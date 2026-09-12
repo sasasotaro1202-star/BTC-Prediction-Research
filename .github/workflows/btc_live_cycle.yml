@@ -54,18 +54,30 @@ jobs:
         run: python src/model_compare.py
       - name: Generate next BTC prediction
         run: python src/predict.py
-      - name: Validate SQLite state
+      - name: Validate BTC prediction state
         run: |
           python - <<'PY'
           import sqlite3
           from pathlib import Path
+          from datetime import datetime, timezone
           p=Path('data/predictions.db')
-          if not p.exists() or p.stat().st_size == 0: raise SystemExit('predictions.db was not produced')
+          if not p.exists() or p.stat().st_size == 0:
+              raise SystemExit('predictions.db was not produced')
           with sqlite3.connect(p) as con:
               n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
-              if n <= 0: raise SystemExit('predictions table is empty')
-              bad=con.execute('SELECT COUNT(*) FROM predictions WHERE abs((p_up_5m+p_down_5m+p_flat_5m)-1.0)>0.00001').fetchone()[0]
-              if bad: raise SystemExit(f'probability integrity failure: {bad}')
+              if n <= 0:
+                  raise SystemExit('predictions table is empty')
+              bad5=con.execute('SELECT COUNT(*) FROM predictions WHERE abs((p_up_5m+p_down_5m+p_flat_5m)-1.0)>0.00001 OR p_up_5m<0 OR p_down_5m<0 OR p_flat_5m<0').fetchone()[0]
+              bad10=con.execute('SELECT COUNT(*) FROM predictions WHERE abs((p_up_10m+p_down_10m+p_flat_10m)-1.0)>0.00001 OR p_up_10m<0 OR p_down_10m<0 OR p_flat_10m<0').fetchone()[0]
+              if bad5 or bad10:
+                  raise SystemExit(f'probability integrity failure: 5m={bad5}, 10m={bad10}')
+              latest=con.execute('SELECT created_at_utc FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+              if not latest:
+                  raise SystemExit('latest prediction missing')
+              created=datetime.fromisoformat(latest[0].replace('Z','+00:00'))
+              age=(datetime.now(timezone.utc)-created).total_seconds()
+              if age > 900:
+                  raise SystemExit(f'latest BTC prediction is stale: {age:.0f}s')
           print('BTC prediction database validation: OK')
           PY
       - name: Upload BTC research artifacts
