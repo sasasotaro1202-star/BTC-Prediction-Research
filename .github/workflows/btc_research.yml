@@ -1,37 +1,91 @@
 name: BTC Research
+
 on:
   schedule:
     - cron: '17 0 * * *'
   workflow_dispatch:
+
 concurrency:
   group: btc-research
   cancel-in-progress: false
+
 permissions:
   contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
 jobs:
   research:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Install research dependencies
-        run: python -m pip install -r requirements.txt
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install research dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            echo "pip install attempt ${attempt} failed"
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Compile research code
+        run: python -m compileall -q src
       - name: Recalculate calibration metrics
         run: python src/calibration.py
       - name: Run model research and adoption gate
         run: python src/model_compare.py
-      - name: Commit adopted model state
+      - name: Validate model artifacts
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          for h in ('5m','10m'):
+              p=Path(f'data/models/{h}.joblib')
+              if not p.exists() or p.stat().st_size == 0:
+                  raise SystemExit(f'missing production model: {p}')
+              meta=Path(f'data/models/{h}.json')
+              if not meta.exists():
+                  raise SystemExit(f'missing model metadata: {meta}')
+              obj=json.loads(meta.read_text())
+              if obj.get('horizon') != h or obj.get('candidate') is not False:
+                  raise SystemExit(f'invalid production metadata: {meta}')
+          print('production model artifact validation: OK')
+          PY
+      - name: Commit adopted model state with retry
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/predictions.db data/models/*.json data/models/*.joblib
           if git diff --cached --quiet; then
             echo 'No research-state changes to commit.'
-          else
-            git commit -m 'Update BTC model research state'
-            git push
+            exit 0
           fi
+          git commit -m 'Update BTC model research state'
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "git push attempt ${attempt} failed; rebasing on origin/main"
+            git fetch origin main
+            git rebase origin/main
+            sleep $((5 * attempt))
+          done
+          echo 'git push failed after 3 attempts'
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: btc-research-state
@@ -39,3 +93,4 @@ jobs:
             data/predictions.db
             data/models/*.json
             data/models/*.joblib
+          retention-days: 14
