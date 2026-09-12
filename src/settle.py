@@ -8,22 +8,20 @@ THRESHOLD = 0.00015
 
 def target_price(target_iso):
     target=datetime.fromisoformat(target_iso.replace('Z','+00:00'))
-    # Binance 1m candle close is the price at the end of that minute.
-    # Query the candle immediately before the target so its close is target time.
-    target_ms=int(target.timestamp()*1000)
-    start_ms=target_ms-60000
-    url=(f'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m'
-         f'&startTime={start_ms}&endTime={target_ms}&limit=2')
-    req=Request(url,headers={'User-Agent':'btc-prediction-research/1.1'})
+    # Coinbase 1-minute candle ending at target: candle start = target - 60s.
+    target_ts=int(target.timestamp())
+    start_ts=target_ts-60
+    end_ts=target_ts
+    url=(f'https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60'
+         f'&start={start_ts}&end={end_ts}')
+    req=Request(url,headers={'User-Agent':'btc-prediction-research/1.3','Accept':'application/json'})
     with urlopen(req,timeout=15) as r:
         rows=json.loads(r.read())
-    if not rows:
-        return None
-    # Prefer the candle whose close time equals the target timestamp.
+    # Coinbase format: [time, low, high, open, close, volume].
     for row in rows:
-        if int(row[6]) >= target_ms:
+        if int(row[0])==start_ts:
             return float(row[4])
-    return float(rows[-1][4])
+    return None
 
 
 def direction(base, actual, threshold=THRESHOLD):
@@ -34,21 +32,30 @@ def direction(base, actual, threshold=THRESHOLD):
 
 
 def settle():
-    init_db(); now=datetime.now(timezone.utc)
+    init_db()
+    now=datetime.now(timezone.utc)
     with sqlite3.connect(DB) as con:
-        rows=con.execute('SELECT * FROM predictions WHERE (actual_price_5m IS NULL AND target_5m <= ?) OR (actual_price_10m IS NULL AND target_10m <= ?)',(now.isoformat(),now.isoformat())).fetchall()
+        rows=con.execute(
+            'SELECT * FROM predictions WHERE (actual_price_5m IS NULL AND target_5m <= ?) OR (actual_price_10m IS NULL AND target_10m <= ?)',
+            (now.isoformat(),now.isoformat())).fetchall()
         settled=0
         for r in rows:
             if r[16] is None and r[2] <= now.isoformat():
                 px=target_price(r[2])
                 if px is not None:
-                    d=direction(r[4],px); pred=max((('UP',r[5]),('DOWN',r[6]),('FLAT',r[7])),key=lambda x:x[1])[0]
-                    con.execute('UPDATE predictions SET actual_price_5m=?,actual_direction_5m=?,correct_5m=?,settled_5m_at_utc=? WHERE prediction_id=?',(px,d,int(d==pred),now.isoformat(),r[0])); settled+=1
+                    d=direction(r[4],px)
+                    pred=max((('UP',r[5]),('DOWN',r[6]),('FLAT',r[7])),key=lambda x:x[1])[0]
+                    con.execute('UPDATE predictions SET actual_price_5m=?,actual_direction_5m=?,correct_5m=?,settled_5m_at_utc=? WHERE prediction_id=?',(px,d,int(d==pred),now.isoformat(),r[0]))
+                    settled+=1
             if r[17] is None and r[3] <= now.isoformat():
                 px=target_price(r[3])
                 if px is not None:
-                    d=direction(r[4],px); pred=max((('UP',r[8]),('DOWN',r[9]),('FLAT',r[10])),key=lambda x:x[1])[0]
-                    con.execute('UPDATE predictions SET actual_price_10m=?,actual_direction_10m=?,correct_10m=?,settled_10m_at_utc=? WHERE prediction_id=?',(px,d,int(d==pred),now.isoformat(),r[0])); settled+=1
+                    d=direction(r[4],px)
+                    pred=max((('UP',r[8]),('DOWN',r[9]),('FLAT',r[10])),key=lambda x:x[1])[0]
+                    con.execute('UPDATE predictions SET actual_price_10m=?,actual_direction_10m=?,correct_10m=?,settled_10m_at_utc=? WHERE prediction_id=?',(px,d,int(d==pred),now.isoformat(),r[0]))
+                    settled+=1
     print('settled_fields',settled)
 
-if __name__=='__main__': settle()
+
+if __name__=='__main__':
+    settle()
