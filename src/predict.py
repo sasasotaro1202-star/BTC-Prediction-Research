@@ -65,18 +65,28 @@ def features(rows):
         'ema_gap_5m':float(c/ema5-1.0),'ema_gap_10m':float(c/ema10-1.0)
     }
 
-def structural_probs(f):
+def structural_probs(f,horizon='5m'):
     vol=max(0.00025,f['volatility_10m'])
-    trend=(2.0*f['ret_1m']+1.5*f['ret_3m']+1.2*f['ret_5m']+0.8*f['ret_10m'])/vol
-    accel=f['acceleration']/vol
-    ema=(f['ema_gap_5m']+f['ema_gap_10m'])/(2*vol)
-    flow=math.log(max(0.25,min(4.0,f['volume_ratio'])))
-    candle=f['body_1m']/vol
-    score=max(-2.5,min(2.5,0.58*trend+0.16*accel+0.12*ema+0.09*flow+0.05*candle))
+    if horizon=='5m':
+        trend=(2.2*f['ret_1m']+1.6*f['ret_3m']+1.0*f['ret_5m']+0.45*f['ret_10m'])/vol
+        accel=f['acceleration']/vol
+        ema=(1.2*f['ema_gap_5m']+0.4*f['ema_gap_10m'])/vol
+        flow=math.log(max(0.25,min(4.0,f['volume_ratio'])))
+        candle=f['body_1m']/vol
+        score=max(-2.5,min(2.5,0.58*trend+0.17*accel+0.11*ema+0.09*flow+0.05*candle))
+        flat_base=0.23
+    else:
+        trend=(0.8*f['ret_1m']+1.3*f['ret_3m']+1.5*f['ret_5m']+1.1*f['ret_10m'])/vol
+        accel=(0.4*f['acceleration']+0.6*f['ret_5m']-0.2*f['ret_1m'])/vol
+        ema=(0.5*f['ema_gap_5m']+1.0*f['ema_gap_10m'])/vol
+        flow=math.log(max(0.25,min(4.0,f['volume_ratio'])))
+        candle=f['body_1m']/vol
+        score=max(-2.5,min(2.5,0.52*trend+0.12*accel+0.19*ema+0.10*flow+0.07*candle))
+        flat_base=0.27
     directional=1/(1+math.exp(-score))
     activity=min(1.0,max(0.0,(f['volume_ratio']-0.7)/1.3))
-    trend_abs=min(2.5,abs(trend))
-    flat=max(0.08,min(0.32,0.27-0.07*trend_abs-0.03*activity+0.05*(1-f['volume_trend'])))
+    trend_abs=min(2.5,abs(score))
+    flat=max(0.08,min(0.36,flat_base-0.055*trend_abs-0.025*activity+0.045*(1-f['volume_trend'])))
     up=(1-flat)*directional; down=(1-flat)-up
     return {'DOWN':float(down),'FLAT':float(flat),'UP':float(up)}
 
@@ -101,12 +111,15 @@ def model_probs(model,f):
         s=sum(out.values()); return {k:v/s for k,v in out.items()}
     except Exception:return None
 
-def stabilize(probs,structural):
+def stabilize(probs,structural,horizon='5m'):
     conservative={'DOWN':0.36,'FLAT':0.28,'UP':0.36}
     p=np.array([probs['DOWN'],probs['FLAT'],probs['UP']],float)
     q=np.array([structural['DOWN'],structural['FLAT'],structural['UP']],float)
     r=np.array([conservative['DOWN'],conservative['FLAT'],conservative['UP']],float)
-    out=0.60*p+0.25*q+0.15*r
+    if horizon=='5m':
+        out=0.60*p+0.25*q+0.15*r
+    else:
+        out=0.55*p+0.30*q+0.15*r
     out=np.clip(out,0.05,0.90); out/=out.sum()
     return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])}
 
@@ -122,17 +135,18 @@ def scenario_paths(f,base):
 def predict():
     init_db(); rows=fetch_klines()
     if len(rows)<31: raise RuntimeError(f'Insufficient BTC candles: {len(rows)}')
-    f=features(rows); structural=structural_probs(f); now=utcnow()
+    f=features(rows); structural5=structural_probs(f,'5m'); structural10=structural_probs(f,'10m'); now=utcnow()
     t5=next_grid(now,1); t10=next_grid(now,2); price=float(rows[-1][4])
-    p5=stabilize(model_probs(load_production_model('5m'),f) or structural,structural)
-    p10=stabilize(model_probs(load_production_model('10m'),f) or structural,structural)
+    p5=stabilize(model_probs(load_production_model('5m'),f) or structural5,structural5,'5m')
+    p10=stabilize(model_probs(load_production_model('10m'),f) or structural10,structural10,'10m')
     v5=registry_version('5m'); v10=registry_version('10m')
-    scenario={'5m':p5,'10m':p10,'structural_prior':structural,'forward_paths':scenario_paths(f,p5),
-              'price_source':'coinbase_btc_usd','probability_policy':'stable_scenario_blend_v4','feature_version':'v4'}
+    scenario={'5m':p5,'10m':p10,'structural_prior_5m':structural5,'structural_prior_10m':structural10,
+              'forward_paths':scenario_paths(f,p5),'price_source':'coinbase_btc_usd',
+              'probability_policy':'stable_scenario_blend_v5_horizon_specific','feature_version':'v4'}
     with sqlite3.connect(DB) as con:
         con.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (now.isoformat(),t5.isoformat(),t10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],
                      f'5m:{v5}|10m:{v10}',json.dumps(f),json.dumps(scenario)))
-    print({'price':price,'target_5m':t5.isoformat(),'target_10m':t10.isoformat(),'p5':p5,'p10':p10,'model_5m':v5,'model_10m':v10,'policy':'stable_scenario_blend_v4'})
+    print({'price':price,'target_5m':t5.isoformat(),'target_10m':t10.isoformat(),'p5':p5,'p10':p10,'model_5m':v5,'model_10m':v10,'policy':'stable_scenario_blend_v5_horizon_specific'})
 
 if __name__=='__main__':predict()
