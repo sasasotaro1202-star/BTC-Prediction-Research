@@ -37,7 +37,7 @@ jobs:
       - name: Restore historical archive cache
         uses: actions/cache@v4
         with:
-          path: data/historical_research/archive_cache
+          path: /tmp/btc_prediction_archive_cache
           key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-${{ github.run_number }}
           restore-keys: |
             btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-
