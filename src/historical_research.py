@@ -114,8 +114,11 @@ def ret(a,n):return a[-1]/a[-1-n]-1.0 if len(a)>n and a[-1-n] else 0.0
 def exists(m,w):return len(m)>=len(w) and all(x in m for x in w)
 
 def build_panel():
-    # Use only completed UTC days so hosted CI can rely on published Binance daily archives.
-    end=(datetime.now(timezone.utc)-timedelta(days=2)).replace(hour=0,minute=0,second=0,microsecond=0)
+    # Binance daily public archives are published with a delay. Keep a
+    # conservative three-day completed-data boundary so CI never asks for
+    # an unpublished UTC day. This preserves the full 45-day research
+    # sample while shifting its window backward by a few days.
+    end=(datetime.now(timezone.utc)-timedelta(days=3)).replace(hour=0,minute=0,second=0,microsecond=0)
     start=end-timedelta(days=DAYS)
     raw=load_market(start,end)
     maps={k:{int(r[0]):r for r in v} for k,v in raw.items() if k not in ("funding","oi")}
