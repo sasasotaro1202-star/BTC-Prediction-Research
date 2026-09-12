@@ -1,152 +1,102 @@
+"""BTC-only live predictor: closed 1m candles, multi-venue confirmation and calibrated model blend."""
+from __future__ import annotations
 import json, math, sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from urllib.request import urlopen, Request
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 import joblib, numpy as np
 from db import DB, init_db
 
 INTERVAL=300
-FEATURES=[
-    'ret_1m','ret_3m','ret_5m','ret_10m',
-    'acceleration','volatility_5m','volatility_10m',
-    'range_position_10m','body_1m','upper_wick_1m','lower_wick_1m',
-    'volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m'
-]
-
+CLASSES=["DOWN","FLAT","UP"]
+FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 
 def utcnow(): return datetime.now(timezone.utc)
-
+def jst(dt): return dt.astimezone(timezone(timedelta(hours=9))).isoformat()
 def next_grid(dt,steps=1):
-    ts=int(dt.timestamp())
-    return datetime.fromtimestamp(((ts//INTERVAL)+steps)*INTERVAL,timezone.utc)
-
-def fetch_klines(limit=60):
-    url='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60'
-    req=Request(url,headers={'User-Agent':'btc-prediction-research/3.0','Accept':'application/json'})
-    with urlopen(req,timeout=15) as r: rows=json.loads(r.read())
-    return sorted(rows,key=lambda x:x[0])[-limit:]
-
-def _ema(values, span):
-    a=2.0/(span+1.0); e=float(values[0])
-    for v in values[1:]: e=a*float(v)+(1-a)*e
+    ts=int(dt.timestamp()); return datetime.fromtimestamp(((ts//INTERVAL)+steps)*INTERVAL,timezone.utc)
+def http_json(url,timeout=12):
+    req=Request(url,headers={'User-Agent':'BTC-Prediction-Research/5.0','Accept':'application/json'})
+    with urlopen(req,timeout=timeout) as r:return json.loads(r.read())
+def bklines(spot=False,limit=120):
+    host='https://api.binance.com/api/v3/klines' if spot else 'https://fapi.binance.com/fapi/v1/klines'
+    q=urlencode({'symbol':'BTCUSDT','interval':'1m','limit':limit}); return http_json(f'{host}?{q}')
+def closed(rows):
+    now=int(utcnow().timestamp()*1000); return [r for r in rows if int(r[0])+60000<=now]
+def bybit_klines(limit=120):
+    q=urlencode({'category':'linear','symbol':'BTCUSDT','interval':'1','limit':limit}); return http_json(f'https://api.bybit.com/v5/market/kline?{q}')
+def bybit_closes(payload):
+    rows=sorted(payload.get('result',{}).get('list',[]),key=lambda r:int(r[0])); now=int(utcnow().timestamp()*1000)
+    return [float(r[4]) for r in rows if int(r[0])+60000<=now]
+def bdepth(limit=50):
+    q=urlencode({'symbol':'BTCUSDT','limit':limit}); return http_json(f'https://fapi.binance.com/fapi/v1/depth?{q}')
+def bydepth(limit=50):
+    q=urlencode({'category':'linear','symbol':'BTCUSDT','limit':limit}); return http_json(f'https://api.bybit.com/v5/market/orderbook?{q}')
+def premium(): return http_json('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')
+def oi(): return http_json('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT')
+def taker():
+    q=urlencode({'symbol':'BTCUSDT','period':'5m','limit':1}); rows=http_json(f'https://fapi.binance.com/futures/data/takerBuySellVol?{q}'); return rows[-1] if rows else {}
+def byfund():
+    q=urlencode({'category':'linear','symbol':'BTCUSDT','limit':1}); return http_json(f'https://api.bybit.com/v5/market/funding/history?{q}')
+def _ema(v,span):
+    a=2/(span+1); e=float(v[0])
+    for x in v[1:]: e=a*float(x)+(1-a)*e
     return e
-
-def _ret(closes,n):
-    return closes[-1]/closes[-1-n]-1.0 if len(closes)>n else 0.0
-
+def _ret(c,n): return c[-1]/c[-1-n]-1 if len(c)>n else 0.0
 def features(rows):
-    closes=np.asarray([float(x[4]) for x in rows],float)
-    opens=np.asarray([float(x[3]) for x in rows],float)
-    highs=np.asarray([float(x[2]) for x in rows],float)
-    lows=np.asarray([float(x[1]) for x in rows],float)
-    vols=np.asarray([float(x[5]) for x in rows],float)
-    c=closes[-1]
-    r1=_ret(closes,1); r3=_ret(closes,3); r5=_ret(closes,5); r10=_ret(closes,10)
-    acceleration=r1-r3/3.0
-    rets=np.diff(closes[-11:])/closes[-11:-1] if len(closes)>=11 else np.array([0.0])
-    volatility_10m=float(np.std(rets))
-    rets5=np.diff(closes[-6:])/closes[-6:-1] if len(closes)>=6 else np.array([0.0])
-    volatility_5m=float(np.std(rets5))
-    hi=float(np.max(highs[-10:])); lo=float(np.min(lows[-10:]));
-    range_position_10m=(c-lo)/(hi-lo) if hi>lo else 0.5
-    body=(c-opens[-1])/c
-    upper=(highs[-1]-max(opens[-1],c))/c
-    lower=(min(opens[-1],c)-lows[-1])/c
-    recent5=float(np.mean(vols[-5:])); prior10=float(np.mean(vols[-15:-5])) if len(vols)>=15 else recent5
-    volume_ratio=recent5/(prior10 if prior10>0 else 1.0)
-    volume_trend=recent5/(float(np.mean(vols[-10:])) if len(vols)>=10 else recent5)
-    ema5=_ema(closes[-20:],5); ema10=_ema(closes[-30:],10)
-    return {
-        'ret_1m':float(r1),'ret_3m':float(r3),'ret_5m':float(r5),'ret_10m':float(r10),
-        'acceleration':float(acceleration),'volatility_5m':volatility_5m,'volatility_10m':volatility_10m,
-        'range_position_10m':float(range_position_10m),'body_1m':float(body),
-        'upper_wick_1m':float(upper),'lower_wick_1m':float(lower),
-        'volume_ratio':float(volume_ratio),'volume_trend':float(volume_trend),
-        'ema_gap_5m':float(c/ema5-1.0),'ema_gap_10m':float(c/ema10-1.0)
-    }
-
-def structural_probs(f,horizon='5m'):
-    vol=max(0.00025,f['volatility_10m'])
-    if horizon=='5m':
-        trend=(2.2*f['ret_1m']+1.6*f['ret_3m']+1.0*f['ret_5m']+0.45*f['ret_10m'])/vol
-        accel=f['acceleration']/vol
-        ema=(1.2*f['ema_gap_5m']+0.4*f['ema_gap_10m'])/vol
-        flow=math.log(max(0.25,min(4.0,f['volume_ratio'])))
-        candle=f['body_1m']/vol
-        score=max(-2.5,min(2.5,0.58*trend+0.17*accel+0.11*ema+0.09*flow+0.05*candle))
-        flat_base=0.23
-    else:
-        trend=(0.8*f['ret_1m']+1.3*f['ret_3m']+1.5*f['ret_5m']+1.1*f['ret_10m'])/vol
-        accel=(0.4*f['acceleration']+0.6*f['ret_5m']-0.2*f['ret_1m'])/vol
-        ema=(0.5*f['ema_gap_5m']+1.0*f['ema_gap_10m'])/vol
-        flow=math.log(max(0.25,min(4.0,f['volume_ratio'])))
-        candle=f['body_1m']/vol
-        score=max(-2.5,min(2.5,0.52*trend+0.12*accel+0.19*ema+0.10*flow+0.07*candle))
-        flat_base=0.27
-    directional=1/(1+math.exp(-score))
-    activity=min(1.0,max(0.0,(f['volume_ratio']-0.7)/1.3))
-    trend_abs=min(2.5,abs(score))
-    flat=max(0.08,min(0.36,flat_base-0.055*trend_abs-0.025*activity+0.045*(1-f['volume_trend'])))
-    up=(1-flat)*directional; down=(1-flat)-up
-    return {'DOWN':float(down),'FLAT':float(flat),'UP':float(up)}
-
-def registry_version(h):
+    c=np.asarray([float(x[4]) for x in rows]); o=np.asarray([float(x[1]) for x in rows]); h=np.asarray([float(x[2]) for x in rows]); l=np.asarray([float(x[3]) for x in rows]); v=np.asarray([float(x[5]) for x in rows]); p=c[-1]
+    r1,r3,r5,r10=[_ret(c,n) for n in (1,3,5,10)]; a=r1-r3/3
+    rv5=float(np.std(np.diff(c[-6:])/c[-6:-1])); rv10=float(np.std(np.diff(c[-11:])/c[-11:-1])); hi,lo=max(h[-10:]),min(l[-10:]); rp=(p-lo)/(hi-lo) if hi>lo else .5
+    body=(p-o[-1])/p; up=(h[-1]-max(o[-1],p))/p; low=(min(o[-1],p)-l[-1])/p; rvol=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-15:-5]))); vtrend=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-10:])))
+    return {'ret_1m':r1,'ret_3m':r3,'ret_5m':r5,'ret_10m':r10,'acceleration':a,'volatility_5m':rv5,'volatility_10m':rv10,'range_position_10m':rp,'body_1m':body,'upper_wick_1m':up,'lower_wick_1m':low,'volume_ratio':rvol,'volume_trend':vtrend,'ema_gap_5m':p/_ema(c[-20:],5)-1,'ema_gap_10m':p/_ema(c[-30:],10)-1}
+def imbalance(book,levels=25):
     try:
-        with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
-        return r[0] if r else 'v1.0'
-    except Exception:return 'v1.0'
-
-def load_production_model(h):
-    path=Path(DB).parent/'models'/f'{h}.joblib'
-    if not path.exists():return None
-    try:return joblib.load(path)
+        bids=book['bids'][:levels]; asks=book['asks'][:levels]; b=sum(float(x[1]) for x in bids); a=sum(float(x[1]) for x in asks); return (b-a)/max(1e-12,b+a)
+    except Exception:return 0.0
+def structural(f,m):
+    vol=max(.00025,f['volatility_10m']); score=(2.2*f['ret_1m']+1.6*f['ret_3m']+f['ret_5m']+.45*f['ret_10m'])/vol; score+=.15*f['acceleration']/vol+.10*(1.2*f['ema_gap_5m']+.4*f['ema_gap_10m'])/vol+.07*math.log(max(.25,min(4,f['volume_ratio'])))+.12*m['book_imbalance']+.08*m['cross_exchange_gap']/vol; score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
+def load_model(h):
+    p=Path(DB).parent/'models'/f'{h}.joblib'
+    if not p.exists():return None
+    try:return joblib.load(p)
     except Exception:return None
-
 def model_probs(model,f):
     if model is None:return None
     try:
-        X=np.array([[f[k] for k in FEATURES]],dtype=float); raw=model.predict_proba(X)[0]
-        out={'DOWN':1e-6,'FLAT':1e-6,'UP':1e-6}
-        for cls,p in zip(model.classes_,raw):out[str(cls)]=float(p)
+        raw=model.predict_proba(np.array([[f[k] for k in FEATURES]]))[0]; out={c:1e-6 for c in CLASSES}
+        for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
         s=sum(out.values()); return {k:v/s for k,v in out.items()}
     except Exception:return None
-
-def stabilize(probs,structural,horizon='5m'):
-    conservative={'DOWN':0.36,'FLAT':0.28,'UP':0.36}
-    p=np.array([probs['DOWN'],probs['FLAT'],probs['UP']],float)
-    q=np.array([structural['DOWN'],structural['FLAT'],structural['UP']],float)
-    r=np.array([conservative['DOWN'],conservative['FLAT'],conservative['UP']],float)
-    if horizon=='5m':
-        out=0.60*p+0.25*q+0.15*r
-    else:
-        out=0.55*p+0.30*q+0.15*r
-    out=np.clip(out,0.05,0.90); out/=out.sum()
-    return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])}
-
-def scenario_paths(f,base):
-    vol=max(0.00025,f['volatility_10m'])
-    trend=abs(2*f['ret_1m']+1.5*f['ret_3m']+1.2*f['ret_5m']+0.8*f['ret_10m'])/vol
-    continuation=min(0.62,max(0.25,0.38+0.09*min(2.5,trend)))
-    reversal=max(0.14,min(0.38,0.28-0.05*min(2.5,trend)))
-    range_prob=max(0.10,1-continuation-reversal)
-    return {'continuation':float(continuation),'reversal':float(reversal),'range':float(range_prob),
-            'directional_bias':'UP' if base['UP']>base['DOWN'] else 'DOWN' if base['DOWN']>base['UP'] else 'FLAT'}
-
-def predict():
-    init_db(); rows=fetch_klines()
-    if len(rows)<31: raise RuntimeError(f'Insufficient BTC candles: {len(rows)}')
-    f=features(rows); structural5=structural_probs(f,'5m'); structural10=structural_probs(f,'10m'); now=utcnow()
-    t5=next_grid(now,1); t10=next_grid(now,2); price=float(rows[-1][4])
-    p5=stabilize(model_probs(load_production_model('5m'),f) or structural5,structural5,'5m')
-    p10=stabilize(model_probs(load_production_model('10m'),f) or structural10,structural10,'10m')
-    v5=registry_version('5m'); v10=registry_version('10m')
-    scenario={'5m':p5,'10m':p10,'structural_prior_5m':structural5,'structural_prior_10m':structural10,
-              'forward_paths':scenario_paths(f,p5),'price_source':'coinbase_btc_usd',
-              'probability_policy':'stable_scenario_blend_v5_horizon_specific','feature_version':'v4'}
-    with sqlite3.connect(DB) as con:
-        con.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                    (now.isoformat(),t5.isoformat(),t10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],
-                     f'5m:{v5}|10m:{v10}',json.dumps(f),json.dumps(scenario)))
-    print({'price':price,'target_5m':t5.isoformat(),'target_10m':t10.isoformat(),'p5':p5,'p10':p10,'model_5m':v5,'model_10m':v10,'policy':'stable_scenario_blend_v5_horizon_specific'})
-
-if __name__=='__main__':predict()
+def fuse(base,struct,m):
+    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap'])); w=.20+.08*agree; out=(1-w)*p+w*q
+    if m['book_imbalance']>.25: out[2]+=.015
+    elif m['book_imbalance']<-.25: out[0]+=.015
+    if m['taker_imbalance']>.55: out[2]+=.01
+    elif m['taker_imbalance']<-.55: out[0]+=.01
+    out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])}
+def regver(h):
+    try:
+        with sqlite3.connect(DB) as c:r=c.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
+        return r[0] if r else 'none'
+    except Exception:return 'none'
+def main():
+    init_db(); now=utcnow(); fut=closed(bklines()); spot=closed(bklines(True)); by=bybit_closes(bybit_klines())
+    if min(len(fut),len(spot),len(by))<40: raise RuntimeError('insufficient closed BTC 1m candles')
+    f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]); byp=float(by[-1]); prem=premium(); o=oi(); t=taker(); bd=bdepth(); ybd=bydepth(); bf=byfund()
+    funding=float(prem.get('lastFundingRate',0) or 0); byfunding=0.0
+    try:byfunding=float(bf['result']['list'][0]['fundingRate'])
+    except Exception:pass
+    tb=float(t.get('takerBuyVol',0) or 0); ts=float(t.get('takerSellVol',0) or 0); takimb=(tb-ts)/max(1e-12,tb+ts)
+    m={'book_imbalance':imbalance(bd),'bybit_book_imbalance':imbalance(ybd.get('result',{})),'cross_exchange_gap':byp/price-1,'taker_imbalance':takimb,'funding_binance':funding,'funding_bybit':byfunding,'oi':float(o.get('openInterest',0) or 0),'spot_futures_gap':spotp/price-1}
+    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8}); p5=fuse(model_probs(load_model('5m'),f) or s5,s5,m); p10=fuse(model_probs(load_model('10m'),f) or s10,s10,m)
+    target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['ret_5m'])>max(.0005,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
+    if abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
+    if abs(m['book_imbalance'])>.45:warnings.append('order-book imbalance')
+    if abs(takimb)>.55:warnings.append('taker-flow imbalance')
+    if abs(funding)>.0002:warnings.append('elevated funding')
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':{'binance_closed_1m':len(fut),'spot_closed_1m':len(spot),'bybit_closed_1m':len(by)},'policy':'production+structural+cross_exchange_microstructure'}
+    with sqlite3.connect(DB) as c:
+        c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],f'5m:{regver("5m")}|10m:{regver("10m")}',json.dumps(f),json.dumps(scenario)))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m')},ensure_ascii=False))
+if __name__=='__main__':main()
