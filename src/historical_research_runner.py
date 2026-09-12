@@ -9,8 +9,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-import json
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -20,9 +18,13 @@ from datetime import datetime, timezone
 
 import historical_research as hr
 
-USER_AGENT = "BTC-Prediction-Research/6.2"
+USER_AGENT = "BTC-Prediction-Research/6.3"
 FALLBACK_ENDPOINTS = {"markPriceKlines", "premiumIndexKlines"}
 RETRYABLE_HTTP = ("HTTP Error 403", "HTTP Error 429", "HTTP Error 451", "HTTP Error 500", "HTTP Error 502", "HTTP Error 503", "HTTP Error 504")
+
+# Keep an immutable reference before monkey-patching. Calling hr.req_json from
+# the replacement after assigning hr.req_json would recurse forever.
+_ORIGINAL_REQ_JSON = hr.req_json
 
 
 def _download_bytes(url: str) -> bytes:
@@ -33,10 +35,7 @@ def _download_bytes(url: str) -> bytes:
 
 def _verified_zip_rows(url: str, start_ms: int, end_ms: int):
     payload = _download_bytes(url)
-
-    # Binance publishes a matching .CHECKSUM file beside each archive.
-    checksum_url = url + ".CHECKSUM"
-    checksum_text = _download_bytes(checksum_url).decode("utf-8", errors="replace").strip()
+    checksum_text = _download_bytes(url + ".CHECKSUM").decode("utf-8", errors="replace").strip()
     expected = checksum_text.split()[0].lower() if checksum_text else ""
     actual = hashlib.sha256(payload).hexdigest().lower()
     if expected and expected != actual:
@@ -66,6 +65,7 @@ def _archive_fallback(url: str):
     parsed = urllib.parse.urlsplit(url)
     qs = urllib.parse.parse_qs(parsed.query)
     symbol = qs.get("symbol", [None])[0]
+    interval = qs.get("interval", ["1m"])[0]
     start_ms = int(qs.get("startTime", [0])[0])
     end_ms = int(qs.get("endTime", [0])[0])
     if not symbol or not start_ms:
@@ -76,21 +76,16 @@ def _archive_fallback(url: str):
         raise RuntimeError("archive fallback only supports mark/premium klines")
 
     day = datetime.fromtimestamp(start_ms / 1000, timezone.utc).date()
-    kind = endpoint
-
-    # Official Binance Futures public-data layout:
-    # futures/um/daily/<kind>/<symbol>/<interval>/<symbol>-<interval>-<date>.zip
-    # (not <symbol>-<kind>-<interval>-<date>.zip).
     archive_url = (
-        f"https://data.binance.vision/data/futures/um/daily/{kind}/"
-        f"{symbol}/1m/{symbol}-1m-{day.isoformat()}.zip"
+        f"https://data.binance.vision/data/futures/um/daily/{endpoint}/"
+        f"{symbol}/{interval}/{symbol}-{interval}-{day.isoformat()}.zip"
     )
     return _verified_zip_rows(archive_url, start_ms, end_ms)
 
 
 def resilient_req_json(url: str, timeout=30, retries=5):
     try:
-        return hr.req_json(url, timeout=timeout, retries=retries)
+        return _ORIGINAL_REQ_JSON(url, timeout=timeout, retries=retries)
     except RuntimeError as exc:
         message = str(exc)
         if not any(code in message for code in RETRYABLE_HTTP):
