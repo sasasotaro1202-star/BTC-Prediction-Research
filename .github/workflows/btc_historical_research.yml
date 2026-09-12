@@ -11,9 +11,11 @@ on:
       - 'requirements.txt'
   workflow_dispatch:
 
+# Never cancel a valid research run because another run was queued.
+# This is a research pipeline: losing a long OOS run is worse than waiting.
 concurrency:
   group: btc-historical-research
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -22,12 +24,14 @@ jobs:
   research:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Compile all research code
