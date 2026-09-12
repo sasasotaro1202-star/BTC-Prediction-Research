@@ -1,8 +1,7 @@
 """Resilient launcher for BTC historical research.
 
-The research logic remains in historical_research.py. This launcher adds a
-verified Binance Public Data fallback when hosted CI cannot access selected
-USD-M Futures REST endpoints.
+Adds a verified Binance Public Data fallback for USD-M Futures kline
+endpoints when hosted CI cannot access the Binance Futures REST API.
 """
 from __future__ import annotations
 
@@ -14,22 +13,25 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import historical_research as hr
 
-USER_AGENT = "BTC-Prediction-Research/6.3"
-FALLBACK_ENDPOINTS = {"markPriceKlines", "premiumIndexKlines"}
-RETRYABLE_HTTP = ("HTTP Error 403", "HTTP Error 429", "HTTP Error 451", "HTTP Error 500", "HTTP Error 502", "HTTP Error 503", "HTTP Error 504")
+USER_AGENT = "BTC-Prediction-Research/6.4"
+# All three USD-M kline sources used by the research engine.
+FALLBACK_ENDPOINTS = {"klines", "markPriceKlines", "premiumIndexKlines"}
+RETRYABLE_HTTP = (
+    "HTTP Error 403", "HTTP Error 429", "HTTP Error 451",
+    "HTTP Error 500", "HTTP Error 502", "HTTP Error 503", "HTTP Error 504",
+)
 
-# Keep an immutable reference before monkey-patching. Calling hr.req_json from
-# the replacement after assigning hr.req_json would recurse forever.
+# Keep an immutable reference before monkey-patching.
 _ORIGINAL_REQ_JSON = hr.req_json
 
 
 def _download_bytes(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=45) as response:
+    with urllib.request.urlopen(req, timeout=60) as response:
         return response.read()
 
 
@@ -61,6 +63,23 @@ def _verified_zip_rows(url: str, start_ms: int, end_ms: int):
             return rows
 
 
+def _archive_urls(symbol: str, interval: str, endpoint: str, day):
+    """Return daily then monthly official Binance archive URLs."""
+    base = "https://data.binance.vision/data/futures/um"
+    d = day.isoformat()
+    ym = day.strftime("%Y-%m")
+    # Binance public-data naming convention is <symbol>-<interval>-<date>.zip
+    daily = (
+        f"{base}/daily/{endpoint}/{symbol}/{interval}/"
+        f"{symbol}-{interval}-{d}.zip"
+    )
+    monthly = (
+        f"{base}/monthly/{endpoint}/{symbol}/{interval}/"
+        f"{symbol}-{interval}-{ym}.zip"
+    )
+    return daily, monthly
+
+
 def _archive_fallback(url: str):
     parsed = urllib.parse.urlsplit(url)
     qs = urllib.parse.parse_qs(parsed.query)
@@ -68,19 +87,40 @@ def _archive_fallback(url: str):
     interval = qs.get("interval", ["1m"])[0]
     start_ms = int(qs.get("startTime", [0])[0])
     end_ms = int(qs.get("endTime", [0])[0])
-    if not symbol or not start_ms:
-        raise RuntimeError("archive fallback could not parse symbol/startTime")
+    if not symbol or not start_ms or not end_ms:
+        raise RuntimeError("archive fallback could not parse symbol/time range")
 
     endpoint = parsed.path.split("/fapi/v1/")[-1]
     if endpoint not in FALLBACK_ENDPOINTS:
-        raise RuntimeError("archive fallback only supports mark/premium klines")
+        raise RuntimeError("archive fallback only supports USD-M kline endpoints")
 
-    day = datetime.fromtimestamp(start_ms / 1000, timezone.utc).date()
-    archive_url = (
-        f"https://data.binance.vision/data/futures/um/daily/{endpoint}/"
-        f"{symbol}/{interval}/{symbol}-{interval}-{day.isoformat()}.zip"
-    )
-    return _verified_zip_rows(archive_url, start_ms, end_ms)
+    start_day = datetime.fromtimestamp(start_ms / 1000, timezone.utc).date()
+    end_day = datetime.fromtimestamp((end_ms - 1) / 1000, timezone.utc).date()
+    day = start_day
+    all_rows = []
+    errors = []
+    while day <= end_day:
+        daily, monthly = _archive_urls(symbol, interval, endpoint, day)
+        loaded = False
+        for archive_url in (daily, monthly):
+            try:
+                all_rows.extend(_verified_zip_rows(archive_url, start_ms, end_ms))
+                loaded = True
+                break
+            except urllib.error.HTTPError as exc:
+                errors.append(f"{archive_url}: HTTP {exc.code}")
+            except Exception as exc:
+                errors.append(f"{archive_url}: {exc}")
+        if not loaded:
+            raise RuntimeError(
+                f"no verified Binance archive available for {symbol} {endpoint} {day}: "
+                + "; ".join(errors[-4:])
+            )
+        day += timedelta(days=1)
+
+    # Deduplicate by open timestamp because daily/monthly boundaries can overlap.
+    dedup = {int(r[0]): r for r in all_rows}
+    return [dedup[k] for k in sorted(dedup)]
 
 
 def resilient_req_json(url: str, timeout=30, retries=5):
@@ -96,7 +136,10 @@ def resilient_req_json(url: str, timeout=30, retries=5):
         last = None
         for attempt in range(3):
             try:
-                return _archive_fallback(url)
+                rows = _archive_fallback(url)
+                if rows:
+                    return rows
+                raise RuntimeError("verified Binance archive returned no rows")
             except Exception as archive_error:
                 last = archive_error
                 time.sleep(float(attempt + 1))
