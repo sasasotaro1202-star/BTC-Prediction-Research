@@ -8,7 +8,9 @@ from db import DB, init_db
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','volatility_10m','volume_ratio']; CLASSES=['DOWN','FLAT','UP']
-MIN_ROWS=2000; MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'
+# Data-first policy: do not research/adopt between these checkpoints.
+MILESTONES=(2000,5000,10000)
+MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def safe_json(t):
@@ -42,7 +44,7 @@ def aligned(model,X):
     return out/out.sum(1,keepdims=True)
 
 def walk_forward(rows,factory):
-    if len(rows)<MIN_ROWS:return None
+    if len(rows)<MIN_TRAIN+MIN_OOS:return None
     preds=[]; ys=[]
     for end in range(MIN_TRAIN,len(rows),TEST_BLOCK):
         train=rows[:end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
@@ -60,8 +62,24 @@ def train_save(rows,h,name,factory):
 
 def better(c,p): return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
 
-def save_metric(h,v,n,m):
-    with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,v,n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
+def save_metric(h,v,n,m,milestone):
+    with sqlite3.connect(DB) as con:
+        con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,f'{v}@{milestone}',n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
+
+def ensure_checkpoint_table():
+    with sqlite3.connect(DB) as con:
+        con.execute('CREATE TABLE IF NOT EXISTS research_checkpoints (horizon TEXT NOT NULL, milestone INTEGER NOT NULL, evaluated_at_utc TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(horizon,milestone))')
+
+def checkpoint_done(h,milestone):
+    with sqlite3.connect(DB) as con:return con.execute('SELECT 1 FROM research_checkpoints WHERE horizon=? AND milestone=?',(h,milestone)).fetchone() is not None
+
+def mark_checkpoint(h,milestone,status):
+    with sqlite3.connect(DB) as con:
+        con.execute('INSERT OR REPLACE INTO research_checkpoints(horizon,milestone,evaluated_at_utc,status) VALUES(?,?,?,?)',(h,milestone,now(),status))
+
+def latest_milestone(n):
+    reached=[m for m in MILESTONES if n>=m]
+    return max(reached) if reached else None
 
 def prod_ver(h):
     with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
@@ -71,22 +89,35 @@ def set_prod(h,v):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
 
 def compare_h(h):
-    rows=load_rows(h)
-    if len(rows)<MIN_ROWS:return {'status':'insufficient_data','n':len(rows),'required':MIN_ROWS}
+    rows=load_rows(h); n=len(rows); milestone=latest_milestone(n)
+    if milestone is None:
+        return {'status':'collecting','n':n,'next_milestone':MILESTONES[0]}
+    if checkpoint_done(h,milestone):
+        next_m=[m for m in MILESTONES if m>milestone]
+        return {'status':'waiting_for_next_milestone','n':n,'last_evaluated':milestone,'next_milestone':(next_m[0] if next_m else None)}
+    # Evaluate exactly at the latest reached checkpoint, using only data available by then.
+    rows=rows[:milestone]
+    if len(rows)<MIN_TRAIN+MIN_OOS:
+        mark_checkpoint(h,milestone,'insufficient_oos')
+        return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
     oos_rows=rows[MIN_TRAIN:]
-    production=metrics([r['y'] for r in oos_rows],[r['production'] for r in oos_rows]); save_metric(h,prod_ver(h),len(oos_rows),production)
+    production=metrics([r['y'] for r in oos_rows],[r['production'] for r in oos_rows]); save_metric(h,prod_ver(h),len(oos_rows),production,milestone)
     cand={'logreg_c0.1':lambda:LogisticRegression(C=.1,max_iter=2000),'logreg_c1':lambda:LogisticRegression(C=1,max_iter=2000),'logreg_c10':lambda:LogisticRegression(C=10,max_iter=2000),'rf_300':lambda:RandomForestClassifier(n_estimators=300,max_depth=6,min_samples_leaf=5,random_state=42,n_jobs=-1)}
     results={}
     for name,f in cand.items():
         m=walk_forward(rows,f)
-        if m: results[name]=m; save_metric(h,name,len(oos_rows),m)
-    eligible=[(n,m) for n,m in results.items() if better(m,production)]
-    if not eligible:return {'status':'rejected','production':production,'candidates':results,'n':len(rows)}
+        if m: results[name]=m; save_metric(h,name,len(oos_rows),m,milestone)
+    eligible=[(name,m) for name,m in results.items() if better(m,production)]
+    if not eligible:
+        mark_checkpoint(h,milestone,'rejected')
+        return {'status':'rejected','milestone':milestone,'production':production,'candidates':results,'n':len(rows)}
     winner,wmin=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_save(rows,h,winner,cand[winner])
-    if not meta:return {'status':'rejected_training','winner':winner}
-    version=f'v2.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); set_prod(h,version)
-    return {'status':'adopted','version':version,'source':winner,'old':production,'new':wmin,'n':len(rows)}
+    if not meta:
+        mark_checkpoint(h,milestone,'rejected_training')
+        return {'status':'rejected_training','milestone':milestone,'winner':winner}
+    version=f'v2.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['evaluation_milestone']=milestone; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
+    return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'n':len(rows)}
 
 def compare():
-    init_db(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
+    init_db(); ensure_checkpoint_table(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
 if __name__=='__main__': compare()
