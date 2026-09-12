@@ -14,13 +14,14 @@ on:
 
 concurrency:
   group: btc-historical-research
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 env:
   PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
 jobs:
   research:
@@ -102,17 +103,29 @@ jobs:
             echo 'Raw Binance archive files must never enter the Git workspace.'
             exit 1
           fi
-      - name: Commit historical research results
+      - name: Commit historical research results with retry
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/historical_research
           if git diff --cached --quiet; then
             echo 'No historical research changes to commit.'
-          else
-            git commit -m 'Update BTC historical research results'
-            git push
+            exit 0
           fi
+          git commit -m 'Update BTC historical research results'
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "git push attempt ${attempt} failed; rebasing on origin/main"
+            git fetch origin main
+            git rebase origin/main
+            sleep $((5 * attempt))
+          done
+          echo 'git push failed after 3 attempts'
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: btc-historical-research
