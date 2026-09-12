@@ -83,7 +83,8 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db data/historical_research models
+          git add data/predictions.db data/historical_research 2>/dev/null || true
+          if [ -d models ]; then git add models; fi
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3; do
