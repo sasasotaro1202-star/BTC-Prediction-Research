@@ -77,9 +77,15 @@ def mark_checkpoint(h,milestone,status):
     with sqlite3.connect(DB) as con:
         con.execute('INSERT OR REPLACE INTO research_checkpoints(horizon,milestone,evaluated_at_utc,status) VALUES(?,?,?,?)',(h,milestone,now(),status))
 
-def latest_milestone(n):
-    reached=[m for m in MILESTONES if n>=m]
-    return max(reached) if reached else None
+def next_due_milestone(n,h):
+    for m in MILESTONES:
+        if n>=m and not checkpoint_done(h,m): return m
+    return None
+
+def next_unreached(n,h):
+    for m in MILESTONES:
+        if not checkpoint_done(h,m): return m if n<m else None
+    return None
 
 def prod_ver(h):
     with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
@@ -89,13 +95,11 @@ def set_prod(h,v):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
 
 def compare_h(h):
-    rows=load_rows(h); n=len(rows); milestone=latest_milestone(n)
+    rows=load_rows(h); n=len(rows); milestone=next_due_milestone(n,h)
     if milestone is None:
-        return {'status':'collecting','n':n,'next_milestone':MILESTONES[0]}
-    if checkpoint_done(h,milestone):
-        next_m=[m for m in MILESTONES if m>milestone]
-        return {'status':'waiting_for_next_milestone','n':n,'last_evaluated':milestone,'next_milestone':(next_m[0] if next_m else None)}
-    # Evaluate exactly at the latest reached checkpoint, using only data available by then.
+        future=next((m for m in MILESTONES if not checkpoint_done(h,m)),None)
+        return {'status':'collecting','n':n,'next_milestone':future}
+    # Evaluate exactly at the checkpoint, even if several predictions arrived between runs.
     rows=rows[:milestone]
     if len(rows)<MIN_TRAIN+MIN_OOS:
         mark_checkpoint(h,milestone,'insufficient_oos')
