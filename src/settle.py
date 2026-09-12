@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 from db import DB, init_db
 
-THRESHOLD = 0.00015
+# One fixed label definition across LIVE and HISTORICAL research.
+# 2 bps is intentionally ex-ante and identical in both paths.
+THRESHOLD = 0.00020
 
 
 def target_price(target_iso):
@@ -13,7 +15,7 @@ def target_price(target_iso):
     end_ts=target_ts
     url=(f'https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60'
          f'&start={start_ts}&end={end_ts}')
-    req=Request(url,headers={'User-Agent':'btc-prediction-research/1.4','Accept':'application/json'})
+    req=Request(url,headers={'User-Agent':'btc-prediction-research/2.0','Accept':'application/json'})
     with urlopen(req,timeout=15) as r:
         rows=json.loads(r.read())
     for row in rows:
@@ -38,8 +40,6 @@ def settle():
             (now.isoformat(),now.isoformat())).fetchall()
         settled=0
         for r in rows:
-            # predictions schema: base_price=column 4, actual_price_5m=14,
-            # actual_price_10m=15, actual_direction_5m=16, actual_direction_10m=17.
             if r[14] is None and r[2] <= now.isoformat():
                 px=target_price(r[2])
                 if px is not None:
@@ -54,7 +54,7 @@ def settle():
                     pred=max((('UP',r[8]),('DOWN',r[9]),('FLAT',r[10])),key=lambda x:x[1])[0]
                     con.execute('UPDATE predictions SET actual_price_10m=?,actual_direction_10m=?,correct_10m=?,settled_10m_at_utc=? WHERE prediction_id=?',(px,d,int(d==pred),now.isoformat(),r[0]))
                     settled+=1
-    print('settled_fields',settled)
+    print('settled_fields',settled,'threshold_bps',THRESHOLD*10000)
 
 
 if __name__=='__main__':
