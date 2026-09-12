@@ -1,4 +1,5 @@
 name: BTC Live Cycle
+
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -9,41 +10,90 @@ on:
       - 'src/**'
       - 'requirements.txt'
       - 'data/**'
+
 concurrency:
   group: btc-live-cycle
   cancel-in-progress: false
+
 permissions:
   contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
 jobs:
   live:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install research dependencies
-        run: python -m pip install -r requirements.txt
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install research dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            echo "pip install attempt ${attempt} failed"
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Compile research code
+        run: python -m compileall -q src
       - name: Settle due predictions
         run: python src/settle.py
       - name: Generate next prediction
         run: python src/predict.py
       - name: Recalculate calibration metrics
         run: python src/calibration.py
+      - name: Validate SQLite state
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          p = Path('data/predictions.db')
+          if not p.exists() or p.stat().st_size == 0:
+              raise SystemExit('predictions.db was not produced')
+          with sqlite3.connect(p) as con:
+              row = con.execute('SELECT COUNT(*) FROM predictions').fetchone()
+              if not row or row[0] <= 0:
+                  raise SystemExit('predictions table is empty')
+          print('prediction database validation: OK')
+          PY
       - name: Upload SQLite log
         uses: actions/upload-artifact@v4
         with:
           name: btc-predictions-db
           path: data/predictions.db
-      - name: Commit research state
+          retention-days: 14
+      - name: Commit research state with retry
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/predictions.db
           if git diff --cached --quiet; then
             echo 'No research-state changes to commit.'
-          else
-            git commit -m 'Update BTC prediction log'
-            git push
+            exit 0
           fi
+          git commit -m 'Update BTC prediction log'
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "git push attempt ${attempt} failed; rebasing on origin/main"
+            git fetch origin main
+            git rebase origin/main
+            sleep $((5 * attempt))
+          done
+          echo 'git push failed after 3 attempts'
+          exit 1
