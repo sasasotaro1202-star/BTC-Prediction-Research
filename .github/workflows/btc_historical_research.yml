@@ -43,11 +43,14 @@ jobs:
           set -u
           for attempt in 1 2 3; do
             echo "=== historical research attempt ${attempt}/3 ==="
-            if python src/historical_research_runner.py; then
+            set +e
+            python src/historical_research_runner.py
+            status=$?
+            set -e
+            if [ "${status}" -eq 0 ]; then
               echo "historical research completed successfully"
               exit 0
             fi
-            status=$?
             echo "research attempt ${attempt} failed with status ${status}"
             if [ "${attempt}" -lt 3 ]; then
               sleep $((30 * attempt))
