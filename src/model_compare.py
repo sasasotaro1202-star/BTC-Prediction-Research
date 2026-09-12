@@ -8,7 +8,7 @@ from db import DB, init_db
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','volatility_10m','volume_ratio']; CLASSES=['DOWN','FLAT','UP']
-MIN_ROWS=80; MIN_TRAIN=50; MIN_OOS=30; TEST_BLOCK=20; MODEL_DIR=DB.parent/'models'
+MIN_ROWS=2000; MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def safe_json(t):
@@ -22,9 +22,9 @@ def load_rows(h):
     out=[]
     for r in rows:
         f=safe_json(r[2])
-        if not all(k in f for k in FEATURES) or r[3] not in CLASSES:continue
+        if not all(k in f for k in FEATURES) or r[3] not in CLASSES: continue
         x=[float(f[k]) for k in FEATURES]
-        if all(math.isfinite(v) for v in x):out.append({'id':r[0],'created':r[1],'x':x,'y':r[3],'production':[float(r[4]),float(r[5]),float(r[6])],'model_version':r[7]})
+        if all(math.isfinite(v) for v in x): out.append({'id':r[0],'created':r[1],'x':x,'y':r[3],'production':[float(r[4]),float(r[5]),float(r[6])],'model_version':r[7]})
     return out
 
 def metrics(ys,probs):
@@ -32,61 +32,61 @@ def metrics(ys,probs):
     conf=p.max(1); hit=(pred==y).astype(float); ece=0.0
     for i in range(10):
         lo=i/10; hi=(i+1)/10; m=(conf>=lo)&((conf<hi) if hi<1 else (conf<=hi))
-        if m.any():ece+=float(m.mean())*abs(float(hit[m].mean())-float(conf[m].mean()))
+        if m.any(): ece += float(m.mean())*abs(float(hit[m].mean())-float(conf[m].mean()))
     one=np.eye(3)[y]
     return {'accuracy':float((pred==y).mean()),'logloss':float(log_loss(y,p,labels=[0,1,2])),'brier':float(np.mean(np.sum((p-one)**2,axis=1))),'calibration_error':ece}
 
 def aligned(model,X):
     p=model.predict_proba(X); out=np.full((len(X),3),1e-6)
-    for j,c in enumerate(model.classes_):out[:,CLASSES.index(c)]=p[:,j]
+    for j,c in enumerate(model.classes_): out[:,CLASSES.index(c)]=p[:,j]
     return out/out.sum(1,keepdims=True)
 
 def walk_forward(rows,factory):
     if len(rows)<MIN_ROWS:return None
-    preds=[];ys=[]
+    preds=[]; ys=[]
     for end in range(MIN_TRAIN,len(rows),TEST_BLOCK):
         train=rows[:end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
-        if not test:break
+        if not test: break
         model=factory(); X=np.array([r['x'] for r in train]); y=np.array([r['y'] for r in train])
-        if len(set(y))<2:continue
+        if len(set(y))<3: continue
         model.fit(X,y); preds.extend(aligned(model,np.array([r['x'] for r in test])).tolist()); ys.extend(r['y'] for r in test)
     return metrics(ys,preds) if len(ys)>=MIN_OOS else None
 
 def train_save(rows,h,name,factory):
     X=np.array([r['x'] for r in rows]); y=np.array([r['y'] for r in rows]); model=factory()
-    if len(set(y))<2:return None
+    if len(set(y))<3:return None
     model.fit(X,y); MODEL_DIR.mkdir(parents=True,exist_ok=True); joblib.dump(model,MODEL_DIR/f'{h}.joblib')
     meta={'model_version':name,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib'}; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); return meta
 
-def better(c,p):return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
+def better(c,p): return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
 
 def save_metric(h,v,n,m):
-    with sqlite3.connect(DB) as con:con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,v,n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
+    with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,v,n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
 
 def prod_ver(h):
     with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
     return r[0] if r else 'v1.0'
 
 def set_prod(h,v):
-    with sqlite3.connect(DB) as con:con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
+    with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
 
 def compare_h(h):
     rows=load_rows(h)
-    if len(rows)<MIN_ROWS:return {'status':'insufficient_data','n':len(rows)}
+    if len(rows)<MIN_ROWS:return {'status':'insufficient_data','n':len(rows),'required':MIN_ROWS}
     oos_rows=rows[MIN_TRAIN:]
     production=metrics([r['y'] for r in oos_rows],[r['production'] for r in oos_rows]); save_metric(h,prod_ver(h),len(oos_rows),production)
     cand={'logreg_c0.1':lambda:LogisticRegression(C=.1,max_iter=2000),'logreg_c1':lambda:LogisticRegression(C=1,max_iter=2000),'logreg_c10':lambda:LogisticRegression(C=10,max_iter=2000),'rf_300':lambda:RandomForestClassifier(n_estimators=300,max_depth=6,min_samples_leaf=5,random_state=42,n_jobs=-1)}
     results={}
     for name,f in cand.items():
         m=walk_forward(rows,f)
-        if m:results[name]=m;save_metric(h,name,len(oos_rows),m)
+        if m: results[name]=m; save_metric(h,name,len(oos_rows),m)
     eligible=[(n,m) for n,m in results.items() if better(m,production)]
-    if not eligible:return {'status':'rejected','production':production,'candidates':results}
+    if not eligible:return {'status':'rejected','production':production,'candidates':results,'n':len(rows)}
     winner,wmin=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_save(rows,h,winner,cand[winner])
     if not meta:return {'status':'rejected_training','winner':winner}
-    version=f'v2.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}';meta['model_version']=version;(MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');set_prod(h,version)
-    return {'status':'adopted','version':version,'source':winner,'old':production,'new':wmin}
+    version=f'v2.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); set_prod(h,version)
+    return {'status':'adopted','version':version,'source':winner,'old':production,'new':wmin,'n':len(rows)}
 
 def compare():
-    init_db();print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
-if __name__=='__main__':compare()
+    init_db(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
+if __name__=='__main__': compare()
