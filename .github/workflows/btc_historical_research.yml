@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - 'src/historical_research.py'
+      - 'src/historical_research_runner.py'
       - '.github/workflows/btc_historical_research.yml'
       - 'requirements.txt'
   workflow_dispatch:
@@ -32,7 +33,7 @@ jobs:
       - name: Compile all research code
         run: python -m compileall -q src
       - name: Run historical walk-forward research
-        run: python src/historical_research.py
+        run: cd src && python historical_research_runner.py
       - name: Validate research artifact
         run: |
           python - <<'PY'
