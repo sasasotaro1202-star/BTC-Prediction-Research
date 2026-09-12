@@ -1,18 +1,18 @@
 """Fail-safe launcher for BTC historical research."""
 from __future__ import annotations
-import concurrent.futures, csv, hashlib, io, urllib.parse, urllib.request, zipfile
+import csv, hashlib, io, urllib.parse, urllib.request, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
 
-USER_AGENT="BTC-Prediction-Research/11.1"
+USER_AGENT="BTC-Prediction-Research/11.2"
 ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaws.com/data.binance.vision")
 ARCHIVE_SAFETY_DAYS=3
-ARCHIVE_CACHE=Path("data/historical_research/archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
+# Raw Binance ZIPs are deliberately kept outside the Git workspace.
+ARCHIVE_CACHE=Path("/tmp/btc_prediction_archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
 CORE_ENDPOINT="klines"; OPTIONAL_ENDPOINTS={"markPriceKlines","premiumIndexKlines"}; FALLBACK_ENDPOINTS={CORE_ENDPOINT,*OPTIONAL_ENDPOINTS}
 RETRYABLE_HTTP={403,429,451,500,502,503,504}
 _ORIGINAL_REQ_JSON=hr.req_json
-_ZIP_CACHE={}
 
 def _download(url,timeout=90):
     req=urllib.request.Request(url,headers={"User-Agent":USER_AGENT})
@@ -50,7 +50,7 @@ def _get_zip(urls):
             cache=_cache_path(url); payload=cache.read_bytes() if cache.exists() else _download(url)
             if not _checksum(url,payload):raise RuntimeError("archive integrity validation failed")
             if not cache.exists():cache.write_bytes(payload)
-            _ZIP_CACHE[url]=payload; return payload,url
+            return payload,url
         except Exception as exc:last=exc
     raise RuntimeError(f"archive unavailable: {urls[0]}: {last}")
 
