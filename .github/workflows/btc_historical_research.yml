@@ -29,8 +29,27 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Compile all research code
+        run: python -m compileall -q src
       - name: Run historical walk-forward research
         run: python src/historical_research.py
+      - name: Validate research artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/report.json')
+          if not p.exists():
+              raise SystemExit('report.json was not produced')
+          r=json.loads(p.read_text())
+          assert r.get('protocol_version') == 'historical-v5-ensemble-statistical'
+          assert set(r.get('horizons', {})) >= {'5m','10m'}
+          for h in ('5m','10m'):
+              hz=r['horizons'][h]
+              assert hz['samples'] > 0
+              assert 'baseline' in hz and 'models' in hz and 'ensemble' in hz
+          print('research artifact validation: OK')
+          PY
       - name: Commit historical research results
         run: |
           git config user.name github-actions[bot]
