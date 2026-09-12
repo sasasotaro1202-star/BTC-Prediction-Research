@@ -3,6 +3,9 @@ on:
   schedule:
     - cron: '17 0 * * *'
   workflow_dispatch:
+concurrency:
+  group: btc-research
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
@@ -11,21 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
+        with: {python-version: '3.12'}
+      - name: Install research dependencies
         run: python -m pip install -r requirements.txt
-      - name: Recalculate calibration
+      - name: Recalculate calibration metrics
         run: python src/calibration.py
-      - name: Train, OOS-test, compare, and adopt/reject
+      - name: Run model research and adoption gate
         run: python src/model_compare.py
-      - name: Persist research state
+      - name: Commit adopted model state
         run: |
-          git config user.name "btc-research-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/predictions.db data/models || true
-          git commit -m "Persist BTC model research state" || true
-          git push
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/predictions.db data/models/*.json data/models/*.joblib
+          if git diff --cached --quiet; then
+            echo 'No research-state changes to commit.'
+          else
+            git commit -m 'Update BTC model research state'
+            git push
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: btc-research-state
