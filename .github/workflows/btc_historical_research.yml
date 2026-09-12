@@ -1,0 +1,46 @@
+name: BTC Historical Research
+
+on:
+  push:
+    paths:
+      - 'src/historical_research.py'
+      - '.github/workflows/btc_historical_research.yml'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-historical-research
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run historical walk-forward research
+        run: python src/historical_research.py
+      - name: Commit historical research results
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research
+          if git diff --cached --quiet; then
+            echo 'No historical research changes to commit.'
+          else
+            git commit -m 'Update BTC historical research results'
+            git push
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: btc-historical-research
+          path: data/historical_research
