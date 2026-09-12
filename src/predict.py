@@ -1,12 +1,11 @@
-"""BTC-only live predictor: closed 1m candles, multi-venue confirmation and calibrated model blend."""
+"""BTC-only live predictor with resilient multi-venue data and conservative probability fusion."""
 from __future__ import annotations
 import json, math, sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 import joblib, numpy as np
 from db import DB, init_db
+from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding
 
 INTERVAL=300
 CLASSES=["DOWN","FLAT","UP"]
@@ -16,29 +15,6 @@ def utcnow(): return datetime.now(timezone.utc)
 def jst(dt): return dt.astimezone(timezone(timedelta(hours=9))).isoformat()
 def next_grid(dt,steps=1):
     ts=int(dt.timestamp()); return datetime.fromtimestamp(((ts//INTERVAL)+steps)*INTERVAL,timezone.utc)
-def http_json(url,timeout=12):
-    req=Request(url,headers={'User-Agent':'BTC-Prediction-Research/5.0','Accept':'application/json'})
-    with urlopen(req,timeout=timeout) as r:return json.loads(r.read())
-def bklines(spot=False,limit=120):
-    host='https://api.binance.com/api/v3/klines' if spot else 'https://fapi.binance.com/fapi/v1/klines'
-    q=urlencode({'symbol':'BTCUSDT','interval':'1m','limit':limit}); return http_json(f'{host}?{q}')
-def closed(rows):
-    now=int(utcnow().timestamp()*1000); return [r for r in rows if int(r[0])+60000<=now]
-def bybit_klines(limit=120):
-    q=urlencode({'category':'linear','symbol':'BTCUSDT','interval':'1','limit':limit}); return http_json(f'https://api.bybit.com/v5/market/kline?{q}')
-def bybit_closes(payload):
-    rows=sorted(payload.get('result',{}).get('list',[]),key=lambda r:int(r[0])); now=int(utcnow().timestamp()*1000)
-    return [float(r[4]) for r in rows if int(r[0])+60000<=now]
-def bdepth(limit=50):
-    q=urlencode({'symbol':'BTCUSDT','limit':limit}); return http_json(f'https://fapi.binance.com/fapi/v1/depth?{q}')
-def bydepth(limit=50):
-    q=urlencode({'category':'linear','symbol':'BTCUSDT','limit':limit}); return http_json(f'https://api.bybit.com/v5/market/orderbook?{q}')
-def premium(): return http_json('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')
-def oi(): return http_json('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT')
-def taker():
-    q=urlencode({'symbol':'BTCUSDT','period':'5m','limit':1}); rows=http_json(f'https://fapi.binance.com/futures/data/takerBuySellVol?{q}'); return rows[-1] if rows else {}
-def byfund():
-    q=urlencode({'category':'linear','symbol':'BTCUSDT','limit':1}); return http_json(f'https://api.bybit.com/v5/market/funding/history?{q}')
 def _ema(v,span):
     a=2/(span+1); e=float(v[0])
     for x in v[1:]: e=a*float(x)+(1-a)*e
@@ -48,7 +24,7 @@ def features(rows):
     c=np.asarray([float(x[4]) for x in rows]); o=np.asarray([float(x[1]) for x in rows]); h=np.asarray([float(x[2]) for x in rows]); l=np.asarray([float(x[3]) for x in rows]); v=np.asarray([float(x[5]) for x in rows]); p=c[-1]
     r1,r3,r5,r10=[_ret(c,n) for n in (1,3,5,10)]; a=r1-r3/3
     rv5=float(np.std(np.diff(c[-6:])/c[-6:-1])); rv10=float(np.std(np.diff(c[-11:])/c[-11:-1])); hi,lo=max(h[-10:]),min(l[-10:]); rp=(p-lo)/(hi-lo) if hi>lo else .5
-    body=(p-o[-1])/p; up=(h[-1]-max(o[-1],p))/p; low=(min(o[-1],p)-l[-1])/p; rvol=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-15:-5]))); vtrend=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-10:])))
+    body=(p-o[-1])/p; up=(h[-1]-max(o[-1],p))/p; low=(min(o[-1],p)-l[-1])/p; rvol=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-15:-5]))) if np.mean(v[-15:-5]) else 1.; vtrend=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-10:]))) if np.mean(v[-10:]) else 1.
     return {'ret_1m':r1,'ret_3m':r3,'ret_5m':r5,'ret_10m':r10,'acceleration':a,'volatility_5m':rv5,'volatility_10m':rv10,'range_position_10m':rp,'body_1m':body,'upper_wick_1m':up,'lower_wick_1m':low,'volume_ratio':rvol,'volume_trend':vtrend,'ema_gap_5m':p/_ema(c[-20:],5)-1,'ema_gap_10m':p/_ema(c[-30:],10)-1}
 def imbalance(book,levels=25):
     try:
@@ -68,8 +44,9 @@ def model_probs(model,f):
         for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
         s=sum(out.values()); return {k:v/s for k,v in out.items()}
     except Exception:return None
-def fuse(base,struct,m):
-    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap'])); w=.20+.08*agree; out=(1-w)*p+w*q
+def fuse(base,struct,m,data_complete):
+    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap']))
+    w=(.20+.08*agree) if data_complete else .12; out=(1-w)*p+w*q
     if m['book_imbalance']>.25: out[2]+=.015
     elif m['book_imbalance']<-.25: out[0]+=.015
     if m['taker_imbalance']>.55: out[2]+=.01
@@ -81,22 +58,35 @@ def regver(h):
         return r[0] if r else 'none'
     except Exception:return 'none'
 def main():
-    init_db(); now=utcnow(); fut=closed(bklines()); spot=closed(bklines(True)); by=bybit_closes(bybit_klines())
-    if min(len(fut),len(spot),len(by))<40: raise RuntimeError('insufficient closed BTC 1m candles')
-    f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]); byp=float(by[-1]); prem=premium(); o=oi(); t=taker(); bd=bdepth(); ybd=bydepth(); bf=byfund()
-    funding=float(prem.get('lastFundingRate',0) or 0); byfunding=0.0
-    try:byfunding=float(bf['result']['list'][0]['fundingRate'])
-    except Exception:pass
-    tb=float(t.get('takerBuyVol',0) or 0); ts=float(t.get('takerSellVol',0) or 0); takimb=(tb-ts)/max(1e-12,tb+ts)
-    m={'book_imbalance':imbalance(bd),'bybit_book_imbalance':imbalance(ybd.get('result',{})),'cross_exchange_gap':byp/price-1,'taker_imbalance':takimb,'funding_binance':funding,'funding_bybit':byfunding,'oi':float(o.get('openInterest',0) or 0),'spot_futures_gap':spotp/price-1}
-    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8}); p5=fuse(model_probs(load_model('5m'),f) or s5,s5,m); p10=fuse(model_probs(load_model('10m'),f) or s10,s10,m)
+    init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
+    if len(fut)<40: raise RuntimeError(f'insufficient closed BTC 1m candles: {status}')
+    f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None; byp=float(by[-1][4]) if len(by)>=40 else None
+    m={'book_imbalance':0.,'bybit_book_imbalance':0.,'cross_exchange_gap':0.,'taker_imbalance':0.,'funding_binance':0.,'funding_bybit':0.,'oi':0.,'spot_futures_gap':0.}
+    try:m['book_imbalance']=imbalance(binance_depth())
+    except Exception:status['binance_depth']='error'
+    try:m['bybit_book_imbalance']=imbalance(bybit_depth().get('result',{}))
+    except Exception:status['bybit_depth']='error'
+    if byp is not None:m['cross_exchange_gap']=byp/price-1
+    try:m['funding_binance']=float(binance_premium().get('lastFundingRate',0) or 0)
+    except Exception:status['binance_premium']='error'
+    try:m['oi']=float(binance_oi().get('openInterest',0) or 0)
+    except Exception:status['binance_oi']='error'
+    try:
+        t=binance_taker(); t=t[-1] if isinstance(t,list) and t else t; tb=float(t.get('takerBuyVol',0) or 0); ts=float(t.get('takerSellVol',0) or 0); m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts)
+    except Exception:status['binance_taker']='error'
+    try:m['funding_bybit']=float(bybit_funding().get('result',{}).get('list',[{}])[0].get('fundingRate',0) or 0)
+    except Exception:status['bybit_funding']='error'
+    if spotp is not None:m['spot_futures_gap']=spotp/price-1
+    data_complete=len(spot)>=40 and byp is not None and status.get('binance_depth')!='error' and status.get('bybit_depth')!='error'
+    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8}); p5=fuse(model_probs(load_model('5m'),f) or s5,s5,m,data_complete); p10=fuse(model_probs(load_model('10m'),f) or s10,s10,m,data_complete)
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['ret_5m'])>max(.0005,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m['book_imbalance'])>.45:warnings.append('order-book imbalance')
-    if abs(takimb)>.55:warnings.append('taker-flow imbalance')
-    if abs(funding)>.0002:warnings.append('elevated funding')
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':{'binance_closed_1m':len(fut),'spot_closed_1m':len(spot),'bybit_closed_1m':len(by)},'policy':'production+structural+cross_exchange_microstructure'}
+    if abs(m['taker_imbalance'])>.55:warnings.append('taker-flow imbalance')
+    if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
+    if not data_complete:warnings.append('partial market-data coverage; confidence reduced')
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'policy':'production+structural+cross_exchange_microstructure'}
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],f'5m:{regver("5m")}|10m:{regver("10m")}',json.dumps(f),json.dumps(scenario)))
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m')},ensure_ascii=False))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
