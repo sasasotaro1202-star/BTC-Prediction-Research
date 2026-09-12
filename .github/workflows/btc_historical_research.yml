@@ -9,6 +9,7 @@ on:
       - 'src/historical_research_runner.py'
       - '.github/workflows/btc_historical_research.yml'
       - 'requirements.txt'
+      - 'scripts/binance_archive_smoke.py'
   workflow_dispatch:
 
 concurrency:
@@ -33,10 +34,30 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+      - name: Restore historical archive cache
+        uses: actions/cache@v4
+        with:
+          path: data/historical_research/archive_cache
+          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-${{ github.run_number }}
+          restore-keys: |
+            btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-
+            btc-archive-${{ runner.os }}-
+      - name: Install dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            echo "pip install attempt ${attempt} failed"
+            sleep $((15 * attempt))
+          done
+          exit 1
       - name: Compile all research code
-        run: python -m compileall -q src
+        run: python -m compileall -q src scripts
+      - name: Preflight Binance public archive
+        run: python scripts/binance_archive_smoke.py
       - name: Run historical walk-forward research with retry
         shell: bash
         run: |
