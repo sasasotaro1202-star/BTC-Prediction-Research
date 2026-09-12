@@ -1,4 +1,4 @@
-import json, math, sqlite3
+import json, math, sqlite3, shutil
 from datetime import datetime, timezone
 import joblib, numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -8,7 +8,6 @@ from db import DB, init_db
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','volatility_10m','volume_ratio']; CLASSES=['DOWN','FLAT','UP']
-# Data-first policy: do not research/adopt between these checkpoints.
 MILESTONES=(2000,5000,10000)
 MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'
 ALPHA=0.05
@@ -69,16 +68,30 @@ def walk_forward(rows,factory):
     return {'metrics':metrics(ys,preds),'ys':ys,'probs':preds,'ids':ids}
 
 
-def train_save(rows,h,name,factory):
+def train_candidate(rows,h,name,factory,milestone):
     X=np.array([r['x'] for r in rows]); y=np.array([r['y'] for r in rows]); model=factory()
     if len(set(y))<3:return None
-    model.fit(X,y); MODEL_DIR.mkdir(parents=True,exist_ok=True); joblib.dump(model,MODEL_DIR/f'{h}.joblib')
-    meta={'model_version':name,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib'}; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); return meta
+    model.fit(X,y)
+    MODEL_DIR.mkdir(parents=True,exist_ok=True)
+    candidate_path=MODEL_DIR/f'{h}.candidate.m{milestone}.{name}.joblib'
+    joblib.dump(model,candidate_path)
+    meta={'model_version':name,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':candidate_path.name,'candidate':True,'milestone':milestone}
+    (MODEL_DIR/f'{h}.candidate.m{milestone}.{name}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
+    return meta
+
+
+def adopt_candidate(h,meta,version):
+    candidate=MODEL_DIR/meta['artifact']
+    production=MODEL_DIR/f'{h}.joblib'
+    if not candidate.exists(): return False
+    # Production is replaced only after the complete OOS/statistical gate passes.
+    shutil.copyfile(candidate,production)
+    final={'model_version':version,'horizon':h,'classes':meta['classes'],'features':FEATURES,'artifact':production.name,'candidate':False,'evaluation_milestone':meta['milestone']}
+    (MODEL_DIR/f'{h}.json').write_text(json.dumps(final,indent=2),encoding='utf-8')
+    return True
 
 
 def better(c,p):
-    # Practical gate: all probabilistic metrics must improve materially; accuracy may be
-    # slightly lower because probability quality is the primary objective.
     return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
 
 
@@ -91,8 +104,6 @@ def loss_arrays(ys,prod,cand):
 
 
 def hac_test(diff,lag):
-    # One-sided HAC test of H0:E[candidate loss-production loss] >= 0
-    # against H1:<0. Bartlett weights account for overlapping h-step forecasts.
     d=np.asarray(diff,float); n=len(d); mean=float(d.mean())
     if n<30:return {'mean_diff':mean,'stat':None,'p_value':None,'significant':False,'lag':lag}
     centered=d-mean; gamma0=float(np.mean(centered*centered)); lrv=gamma0
@@ -101,7 +112,6 @@ def hac_test(diff,lag):
     if not math.isfinite(lrv) or lrv<=0:
         return {'mean_diff':mean,'stat':None,'p_value':None,'significant':False,'lag':lag}
     stat=mean/math.sqrt(lrv/n)
-    # Normal approximation; negative statistic favors the candidate.
     p=0.5*math.erfc(-stat/math.sqrt(2.0))
     return {'mean_diff':mean,'stat':float(stat),'p_value':float(p),'significant':bool(p<ALPHA and mean<0),'lag':lag}
 
@@ -121,22 +131,7 @@ def save_metric(h,v,n,m,milestone):
 
 def save_stat_test(h,model_version,milestone,n,tests):
     with sqlite3.connect(DB) as con:
-        con.execute('''CREATE TABLE IF NOT EXISTS model_stat_tests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            evaluated_at_utc TEXT NOT NULL,
-            horizon TEXT NOT NULL,
-            milestone INTEGER NOT NULL,
-            model_version TEXT NOT NULL,
-            n INTEGER NOT NULL,
-            logloss_mean_diff REAL,
-            logloss_stat REAL,
-            logloss_p REAL,
-            brier_mean_diff REAL,
-            brier_stat REAL,
-            brier_p REAL,
-            alpha REAL NOT NULL,
-            both_significant INTEGER NOT NULL
-        )''')
+        con.execute('''CREATE TABLE IF NOT EXISTS model_stat_tests (id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at_utc TEXT NOT NULL,horizon TEXT NOT NULL,milestone INTEGER NOT NULL,model_version TEXT NOT NULL,n INTEGER NOT NULL,logloss_mean_diff REAL,logloss_stat REAL,logloss_p REAL,brier_mean_diff REAL,brier_stat REAL,brier_p REAL,alpha REAL NOT NULL,both_significant INTEGER NOT NULL)''')
         ll=tests['logloss']; br=tests['brier']
         con.execute('INSERT INTO model_stat_tests(evaluated_at_utc,horizon,milestone,model_version,n,logloss_mean_diff,logloss_stat,logloss_p,brier_mean_diff,brier_stat,brier_p,alpha,both_significant) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now(),h,milestone,model_version,n,ll['mean_diff'],ll['stat'],ll['p_value'],br['mean_diff'],br['stat'],br['p_value'],ALPHA,int(tests['both_significant'])))
 
@@ -151,8 +146,7 @@ def checkpoint_done(h,milestone):
 
 
 def mark_checkpoint(h,milestone,status):
-    with sqlite3.connect(DB) as con:
-        con.execute('INSERT OR REPLACE INTO research_checkpoints(horizon,milestone,evaluated_at_utc,status) VALUES(?,?,?,?)',(h,milestone,now(),status))
+    with sqlite3.connect(DB) as con: con.execute('INSERT OR REPLACE INTO research_checkpoints(horizon,milestone,evaluated_at_utc,status) VALUES(?,?,?,?)',(h,milestone,now(),status))
 
 
 def next_due_milestone(n,h):
@@ -199,11 +193,15 @@ def compare_h(h):
         mark_checkpoint(h,milestone,'rejected')
         return {'status':'rejected','milestone':milestone,'production':production,'candidates':results,'n':len(rows)}
     winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier']))
-    meta=train_save(rows,h,winner,cand[winner])
+    meta=train_candidate(rows,h,winner,cand[winner],milestone)
     if not meta:
         mark_checkpoint(h,milestone,'rejected_training')
         return {'status':'rejected_training','milestone':milestone,'winner':winner}
-    version=f'v2.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['evaluation_milestone']=milestone; meta['statistical_significance']=wtest; (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
+    version=f'v2.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['statistical_significance']=wtest
+    if not adopt_candidate(h,meta,version):
+        mark_checkpoint(h,milestone,'rejected_adoption')
+        return {'status':'rejected_adoption','milestone':milestone,'winner':winner}
+    set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
     return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'n':len(rows)}
 
 
