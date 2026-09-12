@@ -44,6 +44,20 @@ def model_probs(model,f):
         for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
         s=sum(out.values()); return {k:v/s for k,v in out.items()}
     except Exception:return None
+def load_temperature(h):
+    p=Path(DB).parent/'models'/f'{h}.calibration.json'
+    try:
+        obj=json.loads(p.read_text(encoding='utf-8')); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
+        if not (0.5<=t<=3.0) or n<200:return 1.0
+        return t
+    except Exception:return 1.0
+def calibrate_probs(probs,h):
+    t=load_temperature(h)
+    if t==1.0:return probs
+    # CLASSES order is DOWN, FLAT, UP; stored probabilities follow that order.
+    p=np.clip(np.asarray([probs['DOWN'],probs['FLAT'],probs['UP']],float),1e-6,1-1e-6); p/=p.sum()
+    z=np.log(p)/t; z-=z.max(); q=np.exp(z); q/=q.sum()
+    return {'DOWN':float(q[0]),'FLAT':float(q[1]),'UP':float(q[2])}
 def fuse(base,struct,m,data_complete):
     p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap']))
     w=(.20+.08*agree) if data_complete else .12; out=(1-w)*p+w*q
@@ -78,15 +92,17 @@ def main():
     except Exception:status['bybit_funding']='error'
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
     data_complete=len(spot)>=40 and byp is not None and status.get('binance_depth')!='error' and status.get('bybit_depth')!='error'
-    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8}); p5=fuse(model_probs(load_model('5m'),f) or s5,s5,m,data_complete); p10=fuse(model_probs(load_model('10m'),f) or s10,s10,m,data_complete)
+    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8})
+    raw5=fuse(model_probs(load_model('5m'),f) or s5,s5,m,data_complete); raw10=fuse(model_probs(load_model('10m'),f) or s10,s10,m,data_complete)
+    p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['ret_5m'])>max(.0005,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m['book_imbalance'])>.45:warnings.append('order-book imbalance')
     if abs(m['taker_imbalance'])>.55:warnings.append('taker-flow imbalance')
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if not data_complete:warnings.append('partial market-data coverage; confidence reduced')
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'policy':'production+structural+cross_exchange_microstructure'}
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m')},'policy':'production+structural+cross_exchange_microstructure+calibration'}
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],f'5m:{regver("5m")}|10m:{regver("10m")}',json.dumps(f),json.dumps(scenario)))
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'data_quality':status},ensure_ascii=False))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
