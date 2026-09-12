@@ -42,7 +42,7 @@ jobs:
           if not p.exists():
               raise SystemExit('report.json was not produced')
           r=json.loads(p.read_text())
-          assert r.get('protocol_version') == 'historical-v5-ensemble-statistical'
+          assert r.get('protocol_version') == 'historical-v6-microstructure-incremental-cache'
           assert set(r.get('horizons', {})) >= {'5m','10m'}
           for h in ('5m','10m'):
               hz=r['horizons'][h]
