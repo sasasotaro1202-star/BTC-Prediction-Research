@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: btc-historical-research
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -96,6 +96,12 @@ jobs:
               assert 'baseline' in hz and 'models' in hz and 'ensemble' in hz
           print('research artifact validation: OK')
           PY
+      - name: Reject raw archive files in Git workspace
+        run: |
+          if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then
+            echo 'Raw Binance archive files must never enter the Git workspace.'
+            exit 1
+          fi
       - name: Commit historical research results
         run: |
           git config user.name github-actions[bot]
@@ -111,3 +117,4 @@ jobs:
         with:
           name: btc-historical-research
           path: data/historical_research
+          retention-days: 14
