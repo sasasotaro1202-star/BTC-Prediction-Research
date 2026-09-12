@@ -28,7 +28,8 @@ jobs:
           git push
       - uses: actions/upload-artifact@v4
         with:
-          name: btc-research-db
+          name: btc-research-state
           path: |
             data/predictions.db
             data/models/*.json
+            data/models/*.joblib
