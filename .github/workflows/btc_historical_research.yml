@@ -33,7 +33,7 @@ jobs:
       - name: Compile all research code
         run: python -m compileall -q src
       - name: Run historical walk-forward research
-        run: cd src && python historical_research_runner.py
+        run: python src/historical_research_runner.py
       - name: Validate research artifact
         run: |
           python - <<'PY'
