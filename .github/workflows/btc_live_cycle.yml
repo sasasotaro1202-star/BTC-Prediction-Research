@@ -57,7 +57,7 @@ jobs:
       - name: Validate BTC prediction state
         run: |
           python - <<'PY'
-          import sqlite3
+          import json, sqlite3
           from pathlib import Path
           from datetime import datetime, timezone
           p=Path('data/predictions.db')
@@ -78,7 +78,14 @@ jobs:
               age=(datetime.now(timezone.utc)-created).total_seconds()
               if age > 900:
                   raise SystemExit(f'latest BTC prediction is stale: {age:.0f}s')
-          print('BTC prediction database validation: OK')
+          for horizon in ('5m','10m'):
+              cp=Path(f'models/{horizon}.calibration.json')
+              if cp.exists():
+                  obj=json.loads(cp.read_text())
+                  t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
+                  if not (0.5 <= t <= 3.0): raise SystemExit(f'{horizon} calibration temperature out of bounds: {t}')
+                  if n < 0: raise SystemExit(f'{horizon} calibration sample count invalid: {n}')
+          print('BTC prediction database and calibration validation: OK')
           PY
       - name: Upload BTC research artifacts
         uses: actions/upload-artifact@v4
