@@ -11,7 +11,9 @@ from db import DB, init_db
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
-PURGE_BARS={'5m':5,'10m':10}
+# Five-minute and ten-minute labels resolve into the future. Keep a conservative
+# one-hour embargo before each test block in addition to the target-overlap purge.
+PURGE_BARS={'5m':5,'10m':10}; EMBARGO_BARS={'5m':60,'10m':60}
 
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -22,13 +24,17 @@ def safe_json(t):
 def load_rows(h):
     ac,*_=HORIZONS[h]
     with sqlite3.connect(DB) as con:
-        rows=con.execute(f'SELECT prediction_id,created_at_utc,feature_json,{ac},p_up_{h},p_down_{h},p_flat_{h},model_version FROM predictions WHERE {ac} IS NOT NULL ORDER BY created_at_utc').fetchall()
+        rows=con.execute(f'SELECT prediction_id,created_at_utc,feature_json,{ac},p_up_{h},p_down_{h},p_flat_{h},model_version FROM predictions WHERE {ac} IS NOT NULL ORDER BY created_at_utc,prediction_id').fetchall()
     out=[]
     for r in rows:
         f=safe_json(r[2])
         if not all(k in f for k in FEATURES) or r[3] not in CLASSES: continue
         x=[float(f[k]) for k in FEATURES]
-        if all(math.isfinite(v) for v in x): out.append({'id':r[0],'created':r[1],'x':x,'y':r[3],'production':[float(r[4]),float(r[5]),float(r[6])],'model_version':r[7]})
+        if all(math.isfinite(v) for v in x):
+            # DB storage is UP,DOWN,FLAT; research class order is DOWN,FLAT,UP.
+            production=[float(r[5]),float(r[6]),float(r[4])]
+            if all(math.isfinite(v) and v>=0 for v in production) and sum(production)>0:
+                out.append({'id':r[0],'created':r[1],'x':x,'y':r[3],'production':production,'model_version':r[7]})
     return out
 
 def normalize(probs):
@@ -47,16 +53,34 @@ def aligned(model,X):
     for j,c in enumerate(model.classes_): out[:,CLASSES.index(c)]=p[:,j]
     return normalize(out)
 
+def _temperature(probs,ys):
+    if len(ys)<100 or len(set(ys))<3:return 1.0
+    p=normalize(probs); y=np.array([CLASSES.index(v) for v in ys]); logits=np.log(np.clip(p,1e-6,1.0)); best_t=1.0; best=float('inf')
+    for t in np.linspace(0.7,2.5,73):
+        z=logits/t; z-=z.max(axis=1,keepdims=True); q=np.exp(z); q/=q.sum(axis=1,keepdims=True); loss=float(log_loss(y,q,labels=[0,1,2]))
+        if loss<best:best=loss;best_t=float(t)
+    return best_t
+
+def apply_temperature(probs,t):
+    if t==1.0:return normalize(probs)
+    p=normalize(probs); z=np.log(p)/t; z-=z.max(axis=1,keepdims=True); q=np.exp(z); q/=q.sum(axis=1,keepdims=True); return q
+
 def walk_forward(rows,factory,horizon):
     if len(rows)<MIN_TRAIN+MIN_OOS:return None
-    purge=PURGE_BARS[horizon]; preds=[]; ys=[]; ids=[]
+    purge=PURGE_BARS[horizon]; embargo=EMBARGO_BARS[horizon]; preds=[]; ys=[]; ids=[]
     for end in range(MIN_TRAIN,len(rows),TEST_BLOCK):
-        train_end=max(0,end-purge)
-        train=rows[:train_end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
+        train_end=max(0,end-purge-embargo); train=rows[:train_end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
         if len(train)<MIN_TRAIN or not test: break
         model=factory(); X=np.array([r['x'] for r in train]); y=np.array([r['y'] for r in train])
         if len(set(y))<3: continue
-        model.fit(X,y); pp=aligned(model,np.array([r['x'] for r in test]))
+        # Nested time-ordered calibration: fit the candidate on the full training
+        # window, calibrate temperature only on a later training holdout, then
+        # apply that frozen temperature to the unseen test block.
+        split=max(int(len(train)*0.75),MIN_TRAIN-100)
+        cal_rows=train[split:]
+        cal_model=factory(); cal_model.fit(np.array([r['x'] for r in train[:split]]),np.array([r['y'] for r in train[:split]]))
+        cal_probs=aligned(cal_model,np.array([r['x'] for r in cal_rows])); t=_temperature(cal_probs,[r['y'] for r in cal_rows])
+        model.fit(X,y); pp=aligned(model,np.array([r['x'] for r in test])); pp=apply_temperature(pp,t)
         preds.extend(pp.tolist()); ys.extend(r['y'] for r in test); ids.extend(r['id'] for r in test)
     if len(ys)<MIN_OOS:return None
     return {'metrics':metrics(ys,preds),'ys':ys,'probs':preds,'ids':ids}
@@ -138,6 +162,7 @@ def compare_h(h):
         mark_checkpoint(h,milestone,'insufficient_oos'); return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
     oos_rows=rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
     production=metrics(ys,production_probs); save_metric(h,prod_ver(h),len(oos_rows),production,milestone)
+    prod_by_id={r['id']:r for r in oos_rows}
     cand={
       'logreg_c0.1':lambda:Pipeline([('scale',StandardScaler()),('model',LogisticRegression(C=.1,max_iter=3000))]),
       'logreg_c1':lambda:Pipeline([('scale',StandardScaler()),('model',LogisticRegression(C=1,max_iter=3000))]),
@@ -149,11 +174,16 @@ def compare_h(h):
     for name,f in cand.items():
         wf=walk_forward(rows,f,h)
         if not wf: continue
-        m=wf['metrics']; tests=statistical_tests(ys,production_probs,wf['probs'],h)
-        results[name]={'metrics':m,'statistical_tests':tests}; save_metric(h,name,len(oos_rows),m,milestone); save_stat_test(h,name,milestone,len(oos_rows),tests)
+        aligned_rows=[prod_by_id[i] for i in wf['ids'] if i in prod_by_id]
+        if len(aligned_rows)!=len(wf['ids']): continue
+        prod_aligned=[r['production'] for r in aligned_rows]
+        candidate_metrics=metrics(wf['ys'],wf['probs']); production_aligned_metrics=metrics(wf['ys'],prod_aligned)
+        tests=statistical_tests(wf['ys'],prod_aligned,wf['probs'],h)
+        results[name]={'metrics':candidate_metrics,'production_aligned':production_aligned_metrics,'statistical_tests':tests,'n':len(wf['ids'])}
+        save_metric(h,name,len(wf['ids']),candidate_metrics,milestone); save_stat_test(h,name,milestone,len(wf['ids']),tests)
     eligible=[]
     for name,r in results.items():
-        if better(r['metrics'],production) and r['statistical_tests']['both_significant']: eligible.append((name,r['metrics'],r['statistical_tests']))
+        if better(r['metrics'],r['production_aligned']) and r['statistical_tests']['both_significant']: eligible.append((name,r['metrics'],r['statistical_tests']))
     if not eligible:
         mark_checkpoint(h,milestone,'rejected'); return {'status':'rejected','milestone':milestone,'production':production,'candidates':results,'n':len(rows)}
     winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_candidate(rows,h,winner,cand[winner],milestone)
