@@ -4,16 +4,9 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/btc_live_cycle.yml'
-      - 'src/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - 'data/**'
 
 # Only the newest BTC cycle matters. This prevents a slow runner or a burst of
-# push/schedule events from creating a queue of stale prediction jobs.
+# manual/scheduled events from creating a queue of stale prediction jobs.
 concurrency:
   group: btc-live-cycle-main
   cancel-in-progress: true
@@ -63,6 +56,7 @@ jobs:
           PY
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Bootstrap BTC production models from historical data
+        continue-on-error: true
         run: python src/bootstrap_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
