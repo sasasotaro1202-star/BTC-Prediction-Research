@@ -27,7 +27,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from db import DB, init_db
-from market_data import binance_archive_rows
+from binance_history import binance_archive_rows
+from market_data import coinbase_rows, bybit_klines, closed_bybit
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
@@ -47,7 +48,7 @@ MIN_BOOTSTRAP_ROWS = 10_000
 TARGET_ROWS = 30_000
 MIN_TRAIN = 1_000
 MIN_OOS = 500
-UA = "BTC-Prediction-Research/bootstrap/4.0"
+UA = "BTC-Prediction-Research/bootstrap/5.0"
 
 
 def write_status(payload: dict) -> None:
@@ -84,15 +85,6 @@ def _binance_page(end_ms: int | None = None, limit: int = 1500):
     if end_ms is not None:
         params["endTime"] = int(end_ms)
     return _get("https://fapi.binance.com/fapi/v1/klines?" + urlencode(params))
-
-
-def _coinbase_page(start_s: int, end_s: int):
-    params = {
-        "granularity": 60,
-        "start": datetime.fromtimestamp(start_s, timezone.utc).isoformat(),
-        "end": datetime.fromtimestamp(end_s, timezone.utc).isoformat(),
-    }
-    return _get("https://api.exchange.coinbase.com/products/BTC-USD/candles?" + urlencode(params))
 
 
 def fetch_bybit(target: int):
@@ -134,34 +126,19 @@ def fetch_binance(target: int):
         end = oldest - 1
         if len(page) < 1500:
             break
-    return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
-
-
-def fetch_coinbase(target: int):
-    rows = []
-    end = int(time.time())
-    window = 300 * 60
-    for _ in range(math.ceil(target / 300) + 8):
-        start = max(0, end - window)
-        page = _coinbase_page(start, end)
-        if not page:
-            break
-        rows.extend([
-            [int(r[0]) * 1000, float(r[3]), float(r[2]), float(r[1]), float(r[4]), float(r[5])]
-            for r in page
-        ])
-        end = start - 1
-        if len(rows) >= target:
-            break
-        time.sleep(0.15)
+    now_ms = int(time.time() * 1000)
+    rows = [r for r in rows if r[0] + 60_000 <= now_ms]
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 
 def fetch_history(target: int = TARGET_ROWS):
     """Return the best available free historical BTC 1m source.
 
-    Binance Vision is deliberately attempted after live REST sources and before
-    accepting a short sample. This avoids the previous 721-row bootstrap trap.
+    Binance Vision is the primary deep-history source. Its loader walks from
+    monthly archives to completed daily archives and the S3 mirror, records
+    failures, deduplicates timestamps, and refuses unclosed candles. REST
+    sources remain fallback options; a short sample never silently satisfies
+    the bootstrap minimum.
     """
     errors = []
     best = []
@@ -170,7 +147,6 @@ def fetch_history(target: int = TARGET_ROWS):
         ("binance_vision_archive", lambda: binance_archive_rows(target)),
         ("bybit_futures", lambda: fetch_bybit(target)),
         ("binance_futures", lambda: fetch_binance(target)),
-        ("coinbase", lambda: fetch_coinbase(target)),
     )
     for name, loader in sources:
         try:
@@ -181,7 +157,7 @@ def fetch_history(target: int = TARGET_ROWS):
                 return rows, name
             errors.append(f"{name}:only_{len(rows)}_rows")
         except Exception as exc:
-            errors.append(f"{name}:{type(exc).__name}:{exc}")
+            errors.append(f"{name}:{type(exc).__name__}:{exc}")
     if best:
         return best, best_name
     raise RuntimeError("no free BTC historical source available: " + "; ".join(errors))
@@ -304,7 +280,7 @@ def publish(horizon, best, baseline, holdout_n):
         return False, {"status": "holdout_rejected", "model": name, "candidate": score, "baseline": baseline, "holdout_n": holdout_n}
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, MODEL_DIR / f"{horizon}.joblib")
-    version = f"bootstrap.{name}.v4"
+    version = f"bootstrap.{name}.v5"
     meta = {
         "model_version": version,
         "horizon": horizon,
@@ -333,55 +309,26 @@ def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     try:
-        if all((MODEL_DIR / f"{h}.joblib").exists() and (MODEL_DIR / f"{h}.json").exists() for h in ("5m", "10m")):
-            write_status({"status": "skipped_existing_production_models", "required_models_present": True})
-            print("BTC bootstrap skipped: production models already exist")
-            return 0
-
         rows, source = fetch_history(TARGET_ROWS)
-        CACHE.write_text(
-            json.dumps({"source": source, "rows": rows, "created_at_utc": datetime.now(timezone.utc).isoformat()}, separators=(",", ":")),
-            encoding="utf-8",
-        )
-        write_status({"status": "history_fetched", "source": source, "rows": len(rows)})
-
-        if len(rows) < MIN_BOOTSTRAP_ROWS:
-            write_status({
-                "status": "insufficient_history_for_bootstrap",
-                "source": source,
-                "rows": len(rows),
-                "minimum_rows": MIN_BOOTSTRAP_ROWS,
-                "inference_policy": "continue_with_structural_fallback",
-            })
-            print(f"BTC bootstrap non-fatal: got {len(rows)} rows; need >= {MIN_BOOTSTRAP_ROWS} for safe retraining")
-            return 0
-
-        published = []
-        for horizon in (5, 10):
-            X, y = build_dataset(rows, horizon)
-            if len(y) < 7000:
-                write_status({"status": "insufficient_training_rows", "horizon": f"{horizon}m", "rows": len(y), "minimum_rows": 7000})
-                print(f"BTC bootstrap non-fatal: dataset too small for {horizon}m: {len(y)}")
-                continue
-            best, baseline, holdout_n = train_one(X, y)
-            ok, detail = publish(f"{horizon}m", best, baseline, holdout_n)
-            print(json.dumps({"horizon": f"{horizon}m", "source": source, "rows": len(y), "published": ok, "detail": detail}, ensure_ascii=False))
-            if ok:
-                published.append(f"{horizon}m")
-        write_status({"status": "completed", "source": source, "rows": len(rows), "published": published})
-        return 0
+        write_status({"status": "history_ok", "source": source, "rows": len(rows), "oldest_utc": datetime.fromtimestamp(rows[0][0] / 1000, timezone.utc).isoformat(), "newest_utc": datetime.fromtimestamp(rows[-1][0] / 1000, timezone.utc).isoformat()})
     except Exception as exc:
-        # Historical bootstrap is an enhancement, never a hard dependency of
-        # live inference. compileall + live prediction guards catch actual code
-        # defects; transient data/model failures are recorded and the live
-        # structural fallback is allowed to run.
-        write_status({
-            "status": "bootstrap_runtime_error_nonfatal",
-            "error": f"{type(exc).__name__}: {exc}",
-            "inference_policy": "continue_with_structural_fallback",
-        })
-        print(f"BTC bootstrap non-fatal runtime error: {type(exc).__name__}: {exc}")
+        write_status({"status": "history_failed", "error": f"{type(exc).__name__}: {exc}"})
         return 0
+    if len(rows) < MIN_BOOTSTRAP_ROWS:
+        write_status({"status": "insufficient_history", "rows": len(rows), "minimum": MIN_BOOTSTRAP_ROWS, "source": source})
+        return 0
+    CACHE.write_text(json.dumps({"created_at_utc": datetime.now(timezone.utc).isoformat(), "source": source, "rows": rows}, separators=(",", ":")), encoding="utf-8")
+    published = []
+    for horizon in ("5m", "10m"):
+        X, y = build_dataset(rows, int(horizon[:-1]))
+        if len(y) < MIN_TRAIN + MIN_OOS or len(set(y)) < 3:
+            published.append({"horizon": horizon, "status": "insufficient_dataset", "rows": len(y)})
+            continue
+        best, baseline, holdout_n = train_one(X, y)
+        ok, meta = publish(horizon, best, baseline, holdout_n)
+        published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
+    write_status({"status": "complete", "source": source, "rows": len(rows), "published": published})
+    return 0
 
 
 if __name__ == "__main__":
