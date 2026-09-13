@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-UA = "BTC-Prediction-Research/5.3"
+UA = "BTC-Prediction-Research/5.4"
 
 
 def http_json(url: str, timeout: int = 12):
@@ -32,6 +32,19 @@ def _binance(path: str, params: dict):
 
 def _bybit(path: str, params: dict):
     return _get(f"https://api.bybit.com/v5/market/{path}?{urlencode(params)}")
+
+
+def coinbase_klines(limit: int = 300):
+    """Public Coinbase Exchange 1-minute candles; fallback only."""
+    end = int(time.time())
+    start = end - min(limit, 300) * 60
+    return _get(f"https://api.exchange.coinbase.com/products/BTC-USD/candles?{urlencode({'granularity': 60, 'start': start, 'end': end})}")
+
+
+def coinbase_rows(limit: int = 300):
+    # Coinbase: [time, low, high, open, close, volume], newest first.
+    rows = coinbase_klines(limit)
+    return sorted([[int(r[0]) * 1000, float(r[3]), float(r[2]), float(r[1]), float(r[4]), float(r[5])] for r in rows], key=lambda r: r[0])
 
 
 def binance_klines(spot: bool = False, limit: int = 120):
@@ -72,6 +85,17 @@ def resilient_1m_series(limit: int = 120):
     if len(fut) < 40 and len(by) >= 40:
         fut = [[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])] for r in by]
         status["price_feature_fallback"] = "bybit"
+    elif len(fut) < 40:
+        try:
+            cb = coinbase_rows(min(300, max(120, limit)))
+            if len(cb) >= 40:
+                fut = cb
+                status["price_feature_fallback"] = "coinbase"
+            else:
+                status["price_feature_fallback"] = "none"
+        except Exception as e:
+            status["coinbase_futures"] = f"error:{type(e).__name__}"
+            status["price_feature_fallback"] = "none"
     else:
         status["price_feature_fallback"] = "none"
     status["spot_fallback"] = "unavailable" if len(spot) < 40 else "none"
@@ -123,6 +147,12 @@ def target_close_binance(target_iso: str):
         for row in payload.get("result", {}).get("list", []):
             if int(row[0]) == start:
                 return float(row[4]), "bybit"
+    except Exception:
+        pass
+    try:
+        for row in coinbase_rows(10):
+            if row[0] == start:
+                return float(row[4]), "coinbase"
     except Exception:
         pass
     return None, "unavailable"
