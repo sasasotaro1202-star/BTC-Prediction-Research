@@ -1,0 +1,40 @@
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'src'))
+
+import market_data  # noqa: E402
+
+
+class TestMarketFallbacks(unittest.TestCase):
+    def test_bybit_closed_parser_filters_open_candle_and_sorts(self):
+        now = 1_800_000_000_000
+        original = market_data.time.time
+        try:
+            market_data.time.time = lambda: now / 1000
+            payload = {
+                'result': {'list': [
+                    [str(now - 60_000), '100', '101', '99', '100.5', '12', '0'],
+                    [str(now), '101', '102', '100', '101.5', '13', '0'],
+                    [str(now - 120_000), '98', '100', '97', '99', '11', '0'],
+                ]}
+            }
+            rows = market_data.closed_bybit(payload)
+            self.assertEqual([r[0] for r in rows], [now - 120_000, now - 60_000])
+            self.assertEqual(rows[-1][4], 100.5)
+        finally:
+            market_data.time.time = original
+
+    def test_cache_fallback_is_optional_and_well_shaped(self):
+        rows, created = market_data.cache_rows(120)
+        self.assertIsInstance(rows, list)
+        self.assertIsInstance(created, str)
+        if rows:
+            self.assertEqual(len(rows[0]), 6)
+            self.assertTrue(all(len(r) == 6 for r in rows))
+
+
+if __name__ == '__main__':
+    unittest.main()
