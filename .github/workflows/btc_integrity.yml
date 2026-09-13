@@ -15,6 +15,10 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  # Repository integrity checks may run between live cycles. Freshness is still
+  # enforced by the live-cycle gate; this wider bound prevents a static push
+  # check from failing solely because no 5-minute cycle ran during the check.
+  BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '3600'
 
 jobs:
   integrity:
