@@ -58,7 +58,6 @@ jobs:
           PY
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Bootstrap BTC production models from historical data
-        continue-on-error: true
         run: python src/bootstrap_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
@@ -70,6 +69,8 @@ jobs:
         run: python src/model_compare.py
       - name: Generate next BTC prediction
         run: python src/predict.py
+      - name: Run non-fatal BTC research health audit
+        run: python src/research_health.py
       - name: Validate BTC prediction state
         run: |
           python - <<'PY'
@@ -138,7 +139,13 @@ jobs:
                   if n < 0:
                       raise SystemExit(f'{horizon} blend calibration sample count invalid: {n}')
 
-          print('BTC prediction database, model metadata, calibration, and blend validation: OK')
+          health=Path('data/historical_research/research_health.json')
+          if not health.exists():
+              raise SystemExit('research health audit output missing')
+          health_obj=json.loads(health.read_text())
+          if not isinstance(health_obj.get('ok'), bool):
+              raise SystemExit('research health audit output is malformed')
+          print('BTC prediction database, model metadata, calibration, blend, and research-health validation: OK')
           PY
       - name: Upload BTC research artifacts
         uses: actions/upload-artifact@v4
