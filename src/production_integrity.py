@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,18 @@ FEATURES = [
     "upper_wick_1m", "lower_wick_1m", "volume_ratio", "volume_trend",
     "ema_gap_5m", "ema_gap_10m",
 ]
+DEFAULT_MAX_AGE_SECONDS = 900
+
+
+def max_prediction_age_seconds() -> float:
+    raw = os.getenv("BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS", str(DEFAULT_MAX_AGE_SECONDS))
+    try:
+        value = float(raw)
+    except ValueError:
+        fail(f"invalid BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: {raw!r}")
+    if not math.isfinite(value) or value <= 0:
+        fail("BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS must be positive and finite")
+    return value
 
 
 def fail(msg: str) -> None:
@@ -69,8 +82,9 @@ def check_db() -> dict:
             fail("no predictions recorded")
         created = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
         age = (datetime.now(timezone.utc) - created).total_seconds()
-        if age < -60 or age > 900:
-            fail(f"latest prediction is stale or future-dated: {age:.0f}s")
+        max_age = max_prediction_age_seconds()
+        if age < -60 or age > max_age:
+            fail(f"latest prediction is stale or future-dated: {age:.0f}s (max {max_age:.0f}s)")
         if not math.isfinite(float(row[1])) or float(row[1]) <= 0:
             fail("latest base price invalid")
         if not finite_probs(row[2:5]) or not finite_probs(row[5:8]):
@@ -83,7 +97,7 @@ def check_db() -> dict:
             fail("latest prediction lacks data_quality metadata")
         if not row[8]:
             fail("latest prediction lacks model_version")
-    return {"latest_age_seconds": int(age), "prediction_ok": True}
+    return {"latest_age_seconds": int(age), "prediction_ok": True, "max_age_seconds": max_age}
 
 
 def main() -> int:
