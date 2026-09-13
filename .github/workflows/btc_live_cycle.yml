@@ -12,9 +12,11 @@ on:
       - 'requirements.txt'
       - 'data/**'
 
+# Only the newest BTC cycle matters. This prevents a slow runner or a burst of
+# push/schedule events from creating a queue of stale prediction jobs.
 concurrency:
-  group: btc-live-cycle
-  cancel-in-progress: false
+  group: btc-live-cycle-main
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -89,13 +91,20 @@ jobs:
               bad10=con.execute('SELECT COUNT(*) FROM predictions WHERE abs((p_up_10m+p_down_10m+p_flat_10m)-1.0)>0.00001 OR p_up_10m<0 OR p_down_10m<0 OR p_flat_10m<0').fetchone()[0]
               if bad5 or bad10:
                   raise SystemExit(f'probability integrity failure: 5m={bad5}, 10m={bad10}')
-              latest=con.execute('SELECT created_at_utc FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+              latest=con.execute('SELECT created_at_utc,base_price,model_version,scenario_json FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
               if not latest:
                   raise SystemExit('latest prediction missing')
               created=datetime.fromisoformat(latest[0].replace('Z','+00:00'))
               age=(datetime.now(timezone.utc)-created).total_seconds()
               if age > 900:
                   raise SystemExit(f'latest BTC prediction is stale: {age:.0f}s')
+              if latest[1] < 0:
+                  raise SystemExit('latest BTC base price is invalid')
+              scenario=json.loads(latest[3]) if latest[3] else {}
+              if latest[2] == 'DEGRADED_NO_FRESH_DATA':
+                  print('BTC prediction is in safe degraded mode: no fresh public market source was available; directional confidence is intentionally neutralized.')
+              elif not scenario.get('data_quality'):
+                  raise SystemExit('live BTC prediction is missing data-quality metadata')
 
           for horizon in ('5m','10m'):
               model_json=Path(f'models/{horizon}.json')

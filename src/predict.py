@@ -9,8 +9,6 @@ from market_data import resilient_1m_series, binance_depth, bybit_depth, binance
 
 INTERVAL=300
 CLASSES=["DOWN","FLAT","UP"]
-# Production model schema is intentionally frozen. New live-only structural
-# features are added below without invalidating already-trained artifacts.
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 
 def utcnow(): return datetime.now(timezone.utc)
@@ -39,13 +37,10 @@ def structural(f,m):
     score=(2.2*f['ret_1m']+1.6*f['ret_3m']+f['ret_5m']+.45*f['ret_10m']+.35*f['ret_15m']+.20*f['ret_30m'])/vol
     score+=.15*f['acceleration']/vol+.10*(1.2*f['ema_gap_5m']+.4*f['ema_gap_10m'])/vol
     score+=.07*math.log(max(.25,min(4,f['volume_ratio'])))+.05*(f['range_position_10m']-.5)+.04*(f['range_position_30m']-.5)
-    score+=.12*m['book_imbalance']+.08*m['cross_exchange_gap']/vol
-    score+=.08*m['bybit_book_imbalance']
+    score+=.12*m['book_imbalance']+.08*m['cross_exchange_gap']/vol+.08*m['bybit_book_imbalance']
     if m['taker_imbalance']>.55: score+=.10
     elif m['taker_imbalance']<-.55: score-=.10
-    # Funding is treated as a crowding adjustment, not a directional trigger.
-    crowd=max(-1.0,min(1.0,m['funding_binance']/0.0003))
-    score-=.05*crowd
+    crowd=max(-1.0,min(1.0,m['funding_binance']/0.0003)); score-=.05*crowd
     score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
 def load_model(h):
     p=Path(DB).parent/'models'/f'{h}.joblib'
@@ -69,8 +64,7 @@ def load_temperature(h):
 def calibrate_probs(probs,h):
     t=load_temperature(h)
     if t==1.0:return probs
-    p=np.clip(np.asarray([probs['DOWN'],probs['FLAT'],probs['UP']],float),1e-6,1-1e-6); p/=p.sum()
-    z=np.log(p)/t; z-=z.max(); q=np.exp(z); q/=q.sum()
+    p=np.clip(np.asarray([probs['DOWN'],probs['FLAT'],probs['UP']],float),1e-6,1-1e-6); p/=p.sum(); z=np.log(p)/t; z-=z.max(); q=np.exp(z); q/=q.sum()
     return {'DOWN':float(q[0]),'FLAT':float(q[1]),'UP':float(q[2])}
 def fuse(base,struct,m,data_complete):
     p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap']))
@@ -84,12 +78,21 @@ def fuse(base,struct,m,data_complete):
     out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])}
 def regver(h):
     try:
-        with sqlite3.connect(DB) as c:r=c.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
+        with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
         return r[0] if r else 'none'
     except Exception:return 'none'
+def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
+    with sqlite3.connect(DB) as c:
+        c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
+def degraded_prediction(now,status):
+    target5=next_grid(now,1); target10=next_grid(now,2); p5={'DOWN':.03,'FLAT':.94,'UP':.03}; p10={'DOWN':.03,'FLAT':.94,'UP':.03}
+    scenario={'regime':'UNKNOWN','warnings':['NO_FRESH_MARKET_DATA','safe_degraded_mode'],'data_quality':status,'policy':'safe_degraded_no_directional_claim'}
+    insert_prediction(now,target5,target10,0.0,p5,p10,'DEGRADED_NO_FRESH_DATA',{},scenario)
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':None,'direction_5m':'FLAT','probabilities_5m':p5,'probabilities_10m':p10,'confidence':.94,'regime':'UNKNOWN','warnings':scenario['warnings'],'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'data_quality':status},ensure_ascii=False))
 def main():
     init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
-    if len(fut)<40: raise RuntimeError(f'insufficient closed BTC 1m candles: {status}')
+    if len(fut)<40:
+        degraded_prediction(now,status); return
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None; byp=float(by[-1][4]) if len(by)>=40 else None
     m={'book_imbalance':0.,'bybit_book_imbalance':0.,'cross_exchange_gap':0.,'taker_imbalance':0.,'funding_binance':0.,'funding_bybit':0.,'oi':0.,'spot_futures_gap':0.}
     try:m['book_imbalance']=imbalance(binance_depth())
@@ -119,7 +122,6 @@ def main():
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
     if not data_complete:warnings.append('partial market-data coverage; confidence reduced')
     scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m')},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+calibration_holdout_guard'}
-    with sqlite3.connect(DB) as c:
-        c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],f'5m:{regver("5m")}|10m:{regver("10m")}',json.dumps(f),json.dumps(scenario)))
+    insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
