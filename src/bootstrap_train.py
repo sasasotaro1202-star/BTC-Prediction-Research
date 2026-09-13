@@ -6,7 +6,7 @@ model comparison. Fails closed: a model is published only when an unseen
 holdout beats a simple class-frequency baseline on both LogLoss and Brier.
 """
 from __future__ import annotations
-import json, math, time
+import json, math, sqlite3, time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassif
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
+from db import DB, init_db
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'; DATA_DIR=ROOT/'data'/'historical_research'; CACHE=DATA_DIR/'btc_bootstrap_1m.json'
@@ -134,11 +135,16 @@ def publish(h,best,base_score,n_test):
     if not (s['logloss']<base_score['logloss']-.01 and s['brier']<base_score['brier']-.005):
         return False,{'status':'holdout_rejected','model':name,'test_n':n_test,'candidate':s,'baseline':base_score}
     MODEL_DIR.mkdir(parents=True,exist_ok=True);joblib.dump(model,MODEL_DIR/f'{h}.joblib')
-    meta={'model_version':f'bootstrap.{name}','horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n_test,'holdout_metrics':s,'baseline_metrics':base_score,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()}
-    (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');return True,meta
+    version=f'bootstrap.{name}'
+    meta={'model_version':version,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n_test,'holdout_metrics':s,'baseline_metrics':base_score,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()}
+    (MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
+    init_db()
+    with sqlite3.connect(DB) as con:
+        con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,version,datetime.now(timezone.utc).isoformat()))
+    return True,meta
 
 def main():
-    MODEL_DIR.mkdir(parents=True,exist_ok=True);DATA_DIR.mkdir(parents=True,exist_ok=True)
+    MODEL_DIR.mkdir(parents=True,exist_ok=True);DATA_DIR.mkdir(parents=True,exist_ok=True);init_db()
     if all((MODEL_DIR/f'{h}.joblib').exists() and (MODEL_DIR/f'{h}.json').exists() for h in ('5m','10m')):
         print('BTC bootstrap skipped: production models already exist');return
     rows,source=fetch_history(12000);CACHE.write_text(json.dumps({'source':source,'rows':rows,'created_at_utc':datetime.now(timezone.utc).isoformat()}),encoding='utf-8')
