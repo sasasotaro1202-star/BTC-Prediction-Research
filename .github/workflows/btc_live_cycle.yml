@@ -27,7 +27,7 @@ jobs:
   live:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,6 +60,8 @@ jobs:
               raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
           PY
           python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Bootstrap BTC production models from historical data
+        run: python src/bootstrap_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
       - name: Recalculate BTC calibration metrics
