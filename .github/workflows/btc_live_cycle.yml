@@ -57,8 +57,22 @@ jobs:
               raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
           PY
           python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Bootstrap BTC production models from historical data
-        run: python src/bootstrap_train.py
+      - name: Ensure BTC production models exist without retraining every 5 minutes
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for horizon in 5m 10m; do
+            if [ ! -s "models/${horizon}.joblib" ] || [ ! -s "models/${horizon}.json" ]; then
+              missing=1
+            fi
+          done
+          if [ "${missing}" -eq 0 ]; then
+            echo 'Existing BTC production models found; skipping historical bootstrap in the 5-minute live cycle.'
+            exit 0
+          fi
+          echo 'BTC production models are missing; running one bootstrap build.'
+          python src/bootstrap_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
       - name: Recalculate BTC calibration metrics
