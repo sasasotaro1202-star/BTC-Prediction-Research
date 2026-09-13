@@ -26,7 +26,7 @@ MODEL_DIR=ROOT/'models'; DATA_DIR=ROOT/'data'/'historical_research'; CACHE=DATA_
 CLASSES=['DOWN','FLAT','UP']
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 THRESHOLD=.00020
-UA='BTC-Prediction-Research/bootstrap/1.0'
+UA='BTC-Prediction-Research/bootstrap/1.1'
 
 def get(url, attempts=3, timeout=15):
     last=None
@@ -44,37 +44,64 @@ def binance_page(end_ms=None, limit=1500):
     if end_ms is not None:p['endTime']=end_ms
     return get('https://fapi.binance.com/fapi/v1/klines?'+urlencode(p))
 
+def coinbase_page(start_s,end_s):
+    p={'granularity':60,'start':datetime.fromtimestamp(start_s,tz=timezone.utc).isoformat(),'end':datetime.fromtimestamp(end_s,tz=timezone.utc).isoformat()}
+    return get('https://api.exchange.coinbase.com/products/BTC-USD/candles?'+urlencode(p))
+
 def kraken_page(since=None):
     p={'pair':'XBTUSD','interval':1}
     if since is not None:p['since']=since
     return get('https://api.kraken.com/0/public/OHLC?'+urlencode(p))
 
+def fetch_binance(target):
+    rows=[]; end=None
+    while len(rows)<target:
+        page=binance_page(end,1500)
+        if not page:break
+        rows.extend([[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in page])
+        oldest=min(r[0] for r in rows[-len(page):]); end=oldest-1
+        if len(page)<1500:break
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
+    return rows[-target:] if len(rows)>=target else []
+
+def fetch_coinbase(target):
+    rows=[]; end=int(time.time()); window=300*60
+    for _ in range(math.ceil(target/300)+4):
+        start=max(0,end-window)
+        page=coinbase_page(start,end)
+        if not page:break
+        rows.extend([[int(r[0])*1000,float(r[3]),float(r[2]),float(r[1]),float(r[4]),float(r[5])] for r in page])
+        end=start-1
+        if len(rows)>=target:break
+        time.sleep(.15)
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
+    return rows[-target:] if len(rows)>=target else []
+
+def fetch_kraken(target):
+    rows=[]
+    # Kraken's public OHLC endpoint is capped at roughly 720 recent candles,
+    # so it is a last-resort short-history source rather than the primary bootstrap.
+    since=int(time.time())-min(target,700)*60
+    try:
+        payload=kraken_page(since); result=payload.get('result',{}); key=next((k for k in result if k!='last'),None); page=result.get(key,[]) if key else []
+        rows=[[int(r[0])*1000,float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[6])] for r in page]
+    except Exception:
+        rows=[]
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
+    return rows[-target:] if len(rows)>=target else []
+
 def fetch_history(minutes=12000):
-    target=max(3000,minutes); rows=[]
-    try:
-        end=None
-        while len(rows)<target:
-            page=binance_page(end,1500)
-            if not page:break
-            converted=[[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in page]
-            rows.extend(converted); oldest=min(r[0] for r in converted); end=oldest-1
-            if len(converted)<1500:break
-        rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
-        if len(rows)>=target:return rows[-target:],'binance_futures'
-    except Exception: rows=[]
-    rows=[]; since=int(time.time())-target*60
-    try:
-        for _ in range(max(8,math.ceil(target/650)+3)):
-            payload=kraken_page(since); result=payload.get('result',{}); key=next((k for k in result if k!='last'),None); page=result.get(key,[]) if key else []
-            if not page:break
-            converted=[[int(r[0])*1000,float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[6])] for r in page]
-            rows.extend(converted); last=max(r[0] for r in converted); since=last//1000+60
-            if len(rows)>=target:break
-            time.sleep(.15)
-        rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
-        if len(rows)>=target:return rows[-target:],'kraken'
-    except Exception: pass
-    raise RuntimeError(f'bootstrap history unavailable: got {len(rows)} rows, need {target}')
+    target=max(3000,minutes)
+    sources=(('binance_futures',fetch_binance),('coinbase',fetch_coinbase),('kraken',fetch_kraken))
+    errors=[]
+    for name,fn in sources:
+        try:
+            rows=fn(target)
+            if len(rows)>=target:return rows,name
+            errors.append(f'{name}:only_{len(rows)}_rows')
+        except Exception as e:
+            errors.append(f'{name}:{type(e).__name__}')
+    raise RuntimeError(f'bootstrap history unavailable: need {target} rows; {", ".join(errors)}')
 
 def ema(v,span):
     a=2/(span+1); e=float(v[0])
