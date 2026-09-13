@@ -4,9 +4,14 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  # Code/config changes should be exercised immediately. Research-state commits
+  # from the live job are excluded so the job cannot self-trigger.
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'data/**'
+      - 'models/**'
 
-# Research-state commits must not trigger another live cycle. Only scheduled
-# and manual runs enter this workflow; overlapping cycles are coalesced.
 concurrency:
   group: btc-live-cycle-main
   cancel-in-progress: true
@@ -101,6 +106,7 @@ jobs:
               created=datetime.fromisoformat(latest[0].replace('Z','+00:00'))
               age=(datetime.now(timezone.utc)-created).total_seconds()
               if age > 900: raise SystemExit(f'latest prediction is stale: {age:.0f}s')
+              if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
               if latest[1] <= 0: raise SystemExit('latest BTC base price is invalid')
               scenario=json.loads(latest[3]) if latest[3] else {}
               if latest[2] != 'DEGRADED_NO_FRESH_DATA' and not scenario.get('data_quality'):
