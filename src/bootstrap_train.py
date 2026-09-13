@@ -1,4 +1,9 @@
-"""BTC-only robust historical bootstrap trainer."""
+"""BTC-only robust historical bootstrap trainer.
+
+The bootstrap is intentionally best-effort: production inference must not be
+blocked by a temporary historical-data outage. Existing production models are
+never replaced unless a chronological holdout gate is passed.
+"""
 from __future__ import annotations
 import json, math, sqlite3, time
 from datetime import datetime, timezone
@@ -15,9 +20,13 @@ from sklearn.preprocessing import StandardScaler
 from db import DB, init_db
 
 ROOT=Path(__file__).resolve().parents[1]
-MODEL_DIR=ROOT/'models'; DATA_DIR=ROOT/'data'/'historical_research'; CACHE=DATA_DIR/'btc_bootstrap_1m.json'
-CLASSES=['DOWN','FLAT','UP']; THRESHOLD=.00020; UA='BTC-Prediction-Research/bootstrap/2.0'
+MODEL_DIR=ROOT/'models'; DATA_DIR=ROOT/'data'/'historical_research'; CACHE=DATA_DIR/'btc_bootstrap_1m.json'; STATUS=DATA_DIR/'bootstrap_status.json'
+CLASSES=['DOWN','FLAT','UP']; THRESHOLD=.00020; UA='BTC-Prediction-Research/bootstrap/3.0'
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
+
+def write_status(obj):
+    DATA_DIR.mkdir(parents=True,exist_ok=True)
+    STATUS.write_text(json.dumps({**obj,'updated_at_utc':datetime.now(timezone.utc).isoformat()},indent=2),encoding='utf-8')
 
 def get(url, attempts=4, timeout=20):
     last=None
@@ -46,7 +55,7 @@ def coinbase_page(start_s,end_s):
 
 def fetch_bybit(target):
     rows=[]; end=None
-    for _ in range(math.ceil(target/1000)+3):
+    for _ in range(math.ceil(target/1000)+5):
         page=bybit_page(end,1000); raw=page.get('result',{}).get('list',[]) if isinstance(page,dict) else []
         if not raw:break
         for r in raw:
@@ -58,17 +67,17 @@ def fetch_bybit(target):
         time.sleep(.05)
     rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); now_ms=int(time.time()*1000)
     rows=[r for r in rows if r[0]+60000<=now_ms]
-    return rows[-target:] if len(rows)>=target else []
+    return rows[-target:]
 
 def fetch_binance(target):
     rows=[];end=None
-    for _ in range(math.ceil(target/1500)+3):
+    for _ in range(math.ceil(target/1500)+5):
         page=binance_page(end,1500)
         if not page:break
         rows.extend([[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in page])
         oldest=min(int(r[0]) for r in page);end=oldest-1
         if len(page)<1500:break
-    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:] if len(rows)>=target else []
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:]
 
 def fetch_coinbase(target):
     rows=[];end=int(time.time());window=300*60
@@ -78,17 +87,20 @@ def fetch_coinbase(target):
         rows.extend([[int(r[0])*1000,float(r[3]),float(r[2]),float(r[1]),float(r[4]),float(r[5])] for r in page]);end=start-1
         if len(rows)>=target:break
         time.sleep(.15)
-    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:] if len(rows)>=target else []
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:]
 
 def fetch_history(target=30000):
-    errors=[]
+    errors=[]; best=[]; best_name='none'
     for name,fn in (('bybit_futures',fetch_bybit),('binance_futures',fetch_binance),('coinbase',fetch_coinbase)):
         try:
             rows=fn(target)
+            if len(rows)>len(best):best,best_name=rows,name
             if len(rows)>=target:return rows,name
             errors.append(f'{name}:only_{len(rows)}_rows')
-        except Exception as e:errors.append(f'{name}:{type(e).__name__}:{e}')
-    raise RuntimeError(f'bootstrap history unavailable: need {target} rows; {"; ".join(errors)}')
+        except Exception as e:errors.append(f'{name}:{type(e).__name}:{e}')
+    if best:
+        return best,best_name
+    raise RuntimeError(f'no historical BTC source available: {"; ".join(errors)}')
 
 def ema(v,span):
     a=2/(span+1);e=float(v[0])
@@ -139,17 +151,35 @@ def train_one(X,y):
 def publish(h,best,base,n):
     ll,br,negacc,name,model,t,s=best
     if not(s['logloss']<base['logloss']-.01 and s['brier']<base['brier']-.005):return False,{'status':'holdout_rejected','model':name,'candidate':s,'baseline':base,'holdout_n':n}
-    MODEL_DIR.mkdir(parents=True,exist_ok=True);joblib.dump(model,MODEL_DIR/f'{h}.joblib');version=f'bootstrap.{name}.v2';meta={'model_version':version,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n,'holdout_metrics':s,'baseline_metrics':base,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()};(MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');init_db()
+    MODEL_DIR.mkdir(parents=True,exist_ok=True);joblib.dump(model,MODEL_DIR/f'{h}.joblib');version=f'bootstrap.{name}.v3';meta={'model_version':version,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n,'holdout_metrics':s,'baseline_metrics':base,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()};(MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');init_db()
     with sqlite3.connect(DB) as con:con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,version,datetime.now(timezone.utc).isoformat()))
     return True,meta
 
 def main():
     MODEL_DIR.mkdir(parents=True,exist_ok=True);DATA_DIR.mkdir(parents=True,exist_ok=True);init_db()
-    if all((MODEL_DIR/f'{h}.joblib').exists() and (MODEL_DIR/f'{h}.json').exists() for h in ('5m','10m')):print('BTC bootstrap skipped: production models already exist');return
-    rows,source=fetch_history(30000);CACHE.write_text(json.dumps({'source':source,'rows':rows,'created_at_utc':datetime.now(timezone.utc).isoformat()}),encoding='utf-8')
+    if all((MODEL_DIR/f'{h}.joblib').exists() and (MODEL_DIR/f'{h}.json').exists() for h in ('5m','10m')):
+        write_status({'status':'skipped_existing_production_models','required_models_present':True})
+        print('BTC bootstrap skipped: production models already exist');return
+    try:
+        rows,source=fetch_history(30000)
+    except Exception as e:
+        write_status({'status':'historical_sources_unavailable','error':f'{type(e).__name__}: {e}','production_models_present':False,'inference_policy':'continue_with_structural_fallback'})
+        print(f'BTC bootstrap non-fatal: historical sources unavailable: {e}');return
+    CACHE.write_text(json.dumps({'source':source,'rows':rows,'created_at_utc':datetime.now(timezone.utc).isoformat()},separators=(',',':')),encoding='utf-8')
+    write_status({'status':'history_fetched','source':source,'rows':len(rows)})
+    # Do not fail the live cycle merely because a public archive currently
+    # exposes fewer rows than the research target. Existing production models
+    # remain untouched; prediction.py has an independently tested structural
+    # fallback. A bootstrap model is published only after the chronological
+    # holdout gate below passes.
+    if len(rows)<10000:
+        write_status({'status':'insufficient_history_for_bootstrap','source':source,'rows':len(rows),'minimum_rows':10000,'inference_policy':'continue_with_structural_fallback'})
+        print(f'BTC bootstrap non-fatal: got {len(rows)} rows; need >=10000 for safe retraining');return
     for h in (5,10):
         X,y=build_dataset(rows,h)
-        if len(y)<10000:raise RuntimeError(f'bootstrap dataset too small for {h}m: {len(y)}')
+        if len(y)<7000:
+            write_status({'status':'insufficient_training_rows','horizon':h,'rows':len(y),'minimum_rows':7000})
+            print(f'BTC bootstrap non-fatal: dataset too small for {h}m: {len(y)}');continue
         best,base,n=train_one(X,y);ok,detail=publish(f'{h}m',best,base,n);print(json.dumps({'horizon':h,'source':source,'rows':len(y),'published':ok,'detail':detail},ensure_ascii=False))
-        if not ok:raise RuntimeError(f'No safe bootstrap model passed holdout for {h}m: {detail}')
+        if ok:write_status({'status':'completed','last_published_horizon':f'{h}m','source':source,'rows':len(y),'detail':detail})
 if __name__=='__main__':main()
