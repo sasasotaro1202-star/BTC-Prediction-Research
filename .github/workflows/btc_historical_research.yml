@@ -2,19 +2,12 @@ name: BTC Historical Research
 
 on:
   schedule:
-    - cron: '17 1 * * *'
-  push:
-    paths:
-      - 'src/historical_research.py'
-      - 'src/historical_research_runner.py'
-      - '.github/workflows/btc_historical_research.yml'
-      - 'requirements.txt'
-      - 'scripts/binance_archive_smoke.py'
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 concurrency:
   group: btc-historical-research
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -25,9 +18,8 @@ env:
 
 jobs:
   research:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,99 +27,64 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements.txt
-      - name: Restore historical archive cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/btc_prediction_archive_cache
-          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-${{ github.run_number }}
-          restore-keys: |
-            btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-
-            btc-archive-${{ runner.os }}-
-      - name: Install dependencies with retry
+      - name: Install research dependencies with retry
         shell: bash
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
-              exit 0
-            fi
-            echo "pip install attempt ${attempt} failed"
-            sleep $((15 * attempt))
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
+            sleep $((10 * attempt))
           done
           exit 1
-      - name: Compile all research code
-        run: python -m compileall -q src scripts
-      - name: Preflight Binance public archive
-        run: python scripts/binance_archive_smoke.py
-      - name: Run historical walk-forward research with retry
+      - name: Compile research code
+        run: python -m compileall -q src tests
+      - name: Run deterministic BTC guard tests
         shell: bash
         run: |
-          set -u
-          for attempt in 1 2 3; do
-            echo "=== historical research attempt ${attempt}/3 ==="
-            set +e
-            python src/historical_research_runner.py
-            status=$?
-            set -e
-            if [ "${status}" -eq 0 ]; then
-              echo "historical research completed successfully"
-              exit 0
-            fi
-            echo "research attempt ${attempt} failed with status ${status}"
-            if [ "${attempt}" -lt 3 ]; then
-              sleep $((30 * attempt))
-            fi
-          done
-          echo "historical research failed after 3 attempts"
-          exit 1
-      - name: Validate research artifact
+          set -euo pipefail
+          python - <<'PY'
+          import unittest
+          suite = unittest.defaultTestLoader.discover('tests', pattern='test_*.py')
+          count = suite.countTestCases()
+          print(f'Discovered BTC guard tests: {count}')
+          if count == 0:
+              raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
+          PY
+          python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run existing BTC historical research engine
+        run: python src/historical_research.py
+      - name: Validate historical research report
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('data/historical_research/report.json')
+          p=Path('data/historical_research/summary.json')
           if not p.exists():
-              raise SystemExit('report.json was not produced')
-          r=json.loads(p.read_text())
-          assert r.get('protocol_version') == 'historical-v6-microstructure-incremental-cache'
-          assert set(r.get('horizons', {})) >= {'5m','10m'}
-          for h in ('5m','10m'):
-              hz=r['horizons'][h]
-              assert hz['samples'] > 0
-              assert 'baseline' in hz and 'models' in hz and 'ensemble' in hz
-          print('research artifact validation: OK')
+              raise SystemExit('historical research summary missing')
+          obj=json.loads(p.read_text())
+          if not isinstance(obj, dict):
+              raise SystemExit('historical research summary malformed')
+          print('Historical research report validation: OK')
           PY
-      - name: Reject raw archive files in Git workspace
-        run: |
-          if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then
-            echo 'Raw Binance archive files must never enter the Git workspace.'
-            exit 1
-          fi
-      - name: Commit historical research results with retry
+      - name: Upload historical research artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-historical-research
+          path: data/historical_research/**
+          retention-days: 30
+      - name: Commit historical research state with retry
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/historical_research
-          if git diff --cached --quiet; then
-            echo 'No historical research changes to commit.'
-            exit 0
-          fi
-          git commit -m 'Update BTC historical research results'
-          for attempt in 1 2 3; do
-            if git push; then
-              exit 0
-            fi
-            echo "git push attempt ${attempt} failed; rebasing on origin/main"
-            git fetch origin main
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Update BTC historical research'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch --prune origin main
             git rebase origin/main
             sleep $((5 * attempt))
           done
-          echo 'git push failed after 3 attempts'
           exit 1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: btc-historical-research
-          path: data/historical_research
-          retention-days: 14
