@@ -11,6 +11,8 @@ from db import DB, init_db
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
+PURGE_BARS={'5m':5,'10m':10}
+
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def safe_json(t):
@@ -45,12 +47,13 @@ def aligned(model,X):
     for j,c in enumerate(model.classes_): out[:,CLASSES.index(c)]=p[:,j]
     return normalize(out)
 
-def walk_forward(rows,factory):
+def walk_forward(rows,factory,horizon):
     if len(rows)<MIN_TRAIN+MIN_OOS:return None
-    preds=[]; ys=[]; ids=[]
+    purge=PURGE_BARS[horizon]; preds=[]; ys=[]; ids=[]
     for end in range(MIN_TRAIN,len(rows),TEST_BLOCK):
-        train=rows[:end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
-        if not test: break
+        train_end=max(0,end-purge)
+        train=rows[:train_end]; test=rows[end:min(end+TEST_BLOCK,len(rows))]
+        if len(train)<MIN_TRAIN or not test: break
         model=factory(); X=np.array([r['x'] for r in train]); y=np.array([r['y'] for r in train])
         if len(set(y))<3: continue
         model.fit(X,y); pp=aligned(model,np.array([r['x'] for r in test]))
@@ -93,7 +96,7 @@ def hac_test(diff,lag):
     return {'mean_diff':mean,'stat':float(stat),'p_value':float(p),'significant':bool(p<ALPHA and mean<0),'lag':lag}
 
 def statistical_tests(ys,production,candidate,h):
-    lag=1 if h=='5m' else 2; diffs=loss_arrays(ys,production,candidate); tests={k:hac_test(v,lag) for k,v in diffs.items()}
+    lag=PURGE_BARS[h]; diffs=loss_arrays(ys,production,candidate); tests={k:hac_test(v,lag) for k,v in diffs.items()}
     tests['both_significant']=bool(tests['logloss']['significant'] and tests['brier']['significant']); return tests
 
 def save_metric(h,v,n,m,milestone):
@@ -144,7 +147,7 @@ def compare_h(h):
     }
     results={}
     for name,f in cand.items():
-        wf=walk_forward(rows,f)
+        wf=walk_forward(rows,f,h)
         if not wf: continue
         m=wf['metrics']; tests=statistical_tests(ys,production_probs,wf['probs'],h)
         results[name]={'metrics':m,'statistical_tests':tests}; save_metric(h,name,len(oos_rows),m,milestone); save_stat_test(h,name,milestone,len(oos_rows),tests)
