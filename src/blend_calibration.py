@@ -4,9 +4,9 @@ The live predictor has two probability sources:
 1. the production ML model trained on historical OHLCV features;
 2. a causal structural/microstructure overlay built from current public data.
 
-The overlay is useful only if it improves unseen settled predictions.  This
+The overlay is useful only if it improves unseen settled predictions. This
 module therefore learns only a single low-dimensional blend weight from past
-settled predictions, using a chronological fit/holdout split.  If there is no
+settled predictions, using a chronological fit/holdout split. If there is no
 clear holdout improvement, the production-model-heavy default is retained.
 """
 from __future__ import annotations
@@ -50,17 +50,17 @@ def _rows(horizon: str):
     rows = []
     with sqlite3.connect(DB) as con:
         raw = con.execute(
-            f"SELECT created_at_utc,feature_json,scenario_json,{actual} "
+            f"SELECT created_at_utc,scenario_json,{actual} "
             f"FROM predictions WHERE {actual} IS NOT NULL ORDER BY created_at_utc"
         ).fetchall()
-    for created, _, scenario_text, y in raw:
+    for created, scenario_text, y in raw:
         if y not in CLASSES:
             continue
         try:
             scenario = json.loads(scenario_text or "{}")
             comp = scenario.get("components", {})
-            model = comp.get("model_raw")
-            structural = comp.get("structural")
+            model = comp.get(f"model_raw_{horizon}") or comp.get("model_raw")
+            structural = comp.get(f"structural_{horizon}") or comp.get("structural")
             if not isinstance(model, dict) or not isinstance(structural, dict):
                 continue
             mp = [float(model[c]) for c in CLASSES]
@@ -92,9 +92,6 @@ def calibrate(horizon: str):
     baseline_ll = float(log_loss([CLASSES.index(v) for v in y], model_h, labels=[0, 1, 2]))
     baseline_br = _brier(y, model_h)
 
-    # Choose the weight on the earlier segment, then judge it exactly once on
-    # the later segment. The final weight is never chosen from the reported
-    # holdout outcomes.
     train_y = [r[3] for r in train]
     train_model = _norm([r[1] for r in train])
     train_struct = _norm([r[2] for r in train])
