@@ -6,6 +6,8 @@ from db import DB, init_db
 
 CLASSES = ['UP','DOWN','FLAT']
 MODEL_DIR = Path(DB).parent / 'models'
+MIN_CALIBRATION = 300
+HOLDOUT_FRACTION = 0.25
 
 
 def multiclass_metrics(rows, horizon):
@@ -37,27 +39,55 @@ def multiclass_metrics(rows, horizon):
     return correct/n,ll/n,brier/n,ece
 
 
-def temperature_scale(rows):
-    if len(rows) < 200:
-        return 1.0, None
+def _probs_and_labels(rows):
     y=[]; logits=[]
     for r in rows:
         ps=np.clip(np.asarray([float(r[0]),float(r[1]),float(r[2])]),1e-6,1-1e-6)
         ps=ps/ps.sum(); logits.append(np.log(ps)); y.append(CLASSES.index(r[3]))
-    logits=np.asarray(logits); y=np.asarray(y)
+    return np.asarray(logits), np.asarray(y)
+
+
+def _logloss_at_temperature(logits,y,t):
+    z=logits/t; z=z-z.max(axis=1,keepdims=True); p=np.exp(z); p/=p.sum(axis=1,keepdims=True)
+    return float(-np.mean(np.log(np.clip(p[np.arange(len(y)),y],1e-12,1.0))))
+
+
+def temperature_scale(rows):
+    if len(rows) < MIN_CALIBRATION:
+        return 1.0, None, None
+    logits,y=_probs_and_labels(rows)
+    split=max(int(len(rows)*(1-HOLDOUT_FRACTION)),1)
+    fit_logits,fit_y=logits[:split],y[:split]
+    eval_logits,eval_y=logits[split:],y[split:]
+    if len(eval_y)<100 or len(set(fit_y.tolist()))<3:
+        return 1.0,None,None
     best_t=1.0; best=float('inf')
     for t in np.linspace(0.7,2.5,73):
-        z=logits/t; z=z-z.max(axis=1,keepdims=True); p=np.exp(z); p/=p.sum(axis=1,keepdims=True)
-        loss=float(-np.mean(np.log(np.clip(p[np.arange(len(y)),y],1e-12,1.0))))
+        loss=_logloss_at_temperature(fit_logits,fit_y,float(t))
         if loss < best:
             best=loss; best_t=float(t)
-    return best_t,best
+    raw_eval=_logloss_at_temperature(eval_logits,eval_y,1.0)
+    scaled_eval=_logloss_at_temperature(eval_logits,eval_y,best_t)
+    # Only publish a temperature if it improves genuinely unseen data.
+    # A tiny tolerance prevents oscillation when the difference is noise.
+    if scaled_eval >= raw_eval-0.001:
+        return 1.0,best,raw_eval
+    return best_t,best,scaled_eval
 
 
-def save_temperature(horizon, temperature, n):
+def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout_fraction):
     MODEL_DIR.mkdir(parents=True,exist_ok=True)
     path=MODEL_DIR/f'{horizon}.calibration.json'
-    payload={'horizon':horizon,'temperature':float(temperature),'n_settled':int(n),'method':'bounded_temperature_scaling','updated_at_utc':datetime.now(timezone.utc).isoformat()}
+    payload={
+        'horizon':horizon,
+        'temperature':float(temperature),
+        'n_settled':int(n),
+        'method':'bounded_temperature_scaling_holdout_guard',
+        'fit_logloss':None if fit_logloss is None else float(fit_logloss),
+        'holdout_logloss':None if eval_logloss is None else float(eval_logloss),
+        'holdout_fraction':float(holdout_fraction),
+        'updated_at_utc':datetime.now(timezone.utc).isoformat()
+    }
     path.write_text(json.dumps(payload,indent=2),encoding='utf-8')
 
 
@@ -72,8 +102,8 @@ def calibration():
                 continue
             acc,ll,brier,ece=multiclass_metrics(rows,horizon)
             con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),f'{horizon}m','production',len(rows),acc,ll,brier,ece))
-        temperature,fit_ll=temperature_scale(rows)
-        save_temperature(f'{horizon}m',temperature,len(rows))
-        print(horizon,'m',len(rows),'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll)
+        temperature,fit_ll,eval_ll=temperature_scale(rows)
+        save_temperature(f'{horizon}m',temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION)
+        print(horizon,'m',len(rows),'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
 
 if __name__=='__main__': calibration()
