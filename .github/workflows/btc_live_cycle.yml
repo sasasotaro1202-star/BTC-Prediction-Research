@@ -48,7 +48,18 @@ jobs:
       - name: Compile research code
         run: python -m compileall -q src tests
       - name: Run deterministic BTC guard tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import unittest
+          suite = unittest.defaultTestLoader.discover('tests', pattern='test_*.py')
+          count = suite.countTestCases()
+          print(f'Discovered BTC guard tests: {count}')
+          if count == 0:
+              raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
+          PY
+          python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Settle due BTC predictions
         run: python src/settle.py
       - name: Recalculate BTC calibration metrics
