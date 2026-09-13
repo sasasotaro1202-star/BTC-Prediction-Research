@@ -45,8 +45,17 @@ def _brier(y, p):
     return float(np.mean(np.sum((_norm(p) - one) ** 2, axis=1)))
 
 
+def _actual_column(horizon: str) -> str:
+    """Return the canonical predictions-table actual-direction column."""
+    # horizon is already the storage suffix (e.g. "5m"), so do not append
+    # another "m". Keeping this centralized prevents 5mm/10mm schema drift.
+    if horizon not in ("5m", "10m"):
+        raise ValueError(f"unsupported horizon: {horizon}")
+    return f"actual_direction_{horizon}"
+
+
 def _rows(horizon: str):
-    actual = f"actual_direction_{horizon}m"
+    actual = _actual_column(horizon)
     rows = []
     with sqlite3.connect(DB) as con:
         raw = con.execute(
