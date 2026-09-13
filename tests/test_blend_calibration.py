@@ -21,6 +21,12 @@ class TestBlendCalibration(unittest.TestCase):
         bad = [[0.34, 0.33, 0.33]] * 3
         self.assertLess(blend_calibration._brier(y, good), blend_calibration._brier(y, bad))
 
+    def test_horizon_column_mapping(self):
+        self.assertEqual(blend_calibration._actual_column('5m'), 'actual_direction_5m')
+        self.assertEqual(blend_calibration._actual_column('10m'), 'actual_direction_10m')
+        with self.assertRaises(ValueError):
+            blend_calibration._actual_column('5')
+
     def test_grid_is_bounded(self):
         self.assertGreaterEqual(float(blend_calibration.GRID.min()), 0.0)
         self.assertLessEqual(float(blend_calibration.GRID.max()), 0.45)
