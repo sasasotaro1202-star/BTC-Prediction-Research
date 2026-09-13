@@ -14,8 +14,10 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertAlmostEqual(float(p.sum()), 1.0, places=10)
 
     def test_brier_prefers_correct_probability(self):
+        # blend_calibration.CLASSES is [UP, DOWN, FLAT], so the rows below
+        # must follow that exact probability-column order.
         y = ['UP', 'DOWN', 'FLAT']
-        good = [[0.01, 0.01, 0.98], [0.98, 0.01, 0.01], [0.01, 0.98, 0.01]]
+        good = [[0.98, 0.01, 0.01], [0.01, 0.98, 0.01], [0.01, 0.01, 0.98]]
         bad = [[0.34, 0.33, 0.33]] * 3
         self.assertLess(blend_calibration._brier(y, good), blend_calibration._brier(y, bad))
 
