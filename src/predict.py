@@ -29,8 +29,17 @@ def features(rows):
     trend_alignment=(0.50*r5+0.30*r15+0.20*r30)
     return {'ret_1m':r1,'ret_3m':r3,'ret_5m':r5,'ret_10m':r10,'ret_15m':r15,'ret_30m':r30,'acceleration':a,'volatility_5m':rv5,'volatility_10m':rv10,'range_position_10m':rp,'range_position_30m':rp30,'body_1m':body,'upper_wick_1m':up,'lower_wick_1m':low,'volume_ratio':rvol,'volume_trend':vtrend,'ema_gap_5m':p/_ema(c[-20:],5)-1,'ema_gap_10m':p/_ema(c[-30:],10)-1,'trend_alignment':trend_alignment}
 def imbalance(book,levels=25):
+    """Return normalized bid/ask volume imbalance for Binance or Bybit books."""
     try:
-        bids=book['bids'][:levels]; asks=book['asks'][:levels]; b=sum(float(x[1]) for x in bids); a=sum(float(x[1]) for x in asks); return (b-a)/max(1e-12,b+a)
+        # Binance depth: {'bids': [[price, qty], ...], 'asks': ...}
+        bids=book.get('bids') if isinstance(book,dict) else None
+        asks=book.get('asks') if isinstance(book,dict) else None
+        # Bybit v5: {'result': {'b': [[price, qty], ...], 'a': ...}}
+        if (not bids or not asks) and isinstance(book,dict) and isinstance(book.get('result'),dict):
+            result=book['result']; bids=result.get('b') or result.get('bids'); asks=result.get('a') or result.get('asks')
+        if not bids or not asks:return 0.0
+        bids=bids[:levels]; asks=asks[:levels]; b=sum(float(x[1]) for x in bids); a=sum(float(x[1]) for x in asks)
+        return (b-a)/max(1e-12,b+a)
     except Exception:return 0.0
 def structural(f,m):
     vol=max(.00025,f['volatility_10m'])
@@ -97,7 +106,7 @@ def main():
     m={'book_imbalance':0.,'bybit_book_imbalance':0.,'cross_exchange_gap':0.,'taker_imbalance':0.,'funding_binance':0.,'funding_bybit':0.,'oi':0.,'spot_futures_gap':0.}
     try:m['book_imbalance']=imbalance(binance_depth())
     except Exception:status['binance_depth']='error'
-    try:m['bybit_book_imbalance']=imbalance(bybit_depth().get('result',{}))
+    try:m['bybit_book_imbalance']=imbalance(bybit_depth())
     except Exception:status['bybit_depth']='error'
     if byp is not None:m['cross_exchange_gap']=byp/price-1
     try:m['funding_binance']=float(binance_premium().get('lastFundingRate',0) or 0)
