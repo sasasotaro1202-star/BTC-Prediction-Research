@@ -3,6 +3,9 @@ name: BTC Integrity Gate
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'data/**'
+      - 'models/**'
   workflow_dispatch:
 
 concurrency:
@@ -15,9 +18,9 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  # Repository integrity checks may run between live cycles. Freshness is still
-  # enforced by the live-cycle gate; this wider bound prevents a static push
-  # check from failing solely because no 5-minute cycle ran during the check.
+  # Static repository checks may run between live cycles. The live-cycle gate
+  # remains strict about fresh predictions; this gate uses a wider bound so
+  # source-only validation does not fail because no live cycle ran concurrently.
   BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '3600'
 
 jobs:
@@ -38,6 +41,7 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3; do
             if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
+            echo "pip install attempt ${attempt} failed"
             sleep $((10 * attempt))
           done
           exit 1
