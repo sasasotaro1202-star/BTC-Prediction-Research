@@ -28,9 +28,14 @@ class TestMarketFallbacks(unittest.TestCase):
             market_data.time.time = original
 
     def test_cache_fallback_is_optional_and_well_shaped(self):
-        rows, created = market_data.cache_rows(120)
+        result = market_data.cache_rows(120)
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 4)
+        rows, created, age_ms, fresh = result
         self.assertIsInstance(rows, list)
         self.assertIsInstance(created, str)
+        self.assertTrue(age_ms is None or isinstance(age_ms, int))
+        self.assertIsInstance(fresh, bool)
         if rows:
             self.assertEqual(len(rows[0]), 6)
             self.assertTrue(all(len(r) == 6 for r in rows))
