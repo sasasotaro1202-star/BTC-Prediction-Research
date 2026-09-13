@@ -107,9 +107,11 @@ jobs:
               age=(datetime.now(timezone.utc)-created).total_seconds()
               if age > 900: raise SystemExit(f'latest prediction is stale: {age:.0f}s')
               if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
-              if latest[1] <= 0: raise SystemExit('latest BTC base price is invalid')
               scenario=json.loads(latest[3]) if latest[3] else {}
-              if latest[2] != 'DEGRADED_NO_FRESH_DATA' and not scenario.get('data_quality'):
+              degraded=(latest[2] == 'DEGRADED_NO_FRESH_DATA')
+              if not degraded and latest[1] <= 0: raise SystemExit('latest BTC base price is invalid')
+              if degraded and latest[1] != 0: raise SystemExit('degraded BTC prediction must not claim a market base price')
+              if not degraded and not scenario.get('data_quality'):
                   raise SystemExit('live BTC prediction is missing data-quality metadata')
           for horizon in ('5m','10m'):
               mj=Path(f'models/{horizon}.json'); mf=Path(f'models/{horizon}.joblib')
