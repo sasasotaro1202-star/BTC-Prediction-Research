@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/btc_live_cycle.yml'
       - 'src/**'
+      - 'tests/**'
       - 'requirements.txt'
       - 'data/**'
 
@@ -45,7 +46,9 @@ jobs:
           done
           exit 1
       - name: Compile research code
-        run: python -m compileall -q src
+        run: python -m compileall -q src tests
+      - name: Run deterministic BTC guard tests
+        run: python -m unittest discover -s tests -v
       - name: Settle due BTC predictions
         run: python src/settle.py
       - name: Recalculate BTC calibration metrics
@@ -60,9 +63,11 @@ jobs:
           import json, sqlite3
           from pathlib import Path
           from datetime import datetime, timezone
+
           p=Path('data/predictions.db')
           if not p.exists() or p.stat().st_size == 0:
               raise SystemExit('predictions.db was not produced')
+
           with sqlite3.connect(p) as con:
               n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
               if n <= 0:
@@ -78,14 +83,33 @@ jobs:
               age=(datetime.now(timezone.utc)-created).total_seconds()
               if age > 900:
                   raise SystemExit(f'latest BTC prediction is stale: {age:.0f}s')
+
           for horizon in ('5m','10m'):
+              model_json=Path(f'models/{horizon}.json')
+              model_file=Path(f'models/{horizon}.joblib')
+              if model_json.exists():
+                  obj=json.loads(model_json.read_text())
+                  if obj.get('horizon') != horizon:
+                      raise SystemExit(f'{horizon} model metadata horizon mismatch')
+                  if obj.get('artifact') != f'{horizon}.joblib':
+                      raise SystemExit(f'{horizon} model metadata artifact mismatch')
+                  if obj.get('classes') and obj['classes'] != ['DOWN','FLAT','UP']:
+                      raise SystemExit(f'{horizon} model class order mismatch: {obj.get("classes")}')
+                  if obj.get('features') and len(obj['features']) != 15:
+                      raise SystemExit(f'{horizon} model feature count mismatch: {len(obj["features"])}')
+              if model_json.exists() and not model_file.exists():
+                  raise SystemExit(f'{horizon} model metadata exists but artifact is missing')
+
               cp=Path(f'models/{horizon}.calibration.json')
               if cp.exists():
                   obj=json.loads(cp.read_text())
                   t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
-                  if not (0.5 <= t <= 3.0): raise SystemExit(f'{horizon} calibration temperature out of bounds: {t}')
-                  if n < 0: raise SystemExit(f'{horizon} calibration sample count invalid: {n}')
-          print('BTC prediction database and calibration validation: OK')
+                  if not (0.5 <= t <= 3.0):
+                      raise SystemExit(f'{horizon} calibration temperature out of bounds: {t}')
+                  if n < 0:
+                      raise SystemExit(f'{horizon} calibration sample count invalid: {n}')
+
+          print('BTC prediction database, model metadata, and calibration validation: OK')
           PY
       - name: Upload BTC research artifacts
         uses: actions/upload-artifact@v4
@@ -96,6 +120,8 @@ jobs:
             data/historical_research/**
             models/**
           retention-days: 14
+      - name: Check repository diff before commit
+        run: git diff --check
       - name: Commit BTC research state with retry
         shell: bash
         run: |
@@ -106,12 +132,12 @@ jobs:
           if [ -d models ]; then git add models; fi
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
-          for attempt in 1 2 3; do
-            if git push; then exit 0; fi
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
             echo "git push attempt ${attempt} failed; rebasing on origin/main"
-            git fetch origin main
+            git fetch --prune origin main
             git rebase origin/main
             sleep $((5 * attempt))
           done
-          echo 'git push failed after 3 attempts'
+          echo 'git push failed after 5 attempts'
           exit 1
