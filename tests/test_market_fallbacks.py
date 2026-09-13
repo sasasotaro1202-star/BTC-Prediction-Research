@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 import market_data  # noqa: E402
+import predict  # noqa: E402
 
 
 class TestMarketFallbacks(unittest.TestCase):
@@ -39,6 +40,15 @@ class TestMarketFallbacks(unittest.TestCase):
         if rows:
             self.assertEqual(len(rows[0]), 6)
             self.assertTrue(all(len(r) == 6 for r in rows))
+
+    def test_bybit_orderbook_imbalance_uses_v5_shape(self):
+        payload = {
+            'result': {
+                'b': [['100', '5'], ['99', '3']],
+                'a': [['101', '1'], ['102', '1']],
+            }
+        }
+        self.assertAlmostEqual(predict.imbalance(payload, levels=25), 0.60, places=8)
 
 
 if __name__ == '__main__':
