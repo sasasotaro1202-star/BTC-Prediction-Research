@@ -16,7 +16,7 @@ from db import DB, init_db
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'; DATA_DIR=ROOT/'data'/'historical_research'; CACHE=DATA_DIR/'btc_bootstrap_1m.json'
-CLASSES=['DOWN','FLAT','UP']; THRESHOLD=.00020; UA='BTC-Prediction-Research/bootstrap/1.2'
+CLASSES=['DOWN','FLAT','UP']; THRESHOLD=.00020; UA='BTC-Prediction-Research/bootstrap/2.0'
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 
 def get(url, attempts=4, timeout=20):
@@ -27,8 +27,13 @@ def get(url, attempts=4, timeout=20):
             with urlopen(req,timeout=timeout) as r:return json.loads(r.read())
         except Exception as e:
             last=e
-            if i+1<attempts:time.sleep(min(2.0,0.5*(i+1)))
+            if i+1<attempts:time.sleep(min(4.0,0.75*(i+1)))
     raise last
+
+def bybit_page(end_ms=None,limit=1000):
+    p={'category':'linear','symbol':'BTCUSDT','interval':'1','limit':min(1000,limit)}
+    if end_ms is not None:p['end']=int(end_ms)
+    return get('https://api.bybit.com/v5/market/kline?'+urlencode(p))
 
 def binance_page(end_ms=None,limit=1500):
     p={'symbol':'BTCUSDT','interval':'1m','limit':limit}
@@ -39,38 +44,51 @@ def coinbase_page(start_s,end_s):
     p={'granularity':60,'start':datetime.fromtimestamp(start_s,tz=timezone.utc).isoformat(),'end':datetime.fromtimestamp(end_s,tz=timezone.utc).isoformat()}
     return get('https://api.exchange.coinbase.com/products/BTC-USD/candles?'+urlencode(p))
 
+def fetch_bybit(target):
+    rows=[]; end=None
+    for _ in range(math.ceil(target/1000)+3):
+        page=bybit_page(end,1000); raw=page.get('result',{}).get('list',[]) if isinstance(page,dict) else []
+        if not raw:break
+        for r in raw:
+            if len(r)>=6: rows.append([int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])])
+        oldest=min(int(r[0]) for r in raw); new_end=oldest-1
+        if end is not None and new_end>=end:break
+        end=new_end
+        if len(rows)>=target:break
+        time.sleep(.05)
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); now_ms=int(time.time()*1000)
+    rows=[r for r in rows if r[0]+60000<=now_ms]
+    return rows[-target:] if len(rows)>=target else []
+
 def fetch_binance(target):
     rows=[];end=None
-    while len(rows)<target:
+    for _ in range(math.ceil(target/1500)+3):
         page=binance_page(end,1500)
         if not page:break
         rows.extend([[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in page])
         oldest=min(int(r[0]) for r in page);end=oldest-1
         if len(page)<1500:break
-    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
-    return rows[-target:] if len(rows)>=target else []
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:] if len(rows)>=target else []
 
 def fetch_coinbase(target):
     rows=[];end=int(time.time());window=300*60
-    for _ in range(math.ceil(target/300)+6):
+    for _ in range(math.ceil(target/300)+8):
         start=max(0,end-window);page=coinbase_page(start,end)
         if not page:break
-        rows.extend([[int(r[0])*1000,float(r[3]),float(r[2]),float(r[1]),float(r[4]),float(r[5])] for r in page])
-        end=start-1
+        rows.extend([[int(r[0])*1000,float(r[3]),float(r[2]),float(r[1]),float(r[4]),float(r[5])] for r in page]);end=start-1
         if len(rows)>=target:break
         time.sleep(.15)
-    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0])
-    return rows[-target:] if len(rows)>=target else []
+    rows=sorted({r[0]:r for r in rows}.values(),key=lambda r:r[0]); return rows[-target:] if len(rows)>=target else []
 
-def fetch_history(target=12000):
+def fetch_history(target=30000):
     errors=[]
-    for name,fn in (('binance_futures',fetch_binance),('coinbase',fetch_coinbase)):
+    for name,fn in (('bybit_futures',fetch_bybit),('binance_futures',fetch_binance),('coinbase',fetch_coinbase)):
         try:
             rows=fn(target)
             if len(rows)>=target:return rows,name
             errors.append(f'{name}:only_{len(rows)}_rows')
-        except Exception as e:errors.append(f'{name}:{type(e).__name__}')
-    raise RuntimeError(f'bootstrap history unavailable: need {target} rows; {", ".join(errors)}')
+        except Exception as e:errors.append(f'{name}:{type(e).__name__}:{e}')
+    raise RuntimeError(f'bootstrap history unavailable: need {target} rows; {"; ".join(errors)}')
 
 def ema(v,span):
     a=2/(span+1);e=float(v[0])
@@ -80,10 +98,8 @@ def ema(v,span):
 def make_features(rows):
     c=np.asarray([r[4] for r in rows],float);o=np.asarray([r[1] for r in rows],float);h=np.asarray([r[2] for r in rows],float);l=np.asarray([r[3] for r in rows],float);v=np.asarray([r[5] for r in rows],float);p=c[-1]
     ret=lambda n:c[-1]/c[-1-n]-1
-    r1,r3,r5,r10=[ret(n) for n in (1,3,5,10)];a=r1-r3/3
-    rv5=float(np.std(np.diff(c[-6:])/c[-6:-1]));rv10=float(np.std(np.diff(c[-11:])/c[-11:-1]))
-    hi,lo=max(h[-10:]),min(l[-10:]);rp=(p-lo)/(hi-lo) if hi>lo else .5
-    body=(p-o[-1])/p;up=(h[-1]-max(o[-1],p))/p;low=(min(o[-1],p)-l[-1])/p
+    r1,r3,r5,r10=[ret(n) for n in (1,3,5,10)];a=r1-r3/3;rv5=float(np.std(np.diff(c[-6:])/c[-6:-1]));rv10=float(np.std(np.diff(c[-11:])/c[-11:-1]))
+    hi,lo=max(h[-10:]),min(l[-10:]);rp=(p-lo)/(hi-lo) if hi>lo else .5;body=(p-o[-1])/p;up=(h[-1]-max(o[-1],p))/p;low=(min(o[-1],p)-l[-1])/p
     old=float(np.mean(v[-15:-5]));rvol=float(np.mean(v[-5:]))/max(1e-12,old);vt=float(np.mean(v[-5:]))/max(1e-12,float(np.mean(v[-10:])))
     return [r1,r3,r5,r10,a,rv5,rv10,rp,body,up,low,rvol,vt,p/ema(c[-20:],5)-1,p/ema(c[-30:],10)-1]
 
@@ -103,18 +119,15 @@ def metrics(y,p):
 def calibrate(raw,y):
     raw=norm(raw)
     if len(y)<200 or len(set(y))<3:return raw,1.0
-    yi=np.asarray([{c:i for i,c in enumerate(CLASSES)}[z] for z in y]);best=(log_loss(yi,raw,labels=[0,1,2]),1.0)
-    logits=np.log(raw)
+    yi=np.asarray([{c:i for i,c in enumerate(CLASSES)}[z] for z in y]);best=(log_loss(yi,raw,labels=[0,1,2]),1.0);logits=np.log(raw)
     for t in np.linspace(.75,2.25,61):
         z=logits/t;z-=z.max(1,keepdims=True);q=np.exp(z);q/=q.sum(1,keepdims=True);ll=log_loss(yi,q,labels=[0,1,2])
         if ll<best[0]:best=(ll,float(t))
-    if best[1]==1.0:return raw,1.0
-    z=logits/best[1];z-=z.max(1,keepdims=True);q=np.exp(z);q/=q.sum(1,keepdims=True)
-    return q,best[1]
+    z=logits/best[1];z-=z.max(1,keepdims=True);q=np.exp(z);q/=q.sum(1,keepdims=True);return q,best[1]
 
 def train_one(X,y):
     n=len(y);a=int(n*.65);b=int(n*.82);Xtr,Xcal,Xte=X[:a],X[a:b],X[b:];ytr,ycal,yte=y[:a],y[a:b],y[b:]
-    counts=np.array([np.mean(ytr==c) for c in CLASSES]);base=metrics(yte,np.tile(counts,(len(yte),1)));cands=[('logreg',Pipeline([('scale',StandardScaler()),('model',LogisticRegression(C=.5,max_iter=3000,class_weight=None))])),('rf',RandomForestClassifier(n_estimators=300,max_depth=7,min_samples_leaf=12,max_features='sqrt',random_state=42,n_jobs=-1)),('hgb',HistGradientBoostingClassifier(max_iter=220,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.5,random_state=42))]
+    counts=np.array([np.mean(ytr==c) for c in CLASSES]);base=metrics(yte,np.tile(counts,(len(yte),1)));cands=[('logreg',Pipeline([('scale',StandardScaler()),('model',LogisticRegression(C=.5,max_iter=3000))])),('rf',RandomForestClassifier(n_estimators=300,max_depth=7,min_samples_leaf=12,max_features='sqrt',random_state=42,n_jobs=-1)),('hgb',HistGradientBoostingClassifier(max_iter=220,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.5,random_state=42))]
     results=[]
     for name,model in cands:
         model.fit(Xtr,ytr);_,t=calibrate(model.predict_proba(Xcal),ycal);p=norm(model.predict_proba(Xte))
@@ -126,17 +139,17 @@ def train_one(X,y):
 def publish(h,best,base,n):
     ll,br,negacc,name,model,t,s=best
     if not(s['logloss']<base['logloss']-.01 and s['brier']<base['brier']-.005):return False,{'status':'holdout_rejected','model':name,'candidate':s,'baseline':base,'holdout_n':n}
-    MODEL_DIR.mkdir(parents=True,exist_ok=True);joblib.dump(model,MODEL_DIR/f'{h}.joblib');version=f'bootstrap.{name}.v1';meta={'model_version':version,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n,'holdout_metrics':s,'baseline_metrics':base,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()};(MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');init_db()
+    MODEL_DIR.mkdir(parents=True,exist_ok=True);joblib.dump(model,MODEL_DIR/f'{h}.joblib');version=f'bootstrap.{name}.v2';meta={'model_version':version,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':f'{h}.joblib','candidate':False,'bootstrap':True,'holdout_n':n,'holdout_metrics':s,'baseline_metrics':base,'temperature':float(t),'trained_at_utc':datetime.now(timezone.utc).isoformat()};(MODEL_DIR/f'{h}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8');init_db()
     with sqlite3.connect(DB) as con:con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,version,datetime.now(timezone.utc).isoformat()))
     return True,meta
 
 def main():
     MODEL_DIR.mkdir(parents=True,exist_ok=True);DATA_DIR.mkdir(parents=True,exist_ok=True);init_db()
     if all((MODEL_DIR/f'{h}.joblib').exists() and (MODEL_DIR/f'{h}.json').exists() for h in ('5m','10m')):print('BTC bootstrap skipped: production models already exist');return
-    rows,source=fetch_history(12000);CACHE.write_text(json.dumps({'source':source,'rows':rows,'created_at_utc':datetime.now(timezone.utc).isoformat()}),encoding='utf-8')
+    rows,source=fetch_history(30000);CACHE.write_text(json.dumps({'source':source,'rows':rows,'created_at_utc':datetime.now(timezone.utc).isoformat()}),encoding='utf-8')
     for h in (5,10):
         X,y=build_dataset(rows,h)
-        if len(y)<2000:raise RuntimeError(f'bootstrap dataset too small for {h}m: {len(y)}')
+        if len(y)<10000:raise RuntimeError(f'bootstrap dataset too small for {h}m: {len(y)}')
         best,base,n=train_one(X,y);ok,detail=publish(f'{h}m',best,base,n);print(json.dumps({'horizon':h,'source':source,'rows':len(y),'published':ok,'detail':detail},ensure_ascii=False))
         if not ok:raise RuntimeError(f'No safe bootstrap model passed holdout for {h}m: {detail}')
 if __name__=='__main__':main()
