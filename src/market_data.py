@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-UA = "BTC-Prediction-Research/5.4"
+UA = "BTC-Prediction-Research/5.5"
 
 
 def http_json(url: str, timeout: int = 12):
@@ -34,17 +34,23 @@ def _bybit(path: str, params: dict):
     return _get(f"https://api.bybit.com/v5/market/{path}?{urlencode(params)}")
 
 
-def coinbase_klines(limit: int = 300):
-    """Public Coinbase Exchange 1-minute candles; fallback only."""
+def coinbase_rows(limit: int = 300):
+    """Coinbase Exchange BTC-USD 1m candles; fallback only."""
     end = int(time.time())
     start = end - min(limit, 300) * 60
-    return _get(f"https://api.exchange.coinbase.com/products/BTC-USD/candles?{urlencode({'granularity': 60, 'start': start, 'end': end})}")
-
-
-def coinbase_rows(limit: int = 300):
-    # Coinbase: [time, low, high, open, close, volume], newest first.
-    rows = coinbase_klines(limit)
+    rows = _get(f"https://api.exchange.coinbase.com/products/BTC-USD/candles?{urlencode({'granularity': 60, 'start': start, 'end': end})}")
     return sorted([[int(r[0]) * 1000, float(r[3]), float(r[2]), float(r[1]), float(r[4]), float(r[5])] for r in rows], key=lambda r: r[0])
+
+
+def kraken_rows(limit: int = 720):
+    """Kraken BTC/USD 1m OHLC fallback; response may include a partial last candle."""
+    since = int(time.time()) - min(limit, 720) * 60
+    payload = _get(f"https://api.kraken.com/0/public/OHLC?{urlencode({'pair': 'XBTUSD', 'interval': 1, 'since': since})}")
+    result = payload.get("result", {})
+    key = next((k for k in result.keys() if k != "last"), None)
+    rows = result.get(key, []) if key else []
+    out = [[int(r[0]) * 1000, float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[6])] for r in rows]
+    return sorted(out, key=lambda r: r[0])
 
 
 def binance_klines(spot: bool = False, limit: int = 120):
@@ -92,10 +98,19 @@ def resilient_1m_series(limit: int = 120):
                 fut = cb
                 status["price_feature_fallback"] = "coinbase"
             else:
-                status["price_feature_fallback"] = "none"
+                raise RuntimeError("insufficient Coinbase candles")
         except Exception as e:
             status["coinbase_futures"] = f"error:{type(e).__name__}"
-            status["price_feature_fallback"] = "none"
+            try:
+                kr = kraken_rows(max(120, limit))
+                if len(kr) >= 40:
+                    fut = kr
+                    status["price_feature_fallback"] = "kraken"
+                else:
+                    status["price_feature_fallback"] = "none"
+            except Exception as e2:
+                status["kraken_futures"] = f"error:{type(e2).__name__}"
+                status["price_feature_fallback"] = "none"
     else:
         status["price_feature_fallback"] = "none"
     status["spot_fallback"] = "unavailable" if len(spot) < 40 else "none"
@@ -153,6 +168,12 @@ def target_close_binance(target_iso: str):
         for row in coinbase_rows(10):
             if row[0] == start:
                 return float(row[4]), "coinbase"
+    except Exception:
+        pass
+    try:
+        for row in kraken_rows(10):
+            if row[0] == start:
+                return float(row[4]), "kraken"
     except Exception:
         pass
     return None, "unavailable"
