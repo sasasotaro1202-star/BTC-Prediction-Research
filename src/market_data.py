@@ -1,12 +1,12 @@
 """BTC-only resilient public market-data adapters for GitHub Actions."""
 from __future__ import annotations
-import json, time
+import csv, io, json, time, zipfile
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-UA = "BTC-Prediction-Research/7.0"
+UA = "BTC-Prediction-Research/8.0"
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "historical_research" / "btc_bootstrap_1m.json"
 CACHE_MAX_AGE_MS = 15 * 60 * 1000
@@ -34,10 +34,6 @@ def _binance(path: str, params: dict):
     return _get(f"https://{path}?{urlencode(params)}")
 
 
-def _bybit(path: str, params: dict):
-    return _get(f"https://api.bybit.com/v5/market/{path}?{urlencode(params)}")
-
-
 def coinbase_rows(limit: int = 300):
     end = int(time.time())
     start = end - min(limit, 300) * 60
@@ -54,6 +50,56 @@ def kraken_rows(limit: int = 720):
     return sorted([[int(r[0]) * 1000, float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[6])] for r in rows], key=lambda r: r[0])
 
 
+def binance_archive_month(month: datetime):
+    """Read Binance's static monthly UM-futures 1m archive.
+
+    This is intentionally independent of fapi.binance.com. GitHub-hosted
+    runners can receive HTTP 451 from the Futures REST API while the public
+    static archive remains available. The archive is used only for historical
+    bootstrap, never as a substitute for fresh live inference data.
+    """
+    name = f"BTCUSDT-1m-{month.year:04d}-{month.month:02d}.zip"
+    url = f"https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/{name}"
+    req = Request(url, headers={"User-Agent": UA})
+    with urlopen(req, timeout=45) as r:
+        raw = r.read()
+    rows = []
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        csv_names = [n for n in z.namelist() if n.lower().endswith('.csv')]
+        if not csv_names:
+            raise RuntimeError(f"archive contains no csv: {name}")
+        with z.open(csv_names[0]) as fh:
+            for r in csv.reader(io.TextIOWrapper(fh, encoding='utf-8')):
+                if not r or not r[0].isdigit() or len(r) < 6:
+                    continue
+                try:
+                    rows.append([int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
+                except (TypeError, ValueError):
+                    continue
+    now_ms = int(time.time() * 1000)
+    return [r for r in rows if r[0] + 60000 <= now_ms]
+
+
+def binance_archive_rows(target: int):
+    now = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    months = [now]
+    prev = (now - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    months.append(prev)
+    rows = []
+    errors = []
+    for month in months:
+        try:
+            rows.extend(binance_archive_month(month))
+            if len(rows) >= target:
+                break
+        except Exception as e:
+            errors.append(f"{month.strftime('%Y-%m')}:{type(e).__name}")
+    rows = sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])
+    if len(rows) < target:
+        raise RuntimeError(f"archive returned {len(rows)} rows, need {target}; errors={errors}")
+    return rows[-target:]
+
+
 def binance_klines(spot: bool = False, limit: int = 120):
     host = "api.binance.com/api/v3/klines" if spot else "fapi.binance.com/fapi/v1/klines"
     return _binance(host, {"symbol": "BTCUSDT", "interval": "1m", "limit": limit})
@@ -61,6 +107,10 @@ def binance_klines(spot: bool = False, limit: int = 120):
 
 def bybit_klines(limit: int = 120):
     return _bybit("kline", {"category": "linear", "symbol": "BTCUSDT", "interval": "1", "limit": min(limit, 1000)})
+
+
+def _bybit(path: str, params: dict):
+    return _get(f"https://api.bybit.com/v5/market/{path}?{urlencode(params)}")
 
 
 def closed_binance(rows):
