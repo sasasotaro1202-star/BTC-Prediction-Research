@@ -83,9 +83,6 @@ def calibrate_probs(probs,h):
 def fuse(base,struct,m,data_complete,horizon):
     p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap']))
     base_w=load_blend_weight(horizon)
-    # Structural microstructure signals are already represented inside `struct`.
-    # Do not add a second post-fusion directional nudge: that double-counts the
-    # same current information and can invalidate the holdout-calibrated blend.
     w=(base_w+.08*agree) if data_complete else min(base_w,.15)
     w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum()
     return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
@@ -135,7 +132,7 @@ def main():
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
     if not data_complete:warnings.append('partial market-data coverage; confidence reduced')
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
     insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
