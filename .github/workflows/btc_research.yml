@@ -51,6 +51,7 @@ jobs:
         run: python src/production_artifact_audit.py
       - name: Validate model and provenance artifacts
         run: |
+          set -euo pipefail
           python - <<'PY'
           from pathlib import Path
           import json
@@ -78,7 +79,17 @@ jobs:
                   raise SystemExit('invalid production artifact fingerprint')
           print('production model and provenance artifact validation: OK')
           PY
-      - name: Commit adopted model and provenance state with retry
+      - name: Upload BTC research state before commit
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-research-state
+          path: |
+            data/predictions.db
+            data/historical_research/production_artifact_audit.json
+            models/*.json
+            models/*.joblib
+          retention-days: 14
+      - name: Commit adopted model and provenance state with conflict-safe retry
         shell: bash
         run: |
           set -euo pipefail
@@ -90,26 +101,17 @@ jobs:
             exit 0
           fi
           git commit -m 'Update BTC model research state'
-          for attempt in 1 2 3; do
-            if git push; then
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
               exit 0
             fi
             echo "git push attempt ${attempt} failed; rebuilding on origin/main"
-            git fetch origin main
+            git fetch --prune origin main
             git rebase --abort 2>/dev/null || true
             git reset --hard origin/main
             git add data/predictions.db data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
           done
-          echo 'git push failed after 3 attempts'
+          echo 'git push failed after 5 attempts'
           exit 1
-      - uses: actions/upload-artifact@v6
-        with:
-          name: btc-research-state
-          path: |
-            data/predictions.db
-            data/historical_research/production_artifact_audit.json
-            models/*.json
-            models/*.joblib
-          retention-days: 14
