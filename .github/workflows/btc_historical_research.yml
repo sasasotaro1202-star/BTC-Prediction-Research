@@ -13,7 +13,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-state-main
+  # Historical research writes only historical-research artifacts. Keep it
+  # independent from the 5-minute live prediction writer so a long OOS run
+  # cannot starve production predictions.
+  group: btc-historical-research
   cancel-in-progress: false
 
 permissions:
