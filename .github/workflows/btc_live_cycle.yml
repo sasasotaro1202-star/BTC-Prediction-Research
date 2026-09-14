@@ -27,6 +27,24 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Restore BTC prediction database from repository archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='data/predictions.db.gz'
+          db='data/predictions.db'
+          if [ -s "$archive" ]; then
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored predictions.db from compressed repository state.')
+          PY
+          elif [ -s "$db" ]; then
+            echo 'Legacy uncompressed predictions.db detected; it will be migrated after validation.'
+          else
+            echo 'No existing prediction database found; workflow may initialize it.'
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -89,6 +107,7 @@ jobs:
           from datetime import datetime,timezone
           p=Path('data/predictions.db')
           if not p.exists() or p.stat().st_size == 0: raise SystemExit('predictions.db missing')
+          if p.stat().st_size >= 95 * 1024 * 1024: raise SystemExit(f'predictions.db is too large to safely commit uncompressed: {p.stat().st_size} bytes')
           with sqlite3.connect(p) as con:
               n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
               if n <= 0: raise SystemExit('predictions table is empty')
@@ -140,9 +159,28 @@ jobs:
           name: btc-predictions-db
           path: |
             data/predictions.db
+            data/predictions.db.gz
             data/historical_research/**
             models/**
           retention-days: 14
+      - name: Compress validated BTC prediction database for repository storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import compress_db, sha256_file
+          db=Path('data/predictions.db')
+          archive=Path('data/predictions.db.gz')
+          info=compress_db(db, archive)
+          print(f'Compressed BTC state: {info["bytes"]} bytes, sha256={info["sha256"]}')
+          if info['bytes'] >= 95 * 1024 * 1024:
+              raise SystemExit('compressed BTC state is still too large for safe GitHub storage')
+          if archive.stat().st_size >= db.stat().st_size:
+              raise SystemExit('BTC state compression produced no size reduction')
+          db.unlink()
+          print(f'Repository state migration ready: {db} removed; {archive} retained.')
+          PY
       - name: Check repository diff before commit
         run: git diff --check
       - name: Commit BTC research state with conflict-safe merge retry
@@ -151,22 +189,40 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db data/historical_research 2>/dev/null || true
-          if [ -d models ]; then git add models; fi
+          git add data/predictions.db.gz data/historical_research 2>/dev/null || true
+          git rm --cached data/predictions.db 2>/dev/null || true
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
-            cp data/predictions.db /tmp/btc_local_predictions.db
+            cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             git rebase --abort 2>/dev/null || true
             git fetch --prune origin main
             git reset --hard origin/main
-            python scripts/merge_prediction_state.py /tmp/btc_local_predictions.db data/predictions.db
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db, compress_db
+          import shutil
+          archive=Path('data/predictions.db.gz')
+          if archive.exists():
+              restore_db(archive, Path('data/predictions.db'))
+          else:
+              Path('data').mkdir(exist_ok=True)
+          restore_db(Path('/tmp/btc_local_predictions.db.gz'), Path('/tmp/btc_local_predictions.db'))
+          if Path('data/predictions.db').exists():
+              # Merge the local prediction state into the origin state, then re-archive.
+              import subprocess
+              subprocess.run(['python','scripts/merge_prediction_state.py','/tmp/btc_local_predictions.db','data/predictions.db'],check=True)
+          else:
+              shutil.copy2('/tmp/btc_local_predictions.db','data/predictions.db')
+          compress_db(Path('data/predictions.db'), archive)
+          Path('data/predictions.db').unlink()
+          PY
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
-            git add data/predictions.db data/historical_research 2>/dev/null || true
-            if [ -d models ]; then git add models; fi
+            git add data/predictions.db.gz data/historical_research 2>/dev/null || true
+            git rm --cached data/predictions.db 2>/dev/null || true
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
           done
