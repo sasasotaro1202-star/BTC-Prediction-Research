@@ -59,10 +59,22 @@ def model_probs(model,f):
         for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
         s=sum(out.values()); return {k:v/s for k,v in out.items()}
     except Exception:return None
+def regver(h):
+    try:
+        with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
+        return r[0] if r else 'none'
+    except Exception:return 'none'
 def load_temperature(h):
     p=Path(DB).parent/'models'/f'{h}.calibration.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
+        # Calibration is stateful model metadata. Never apply a temperature fitted
+        # to a different production generation, and never reuse stale calibration
+        # after the current generation has insufficient settled history.
+        calibrated_version=str(obj.get('model_version',''))
+        current_version=regver(h)
+        if calibrated_version != current_version:
+            return 1.0
         if not (0.5<=t<=3.0) or n<300:return 1.0
         return t
     except Exception:return 1.0
@@ -86,11 +98,6 @@ def fuse(base,struct,m,data_complete,horizon):
     w=(base_w+.08*agree) if data_complete else min(base_w,.15)
     w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum()
     return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
-def regver(h):
-    try:
-        with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
-        return r[0] if r else 'none'
-    except Exception:return 'none'
 def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
