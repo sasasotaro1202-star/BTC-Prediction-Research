@@ -131,20 +131,22 @@ def fetch_binance(target: int):
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 
-def _latest_contiguous_suffix(rows, interval_ms: int = 60_000):
-    """Keep only the latest gap-free 1m window.
+def _latest_contiguous_suffix(rows, min_len: int = MIN_BOOTSTRAP_ROWS):
+    """Keep only the latest fully contiguous 1-minute suffix.
 
-    A missing minute must never be compressed into a shorter elapsed interval:
-    doing so silently corrupts returns, volatility, volume ratios and labels.
+    Historical APIs can return valid candles with internal gaps. Using such a
+    sequence as if every row were one minute apart silently distorts returns,
+    volatility, rolling features and future-horizon labels. Refuse to bridge
+    gaps rather than fabricating continuity.
     """
-    rows = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0])
     if not rows:
         return []
-    end = len(rows)
-    for i in range(len(rows) - 1, 0, -1):
-        if int(rows[i][0]) - int(rows[i - 1][0]) != interval_ms:
-            return rows[i:end]
-    return rows
+    ordered = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0])
+    suffix_start = len(ordered) - 1
+    while suffix_start > 0 and ordered[suffix_start][0] - ordered[suffix_start - 1][0] == 60_000:
+        suffix_start -= 1
+    suffix = ordered[suffix_start:]
+    return suffix if len(suffix) >= min_len else suffix
 
 
 def fetch_history(target: int = TARGET_ROWS):
@@ -152,8 +154,8 @@ def fetch_history(target: int = TARGET_ROWS):
 
     Binance Vision is the primary deep-history source. Its loader walks from
     monthly archives to completed daily archives and the S3 mirror, records
-    failures, deduplicates timestamps, and refuses unclosed candles. REST
-    sources remain fallback options; a short sample never silently satisfies
+    failures, deduplicates timestamps, and refuses unclosed candles.
+    REST sources remain fallback options; a short sample never silently satisfies
     the bootstrap minimum.
     """
     errors = []
@@ -166,8 +168,7 @@ def fetch_history(target: int = TARGET_ROWS):
     )
     for name, loader in sources:
         try:
-            raw_rows = loader()
-            rows = _latest_contiguous_suffix(raw_rows)
+            rows = _latest_contiguous_suffix(loader(), min_len=MIN_BOOTSTRAP_ROWS)
             if len(rows) > len(best):
                 best, best_name = rows, name
             if len(rows) >= target:
