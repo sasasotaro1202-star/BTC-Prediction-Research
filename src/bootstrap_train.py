@@ -131,6 +131,22 @@ def fetch_binance(target: int):
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 
+def _latest_contiguous_suffix(rows, interval_ms: int = 60_000):
+    """Keep only the latest gap-free 1m window.
+
+    A missing minute must never be compressed into a shorter elapsed interval:
+    doing so silently corrupts returns, volatility, volume ratios and labels.
+    """
+    rows = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0])
+    if not rows:
+        return []
+    end = len(rows)
+    for i in range(len(rows) - 1, 0, -1):
+        if int(rows[i][0]) - int(rows[i - 1][0]) != interval_ms:
+            return rows[i:end]
+    return rows
+
+
 def fetch_history(target: int = TARGET_ROWS):
     """Return the best available free historical BTC 1m source.
 
@@ -150,12 +166,13 @@ def fetch_history(target: int = TARGET_ROWS):
     )
     for name, loader in sources:
         try:
-            rows = loader()
+            raw_rows = loader()
+            rows = _latest_contiguous_suffix(raw_rows)
             if len(rows) > len(best):
                 best, best_name = rows, name
             if len(rows) >= target:
                 return rows, name
-            errors.append(f"{name}:only_{len(rows)}_rows")
+            errors.append(f"{name}:only_{len(rows)}_contiguous_rows")
         except Exception as exc:
             errors.append(f"{name}:{type(exc).__name__}:{exc}")
     if best:
