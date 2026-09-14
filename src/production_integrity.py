@@ -30,6 +30,13 @@ FEATURES = [
 DEFAULT_MAX_AGE_SECONDS = 900
 
 
+def require_fresh_prediction() -> bool:
+    raw = os.getenv("BTC_INTEGRITY_REQUIRE_FRESH", "true").strip().lower()
+    if raw not in {"true", "false"}:
+        fail(f"invalid BTC_INTEGRITY_REQUIRE_FRESH: {raw!r}")
+    return raw == "true"
+
+
 def max_prediction_age_seconds() -> float:
     raw = os.getenv("BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS", str(DEFAULT_MAX_AGE_SECONDS))
     try:
@@ -83,7 +90,8 @@ def check_db() -> dict:
         created = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
         age = (datetime.now(timezone.utc) - created).total_seconds()
         max_age = max_prediction_age_seconds()
-        if age < -60 or age > max_age:
+        fresh_required = require_fresh_prediction()
+        if fresh_required and (age < -60 or age > max_age):
             fail(f"latest prediction is stale or future-dated: {age:.0f}s (max {max_age:.0f}s)")
         if not math.isfinite(float(row[1])) or float(row[1]) <= 0:
             fail("latest base price invalid")
@@ -97,7 +105,7 @@ def check_db() -> dict:
             fail("latest prediction lacks data_quality metadata")
         if not row[8]:
             fail("latest prediction lacks model_version")
-    return {"latest_age_seconds": int(age), "prediction_ok": True, "max_age_seconds": max_age}
+    return {"latest_age_seconds": int(age), "prediction_ok": True, "freshness_required": fresh_required, "max_age_seconds": max_age}
 
 
 def main() -> int:
