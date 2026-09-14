@@ -92,5 +92,6 @@ def patched_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
 
 hr.fetch_klines_chunk=patched_chunk
 hr.req_json=runner.resilient_req_json
+hr.spot_proxy=False
 
 if __name__=="__main__":hr.main()
