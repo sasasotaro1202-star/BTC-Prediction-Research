@@ -18,8 +18,10 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
-  BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '3600'
+  # A green integrity run must prove that the latest production prediction is
+  # fresh. The live cycle already enforces the same production freshness SLA.
+  BTC_INTEGRITY_REQUIRE_FRESH: 'true'
+  BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '900'
 
 jobs:
   integrity:
