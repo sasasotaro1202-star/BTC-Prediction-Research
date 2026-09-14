@@ -51,13 +51,7 @@ def kraken_rows(limit: int = 720):
 
 
 def binance_archive_month(month: datetime):
-    """Read Binance's static monthly UM-futures 1m archive.
-
-    This is intentionally independent of fapi.binance.com. GitHub-hosted
-    runners can receive HTTP 451 from the Futures REST API while the public
-    static archive remains available. The archive is used only for historical
-    bootstrap, never as a substitute for fresh live inference data.
-    """
+    """Read Binance's static monthly UM-futures 1m archive."""
     name = f"BTCUSDT-1m-{month.year:04d}-{month.month:02d}.zip"
     url = f"https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/{name}"
     req = Request(url, headers={"User-Agent": UA})
@@ -125,12 +119,7 @@ def closed_bybit(payload):
 
 
 def _latest_contiguous_suffix(rows, minimum: int = 40):
-    """Return the newest contiguous 1-minute suffix, or [] if too short.
-
-    A gap must never be silently compressed into a shorter elapsed-time return;
-    doing so would make 3m/5m/10m features use the wrong horizon. We therefore
-    keep only the latest suffix whose open timestamps advance exactly 60 seconds.
-    """
+    """Return the newest contiguous 1-minute suffix, or [] if too short."""
     rows = sorted(rows, key=lambda r: int(r[0]))
     if not rows:
         return []
@@ -162,22 +151,20 @@ def cache_rows(limit=120):
 
 def resilient_1m_series(limit: int = 120):
     status = {}
-    # Prefer Bybit for GitHub-hosted execution because Binance Futures may return
-    # HTTP 451 to cloud-hosted IP ranges. Binance remains a cross-check when available.
     try:
-        by = _latest_contiguous_suffix(closed_bybit(bybit_klines(limit)), min(40, limit))
+        by = _latest_contiguous_suffix(closed_bybit(bybit_klines(limit)), 40)
         status["bybit_futures"] = "ok" if by else "non_contiguous_or_insufficient"
     except Exception as e:
         by = []
         status["bybit_futures"] = f"error:{type(e).__name__}"
     try:
-        fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), min(40, limit))
+        fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), 40)
         status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
     except Exception as e:
         fut = []
         status["binance_futures"] = f"error:{type(e).__name__}"
     try:
-        spot = _latest_contiguous_suffix(closed_binance(binance_klines(True, limit)), min(40, limit))
+        spot = _latest_contiguous_suffix(closed_binance(binance_klines(True, limit)), 40)
         status["binance_spot"] = "ok" if spot else "non_contiguous_or_insufficient"
     except Exception as e:
         spot = []
@@ -240,8 +227,45 @@ def binance_oi():
 
 
 def binance_taker():
-    return _binance("futures/coinm", {"symbol": "BTCUSD_PERP", "limit": 1})
+    return _binance("futures/data/takerBuySellVol", {"symbol": "BTCUSDT", "period": "5m", "limit": 1})
 
 
 def bybit_funding():
+    return _bybit("funding/history", {"category": "linear", "symbol": "BTCUSDT", "limit": 1})
+
+
+def bybit_mark_price():
     return _bybit("tickers", {"category": "linear", "symbol": "BTCUSDT"})
+
+
+def target_close_binance(target_iso: str):
+    target = datetime.fromisoformat(target_iso.replace("Z", "+00:00"))
+    ts = int(target.timestamp() * 1000)
+    start = ts - 60000
+    try:
+        rows = _binance("fapi.binance.com/fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1m", "startTime": start, "endTime": ts, "limit": 2})
+        for row in rows:
+            if int(row[0]) == start:
+                return float(row[4]), "binance"
+    except Exception:
+        pass
+    try:
+        payload = _bybit("kline", {"category": "linear", "symbol": "BTCUSDT", "interval": "1", "start": start, "end": ts, "limit": 2})
+        for row in payload.get("result", {}).get("list", []):
+            if int(row[0]) == start:
+                return float(row[4]), "bybit"
+    except Exception:
+        pass
+    try:
+        for row in coinbase_rows(10):
+            if row[0] == start:
+                return float(row[4]), "coinbase"
+    except Exception:
+        pass
+    try:
+        for row in kraken_rows(10):
+            if row[0] == start:
+                return float(row[4]), "kraken"
+    except Exception:
+        pass
+    return None, "unavailable"
