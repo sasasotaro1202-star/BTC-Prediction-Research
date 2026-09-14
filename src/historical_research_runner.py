@@ -190,7 +190,11 @@ def resilient_req_json(url,timeout=30,retries=5):
             archived=_archive_funding_fallback(url)
             if archived:return archived
             print("[WARN] No completed Binance funding archive covers this window; trying free Bybit funding-history fallback.")
-            return _bybit_funding_fallback(url)
+            try:
+                return _bybit_funding_fallback(url)
+            except Exception as fallback_exc:
+                print(f"[WARN] Bybit funding fallback unavailable; continuing without new funding observations: {fallback_exc}")
+                return []
         if endpoint==CORE_ENDPOINT:return _archive_fallback(url,optional=False)
         if endpoint in OPTIONAL_ENDPOINTS:return _archive_fallback(url,optional=True)
         raise
