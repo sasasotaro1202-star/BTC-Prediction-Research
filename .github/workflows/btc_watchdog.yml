@@ -29,13 +29,8 @@ jobs:
               echo "WARN: unable to inspect ${workflow}; continuing"
               continue
             }
-
-            # Always inspect the newest run, never an older completed run.
-            # This prevents stale failures from being retried while a newer
-            # run is queued or already executing.
             latest=$(printf '%s' "$response" | jq -c '.workflow_runs[0] // empty')
             [ -n "$latest" ] || { echo "No run found for ${workflow}"; continue; }
-
             status=$(printf '%s' "$latest" | jq -r '.status // ""')
             conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // ""')
             run_id=$(printf '%s' "$latest" | jq -r '.id // 0')
@@ -44,21 +39,14 @@ jobs:
             updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
             age=$((now - updated_epoch))
             echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
-
-            # Never interfere with a run that is still queued/in progress.
             if [ "$status" != "completed" ]; then
               echo "Latest run is not completed; no retry for ${workflow}"
               continue
             fi
-
-            # Recover the classes of terminal failures most likely to be
-            # transient infrastructure interruptions. Do not retry a fresh
-            # failure immediately; allow logs/artifacts to settle first.
             retryable=false
             case "$conclusion" in
               failure|cancelled|timed_out) retryable=true ;;
             esac
-
             if [ "$retryable" = true ] && [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
               echo "Retrying eligible failed jobs for latest ${workflow} run ${run_id}"
               if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
