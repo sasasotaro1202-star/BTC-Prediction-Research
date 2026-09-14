@@ -68,8 +68,6 @@ def temperature_scale(rows):
             best=loss; best_t=float(t)
     raw_eval=_logloss_at_temperature(eval_logits,eval_y,1.0)
     scaled_eval=_logloss_at_temperature(eval_logits,eval_y,best_t)
-    # Only publish a temperature if it improves genuinely unseen data.
-    # A tiny tolerance prevents oscillation when the difference is noise.
     if scaled_eval >= raw_eval-0.001:
         return 1.0,best,raw_eval
     return best_t,best,scaled_eval
@@ -98,13 +96,14 @@ def _current_registry_version(con, horizon):
 
 
 def _settled_rows(con, horizon, actual_col, model_version):
-    # Calibration must not pool incompatible model generations.  Predictions store
+    # Calibration must not pool incompatible model generations. Predictions store
     # both horizon registry versions in one field, so match the relevant prefix.
-    if not model_version:
+    if horizon not in ('5m', '10m') or not model_version:
         return []
+    prob_suffix=horizon  # 5m -> p_up_5m; never append another 'm'.
     prefix=f'{horizon}:{model_version}|%'
     return con.execute(
-        f'''SELECT p_up_{horizon}m,p_down_{horizon}m,p_flat_{horizon}m,{actual_col}
+        f'''SELECT p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},{actual_col}
             FROM predictions
             WHERE {actual_col} IS NOT NULL
               AND model_version LIKE ?
@@ -120,11 +119,11 @@ def calibration():
         actual_col=f'actual_direction_{horizon}m'
         with sqlite3.connect(DB) as con:
             model_version=_current_registry_version(con,f'{horizon}m')
-            rows=_settled_rows(con,horizon,actual_col,model_version)
+            rows=_settled_rows(con,f'{horizon}m',actual_col,model_version)
             if not rows:
                 print(horizon,'m: no settled predictions for current model generation',model_version)
                 continue
-            acc,ll,brier,ece=multiclass_metrics(rows,horizon)
+            acc,ll,brier,ece=multiclass_metrics(rows,f'{horizon}m')
             con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),f'{horizon}m',model_version,len(rows),acc,ll,brier,ece))
         temperature,fit_ll,eval_ll=temperature_scale(rows)
         save_temperature(f'{horizon}m',temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION,model_version)
