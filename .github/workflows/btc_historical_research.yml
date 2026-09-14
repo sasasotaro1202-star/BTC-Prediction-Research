@@ -7,15 +7,13 @@ on:
     paths:
       - 'src/historical_research.py'
       - 'src/historical_research_runner.py'
+      - 'scripts/historical_research_spot_fallback.py'
       - '.github/workflows/btc_historical_research.yml'
       - 'requirements.txt'
       - 'scripts/binance_archive_smoke.py'
   workflow_dispatch:
 
 concurrency:
-  # Historical research writes only historical-research artifacts. Keep it
-  # independent from the 5-minute live prediction writer so a long OOS run
-  # cannot starve production predictions.
   group: btc-historical-research
   cancel-in-progress: false
 
@@ -42,9 +40,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/btc_prediction_archive_cache
-          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-${{ github.run_number }}
+          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}-${{ github.run_number }}
           restore-keys: |
-            btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-
+            btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}-
             btc-archive-${{ runner.os }}-
       - name: Install dependencies with retry
         shell: bash
@@ -66,7 +64,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "=== historical research attempt ${attempt}/3 ==="
             set +e
-            python src/historical_research_runner.py
+            python scripts/historical_research_spot_fallback.py
             status=$?
             set -e
             if [ "${status}" -eq 0 ]; then exit 0; fi
