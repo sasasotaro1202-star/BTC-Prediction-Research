@@ -6,8 +6,8 @@ The live predictor has two probability sources:
 
 The overlay is useful only if it improves unseen settled predictions. This
 module therefore learns only a single low-dimensional blend weight from past
-settled predictions, using a chronological fit/holdout split. If there is no
-clear holdout improvement, the production-model-heavy default is retained.
+settled predictions, using a chronological fit/holdout split. It never pools
+incompatible production-model generations.
 """
 from __future__ import annotations
 
@@ -46,36 +46,59 @@ def _brier(y, p):
 
 
 def _actual_column(horizon: str) -> str:
-    """Return the canonical predictions-table actual-direction column."""
-    # horizon is already the storage suffix (e.g. "5m"), so do not append
-    # another "m". Keeping this centralized prevents 5mm/10mm schema drift.
     if horizon not in ("5m", "10m"):
         raise ValueError(f"unsupported horizon: {horizon}")
     return f"actual_direction_{horizon}"
 
 
+def _current_registry_version(con, horizon: str):
+    row = con.execute(
+        "SELECT production_version FROM model_registry WHERE horizon=?",
+        (horizon,),
+    ).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
 def _rows(horizon: str):
+    """Load settled rows for the currently registered production generation only."""
     actual = _actual_column(horizon)
+    prob_suffix = horizon  # e.g. 5m -> p_up_5m; do not append another 'm'.
     rows = []
     with sqlite3.connect(DB) as con:
+        model_version = _current_registry_version(con, horizon)
+        if not model_version:
+            return rows
+        # Predictions store both horizon versions as "5m:<version>|10m:<version>".
+        prefix = f"{horizon}:{model_version}|%"
         raw = con.execute(
-            f"SELECT created_at_utc,scenario_json,{actual} "
-            f"FROM predictions WHERE {actual} IS NOT NULL ORDER BY created_at_utc"
+            f"""SELECT created_at_utc,scenario_json,
+                       p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},
+                       {actual}
+                FROM predictions
+                WHERE {actual} IS NOT NULL
+                  AND model_version LIKE ?
+                  AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
+                ORDER BY created_at_utc""",
+            (prefix,),
         ).fetchall()
-    for created, scenario_text, y in raw:
+
+    for created, scenario_text, up, down, flat, y in raw:
         if y not in CLASSES:
             continue
         try:
-            scenario = json.loads(scenario_text or "{}")
-            comp = scenario.get("components", {})
+            comp = json.loads(scenario_text or "{}").get("components", {})
             model = comp.get(f"model_raw_{horizon}") or comp.get("model_raw")
             structural = comp.get(f"structural_{horizon}") or comp.get("structural")
             if not isinstance(model, dict) or not isinstance(structural, dict):
                 continue
             mp = [float(model[c]) for c in CLASSES]
             sp = [float(structural[c]) for c in CLASSES]
-            if not all(math.isfinite(x) for x in mp + sp):
+            stored = [float(up), float(down), float(flat)]
+            if not all(math.isfinite(x) for x in mp + sp + stored):
                 continue
+            # The stored probabilities are retained for auditability; calibration
+            # operates on the raw model/structural components to avoid re-calibrating
+            # an already-fused probability as if it were an independent component.
             rows.append((created, mp, sp, y))
         except Exception:
             continue
