@@ -159,7 +159,9 @@ def compare_h(h):
         future=next((m for m in MILESTONES if not checkpoint_done(h,m)),None); return {'status':'collecting','n':n,'next_milestone':future}
     rows=rows[:milestone]
     if len(rows)<MIN_TRAIN+MIN_OOS:
-        mark_checkpoint(h,milestone,'insufficient_oos'); return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
+        # Do not checkpoint an unmet milestone: the dataset is still growing and
+        # this exact milestone must be evaluated once enough settled OOS exists.
+        return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
     oos_rows=rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
     production=metrics(ys,production_probs); save_metric(h,prod_ver(h),len(oos_rows),production,milestone)
     prod_by_id={r['id']:r for r in oos_rows}
@@ -197,5 +199,3 @@ def compare_h(h):
 
 def compare():
     init_db(); ensure_checkpoint_table(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
-
-if __name__=='__main__': compare()
