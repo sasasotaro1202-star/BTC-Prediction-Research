@@ -1,4 +1,4 @@
-import json, math, sqlite3, shutil
+import json, math, os, sqlite3, shutil, tempfile
 from datetime import datetime, timezone
 import joblib, numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -93,12 +93,61 @@ def train_candidate(rows,h,name,factory,milestone):
     meta={'model_version':name,'horizon':h,'classes':list(model.classes_),'features':FEATURES,'artifact':candidate_path.name,'candidate':True,'milestone':milestone}
     (MODEL_DIR/f'{h}.candidate.m{milestone}.{name}.json').write_text(json.dumps(meta,indent=2),encoding='utf-8'); return meta
 
+def _validate_candidate(candidate,meta):
+    if not candidate.exists() or candidate.stat().st_size == 0:return False
+    try:
+        model=joblib.load(candidate)
+        classes=list(getattr(model,'classes_',[]))
+        if classes != list(meta.get('classes',[])) or classes != CLASSES:return False
+        if list(meta.get('features',[])) != FEATURES:return False
+        probe=np.zeros((1,len(FEATURES)),dtype=float)
+        probs=np.asarray(model.predict_proba(probe),dtype=float)
+        if probs.shape != (1,len(CLASSES)) or not np.isfinite(probs).all():return False
+        if not np.isclose(float(probs.sum()),1.0,atol=1e-6):return False
+        return True
+    except Exception:
+        return False
+
 def adopt_candidate(h,meta,version):
-    candidate=MODEL_DIR/meta['artifact']; production=MODEL_DIR/f'{h}.joblib'
-    if not candidate.exists(): return False
-    shutil.copyfile(candidate,production)
+    candidate=MODEL_DIR/meta['artifact']; production=MODEL_DIR/f'{h}.joblib'; production_meta=MODEL_DIR/f'{h}.json'
+    if not _validate_candidate(candidate,meta): return False
+    MODEL_DIR.mkdir(parents=True,exist_ok=True)
     final={'model_version':version,'horizon':h,'classes':meta['classes'],'features':FEATURES,'artifact':production.name,'candidate':False,'evaluation_milestone':meta['milestone']}
-    (MODEL_DIR/f'{h}.json').write_text(json.dumps(final,indent=2),encoding='utf-8'); return True
+    # Stage both artifacts, then replace as a pair. If metadata publication fails
+    # after the model swap, restore the previous production pair instead of
+    # leaving runtime with a model/metadata mismatch.
+    model_tmp=None; meta_tmp=None; backup_model=None; backup_meta=None
+    try:
+        with tempfile.NamedTemporaryFile(dir=MODEL_DIR,prefix=f'.{h}.model.',suffix='.tmp',delete=False) as f:
+            model_tmp=f.name
+        with tempfile.NamedTemporaryFile(dir=MODEL_DIR,prefix=f'.{h}.meta.',suffix='.tmp',mode='w',encoding='utf-8',delete=False) as f:
+            meta_tmp=f.name; f.write(json.dumps(final,indent=2)); f.flush(); os.fsync(f.fileno())
+        shutil.copyfile(candidate,model_tmp)
+        with open(model_tmp,'rb') as f: os.fsync(f.fileno())
+        if production.exists():
+            backup_model=production.with_suffix(production.suffix+'.bak')
+            shutil.copyfile(production,backup_model)
+        if production_meta.exists():
+            backup_meta=production_meta.with_suffix(production_meta.suffix+'.bak')
+            shutil.copyfile(production_meta,backup_meta)
+        os.replace(model_tmp,production); model_tmp=None
+        os.replace(meta_tmp,production_meta); meta_tmp=None
+        if backup_model: backup_model.unlink(missing_ok=True)
+        if backup_meta: backup_meta.unlink(missing_ok=True)
+        return _validate_candidate(production,final) and json.loads(production_meta.read_text(encoding='utf-8')).get('model_version')==version
+    except Exception:
+        if backup_model and backup_model.exists(): os.replace(backup_model,production)
+        elif production.exists() and not backup_model: production.unlink(missing_ok=True)
+        if backup_meta and backup_meta.exists(): os.replace(backup_meta,production_meta)
+        elif production_meta.exists() and not backup_meta: production_meta.unlink(missing_ok=True)
+        return False
+    finally:
+        if model_tmp:
+            try: os.unlink(model_tmp)
+            except FileNotFoundError: pass
+        if meta_tmp:
+            try: os.unlink(meta_tmp)
+            except FileNotFoundError: pass
 
 def better(c,p):
     return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
@@ -199,3 +248,5 @@ def compare_h(h):
 
 def compare():
     init_db(); ensure_checkpoint_table(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
+
+if __name__ == '__main__': compare()
