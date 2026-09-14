@@ -1,14 +1,13 @@
 """Fail-safe launcher for BTC historical research."""
 from __future__ import annotations
-import csv, hashlib, io, urllib.parse, urllib.request, zipfile
+import csv, hashlib, io, json, urllib.parse, urllib.request, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
 
-USER_AGENT="BTC-Prediction-Research/11.2"
+USER_AGENT="BTC-Prediction-Research/11.3"
 ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaws.com/data.binance.vision")
 ARCHIVE_SAFETY_DAYS=3
-# Raw Binance ZIPs are deliberately kept outside the Git workspace.
 ARCHIVE_CACHE=Path("/tmp/btc_prediction_archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
 CORE_ENDPOINT="klines"; OPTIONAL_ENDPOINTS={"markPriceKlines","premiumIndexKlines"}; FALLBACK_ENDPOINTS={CORE_ENDPOINT,*OPTIONAL_ENDPOINTS}
 RETRYABLE_HTTP={403,429,451,500,502,503,504}
@@ -101,12 +100,34 @@ def _archive_fallback(url,optional=False):
         day=month_end
     dedup={int(r[0]):r for r in rows}; return [dedup[k] for k in sorted(dedup)]
 
+def _bybit_funding_fallback(url):
+    parsed=urllib.parse.urlsplit(url); qs=urllib.parse.parse_qs(parsed.query)
+    symbol=qs.get("symbol",["BTCUSDT"])[0]; start_ms=int(qs.get("startTime",[0])[0]); end_ms=int(qs.get("endTime",[0])[0])
+    if not start_ms or not end_ms: raise RuntimeError("funding fallback requires startTime/endTime")
+    out=[]; cursor_end=end_ms
+    for _ in range(20):
+        q=urllib.parse.urlencode({"category":"linear","symbol":symbol,"startTime":start_ms,"endTime":cursor_end,"limit":200})
+        payload=json.loads(_download(f"https://api.bybit.com/v5/market/funding/history?{q}",30))
+        if payload.get("retCode") not in (0,None): raise RuntimeError(f"Bybit funding API error: {payload.get('retCode')} {payload.get('retMsg')}")
+        batch=payload.get("result",{}).get("list",[]) or []
+        if not batch: break
+        for r in batch:
+            ts=int(r["fundingRateTimestamp"])
+            if start_ms<=ts<end_ms: out.append({"symbol":symbol,"fundingTime":ts,"fundingRate":r["fundingRate"]})
+        oldest=min(int(r["fundingRateTimestamp"]) for r in batch)
+        if oldest<=start_ms or len(batch)<200: break
+        cursor_end=oldest-1
+    dedup={int(r["fundingTime"]):r for r in out}; return [dedup[k] for k in sorted(dedup)]
+
 def resilient_req_json(url,timeout=30,retries=5):
     try:return _ORIGINAL_REQ_JSON(url,timeout=timeout,retries=retries)
     except RuntimeError as exc:
         message=str(exc)
         if "/fapi/v1/" not in url or not any(f"HTTP Error {c}" in message for c in RETRYABLE_HTTP):raise
         endpoint=url.split("/fapi/v1/",1)[1].split("?",1)[0]
+        if endpoint=="fundingRate":
+            print("[WARN] Binance fundingRate unavailable; using free Bybit funding-history fallback.")
+            return _bybit_funding_fallback(url)
         if endpoint==CORE_ENDPOINT:return _archive_fallback(url,optional=False)
         if endpoint in OPTIONAL_ENDPOINTS:return _archive_fallback(url,optional=True)
         raise
