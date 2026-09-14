@@ -96,9 +96,6 @@ def _rows(horizon: str):
             stored = [float(up), float(down), float(flat)]
             if not all(math.isfinite(x) for x in mp + sp + stored):
                 continue
-            # The stored probabilities are retained for auditability; calibration
-            # operates on the raw model/structural components to avoid re-calibrating
-            # an already-fused probability as if it were an independent component.
             rows.append((created, mp, sp, y))
         except Exception:
             continue
@@ -107,9 +104,13 @@ def _rows(horizon: str):
 
 def calibrate(horizon: str):
     rows = _rows(horizon)
+    with sqlite3.connect(DB) as con:
+        model_version = _current_registry_version(con, horizon)
+
     if len(rows) < MIN_ROWS:
         return {
             "horizon": horizon,
+            "model_version": model_version,
             "base_weight": DEFAULT_WEIGHT,
             "n": len(rows),
             "status": "insufficient_history",
@@ -146,6 +147,7 @@ def calibrate(horizon: str):
     final_w = best_w if accepted else DEFAULT_WEIGHT
     return {
         "horizon": horizon,
+        "model_version": model_version,
         "base_weight": float(final_w),
         "n": len(rows),
         "fit_n": len(train),
