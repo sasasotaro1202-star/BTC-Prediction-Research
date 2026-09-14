@@ -13,7 +13,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-historical-research
+  # Historical research also writes shared research state, so it must not race
+  # with the live/research workflows while committing to main.
+  group: btc-state-main
   cancel-in-progress: false
 
 permissions:

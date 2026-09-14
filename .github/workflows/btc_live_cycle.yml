@@ -11,7 +11,9 @@ on:
       - 'models/**'
 
 concurrency:
-  group: btc-live-cycle-main
+  # All BTC state writers share one lock. SQLite/model artifacts are committed to main,
+  # so separate workflow-level locks can otherwise race and create binary rebase conflicts.
+  group: btc-state-main
   cancel-in-progress: false
 
 permissions:
