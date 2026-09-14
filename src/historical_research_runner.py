@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
 
-USER_AGENT="BTC-Prediction-Research/11.4"
+USER_AGENT="BTC-Prediction-Research/11.5"
 ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaws.com/data.binance.vision")
 ARCHIVE_SAFETY_DAYS=3
 ARCHIVE_CACHE=Path("/tmp/btc_prediction_archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
@@ -25,11 +25,8 @@ def _archive_path(symbol,interval,endpoint,day,monthly):
 def _candidate_urls(symbol,interval,endpoint,day,monthly):
     p=_archive_path(symbol,interval,endpoint,day,monthly); return [f"{b}/{p}" for b in ARCHIVE_BASES]
 
-def _funding_candidate_urls(symbol,day,monthly):
-    if monthly:
-        stamp=day.strftime("%Y-%m"); p=f"data/futures/um/monthly/fundingRate/{symbol}/{symbol}-fundingRate-{stamp}.zip"
-    else:
-        stamp=day.isoformat(); p=f"data/futures/um/daily/fundingRate/{symbol}/{symbol}-fundingRate-{stamp}.zip"
+def _funding_candidate_urls(symbol,day):
+    stamp=day.strftime("%Y-%m"); p=f"data/futures/um/monthly/fundingRate/{symbol}/{symbol}-fundingRate-{stamp}.zip"
     return [f"{b}/{p}" for b in ARCHIVE_BASES]
 
 def _cache_path(url):return ARCHIVE_CACHE/(hashlib.sha256(url.encode()).hexdigest()+".zip")
@@ -81,8 +78,7 @@ def _funding_zip_rows(urls,start_ms,end_ms):
         if not names:return []
         with zf.open(names[0]) as fh:
             text=io.TextIOWrapper(fh,encoding="utf-8",newline="")
-            reader=csv.reader(text)
-            header=None
+            reader=csv.reader(text); header=None
             for raw in reader:
                 if not raw:continue
                 lowered=[str(x).strip().lower() for x in raw]
@@ -94,19 +90,17 @@ def _funding_zip_rows(urls,start_ms,end_ms):
                             for n in names:
                                 if n in header:return raw[header.index(n)]
                             return None
-                        ts_raw=col(["fundingtime","funding_time","calc_time","timestamp"])
-                        rate_raw=col(["last_funding_rate","fundingrate","funding_rate"])
+                        ts_raw=col(["fundingtime","funding_time","calc_time","timestamp"]); rate_raw=col(["last_funding_rate","fundingrate","funding_rate"])
                         if ts_raw is None or rate_raw is None:continue
                         ts=float(ts_raw)
-                        if ts < 10_000_000_000: ts*=1000
+                        if ts<10_000_000_000:ts*=1000
                         ts=int(ts)
-                        if start_ms<=ts<end_ms:
-                            rows.append({"symbol":"BTCUSDT","fundingTime":ts,"fundingRate":str(rate_raw)})
+                        if start_ms<=ts<end_ms:rows.append({"symbol":"BTCUSDT","fundingTime":ts,"fundingRate":str(rate_raw)})
                     except (ValueError,TypeError,IndexError):continue
                 else:
                     try:
                         ts=float(raw[0]); rate=raw[-1]
-                        if ts < 10_000_000_000: ts*=1000
+                        if ts<10_000_000_000:ts*=1000
                         ts=int(ts)
                         if start_ms<=ts<end_ms:rows.append({"symbol":"BTCUSDT","fundingTime":ts,"fundingRate":str(rate)})
                     except (ValueError,TypeError,IndexError):continue
@@ -117,9 +111,7 @@ def _safe_end():
 
 def _archive_fallback(url,optional=False):
     parsed=urllib.parse.urlsplit(url); qs=urllib.parse.parse_qs(parsed.query)
-    symbol=qs.get("symbol",[None])[0]; interval=qs.get("interval",["1m"])[0]
-    start_ms=int(qs.get("startTime",[0])[0]); requested_end_ms=int(qs.get("endTime",[0])[0])
-    endpoint=parsed.path.split("/fapi/v1/",1)[-1]
+    symbol=qs.get("symbol",[None])[0]; interval=qs.get("interval",["1m"])[0]; start_ms=int(qs.get("startTime",[0])[0]); requested_end_ms=int(qs.get("endTime",[0])[0]); endpoint=parsed.path.split("/fapi/v1/",1)[-1]
     if not symbol or not start_ms or not requested_end_ms or endpoint not in FALLBACK_ENDPOINTS:
         if optional:return []
         raise RuntimeError("invalid archive fallback request")
@@ -131,8 +123,7 @@ def _archive_fallback(url,optional=False):
         month_start=day.replace(day=1); month_end=(month_start+timedelta(days=32)).replace(day=1)
         month_a=max(start_ms,int(datetime.combine(month_start,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)); month_b=min(end_ms,int(datetime.combine(month_end,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000))
         if month_end<=current_month:
-            try:
-                rows.extend(_zip_rows(_candidate_urls(symbol,interval,endpoint,month_start,True),month_a,month_b)); day=month_end; continue
+            try:rows.extend(_zip_rows(_candidate_urls(symbol,interval,endpoint,month_start,True),month_a,month_b)); day=month_end; continue
             except Exception as exc:print(f"[WARN] monthly archive unavailable: {symbol} {endpoint} {month_start}: {exc}")
         d=day; daily_end=min(end_day,month_end-timedelta(days=1))
         while d<=daily_end:
@@ -146,45 +137,45 @@ def _archive_fallback(url,optional=False):
     dedup={int(r[0]):r for r in rows}; return [dedup[k] for k in sorted(dedup)]
 
 def _archive_funding_fallback(url):
+    """Use completed monthly Binance Vision fundingRate archives only.
+
+    Binance publishes fundingRate as monthly archives. The current month is
+    deliberately treated as unavailable; returning the completed history lets
+    the research panel carry forward the last observed funding event instead
+    of inventing current-month data or failing the entire research run.
+    """
     parsed=urllib.parse.urlsplit(url); qs=urllib.parse.parse_qs(parsed.query)
     symbol=qs.get("symbol",["BTCUSDT"])[0]; start_ms=int(qs.get("startTime",[0])[0]); requested_end_ms=int(qs.get("endTime",[0])[0])
-    if not start_ms or not requested_end_ms: raise RuntimeError("funding archive fallback requires startTime/endTime")
+    if not start_ms or not requested_end_ms:raise RuntimeError("funding archive fallback requires startTime/endTime")
     end_ms=min(requested_end_ms,_safe_end())
     if start_ms>=end_ms:return []
     start_day=datetime.fromtimestamp(start_ms/1000,timezone.utc).date(); end_day=datetime.fromtimestamp((end_ms-1)/1000,timezone.utc).date(); current_month=datetime.now(timezone.utc).date().replace(day=1)
-    out=[]; day=start_day
-    while day<=end_day:
-        month_start=day.replace(day=1); month_end=(month_start+timedelta(days=32)).replace(day=1)
-        a=max(start_ms,int(datetime.combine(month_start,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)); b=min(end_ms,int(datetime.combine(month_end,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000))
-        if month_end<=current_month:
-            try:
-                out.extend(_funding_zip_rows(_funding_candidate_urls(symbol,month_start,True),a,b)); day=month_end; continue
-            except Exception as exc:print(f"[WARN] monthly funding archive unavailable: {symbol} {month_start}: {exc}")
-        d=day; daily_end=min(end_day,month_end-timedelta(days=1))
-        while d<=daily_end:
-            da=max(start_ms,int(datetime.combine(d,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)); db=min(end_ms,int(datetime.combine(d+timedelta(days=1),datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000))
-            try:out.extend(_funding_zip_rows(_funding_candidate_urls(symbol,d,False),da,db))
-            except Exception as exc:raise RuntimeError(f"no verified Binance funding archive for {symbol} {d}: {exc}") from exc
-            d+=timedelta(days=1)
-        day=month_end
+    out=[]; month=start_day.replace(day=1)
+    while month<=end_day:
+        month_end=(month+timedelta(days=32)).replace(day=1)
+        if month>=current_month:
+            print(f"[WARN] Binance Vision fundingRate current-month archive not published; no new funding observations for {month}.")
+            month=month_end; continue
+        a=max(start_ms,int(datetime.combine(month,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)); b=min(end_ms,int(datetime.combine(month_end,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000))
+        try:out.extend(_funding_zip_rows(_funding_candidate_urls(symbol,month),a,b))
+        except Exception as exc:print(f"[WARN] monthly funding archive unavailable: {symbol} {month}: {exc}")
+        month=month_end
     dedup={int(r["fundingTime"]):r for r in out}; return [dedup[k] for k in sorted(dedup)]
 
 def _bybit_funding_fallback(url):
-    parsed=urllib.parse.urlsplit(url); qs=urllib.parse.parse_qs(parsed.query)
-    symbol=qs.get("symbol",["BTCUSDT"])[0]; start_ms=int(qs.get("startTime",[0])[0]); end_ms=int(qs.get("endTime",[0])[0])
-    if not start_ms or not end_ms: raise RuntimeError("funding fallback requires startTime/endTime")
+    parsed=urllib.parse.urlsplit(url); qs=urllib.parse.parse_qs(parsed.query); symbol=qs.get("symbol",["BTCUSDT"])[0]; start_ms=int(qs.get("startTime",[0])[0]); end_ms=int(qs.get("endTime",[0])[0])
+    if not start_ms or not end_ms:raise RuntimeError("funding fallback requires startTime/endTime")
     out=[]; cursor_end=end_ms
     for _ in range(20):
-        q=urllib.parse.urlencode({"category":"linear","symbol":symbol,"startTime":start_ms,"endTime":cursor_end,"limit":200})
-        payload=json.loads(_download(f"https://api.bybit.com/v5/market/funding/history?{q}",30))
-        if payload.get("retCode") not in (0,None): raise RuntimeError(f"Bybit funding API error: {payload.get('retCode')} {payload.get('retMsg')}")
+        q=urllib.parse.urlencode({"category":"linear","symbol":symbol,"startTime":start_ms,"endTime":cursor_end,"limit":200}); payload=json.loads(_download(f"https://api.bybit.com/v5/market/funding/history?{q}",30))
+        if payload.get("retCode") not in (0,None):raise RuntimeError(f"Bybit funding API error: {payload.get('retCode')} {payload.get('retMsg')}")
         batch=payload.get("result",{}).get("list",[]) or []
-        if not batch: break
+        if not batch:break
         for r in batch:
             ts=int(r["fundingRateTimestamp"])
-            if start_ms<=ts<end_ms: out.append({"symbol":symbol,"fundingTime":ts,"fundingRate":r["fundingRate"]})
+            if start_ms<=ts<end_ms:out.append({"symbol":symbol,"fundingTime":ts,"fundingRate":r["fundingRate"]})
         oldest=min(int(r["fundingRateTimestamp"]) for r in batch)
-        if oldest<=start_ms or len(batch)<200: break
+        if oldest<=start_ms or len(batch)<200:break
         cursor_end=oldest-1
     dedup={int(r["fundingTime"]):r for r in out}; return [dedup[k] for k in sorted(dedup)]
 
@@ -195,11 +186,11 @@ def resilient_req_json(url,timeout=30,retries=5):
         if "/fapi/v1/" not in url or not any(f"HTTP Error {c}" in message for c in RETRYABLE_HTTP):raise
         endpoint=url.split("/fapi/v1/",1)[1].split("?",1)[0]
         if endpoint=="fundingRate":
-            print("[WARN] Binance fundingRate unavailable; using verified free Binance Vision funding archive.")
-            try:return _archive_funding_fallback(url)
-            except Exception as archive_exc:
-                print(f"[WARN] Binance Vision funding archive fallback failed: {archive_exc}; trying free Bybit funding-history fallback.")
-                return _bybit_funding_fallback(url)
+            print("[WARN] Binance fundingRate unavailable; using verified free Binance Vision monthly funding archive.")
+            archived=_archive_funding_fallback(url)
+            if archived:return archived
+            print("[WARN] No completed Binance funding archive covers this window; trying free Bybit funding-history fallback.")
+            return _bybit_funding_fallback(url)
         if endpoint==CORE_ENDPOINT:return _archive_fallback(url,optional=False)
         if endpoint in OPTIONAL_ENDPOINTS:return _archive_fallback(url,optional=True)
         raise
