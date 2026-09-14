@@ -13,8 +13,6 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Historical research also writes shared research state, so it must not race
-  # with the live/research workflows while committing to main.
   group: btc-state-main
   cancel-in-progress: false
 
@@ -50,10 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
-              exit 0
-            fi
-            echo "pip install attempt ${attempt} failed"
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
             sleep $((15 * attempt))
           done
           exit 1
@@ -71,16 +66,10 @@ jobs:
             python src/historical_research_runner.py
             status=$?
             set -e
-            if [ "${status}" -eq 0 ]; then
-              echo "historical research completed successfully"
-              exit 0
-            fi
+            if [ "${status}" -eq 0 ]; then exit 0; fi
             echo "research attempt ${attempt} failed with status ${status}"
-            if [ "${attempt}" -lt 3 ]; then
-              sleep $((30 * attempt))
-            fi
+            if [ "${attempt}" -lt 3 ]; then sleep $((30 * attempt)); fi
           done
-          echo "historical research failed after 3 attempts"
           exit 1
       - name: Validate research artifact
         run: |
@@ -88,8 +77,7 @@ jobs:
           import json
           from pathlib import Path
           p=Path('data/historical_research/report.json')
-          if not p.exists():
-              raise SystemExit('report.json was not produced')
+          if not p.exists(): raise SystemExit('report.json was not produced')
           r=json.loads(p.read_text())
           assert r.get('protocol_version') == 'historical-v6-microstructure-incremental-cache'
           assert set(r.get('horizons', {})) >= {'5m','10m'}
@@ -101,32 +89,29 @@ jobs:
           PY
       - name: Reject raw archive files in Git workspace
         run: |
-          if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then
-            echo 'Raw Binance archive files must never enter the Git workspace.'
-            exit 1
-          fi
-      - name: Commit historical research results with retry
+          if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then exit 1; fi
+      - name: Commit historical research results with conflict-safe retry
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/historical_research
-          if git diff --cached --quiet; then
-            echo 'No historical research changes to commit.'
-            exit 0
-          fi
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m 'Update BTC historical research results'
-          for attempt in 1 2 3; do
-            if git push; then
-              exit 0
-            fi
-            echo "git push attempt ${attempt} failed; rebasing on origin/main"
-            git fetch origin main
-            git rebase origin/main
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push attempt ${attempt} rejected; rebuilding research state on origin/main"
+            cp -a data/historical_research /tmp/btc_local_historical_research
+            git rebase --abort 2>/dev/null || true
+            git fetch --prune origin main
+            git reset --hard origin/main
+            rm -rf data/historical_research
+            cp -a /tmp/btc_local_historical_research data/historical_research
+            git add data/historical_research
+            git diff --cached --quiet || git commit -m 'Merge BTC historical research state safely'
             sleep $((5 * attempt))
           done
-          echo 'git push failed after 3 attempts'
           exit 1
       - uses: actions/upload-artifact@v6
         with:
