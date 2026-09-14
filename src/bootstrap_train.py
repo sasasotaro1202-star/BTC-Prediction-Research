@@ -131,33 +131,19 @@ def fetch_binance(target: int):
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 
-def _latest_contiguous_suffix(rows, min_len: int = MIN_BOOTSTRAP_ROWS):
-    """Keep only the latest fully contiguous 1-minute suffix.
-
-    Historical APIs can return valid candles with internal gaps. Using such a
-    sequence as if every row were one minute apart silently distorts returns,
-    volatility, rolling features and future-horizon labels. Refuse to bridge
-    gaps rather than fabricating continuity.
-    """
+def _contiguous_suffix(rows):
+    """Return the latest contiguous 1-minute suffix without inventing bars."""
     if not rows:
         return []
     ordered = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0])
-    suffix_start = len(ordered) - 1
-    while suffix_start > 0 and ordered[suffix_start][0] - ordered[suffix_start - 1][0] == 60_000:
-        suffix_start -= 1
-    suffix = ordered[suffix_start:]
-    return suffix if len(suffix) >= min_len else suffix
+    start = len(ordered) - 1
+    while start > 0 and ordered[start][0] - ordered[start - 1][0] == 60_000:
+        start -= 1
+    return ordered[start:]
 
 
 def fetch_history(target: int = TARGET_ROWS):
-    """Return the best available free historical BTC 1m source.
-
-    Binance Vision is the primary deep-history source. Its loader walks from
-    monthly archives to completed daily archives and the S3 mirror, records
-    failures, deduplicates timestamps, and refuses unclosed candles.
-    REST sources remain fallback options; a short sample never silently satisfies
-    the bootstrap minimum.
-    """
+    """Return the best available free historical BTC 1m source."""
     errors = []
     best = []
     best_name = "none"
@@ -168,7 +154,7 @@ def fetch_history(target: int = TARGET_ROWS):
     )
     for name, loader in sources:
         try:
-            rows = _latest_contiguous_suffix(loader(), min_len=MIN_BOOTSTRAP_ROWS)
+            rows = _contiguous_suffix(loader())
             if len(rows) > len(best):
                 best, best_name = rows, name
             if len(rows) >= target:
