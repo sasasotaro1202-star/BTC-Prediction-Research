@@ -32,7 +32,7 @@ MIN_BOOTSTRAP_ROWS = 10_000
 TARGET_ROWS = 30_000
 MIN_TRAIN = 1_000
 MIN_OOS = 500
-UA = "BTC-Prediction-Research/bootstrap/5.1"
+UA = "BTC-Prediction-Research/bootstrap/5.2"
 
 def write_status(payload: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -150,33 +150,31 @@ def fit_temperature(probs, y):
     return best_t if log_loss(yi[split:], q, labels=[0, 1, 2]) < log_loss(yi[split:], normalize(p[split:]), labels=[0, 1, 2]) - 0.001 else 1.0
 
 def train_one(X, y):
-    """Select on a clean chronological holdout, then refit weights on train+calibration.
-
-    The final holdout remains completely unused for fitting. Architecture/hyperparameter
-    selection is driven by that holdout, so published metadata records it as a selection
-    audit rather than an unbiased final performance estimate.
-    """
+    """Select architecture on chronological validation, then audit on untouched OOS."""
     n = len(y); train_end = int(n * 0.65); cal_end = int(n * 0.82)
     Xtr, Xcal, Xte = X[:train_end], X[train_end:cal_end], X[cal_end:]
     ytr, ycal, yte = y[:train_end], y[train_end:cal_end], y[cal_end:]
     baseline = metrics(yte, np.tile(np.asarray([np.mean(ytr == c) for c in CLASSES]), (len(yte), 1)))
     candidates = [("logreg", Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(C=0.5, max_iter=3000))])), ("rf", RandomForestClassifier(n_estimators=300, max_depth=7, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=-1)), ("hgb", HistGradientBoostingClassifier(max_iter=220, max_leaf_nodes=15, learning_rate=0.04, l2_regularization=1.5, random_state=42))]
-    results = []
+    validation_results = []
     for name, model in candidates:
-        model.fit(Xtr, ytr); temperature = fit_temperature(model.predict_proba(Xcal), ycal); p = normalize(model.predict_proba(Xte))
-        if temperature != 1.0:
-            z = np.log(p) / temperature; z -= z.max(axis=1, keepdims=True); p = np.exp(z); p /= p.sum(axis=1, keepdims=True)
-        score = metrics(yte, p); results.append((score["logloss"], score["brier"], -score["accuracy"], name, model, temperature, score))
-    results.sort(key=lambda r: r[:3])
-    _, _, _, name, selected_model, temperature, score = results[0]
-    # Refit only on train+calibration. The final holdout is never used for fitting.
+        model.fit(Xtr, ytr)
+        v = metrics(ycal, normalize(model.predict_proba(Xcal)))
+        validation_results.append((v["logloss"], v["brier"], -v["accuracy"], name, model))
+    validation_results.sort(key=lambda r: r[:3])
+    _, _, _, name, selected_model = validation_results[0]
     selected_model.fit(np.concatenate([Xtr, Xcal]), np.concatenate([ytr, ycal]))
-    return (score["logloss"], score["brier"], -score["accuracy"], name, selected_model, temperature, score), baseline, len(yte)
+    holdout_score = metrics(yte, normalize(selected_model.predict_proba(Xte)))
+    return (holdout_score["logloss"], holdout_score["brier"], -holdout_score["accuracy"], name, selected_model, 1.0, holdout_score), baseline, len(yte), validation_results
 
-def publish(horizon, best, baseline, holdout_n):
-    _, _, _, name, model, temperature, score = best; safe_gain = score["logloss"] < baseline["logloss"] - 0.01 and score["brier"] < baseline["brier"] - 0.005
-    if not safe_gain: return False, {"status": "holdout_rejected", "model": name, "candidate": score, "baseline": baseline, "holdout_n": holdout_n}
-    MODEL_DIR.mkdir(parents=True, exist_ok=True); joblib.dump(model, MODEL_DIR / f"{horizon}.joblib"); version = f"bootstrap.{name}.v5.1"; meta = {"model_version": version, "horizon": horizon, "classes": list(model.classes_), "features": FEATURES, "artifact": f"{horizon}.joblib", "candidate": False, "bootstrap": True, "selection_audit": "chronological_18pct_holdout", "final_fit_fraction": 0.82, "holdout_n": holdout_n, "holdout_metrics": score, "baseline_metrics": baseline, "temperature": float(temperature), "trained_at_utc": datetime.now(timezone.utc).isoformat()}; (MODEL_DIR / f"{horizon}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+def publish(horizon, best, baseline, holdout_n, validation_results):
+    _, _, _, name, model, temperature, score = best
+    safe_gain = score["logloss"] < baseline["logloss"] - 0.01 and score["brier"] < baseline["brier"] - 0.005
+    if not safe_gain: return False, {"status": "holdout_rejected", "model": name, "candidate": score, "baseline": baseline, "holdout_n": holdout_n, "selection": "chronological_17pct_validation"}
+    MODEL_DIR.mkdir(parents=True, exist_ok=True); joblib.dump(model, MODEL_DIR / f"{horizon}.joblib"); version = f"bootstrap.{name}.v5.2"
+    validation_summary = [{"model": r[3], "logloss": r[0], "brier": r[1], "accuracy": -r[2]} for r in validation_results]
+    meta = {"model_version": version, "horizon": horizon, "classes": list(model.classes_), "features": FEATURES, "artifact": f"{horizon}.joblib", "candidate": False, "bootstrap": True, "selection_method": "chronological_17pct_validation", "final_fit_fraction": 0.82, "holdout_n": holdout_n, "holdout_metrics": score, "baseline_metrics": baseline, "validation_metrics": validation_summary, "temperature": float(temperature), "trained_at_utc": datetime.now(timezone.utc).isoformat()}
+    (MODEL_DIR / f"{horizon}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     with sqlite3.connect(DB) as con: con.execute("INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc", (horizon, version, datetime.now(timezone.utc).isoformat()))
     return True, meta
 
@@ -190,7 +188,8 @@ def main():
     for horizon in ("5m", "10m"):
         X, y = build_dataset(rows, int(horizon[:-1]))
         if len(y) < MIN_TRAIN + MIN_OOS or len(set(y)) < 3: published.append({"horizon": horizon, "status": "insufficient_dataset", "rows": len(y)}); continue
-        best, baseline, holdout_n = train_one(X, y); ok, meta = publish(horizon, best, baseline, holdout_n); published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
+        best, baseline, holdout_n, validation_results = train_one(X, y); ok, meta = publish(horizon, best, baseline, holdout_n, validation_results); published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
     write_status({"status": "complete", "source": source, "rows": len(rows), "published": published}); return 0
 
-if __name__ == "__main__": raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())
