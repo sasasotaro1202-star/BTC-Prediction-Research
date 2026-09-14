@@ -47,7 +47,9 @@ jobs:
         run: python src/calibration.py
       - name: Run model research and adoption gate
         run: python src/model_compare.py
-      - name: Validate model artifacts
+      - name: Audit production artifact provenance
+        run: python src/production_artifact_audit.py
+      - name: Validate model and provenance artifacts
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -62,15 +64,27 @@ jobs:
               obj=json.loads(meta.read_text())
               if obj.get('horizon') != h or obj.get('candidate') is not False:
                   raise SystemExit(f'invalid production metadata: {meta}')
-          print('production model artifact validation: OK')
+          audit=Path('data/historical_research/production_artifact_audit.json')
+          if not audit.exists():
+              raise SystemExit('missing production artifact provenance audit')
+          obj=json.loads(audit.read_text())
+          artifacts=obj.get('artifacts')
+          if not isinstance(artifacts,list) or len(artifacts) != 2:
+              raise SystemExit('invalid production artifact provenance audit')
+          for item in artifacts:
+              if item.get('horizon') not in {'5m','10m'}:
+                  raise SystemExit('invalid audit horizon')
+              if len(str(item.get('model_sha256',''))) != 64 or len(str(item.get('metadata_sha256',''))) != 64:
+                  raise SystemExit('invalid production artifact fingerprint')
+          print('production model and provenance artifact validation: OK')
           PY
-      - name: Commit adopted model state with retry
+      - name: Commit adopted model and provenance state with retry
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db models/*.json models/*.joblib
+          git add data/predictions.db data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
           if git diff --cached --quiet; then
             echo 'No research-state changes to commit.'
             exit 0
@@ -80,9 +94,12 @@ jobs:
             if git push; then
               exit 0
             fi
-            echo "git push attempt ${attempt} failed; rebasing on origin/main"
+            echo "git push attempt ${attempt} failed; rebuilding on origin/main"
             git fetch origin main
-            git rebase origin/main
+            git rebase --abort 2>/dev/null || true
+            git reset --hard origin/main
+            git add data/predictions.db data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
+            git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
           done
           echo 'git push failed after 3 attempts'
@@ -92,6 +109,7 @@ jobs:
           name: btc-research-state
           path: |
             data/predictions.db
+            data/historical_research/production_artifact_audit.json
             models/*.json
             models/*.joblib
           retention-days: 14
