@@ -11,8 +11,6 @@ on:
       - 'models/**'
 
 concurrency:
-  # All BTC state writers share one lock. SQLite/model artifacts are committed to main,
-  # so separate workflow-level locks can otherwise race and create binary rebase conflicts.
   group: btc-state-main
   cancel-in-progress: false
 
@@ -40,7 +38,6 @@ jobs:
           set -euo pipefail
           for attempt in 1 2 3; do
             if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
-            echo "pip install attempt ${attempt} failed"
             sleep $((10 * attempt))
           done
           exit 1
@@ -52,11 +49,10 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import unittest
-          suite = unittest.defaultTestLoader.discover('tests', pattern='test_*.py')
-          count = suite.countTestCases()
+          suite=unittest.defaultTestLoader.discover('tests',pattern='test_*.py')
+          count=suite.countTestCases()
           print(f'Discovered BTC guard tests: {count}')
-          if count == 0:
-              raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
+          if count == 0: raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
           PY
           python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Ensure BTC production models exist without retraining every 5 minutes
@@ -67,10 +63,7 @@ jobs:
           for horizon in 5m 10m; do
             if [ ! -s "models/${horizon}.joblib" ] || [ ! -s "models/${horizon}.json" ]; then missing=1; fi
           done
-          if [ "${missing}" -eq 0 ]; then
-            echo 'Existing BTC production models found; skipping historical bootstrap.'
-            exit 0
-          fi
+          if [ "${missing}" -eq 0 ]; then exit 0; fi
           python src/bootstrap_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
@@ -89,9 +82,9 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, sqlite3
+          import json,sqlite3
           from pathlib import Path
-          from datetime import datetime, timezone
+          from datetime import datetime,timezone
           p=Path('data/predictions.db')
           if not p.exists() or p.stat().st_size == 0: raise SystemExit('predictions.db missing')
           with sqlite3.connect(p) as con:
@@ -103,16 +96,14 @@ jobs:
                   if bad: raise SystemExit(f'probability integrity failure {cols}: {bad}')
               latest=con.execute('SELECT created_at_utc,base_price,model_version,scenario_json FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
               if not latest: raise SystemExit('latest prediction missing')
-              created=datetime.fromisoformat(latest[0].replace('Z','+00:00'))
-              age=(datetime.now(timezone.utc)-created).total_seconds()
+              age=(datetime.now(timezone.utc)-datetime.fromisoformat(latest[0].replace('Z','+00:00'))).total_seconds()
               if age > 900: raise SystemExit(f'latest prediction is stale: {age:.0f}s')
               if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
               scenario=json.loads(latest[3]) if latest[3] else {}
-              degraded=(latest[2] == 'DEGRADED_NO_FRESH_DATA')
+              degraded=(latest[2]=='DEGRADED_NO_FRESH_DATA')
               if not degraded and latest[1] <= 0: raise SystemExit('latest BTC base price is invalid')
               if degraded and latest[1] != 0: raise SystemExit('degraded BTC prediction must not claim a market base price')
-              if not degraded and not scenario.get('data_quality'):
-                  raise SystemExit('live BTC prediction is missing data-quality metadata')
+              if not degraded and not scenario.get('data_quality'): raise SystemExit('live BTC prediction is missing data-quality metadata')
           for horizon in ('5m','10m'):
               mj=Path(f'models/{horizon}.json'); mf=Path(f'models/{horizon}.joblib')
               if mj.exists():
@@ -125,17 +116,14 @@ jobs:
               cp=Path(f'models/{horizon}.calibration.json')
               if cp.exists():
                   obj=json.loads(cp.read_text()); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
-                  if not 0.5 <= t <= 3.0: raise SystemExit(f'{horizon} calibration temperature invalid: {t}')
-                  if n < 0: raise SystemExit(f'{horizon} calibration count invalid: {n}')
+                  if not 0.5 <= t <= 3.0 or n < 0: raise SystemExit(f'{horizon} calibration invalid')
               bp=Path(f'models/{horizon}.blend.json')
               if bp.exists():
                   obj=json.loads(bp.read_text()); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0))
-                  if not 0.0 <= w <= 0.45: raise SystemExit(f'{horizon} blend weight invalid: {w}')
-                  if n < 0: raise SystemExit(f'{horizon} blend count invalid: {n}')
+                  if not 0.0 <= w <= 0.45 or n < 0: raise SystemExit(f'{horizon} blend invalid')
           health=Path('data/historical_research/research_health.json')
           if not health.exists(): raise SystemExit('research health audit output missing')
-          health_obj=json.loads(health.read_text())
-          if not isinstance(health_obj.get('ok'), bool): raise SystemExit('research health audit malformed')
+          if not isinstance(json.loads(health.read_text()).get('ok'),bool): raise SystemExit('research health audit malformed')
           print('BTC prediction database, models, calibration, blend, and research-health validation: OK')
           PY
       - name: Upload BTC research artifacts
@@ -149,7 +137,7 @@ jobs:
           retention-days: 14
       - name: Check repository diff before commit
         run: git diff --check
-      - name: Commit BTC research state with retry
+      - name: Commit BTC research state with conflict-safe merge retry
         shell: bash
         run: |
           set -euo pipefail
@@ -161,9 +149,45 @@ jobs:
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:main; then exit 0; fi
-            echo "git push attempt ${attempt} failed; rebasing on origin/main"
+            echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
+            cp data/predictions.db /tmp/btc_local_predictions.db
+            if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
+            git rebase --abort 2>/dev/null || true
             git fetch --prune origin main
-            git rebase origin/main
+            git reset --hard origin/main
+            python - <<'PY'
+            import sqlite3
+            local='/tmp/btc_local_predictions.db'
+            target='data/predictions.db'
+            con=sqlite3.connect(target)
+            con.execute("ATTACH DATABASE ? AS local",(local,))
+            tables=['predictions','model_metrics','model_registry']
+            for table in tables:
+                cols=[r[1] for r in con.execute(f'PRAGMA table_info({table})')]
+                local_cols=[r[1] for r in con.execute(f'PRAGMA local.table_info({table})')]
+                common=[c for c in cols if c in local_cols]
+                if not common: continue
+                names=','.join('"'+c+'"' for c in common)
+                placeholders=','.join('?' for _ in common)
+                rows=con.execute(f'SELECT {names} FROM local.{table}').fetchall()
+                for row in rows:
+                    try:
+                        if table=='predictions':
+                            data=list(row); data[0]=None
+                            con.execute(f'INSERT INTO {table} ({names}) VALUES ({placeholders})',data)
+                        elif table=='model_metrics':
+                            data=list(row); data[0]=None
+                            con.execute(f'INSERT INTO {table} ({names}) VALUES ({placeholders})',data)
+                        elif table=='model_registry':
+                            con.execute(f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',row)
+                    except sqlite3.IntegrityError:
+                        pass
+            con.commit(); con.execute('DETACH DATABASE local'); con.close()
+            PY
+            if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
+            git add data/predictions.db data/historical_research 2>/dev/null || true
+            if [ -d models ]; then git add models; fi
+            git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
           done
           exit 1
