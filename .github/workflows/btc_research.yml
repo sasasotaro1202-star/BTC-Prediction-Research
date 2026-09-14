@@ -52,10 +52,10 @@ jobs:
           from pathlib import Path
           import json
           for h in ('5m','10m'):
-              p=Path(f'data/models/{h}.joblib')
+              p=Path(f'models/{h}.joblib')
               if not p.exists() or p.stat().st_size == 0:
                   raise SystemExit(f'missing production model: {p}')
-              meta=Path(f'data/models/{h}.json')
+              meta=Path(f'models/{h}.json')
               if not meta.exists():
                   raise SystemExit(f'missing model metadata: {meta}')
               obj=json.loads(meta.read_text())
@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db data/models/*.json data/models/*.joblib
+          git add data/predictions.db models/*.json models/*.joblib
           if git diff --cached --quiet; then
             echo 'No research-state changes to commit.'
             exit 0
@@ -91,6 +91,6 @@ jobs:
           name: btc-research-state
           path: |
             data/predictions.db
-            data/models/*.json
-            data/models/*.joblib
+            models/*.json
+            models/*.joblib
           retention-days: 14
