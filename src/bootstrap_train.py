@@ -169,12 +169,9 @@ def train_one(X, y):
         score = metrics(yte, p); results.append((score["logloss"], score["brier"], -score["accuracy"], name, model, temperature, score))
     results.sort(key=lambda r: r[:3])
     _, _, _, name, selected_model, temperature, score = results[0]
-    # Do not fit on the final holdout. Use the calibration portion for additional
-    # production training after model-family selection; this increases sample
-    # efficiency without contaminating the chronological audit block.
-    final_model = next(factory for candidate_name, factory in candidates if candidate_name == name)
-    final_model.fit(np.concatenate([Xtr, Xcal]), np.concatenate([ytr, ycal]))
-    return (score["logloss"], score["brier"], -score["accuracy"], name, final_model, temperature, score), baseline, len(yte)
+    # Refit only on train+calibration. The final holdout is never used for fitting.
+    selected_model.fit(np.concatenate([Xtr, Xcal]), np.concatenate([ytr, ycal]))
+    return (score["logloss"], score["brier"], -score["accuracy"], name, selected_model, temperature, score), baseline, len(yte)
 
 def publish(horizon, best, baseline, holdout_n):
     _, _, _, name, model, temperature, score = best; safe_gain = score["logloss"] < baseline["logloss"] - 0.01 and score["brier"] < baseline["brier"] - 0.005
