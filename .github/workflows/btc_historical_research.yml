@@ -29,14 +29,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements.txt
       - name: Restore historical archive cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/btc_prediction_archive_cache
           key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py') }}-${{ github.run_number }}
@@ -126,7 +126,7 @@ jobs:
           done
           echo 'git push failed after 3 attempts'
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: btc-historical-research
           path: data/historical_research
