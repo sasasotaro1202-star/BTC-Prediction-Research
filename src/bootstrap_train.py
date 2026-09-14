@@ -23,23 +23,34 @@ from binance_history import binance_archive_rows
 from market_data import coinbase_rows, bybit_klines, closed_bybit
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL_DIR = ROOT / "models"; DATA_DIR = ROOT / "data" / "historical_research"; CACHE = DATA_DIR / "btc_bootstrap_1m.json"; STATUS = DATA_DIR / "bootstrap_status.json"
+MODEL_DIR = ROOT / "models"
+DATA_DIR = ROOT / "data" / "historical_research"
+CACHE = DATA_DIR / "btc_bootstrap_1m.json"
+STATUS = DATA_DIR / "bootstrap_status.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
 FEATURES = ["ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration", "volatility_5m", "volatility_10m", "range_position_10m", "body_1m", "upper_wick_1m", "lower_wick_1m", "volume_ratio", "volume_trend", "ema_gap_5m", "ema_gap_10m"]
-THRESHOLD = 0.00020; MIN_BOOTSTRAP_ROWS = 10_000; TARGET_ROWS = 30_000; MIN_TRAIN = 1_000; MIN_OOS = 500; UA = "BTC-Prediction-Research/bootstrap/5.0"
+THRESHOLD = 0.00020
+MIN_BOOTSTRAP_ROWS = 10_000
+TARGET_ROWS = 30_000
+MIN_TRAIN = 1_000
+MIN_OOS = 500
+UA = "BTC-Prediction-Research/bootstrap/5.0"
 
 def write_status(payload: dict) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True); STATUS.write_text(json.dumps({**payload, "updated_at_utc": datetime.now(timezone.utc).isoformat()}, indent=2), encoding="utf-8")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS.write_text(json.dumps({**payload, "updated_at_utc": datetime.now(timezone.utc).isoformat()}, indent=2), encoding="utf-8")
 
 def _get(url: str, attempts: int = 4, timeout: int = 30):
     last = None
     for i in range(attempts):
         try:
             req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-            with urlopen(req, timeout=timeout) as r: return json.loads(r.read())
+            with urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
         except Exception as exc:
             last = exc
-            if i + 1 < attempts: time.sleep(min(4.0, 0.75 * (i + 1)))
+            if i + 1 < attempts:
+                time.sleep(min(4.0, 0.75 * (i + 1)))
     raise last
 
 def _bybit_page(end_ms=None, limit=1000):
@@ -53,39 +64,45 @@ def _binance_page(end_ms=None, limit=1500):
     return _get("https://fapi.binance.com/fapi/v1/klines?" + urlencode(params))
 
 def fetch_bybit(target: int):
-    rows = []; end = None
+    rows = []
+    end = None
     for _ in range(math.ceil(target / 1000) + 8):
         raw = _bybit_page(end, 1000).get("result", {}).get("list", [])
         if not raw: break
         rows.extend([[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])] for r in raw if len(r) >= 6])
-        oldest = min(int(r[0]) for r in raw); new_end = oldest - 1
+        new_end = min(int(r[0]) for r in raw) - 1
         if end is not None and new_end >= end: break
         end = new_end
         if len(rows) >= target: break
         time.sleep(0.05)
-    now_ms = int(time.time() * 1000); rows = [r for r in rows if r[0] + 60_000 <= now_ms]
+    now_ms = int(time.time() * 1000)
+    rows = [r for r in rows if r[0] + 60_000 <= now_ms]
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 def fetch_binance(target: int):
-    rows = []; end = None
+    rows = []
+    end = None
     for _ in range(math.ceil(target / 1500) + 8):
         page = _binance_page(end, 1500)
         if not page: break
         rows.extend([[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])] for r in page])
         end = min(int(r[0]) for r in page) - 1
         if len(page) < 1500: break
-    now_ms = int(time.time() * 1000); rows = [r for r in rows if r[0] + 60_000 <= now_ms]
+    now_ms = int(time.time() * 1000)
+    rows = [r for r in rows if r[0] + 60_000 <= now_ms]
     return sorted({r[0]: r for r in rows}.values(), key=lambda r: r[0])[-target:]
 
 def _contiguous_suffix(rows):
-    """Keep only the latest fully contiguous 1-minute suffix; never bridge gaps."""
     if not rows: return []
-    ordered = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0]); start = len(ordered) - 1
+    ordered = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: r[0])
+    start = len(ordered) - 1
     while start > 0 and ordered[start][0] - ordered[start - 1][0] == 60_000: start -= 1
     return ordered[start:]
 
 def fetch_history(target: int = TARGET_ROWS):
-    errors = []; best = []; best_name = "none"
+    errors = []
+    best = []
+    best_name = "none"
     sources = (("binance_vision_archive", lambda: binance_archive_rows(target)), ("bybit_futures", lambda: fetch_bybit(target)), ("binance_futures", lambda: fetch_binance(target)))
     for name, loader in sources:
         try:
@@ -112,7 +129,9 @@ def make_features(rows):
 def build_dataset(rows, horizon):
     X, y = [], []
     for i in range(30, len(rows) - horizon):
-        future_return = rows[i + horizon][4] / rows[i][4] - 1; y.append("UP" if future_return > THRESHOLD else "DOWN" if future_return < -THRESHOLD else "FLAT"); X.append(make_features(rows[:i + 1]))
+        future_return = rows[i + horizon][4] / rows[i][4] - 1
+        y.append("UP" if future_return > THRESHOLD else "DOWN" if future_return < -THRESHOLD else "FLAT")
+        X.append(make_features(rows[:i + 1]))
     return np.asarray(X, float), np.asarray(y)
 
 def normalize(probs):
