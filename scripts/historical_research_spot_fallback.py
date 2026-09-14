@@ -92,6 +92,10 @@ def patched_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
 
 hr.fetch_klines_chunk=patched_chunk
 hr.req_json=runner.resilient_req_json
-hr.spot_proxy=False
+# historical_research.build_panel keeps a local proxy flag for feature construction,
+# while main() reads the module-level flag for report metadata. Infer the latter
+# from the persisted spot cache: the archive fallback intentionally does not write
+# spot chunks, whereas the original API path does.
+hr.spot_proxy=not any(hr.CACHE.glob("btc_spot_BTCUSDT_*.json"))
 
 if __name__=="__main__":hr.main()
