@@ -42,7 +42,7 @@ jobs:
           done
           exit 1
       - name: Compile research code
-        run: python -m compileall -q src tests
+        run: python -m compileall -q src tests scripts
       - name: Run deterministic BTC guard tests
         shell: bash
         run: |
@@ -155,35 +155,7 @@ jobs:
             git rebase --abort 2>/dev/null || true
             git fetch --prune origin main
             git reset --hard origin/main
-            python - <<'PY'
-            import sqlite3
-            local='/tmp/btc_local_predictions.db'
-            target='data/predictions.db'
-            con=sqlite3.connect(target)
-            con.execute("ATTACH DATABASE ? AS local",(local,))
-            tables=['predictions','model_metrics','model_registry']
-            for table in tables:
-                cols=[r[1] for r in con.execute(f'PRAGMA table_info({table})')]
-                local_cols=[r[1] for r in con.execute(f'PRAGMA local.table_info({table})')]
-                common=[c for c in cols if c in local_cols]
-                if not common: continue
-                names=','.join('"'+c+'"' for c in common)
-                placeholders=','.join('?' for _ in common)
-                rows=con.execute(f'SELECT {names} FROM local.{table}').fetchall()
-                for row in rows:
-                    try:
-                        if table=='predictions':
-                            data=list(row); data[0]=None
-                            con.execute(f'INSERT INTO {table} ({names}) VALUES ({placeholders})',data)
-                        elif table=='model_metrics':
-                            data=list(row); data[0]=None
-                            con.execute(f'INSERT INTO {table} ({names}) VALUES ({placeholders})',data)
-                        elif table=='model_registry':
-                            con.execute(f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',row)
-                    except sqlite3.IntegrityError:
-                        pass
-            con.commit(); con.execute('DETACH DATABASE local'); con.close()
-            PY
+            python scripts/merge_prediction_state.py /tmp/btc_local_predictions.db data/predictions.db
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             git add data/predictions.db data/historical_research 2>/dev/null || true
             if [ -d models ]; then git add models; fi
