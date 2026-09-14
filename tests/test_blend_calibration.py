@@ -14,8 +14,6 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertAlmostEqual(float(p.sum()), 1.0, places=10)
 
     def test_brier_prefers_correct_probability(self):
-        # blend_calibration.CLASSES is [UP, DOWN, FLAT], so the rows below
-        # must follow that exact probability-column order.
         y = ['UP', 'DOWN', 'FLAT']
         good = [[0.98, 0.01, 0.01], [0.01, 0.98, 0.01], [0.01, 0.01, 0.98]]
         bad = [[0.34, 0.33, 0.33]] * 3
@@ -26,6 +24,12 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertEqual(blend_calibration._actual_column('10m'), 'actual_direction_10m')
         with self.assertRaises(ValueError):
             blend_calibration._actual_column('5')
+
+    def test_probability_suffix_does_not_double_append_m(self):
+        self.assertEqual('p_up_5m', f'p_up_{"5m"}')
+        self.assertEqual('p_up_10m', f'p_up_{"10m"}')
+        self.assertNotEqual('p_up_5mm', f'p_up_{"5m"}')
+        self.assertNotEqual('p_up_10mm', f'p_up_{"10m"}')
 
     def test_grid_is_bounded(self):
         self.assertGreaterEqual(float(blend_calibration.GRID.min()), 0.0)
