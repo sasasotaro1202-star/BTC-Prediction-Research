@@ -75,14 +75,15 @@ def temperature_scale(rows):
     return best_t,best,scaled_eval
 
 
-def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout_fraction):
+def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout_fraction, model_version):
     MODEL_DIR.mkdir(parents=True,exist_ok=True)
     path=MODEL_DIR/f'{horizon}.calibration.json'
     payload={
         'horizon':horizon,
         'temperature':float(temperature),
         'n_settled':int(n),
-        'method':'bounded_temperature_scaling_holdout_guard',
+        'model_version':model_version,
+        'method':'bounded_temperature_scaling_current_model_generation_holdout_guard',
         'fit_logloss':None if fit_logloss is None else float(fit_logloss),
         'holdout_logloss':None if eval_logloss is None else float(eval_logloss),
         'holdout_fraction':float(holdout_fraction),
@@ -91,19 +92,42 @@ def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout
     path.write_text(json.dumps(payload,indent=2),encoding='utf-8')
 
 
+def _current_registry_version(con, horizon):
+    row=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(horizon,)).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+def _settled_rows(con, horizon, actual_col, model_version):
+    # Calibration must not pool incompatible model generations.  Predictions store
+    # both horizon registry versions in one field, so match the relevant prefix.
+    if not model_version:
+        return []
+    prefix=f'{horizon}:{model_version}|%'
+    return con.execute(
+        f'''SELECT p_up_{horizon}m,p_down_{horizon}m,p_flat_{horizon}m,{actual_col}
+            FROM predictions
+            WHERE {actual_col} IS NOT NULL
+              AND model_version LIKE ?
+              AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
+            ORDER BY created_at_utc''',
+        (prefix,)
+    ).fetchall()
+
+
 def calibration():
     init_db(); now=datetime.now(timezone.utc)
     for horizon in (5,10):
         actual_col=f'actual_direction_{horizon}m'
         with sqlite3.connect(DB) as con:
-            rows=con.execute(f'SELECT p_up_{horizon}m,p_down_{horizon}m,p_flat_{horizon}m,{actual_col} FROM predictions WHERE {actual_col} IS NOT NULL ORDER BY created_at_utc').fetchall()
+            model_version=_current_registry_version(con,f'{horizon}m')
+            rows=_settled_rows(con,horizon,actual_col,model_version)
             if not rows:
-                print(horizon,'m: no settled predictions')
+                print(horizon,'m: no settled predictions for current model generation',model_version)
                 continue
             acc,ll,brier,ece=multiclass_metrics(rows,horizon)
-            con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),f'{horizon}m','production',len(rows),acc,ll,brier,ece))
+            con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),f'{horizon}m',model_version,len(rows),acc,ll,brier,ece))
         temperature,fit_ll,eval_ll=temperature_scale(rows)
-        save_temperature(f'{horizon}m',temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION)
-        print(horizon,'m',len(rows),'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
+        save_temperature(f'{horizon}m',temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION,model_version)
+        print(horizon,'m',len(rows),'model_version',model_version,'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
 
 if __name__=='__main__': calibration()
