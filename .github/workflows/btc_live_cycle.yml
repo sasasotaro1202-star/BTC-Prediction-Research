@@ -4,8 +4,6 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-  # Code/config changes should be exercised immediately. Research-state commits
-  # from the live job are excluded so the job cannot self-trigger.
   push:
     branches: [main]
     paths-ignore:
@@ -14,9 +12,6 @@ on:
 
 concurrency:
   group: btc-live-cycle-main
-  # Do not cancel a healthy 5-minute cycle if a new scheduled/push run arrives.
-  # A cancellation can leave the production state half-written and appear as an
-  # Action failure even when the underlying pipeline is healthy.
   cancel-in-progress: false
 
 permissions:
@@ -31,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -142,7 +137,7 @@ jobs:
           print('BTC prediction database, models, calibration, blend, and research-health validation: OK')
           PY
       - name: Upload BTC research artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: btc-predictions-db
           path: |
