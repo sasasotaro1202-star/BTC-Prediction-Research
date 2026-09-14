@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Retry recent failed BTC workflows
+      - name: Retry only the latest eligible failed BTC workflow
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -29,22 +29,36 @@ jobs:
               echo "WARN: unable to inspect ${workflow}; continuing"
               continue
             }
-            run=$(printf '%s' "$response" | jq -c '[.workflow_runs[] | select(.status == "completed")] | .[0] // empty')
-            [ -n "$run" ] || { echo "No completed run found for ${workflow}"; continue; }
-            conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
-            run_id=$(printf '%s' "$run" | jq -r '.id // 0')
-            attempt=$(printf '%s' "$run" | jq -r '.run_attempt // 1')
-            updated=$(printf '%s' "$run" | jq -r '.updated_at // ""')
+
+            # Inspect the newest run, not merely the newest completed run.
+            # This prevents an older failure from being retried while a newer
+            # run is already queued/in progress.
+            latest=$(printf '%s' "$response" | jq -c '.workflow_runs[0] // empty')
+            [ -n "$latest" ] || { echo "No run found for ${workflow}"; continue; }
+
+            status=$(printf '%s' "$latest" | jq -r '.status // ""')
+            conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // ""')
+            run_id=$(printf '%s' "$latest" | jq -r '.id // 0')
+            attempt=$(printf '%s' "$latest" | jq -r '.run_attempt // 1')
+            updated=$(printf '%s' "$latest" | jq -r '.updated_at // ""')
             updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
             age=$((now - updated_epoch))
-            echo "run=${run_id} conclusion=${conclusion} attempt=${attempt} age=${age}s"
+            echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
+
+            if [ "$status" != "completed" ]; then
+              echo "Latest run is not completed; no retry for ${workflow}"
+              continue
+            fi
+
             if [ "$conclusion" = "failure" ] && [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
-              echo "Retrying failed jobs for ${workflow} run ${run_id}"
+              echo "Retrying failed jobs for latest ${workflow} run ${run_id}"
               if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
                 echo "Retry requested successfully for ${workflow} run ${run_id}"
               else
                 echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
               fi
+            else
+              echo "No retry needed for ${workflow}"
             fi
           done
           echo 'BTC workflow watchdog completed without masking core workflow results.'
