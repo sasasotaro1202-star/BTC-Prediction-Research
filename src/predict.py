@@ -68,21 +68,22 @@ def load_temperature(h):
     p=Path(DB).parent/'models'/f'{h}.calibration.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
-        # Calibration is stateful model metadata. Never apply a temperature fitted
-        # to a different production generation, and never reuse stale calibration
-        # after the current generation has insufficient settled history.
         calibrated_version=str(obj.get('model_version',''))
         current_version=regver(h)
-        if calibrated_version != current_version:
-            return 1.0
+        if calibrated_version != current_version:return 1.0
         if not (0.5<=t<=3.0) or n<300:return 1.0
         return t
     except Exception:return 1.0
 def load_blend_weight(h):
-    """Load only a holdout-validated structural blend weight."""
+    """Load only a holdout-validated blend weight from the current model generation."""
     p=Path(DB).parent/'models'/f'{h}.blend.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0)); status=str(obj.get('status',''))
+        calibrated_version=str(obj.get('model_version',''))
+        current_version=regver(h)
+        # Never apply a blend weight fitted to a different production generation.
+        # Older files without a generation binding are treated as stale as well.
+        if calibrated_version != current_version:return 0.20
         if n<400 or status not in {'accepted','rejected','insufficient_history'}: return 0.20
         if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.20
         return w
