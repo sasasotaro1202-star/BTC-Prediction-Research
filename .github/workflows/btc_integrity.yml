@@ -18,9 +18,6 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  # Static source validation must not fail merely because the last live-cycle
-  # prediction is older than the live freshness SLA. Manual integrity runs
-  # remain strict about freshness.
   BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
   BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '3600'
 
@@ -30,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
