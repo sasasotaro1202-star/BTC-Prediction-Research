@@ -105,10 +105,18 @@ jobs:
             if git push origin HEAD:main; then
               exit 0
             fi
-            echo "git push attempt ${attempt} failed; rebuilding on origin/main"
-            git fetch --prune origin main
+            echo "git push attempt ${attempt} failed; preserving local research state and rebuilding on origin/main"
+            rm -rf /tmp/btc_research_models
+            mkdir -p /tmp/btc_research_models
+            cp -a models/. /tmp/btc_research_models/
+            cp data/predictions.db /tmp/btc_research_predictions.db
+            if [ -f data/historical_research/production_artifact_audit.json ]; then cp data/historical_research/production_artifact_audit.json /tmp/btc_research_artifact_audit.json; fi
             git rebase --abort 2>/dev/null || true
+            git fetch --prune origin main
             git reset --hard origin/main
+            cp -a /tmp/btc_research_models/. models/
+            cp /tmp/btc_research_predictions.db data/predictions.db
+            if [ -f /tmp/btc_research_artifact_audit.json ]; then cp /tmp/btc_research_artifact_audit.json data/historical_research/production_artifact_audit.json; fi
             git add data/predictions.db data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
