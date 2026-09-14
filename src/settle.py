@@ -10,6 +10,8 @@ MAX_TARGET_WORKERS = 4
 
 
 def direction(base: float, actual: float, threshold: float = THRESHOLD) -> str:
+    if base <= 0:
+        raise ValueError('base price must be positive for normal settlement')
     r = actual / base - 1.0
     if r > threshold:
         return 'UP'
@@ -19,11 +21,9 @@ def direction(base: float, actual: float, threshold: float = THRESHOLD) -> str:
 
 
 def resolve_targets(targets: list[str], max_workers: int = MAX_TARGET_WORKERS) -> dict[str, tuple[float | None, str]]:
-    """Resolve unique target timestamps concurrently, without changing scoring semantics."""
     unique_targets = sorted(set(targets))
     if not unique_targets:
         return {}
-
     results: dict[str, tuple[float | None, str]] = {}
     workers = max(1, min(max_workers, len(unique_targets)))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='btc-settle') as executor:
@@ -33,7 +33,6 @@ def resolve_targets(targets: list[str], max_workers: int = MAX_TARGET_WORKERS) -
             try:
                 results[target] = future.result()
             except Exception:
-                # A single public-source failure must not abort settlement of the other targets.
                 results[target] = (None, 'unavailable')
     return results
 
@@ -41,13 +40,13 @@ def resolve_targets(targets: list[str], max_workers: int = MAX_TARGET_WORKERS) -
 def settle():
     init_db()
     now = datetime.now(timezone.utc)
-    settled = unavailable = 0
+    settled = unavailable = skipped_degraded = 0
     with sqlite3.connect(DB) as con:
         rows = con.execute('''
             SELECT prediction_id, target_5m, target_10m, base_price,
                    p_up_5m, p_down_5m, p_flat_5m,
                    p_up_10m, p_down_10m, p_flat_10m,
-                   actual_price_5m, actual_price_10m
+                   actual_price_5m, actual_price_10m, model_version
             FROM predictions
             WHERE (actual_price_5m IS NULL AND target_5m <= ?)
                OR (actual_price_10m IS NULL AND target_10m <= ?)
@@ -56,6 +55,9 @@ def settle():
 
         targets: list[str] = []
         for r in rows:
+            if r[12] == 'DEGRADED_NO_FRESH_DATA':
+                skipped_degraded += 1
+                continue
             if r[10] is None and r[1] <= now.isoformat():
                 targets.append(r[1])
             if r[11] is None and r[2] <= now.isoformat():
@@ -63,7 +65,12 @@ def settle():
         resolved = resolve_targets(targets)
 
         for r in rows:
-            prediction_id, target5, target10, base, up5, down5, flat5, up10, down10, flat10, actual5, actual10 = r
+            prediction_id, target5, target10, base, up5, down5, flat5, up10, down10, flat10, actual5, actual10, model_version = r
+            if model_version == 'DEGRADED_NO_FRESH_DATA':
+                continue
+            if not isinstance(base, (int, float)) or base <= 0:
+                unavailable += 1
+                continue
             if actual5 is None and target5 <= now.isoformat():
                 px, _ = resolved.get(target5, (None, 'unavailable'))
                 if px is not None:
@@ -82,7 +89,7 @@ def settle():
                     settled += 1
                 else:
                     unavailable += 1
-    print('settled_fields', settled, 'unavailable_fields', unavailable, 'threshold_bps', THRESHOLD * 10000)
+    print('settled_fields', settled, 'unavailable_fields', unavailable, 'skipped_degraded', skipped_degraded, 'threshold_bps', THRESHOLD * 10000)
 
 
 if __name__ == '__main__':
