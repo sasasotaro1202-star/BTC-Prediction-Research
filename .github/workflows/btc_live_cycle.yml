@@ -73,6 +73,8 @@ jobs:
         run: python src/blend_calibration.py
       - name: Run BTC model comparison and adoption gate
         run: python src/model_compare.py
+      - name: Audit BTC production artifact provenance
+        run: python src/production_artifact_audit.py
       - name: Generate next BTC prediction
         run: python src/predict.py
       - name: Run non-fatal BTC research health audit
@@ -121,10 +123,16 @@ jobs:
               if bp.exists():
                   obj=json.loads(bp.read_text()); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0))
                   if not 0.0 <= w <= 0.45 or n < 0: raise SystemExit(f'{horizon} blend invalid')
+          audit=Path('data/historical_research/production_artifact_audit.json')
+          if not audit.exists(): raise SystemExit('production artifact audit output missing')
+          audit_obj=json.loads(audit.read_text())
+          if not isinstance(audit_obj.get('artifacts'),list) or len(audit_obj['artifacts']) != 2: raise SystemExit('production artifact audit malformed')
+          for item in audit_obj['artifacts']:
+              if item.get('horizon') not in {'5m','10m'} or len(str(item.get('model_sha256',''))) != 64 or len(str(item.get('metadata_sha256',''))) != 64: raise SystemExit('production artifact fingerprint invalid')
           health=Path('data/historical_research/research_health.json')
           if not health.exists(): raise SystemExit('research health audit output missing')
           if not isinstance(json.loads(health.read_text()).get('ok'),bool): raise SystemExit('research health audit malformed')
-          print('BTC prediction database, models, calibration, blend, and research-health validation: OK')
+          print('BTC prediction database, models, calibration, blend, artifact provenance, and research-health validation: OK')
           PY
       - name: Upload BTC research artifacts
         uses: actions/upload-artifact@v6
