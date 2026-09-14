@@ -1,9 +1,4 @@
-"""Strict production-integrity gate for BTC prediction runs.
-
-This gate is deliberately independent from model scoring. A green workflow is
-not sufficient: the run must also have valid artifacts, probabilities,
-point-in-time metadata, and a usable champion model.
-"""
+"""Strict production-integrity gate for BTC prediction runs."""
 from __future__ import annotations
 
 import json
@@ -30,6 +25,10 @@ FEATURES = [
 DEFAULT_MAX_AGE_SECONDS = 900
 
 
+def fail(msg: str) -> None:
+    raise RuntimeError(msg)
+
+
 def require_fresh_prediction() -> bool:
     raw = os.getenv("BTC_INTEGRITY_REQUIRE_FRESH", "true").strip().lower()
     if raw not in {"true", "false"}:
@@ -46,10 +45,6 @@ def max_prediction_age_seconds() -> float:
     if not math.isfinite(value) or value <= 0:
         fail("BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS must be positive and finite")
     return value
-
-
-def fail(msg: str) -> None:
-    raise RuntimeError(msg)
 
 
 def finite_probs(values) -> bool:
@@ -93,19 +88,28 @@ def check_db() -> dict:
         fresh_required = require_fresh_prediction()
         if fresh_required and (age < -60 or age > max_age):
             fail(f"latest prediction is stale or future-dated: {age:.0f}s (max {max_age:.0f}s)")
-        if not math.isfinite(float(row[1])) or float(row[1]) <= 0:
-            fail("latest base price invalid")
         if not finite_probs(row[2:5]) or not finite_probs(row[5:8]):
             fail("latest prediction probabilities invalid")
-        feature_obj = json.loads(row[9] or "{}")
-        if not all(k in feature_obj and math.isfinite(float(feature_obj[k])) for k in FEATURES):
-            fail("latest prediction feature snapshot is incomplete or non-finite")
         scenario = json.loads(row[10] or "{}")
         if not isinstance(scenario.get("data_quality"), dict):
             fail("latest prediction lacks data_quality metadata")
-        if not row[8]:
-            fail("latest prediction lacks model_version")
-    return {"latest_age_seconds": int(age), "prediction_ok": True, "freshness_required": fresh_required, "max_age_seconds": max_age}
+        degraded = row[8] == "DEGRADED_NO_FRESH_DATA"
+        if degraded:
+            if float(row[1]) != 0.0:
+                fail("degraded prediction must not claim a market base price")
+            if row[9] not in (None, "", "{}"):
+                fail("degraded prediction must not contain fabricated feature snapshot")
+            if scenario.get("policy") != "safe_degraded_no_directional_claim":
+                fail("degraded prediction lacks explicit safe policy")
+        else:
+            if not math.isfinite(float(row[1])) or float(row[1]) <= 0:
+                fail("latest base price invalid")
+            feature_obj = json.loads(row[9] or "{}")
+            if not all(k in feature_obj and math.isfinite(float(feature_obj[k])) for k in FEATURES):
+                fail("latest prediction feature snapshot is incomplete or non-finite")
+            if not row[8]:
+                fail("latest prediction lacks model_version")
+    return {"latest_age_seconds": int(age), "prediction_ok": True, "freshness_required": fresh_required, "max_age_seconds": max_age, "safe_degraded": degraded}
 
 
 def main() -> int:
