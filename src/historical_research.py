@@ -122,15 +122,11 @@ def build_panel():
     start=end-timedelta(days=DAYS)
     raw=load_market(start,end)
     maps={k:{int(r[0]):r for r in v} for k,v in raw.items() if k not in ("funding","oi")}
-    # Spot archives/API can be temporarily unavailable (e.g. regional 451).
-    # Do not discard an otherwise valid futures research window. Use the
-    # BTC futures close as an explicit spot proxy and report the degraded
-    # basis coverage rather than silently pretending spot was observed.
     spot_proxy=False
     if not maps.get("btc_spot"):
         if maps.get("btc_fut"):
             maps["btc_spot"]=dict(maps["btc_fut"]); spot_proxy=True
-            print("[WARN] BTC spot history unavailable; using BTC futures as explicit spot proxy. basis features are unavailable for this run.")
+            print("[WARN] BTC spot history unavailable; using BTC futures as explicit spot proxy. basis features disabled.")
         else:
             raise RuntimeError("both BTC spot and futures historical data are unavailable")
     funding={int(r["fundingTime"]):float(r["fundingRate"]) for r in raw.get("funding",[])}; oi={int(r["timestamp"]):float(r["sumOpenInterest"]) for r in raw.get("oi",[])}
@@ -157,7 +153,6 @@ def build_panel():
         if all(math.isfinite(v) for v in x):rows.append((t,x,p))
     return rows
 
-
 def labels(rows,h):
     n=len(rows)-h; X=np.asarray([rows[i][1] for i in range(n)],float); base=np.asarray([rows[i][2] for i in range(n)],float); fut=np.asarray([rows[i+h][2] for i in range(n)],float); r=(fut/base-1)*10000; y=np.where(r>NEUTRAL_BPS,"UP",np.where(r<-NEUTRAL_BPS,"DOWN","FLAT")); return X,y,np.asarray([rows[i][0] for i in range(n)]),base
 
@@ -174,23 +169,47 @@ def metrics(y,p):
 
 def factories():
     return {"logreg":lambda:Pipeline([("s",StandardScaler()),("m",LogisticRegression(C=.3,max_iter=1200))]),"extra":lambda:ExtraTreesClassifier(n_estimators=220,max_depth=12,min_samples_leaf=12,max_features="sqrt",random_state=42,n_jobs=-1),"rf":lambda:RandomForestClassifier(n_estimators=220,max_depth=10,min_samples_leaf=10,max_features="sqrt",random_state=42,n_jobs=-1),"hgb":lambda:HistGradientBoostingClassifier(max_iter=160,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.5,random_state=42)}
-
 def align(m,X):
-    raw=m.predict_proba(X); out=np.full((len(X),3),1e-7); classes=list(m.classes_)
-    for j,c in enumerate(classes):out[:,CLASSES.index(c)]=raw[:,j]
+    raw=m.predict_proba(X); out=np.full((len(X),3),1e-7)
+    for j,c in enumerate(m.classes_):out[:,CLASSES.index(str(c))]=raw[:,j]
     return norm(out)
-
+def wf(X,y,ts):
+    out={}
+    for name,f in factories().items():
+        ps,ys,st=[],[],[]
+        for end in range(MIN_TRAIN,len(X),TEST_BLOCK):
+            a=end+EMBARGO; b=min(a+TEST_BLOCK,len(X))
+            if a>=len(X):break
+            m=f();m.fit(X[:end],y[:end]);p=align(m,X[a:b]);ps.extend(p.tolist());ys.extend(y[a:b]);st.extend(ts[a:b].tolist())
+        if len(ys)>=10000:out[name]={"metrics":metrics(np.asarray(ys),np.asarray(ps)),"y":ys,"p":ps,"ts":st}
+    return out
+def bootstrap_loss(y,p,baseline,metric="logloss",n_boot=1500,seed=42):
+    rng=np.random.default_rng(seed); idx={c:i for i,c in enumerate(CLASSES)}; yi=np.array([idx[v] for v in y]); p=norm(p); b=norm(baseline)
+    if metric=="logloss":a=-np.log(np.clip(p[np.arange(len(y)),yi],1e-7,1)); z=-np.log(np.clip(b[np.arange(len(y)),yi],1e-7,1))
+    else:one=np.eye(3)[yi]; a=np.sum((p-one)**2,1); z=np.sum((b-one)**2,1)
+    d=a-z; obs=float(d.mean()); vals=np.array([float(rng.choice(d,size=len(d),replace=True).mean()) for _ in range(n_boot)]); lo,hi=np.quantile(vals,[.025,.975]); pval=2*min(float(np.mean(vals<=0)),float(np.mean(vals>=0))); return {"difference_candidate_minus_baseline":obs,"ci95":[float(lo),float(hi)],"bootstrap_p":float(min(1,pval))}
 def main():
-    rows=build_panel(); results={}
-    for horizon,h in TARGETS.items():
-        X,y,ts,_=labels(rows,h); n=len(y); cut=n-MIN_TRAIN-TEST_BLOCK; tr_end=cut; test_start=tr_end+EMBARGO; Xtr,ytr=X[:tr_end],y[:tr_end]; Xte,yte=X[test_start:],y[test_start:]
-        if len(Xte)<TEST_BLOCK:raise RuntimeError(f"insufficient OOS block for {horizon}: {len(Xte)}")
-        scores={}; preds={}
-        for name,make in factories().items():
-            m=make(); m.fit(Xtr,ytr); p=align(m,Xte); scores[name]=metrics(yte,p); preds[name]=p
-        order=sorted(scores,key=lambda k:scores[k]["logloss"]); best=order[0]; ensemble=norm(sum(preds[k] for k in order[:2])/2)
-        results[horizon]={"models":scores,"best_model":best,"ensemble_top2":metrics(yte,ensemble),"oos_start":int(ts[test_start]),"oos_end":int(ts[-1]),"spot_proxy":bool(spot_proxy)}
-    (OUT/"report.json").write_text(json.dumps(results,indent=2),encoding="utf-8")
-    print(json.dumps(results,indent=2))
-
+    rows=build_panel()
+    with (OUT/"aligned_panel.csv").open("w",newline="") as f:
+        w=csv.writer(f);w.writerow(["timestamp","price"]+FEATURES);w.writerows([[t,p]+x for t,x,p in rows])
+    report={"protocol_version":"historical-v6-microstructure-incremental-cache","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"horizons":{}}
+    for h,steps in TARGETS.items():
+        X,y,ts,base=labels(rows,steps); r=wf(X,y,ts); freq=np.array([(y==c).sum() for c in CLASSES],float); freq/=freq.sum(); hz={"samples":len(y),"class_counts":{c:int((y==c).sum()) for c in CLASSES},"baseline":{"uniform":metrics(y,np.tile([1/3]*3,(len(y),1))),"frequency":metrics(y,np.tile(freq,(len(y),1)))},"models":{},"ensemble":{}}
+        names=list(r)
+        for name,o in r.items():
+            hz["models"][name]=o["metrics"]
+            for n in (2000,5000,10000):
+                if len(o["y"])>=n:hz["models"][name][f"oos_{n}"]=metrics(np.asarray(o["y"][:n]),np.asarray(o["p"][:n]))
+            with (OUT/f"oos_{h}_{name}.csv").open("w",newline="") as f:
+                w=csv.writer(f);w.writerow(["timestamp","actual","p_down","p_flat","p_up"])
+                for yy,pp,tt in zip(o["y"],o["p"],o["ts"]):w.writerow([int(tt),yy,*map(float,pp)])
+        if names:
+            n=min(len(r[k]["y"]) for k in names); ep=np.mean([np.asarray(r[k]["p"][:n]) for k in names],axis=0); ey=np.asarray(r[names[0]]["y"][:n]); hz["ensemble"]["equal_weight"]=metrics(ey,ep); uni=np.tile([1/3]*3,(n,1));freqb=np.tile(freq,(n,1))
+            for base_name,b in [("uniform",uni),("frequency",freqb)]:
+                hz["ensemble"][f"vs_{base_name}_logloss"]=bootstrap_loss(ey,ep,b,"logloss"); hz["ensemble"][f"vs_{base_name}_brier"]=bootstrap_loss(ey,ep,b,"brier")
+            with (OUT/f"oos_{h}_ensemble.csv").open("w",newline="") as f:
+                w=csv.writer(f);w.writerow(["timestamp","actual","p_down","p_flat","p_up"])
+                for yy,pp,tt in zip(ey,ep,r[names[0]]["ts"][:n]):w.writerow([int(tt),yy,*map(float,pp)])
+        report["horizons"][h]=hz
+    report["finished_utc"]=datetime.now(timezone.utc).isoformat(); report["spot_proxy"] = bool(spot_proxy); (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8"); print(json.dumps(report,indent=2))
 if __name__=="__main__":main()
