@@ -40,6 +40,21 @@ def make_db(path, rows):
     con.close()
 
 
+def add_registry(path, version, updated_at):
+    con = sqlite3.connect(path)
+    con.execute('''CREATE TABLE model_registry (
+        horizon TEXT PRIMARY KEY,
+        production_version TEXT NOT NULL,
+        updated_at_utc TEXT NOT NULL
+    )''')
+    con.executemany(
+        'INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?)',
+        [('5m', version, updated_at), ('10m', version, updated_at)],
+    )
+    con.commit()
+    con.close()
+
+
 class TestMergePredictionState(unittest.TestCase):
     def test_settled_and_unsettled_same_prediction_merge_once_and_reconcile(self):
         with tempfile.TemporaryDirectory() as td:
@@ -120,6 +135,30 @@ class TestMergePredictionState(unittest.TestCase):
             con.close()
             self.assertEqual(count, 1)
             self.assertEqual(row, (101.0, 102.0))
+
+    def test_model_registry_prefers_newer_state_and_does_not_roll_back(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            make_db(target, []); make_db(local, [])
+            add_registry(target, 'new_model', '2026-09-15T12:00:00+00:00')
+            add_registry(local, 'old_model', '2026-09-15T11:00:00+00:00')
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            row = con.execute('SELECT production_version, updated_at_utc FROM model_registry WHERE horizon="5m"').fetchone()
+            con.close()
+            self.assertEqual(row, ('new_model', '2026-09-15T12:00:00+00:00'))
+
+    def test_model_registry_promotes_newer_local_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            make_db(target, []); make_db(local, [])
+            add_registry(target, 'old_model', '2026-09-15T11:00:00+00:00')
+            add_registry(local, 'new_model', '2026-09-15T12:00:00+00:00')
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            row = con.execute('SELECT production_version, updated_at_utc FROM model_registry WHERE horizon="5m"').fetchone()
+            con.close()
+            self.assertEqual(row, ('new_model', '2026-09-15T12:00:00+00:00'))
 
 
 if __name__ == '__main__':
