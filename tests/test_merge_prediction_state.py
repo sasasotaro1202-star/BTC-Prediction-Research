@@ -36,7 +36,7 @@ def make_db(path, rows):
 
 
 class TestMergePredictionState(unittest.TestCase):
-    def test_settled_and_unsettled_same_prediction_merge_once(self):
+    def test_settled_and_unsettled_same_prediction_merge_once_and_reconcile(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
             immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
@@ -47,10 +47,25 @@ class TestMergePredictionState(unittest.TestCase):
             make_db(target, [unsettled]); make_db(local, [settled])
             subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
             con = sqlite3.connect(target)
-            rows = con.execute('SELECT actual_price_5m, actual_direction_5m FROM predictions').fetchall()
+            rows = con.execute('SELECT actual_price_5m, actual_direction_5m, correct_5m FROM predictions').fetchall()
             con.close()
             self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0], (None, None))
+            self.assertEqual(rows[0], (101.0, 'UP', 1))
+
+    def test_existing_target_settlement_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{}', '{}')
+            target_row = immutable + (102.0, 'UP', 1, '2026-09-15T10:05:02+00:00', None, None, None, None)
+            local_row = immutable + (101.0, 'UP', 1, '2026-09-15T10:05:01+00:00', None, None, None, None)
+            make_db(target, [target_row]); make_db(local, [local_row])
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            row = con.execute('SELECT actual_price_5m, settled_5m_at_utc FROM predictions').fetchone()
+            con.close()
+            self.assertEqual(row, (102.0, '2026-09-15T10:05:02+00:00'))
 
     def test_distinct_prediction_events_are_not_collapsed(self):
         with tempfile.TemporaryDirectory() as td:
