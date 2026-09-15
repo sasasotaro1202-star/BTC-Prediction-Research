@@ -45,6 +45,29 @@ jobs:
             sleep $((10 * attempt))
           done
           exit 1
+      - name: Restore BTC state archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s data/predictions.db ]]; then
+            echo "Using existing uncompressed prediction state"
+            exit 0
+          fi
+          if [[ -s data/predictions.db.gz ]]; then
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          archive = Path('data/predictions.db.gz')
+          target = Path('data/predictions.db')
+          restore_db(archive, target)
+          if not target.exists() or target.stat().st_size == 0:
+              raise SystemExit('restored prediction database is missing or empty')
+          print(f'Restored BTC state: {target.stat().st_size} bytes')
+          PY
+            exit 0
+          fi
+          echo 'No BTC prediction state found (predictions.db or predictions.db.gz)' >&2
+          exit 1
       - name: Compile all BTC code
         run: python -m compileall -q src tests
       - name: Run all BTC tests
