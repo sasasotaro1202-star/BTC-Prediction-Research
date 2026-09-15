@@ -9,7 +9,9 @@ if len(sys.argv) != 3:
 local_path, target_path = sys.argv[1:]
 
 # Conflict recovery can run this merge repeatedly. Auto-increment IDs are not
-# logical identity, so prediction/metric rows are matched on all non-ID fields.
+# logical identity. Prediction settlement fields are mutable, so they must not
+# participate in duplicate detection; otherwise a prediction that was settled
+# on one side and unsettled on the other can be inserted twice.
 con = sqlite3.connect(target_path)
 con.execute('PRAGMA foreign_keys=ON')
 con.execute('ATTACH DATABASE ? AS local', (local_path,))
@@ -29,7 +31,9 @@ try:
 
         if table == 'model_registry':
             # horizon is the declared primary key; this table is a latest-state
-            # pointer, so the local snapshot intentionally wins on recovery.
+            # pointer. Preserve the historical behavior that the recovered local
+            # snapshot wins for this table; production model artifacts are guarded
+            # separately by provenance/integrity checks.
             rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
             for row in rows:
                 con.execute(
@@ -39,10 +43,23 @@ try:
             print(f'{table}: replaced={len(rows)}')
             continue
 
-        identity_cols = [
-            c for c in common
-            if c not in {'prediction_id', 'id', 'metric_id'}
-        ]
+        if table == 'predictions':
+            # These columns describe the prediction event at creation time and are
+            # immutable. actual_* / correct_* / settled_* fields are explicitly
+            # excluded because settlement mutates them later.
+            mutable = {
+                'actual_price_5m', 'actual_direction_5m', 'correct_5m', 'settled_5m_at_utc',
+                'actual_price_10m', 'actual_direction_10m', 'correct_10m', 'settled_10m_at_utc',
+            }
+            identity_cols = [
+                c for c in common
+                if c not in {'prediction_id', 'id', 'metric_id'} and c not in mutable
+            ]
+        else:
+            # model_metrics is append-only: every non-ID field belongs to the
+            # metric event identity.
+            identity_cols = [c for c in common if c not in {'prediction_id', 'id', 'metric_id'}]
+
         if not identity_cols:
             raise RuntimeError(f'No logical identity columns available for {table}')
 
