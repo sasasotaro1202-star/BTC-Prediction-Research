@@ -8,10 +8,8 @@ if len(sys.argv) != 3:
 
 local_path, target_path = sys.argv[1:]
 
-# Merge is intentionally idempotent: conflict recovery may execute this script
-# repeatedly, and the same local snapshot must never create duplicate logical
-# prediction/metric rows. Auto-increment IDs are not used as identity because
-# the two databases can allocate different IDs for the same logical record.
+# Conflict recovery can run this merge repeatedly. Auto-increment IDs are not
+# logical identity, so prediction/metric rows are matched on all non-ID fields.
 con = sqlite3.connect(target_path)
 con.execute('PRAGMA foreign_keys=ON')
 con.execute('ATTACH DATABASE ? AS local', (local_path,))
@@ -30,14 +28,15 @@ try:
         placeholders = ','.join('?' for _ in common)
 
         if table == 'model_registry':
-            # horizon is the declared primary key; this table represents the
-            # latest production pointer, so the local state intentionally wins.
+            # horizon is the declared primary key; this table is a latest-state
+            # pointer, so the local snapshot intentionally wins on recovery.
             rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
             for row in rows:
                 con.execute(
                     f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',
                     row,
                 )
+            print(f'{table}: replaced={len(rows)}')
             continue
 
         identity_cols = [
@@ -47,51 +46,39 @@ try:
         if not identity_cols:
             raise RuntimeError(f'No logical identity columns available for {table}')
 
-        identity_names = ','.join('"' + c + '"' for c in identity_cols)
-        # NULL-safe equality is important if optional outcome fields are part
-        # of a future schema. Current prediction/metric identity fields are
-        # non-NULL, but IS provides deterministic behavior across migrations.
-        predicate = ' AND '.join(
-            f'(t."{c}" IS l."{c}")' for c in identity_cols
-        )
-
         rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
         inserted = 0
         skipped = 0
         for row in rows:
-            # Exclude the auto-increment ID from the inserted values. SQLite
-            # allocates a target-local ID, avoiding collisions after branches
-            # diverge and making repeated recovery merges safe.
-            values = list(row)
-            insert_cols = list(common)
-            for id_col in ('prediction_id', 'id', 'metric_id'):
-                if id_col in insert_cols:
-                    idx = insert_cols.index(id_col)
-                    insert_cols.pop(idx)
-                    values.pop(idx)
-                    break
+            row_map = dict(zip(common, row))
+            # NULL-safe equality, evaluated against this specific local row.
+            where = ' AND '.join(
+                f'(("{c}" = ?) OR ("{c}" IS NULL AND ? IS NULL))'
+                for c in identity_cols
+            )
+            params = []
+            for c in identity_cols:
+                params.extend((row_map[c], row_map[c]))
 
-            insert_names = ','.join('"' + c + '"' for c in insert_cols)
-            insert_placeholders = ','.join('?' for _ in insert_cols)
             exists = con.execute(
-                f'SELECT 1 FROM {table} AS t '
-                f'WHERE EXISTS (SELECT 1 FROM local.{table} AS l '
-                f'WHERE {predicate} LIMIT 1) LIMIT 1',
-                row,
+                f'SELECT 1 FROM {table} WHERE {where} LIMIT 1',
+                params,
             ).fetchone()
             if exists:
                 skipped += 1
                 continue
+
+            insert_cols = [c for c in common if c not in {'prediction_id', 'id', 'metric_id'}]
+            insert_values = [row_map[c] for c in insert_cols]
+            insert_names = ','.join('"' + c + '"' for c in insert_cols)
+            insert_placeholders = ','.join('?' for _ in insert_cols)
             try:
                 con.execute(
                     f'INSERT INTO {table} ({insert_names}) VALUES ({insert_placeholders})',
-                    values,
+                    insert_values,
                 )
                 inserted += 1
             except sqlite3.IntegrityError as exc:
-                # A genuine schema-level uniqueness collision is safe to skip;
-                # other errors must fail closed instead of being misreported as
-                # a successful merge.
                 message = str(exc).lower()
                 if 'unique' in message or 'constraint' in message:
                     skipped += 1
