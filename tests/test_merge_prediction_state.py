@@ -2,8 +2,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import unittest
 from pathlib import Path
+import unittest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'merge_prediction_state.py'
@@ -31,8 +31,13 @@ def make_db(path, rows):
         actual_direction_10m TEXT, correct_10m INTEGER, settled_10m_at_utc TEXT
     )''')
     for row in rows:
-        con.execute(f'INSERT INTO predictions ({PREDICTION_COLUMNS}) VALUES ({",".join("?" for _ in PREDICTION_COLUMNS.split(","))})', row)
-    con.commit(); con.close()
+        con.execute(
+            f'INSERT INTO predictions ({PREDICTION_COLUMNS}) VALUES '
+            f'({",".join("?" for _ in PREDICTION_COLUMNS.split(","))})',
+            row,
+        )
+    con.commit()
+    con.close()
 
 
 class TestMergePredictionState(unittest.TestCase):
@@ -81,6 +86,40 @@ class TestMergePredictionState(unittest.TestCase):
             count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
             con.close()
             self.assertEqual(count, 2)
+
+    def test_brand_new_settled_prediction_preserves_settlement_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            immutable = ('2026-09-15T10:01:00+00:00', '2026-09-15T10:06:00+00:00',
+                         '2026-09-15T10:11:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{}', '{}')
+            settled = immutable + (101.0, 'UP', 1, '2026-09-15T10:06:01+00:00', 102.0, 'UP', 1, '2026-09-15T10:11:01+00:00')
+            make_db(target, []); make_db(local, [settled])
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            row = con.execute('''SELECT actual_price_5m, actual_direction_5m, correct_5m,
+                                        settled_5m_at_utc, actual_price_10m, actual_direction_10m,
+                                        correct_10m, settled_10m_at_utc
+                                 FROM predictions''').fetchone()
+            con.close()
+            self.assertEqual(row, (101.0, 'UP', 1, '2026-09-15T10:06:01+00:00', 102.0, 'UP', 1, '2026-09-15T10:11:01+00:00'))
+
+    def test_repeated_merge_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            immutable = ('2026-09-15T10:02:00+00:00', '2026-09-15T10:07:00+00:00',
+                         '2026-09-15T10:12:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{}', '{}')
+            settled = immutable + (101.0, 'UP', 1, '2026-09-15T10:07:01+00:00', 102.0, 'UP', 1, '2026-09-15T10:12:01+00:00')
+            make_db(target, []); make_db(local, [settled])
+            for _ in range(2):
+                subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+            row = con.execute('SELECT actual_price_5m, actual_price_10m FROM predictions').fetchone()
+            con.close()
+            self.assertEqual(count, 1)
+            self.assertEqual(row, (101.0, 102.0))
 
 
 if __name__ == '__main__':
