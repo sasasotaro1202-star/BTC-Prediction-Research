@@ -64,11 +64,9 @@ try:
             raise RuntimeError(f'No logical identity columns available for {table}')
 
         rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
-        inserted = 0
-        skipped = 0
+        inserted = updated = skipped = 0
         for row in rows:
             row_map = dict(zip(common, row))
-            # NULL-safe equality, evaluated against this specific local row.
             where = ' AND '.join(
                 f'(("{c}" = ?) OR ("{c}" IS NULL AND ? IS NULL))'
                 for c in identity_cols
@@ -77,12 +75,28 @@ try:
             for c in identity_cols:
                 params.extend((row_map[c], row_map[c]))
 
-            exists = con.execute(
-                f'SELECT 1 FROM {table} WHERE {where} LIMIT 1',
+            existing = con.execute(
+                f'SELECT rowid, {names} FROM {table} WHERE {where} LIMIT 1',
                 params,
             ).fetchone()
-            if exists:
+            if existing:
                 skipped += 1
+                if table == 'predictions':
+                    # Merge only previously-missing settlement fields. Never
+                    # overwrite a non-null target settlement with a conflicting
+                    # local value: target may contain the later/authoritative
+                    # settlement observation. This makes recovery idempotent and
+                    # preserves the most complete known state.
+                    existing_map = dict(zip(['rowid'] + common, existing))
+                    settlement_cols = [
+                        c for c in mutable
+                        if c in common and existing_map.get(c) is None and row_map.get(c) is not None
+                    ]
+                    if settlement_cols:
+                        set_clause = ','.join(f'"{c}"=?' for c in settlement_cols)
+                        values = [row_map[c] for c in settlement_cols] + [existing_map['rowid']]
+                        con.execute(f'UPDATE {table} SET {set_clause} WHERE rowid=?', values)
+                        updated += 1
                 continue
 
             insert_cols = [c for c in common if c not in {'prediction_id', 'id', 'metric_id'}]
@@ -102,7 +116,7 @@ try:
                 else:
                     raise
 
-        print(f'{table}: inserted={inserted} skipped_existing={skipped}')
+        print(f'{table}: inserted={inserted} updated={updated} skipped_existing={skipped}')
 
     con.commit()
 finally:
