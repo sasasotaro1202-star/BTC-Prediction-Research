@@ -99,6 +99,8 @@ jobs:
         run: python src/research_health.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
         run: python src/venue_drift.py
+      - name: Diagnose FLAT disappearance by prediction pipeline stage
+        run: python src/flat_diagnostic.py
       - name: Validate BTC prediction state
         shell: bash
         run: |
@@ -157,7 +159,12 @@ jobs:
           drift_obj=json.loads(drift.read_text())
           if drift_obj.get('policy') != 'monitor_only_no_model_input_no_promotion_effect': raise SystemExit('venue drift audit policy mismatch')
           if not isinstance(drift_obj.get('source_counts'),dict) or not isinstance(drift_obj.get('cross_exchange_gap'),dict): raise SystemExit('venue drift audit malformed')
-          print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, and venue-drift validation: OK')
+          flat=Path('data/historical_research/flat_diagnostic.json')
+          if not flat.exists(): raise SystemExit('FLAT diagnostic output missing')
+          flat_obj=json.loads(flat.read_text())
+          if flat_obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('FLAT diagnostic policy mismatch')
+          if not isinstance(flat_obj.get('counts'),dict) or not isinstance(flat_obj.get('window'),int) or flat_obj.get('window',0) <= 0: raise SystemExit('FLAT diagnostic malformed')
+          print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, venue-drift, and FLAT diagnostic validation: OK')
           PY
       - name: Compress validated BTC prediction database for repository storage
         shell: bash
@@ -210,6 +217,7 @@ jobs:
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
+            if [ -f data/historical_research/flat_diagnostic.json ]; then cp data/historical_research/flat_diagnostic.json /tmp/btc_local_flat_diagnostic.json; fi
             git rebase --abort 2>/dev/null || true
             git fetch --prune origin main
             git reset --hard origin/main
@@ -232,6 +240,7 @@ jobs:
           PY
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
+            if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
             git add data/predictions.db.gz data/historical_research 2>/dev/null || true
             git rm --cached data/predictions.db 2>/dev/null || true
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
