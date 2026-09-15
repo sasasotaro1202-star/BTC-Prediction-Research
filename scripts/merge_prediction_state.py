@@ -30,17 +30,37 @@ try:
         placeholders = ','.join('?' for _ in common)
 
         if table == 'model_registry':
-            # horizon is the declared primary key; this table is a latest-state
-            # pointer. Preserve the historical behavior that the recovered local
-            # snapshot wins for this table; production model artifacts are guarded
-            # separately by provenance/integrity checks.
-            rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
-            for row in rows:
-                con.execute(
-                    f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',
-                    row,
-                )
-            print(f'{table}: replaced={len(rows)}')
+            # This table is a latest-state pointer. During a push conflict the
+            # local checkout may contain an older registry snapshot than the
+            # origin checkout. Never roll production back merely because the
+            # local state won the database merge. Prefer the row with the newest
+            # valid updated_at_utc; if timestamps are unavailable, preserve the
+            # target row rather than guessing.
+            target_rows = con.execute(f'SELECT {names} FROM {table}').fetchall()
+            local_rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
+            index = {row[common.index('horizon')]: row for row in target_rows} if 'horizon' in common else {}
+            updated_idx = common.index('updated_at_utc') if 'updated_at_utc' in common else None
+            for row in local_rows:
+                key = row[common.index('horizon')] if 'horizon' in common else None
+                current = index.get(key)
+                if current is None:
+                    con.execute(
+                        f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',
+                        row,
+                    )
+                    index[key] = row
+                    continue
+                if updated_idx is None:
+                    continue
+                local_ts = str(row[updated_idx] or '')
+                target_ts = str(current[updated_idx] or '')
+                if local_ts and (not target_ts or local_ts > target_ts):
+                    con.execute(
+                        f'INSERT OR REPLACE INTO {table} ({names}) VALUES ({placeholders})',
+                        row,
+                    )
+                    index[key] = row
+            print(f'{table}: target={len(target_rows)} local={len(local_rows)} latest-timestamp-wins')
             continue
 
         if table == 'predictions':
