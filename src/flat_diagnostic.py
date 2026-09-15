@@ -15,16 +15,21 @@ CLASSES = ('DOWN', 'FLAT', 'UP')
 
 def _argmax(values):
     vals = [float(x) for x in values]
-    if any(not math.isfinite(x) for x in vals):
+    if len(vals) != 3 or any(not math.isfinite(x) for x in vals):
         return None
     return CLASSES[max(range(3), key=lambda i: vals[i])]
 
 
 def _stage(obj: dict, key: str):
     value = obj.get(key)
-    if not isinstance(value, (list, tuple)) or len(value) != 3:
-        return None
-    return _argmax(value)
+    if isinstance(value, dict):
+        try:
+            return _argmax([value[c] for c in CLASSES])
+        except (KeyError, TypeError, ValueError):
+            return None
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        return _argmax(value)
+    return None
 
 
 def build_report(db_path: str | Path = DB, window: int = WINDOW) -> dict:
@@ -40,6 +45,7 @@ def build_report(db_path: str | Path = DB, window: int = WINDOW) -> dict:
 
     counts = {h: {stage: Counter() for stage in ('model_raw', 'structural', 'fused_raw', 'calibrated', 'final')} for h in ('5m', '10m')}
     parse_errors = 0
+    stage_observations = Counter()
     for p_down5, p_flat5, p_up5, p_down10, p_flat10, p_up10, raw in rows:
         try:
             obj = json.loads(raw or '{}')
@@ -57,9 +63,11 @@ def build_report(db_path: str | Path = DB, window: int = WINDOW) -> dict:
                     winner = _stage(components, key)
                     if winner is not None:
                         counts[h][stage][winner] += 1
+                        stage_observations[(h, stage)] += 1
                 winner = _argmax(final)
                 if winner is not None:
                     counts[h]['final'][winner] += 1
+                    stage_observations[(h, 'final')] += 1
         except Exception:
             parse_errors += 1
 
@@ -67,6 +75,7 @@ def build_report(db_path: str | Path = DB, window: int = WINDOW) -> dict:
         'ok': parse_errors == 0 and len(rows) > 0,
         'window': len(rows),
         'parse_errors': parse_errors,
+        'stage_observations': {f'{h}_{stage}': n for (h, stage), n in sorted(stage_observations.items())},
         'counts': {
             h: {stage: dict(sorted(counter.items())) for stage, counter in stages.items()}
             for h, stages in counts.items()
