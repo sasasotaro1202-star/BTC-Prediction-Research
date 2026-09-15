@@ -18,18 +18,18 @@ class TestSettle(unittest.TestCase):
     def test_resolve_targets_deduplicates_and_tolerates_failure(self):
         calls = []
 
-        def fake_target(target):
-            calls.append(target)
+        def fake_target(target, source):
+            calls.append((target, source))
             if target == 'bad':
                 raise RuntimeError('temporary public-source failure')
             return (123.0, 'test')
 
-        with patch.object(settle, 'target_close_binance', side_effect=fake_target):
-            result = settle.resolve_targets(['a', 'a', 'bad'], max_workers=2)
+        with patch.object(settle, 'target_close_preferred', side_effect=fake_target):
+            result = settle.resolve_targets([('a', 'binance_futures'), ('a', 'binance_futures'), ('bad', 'binance_futures')], max_workers=2)
 
-        self.assertEqual(sorted(calls), ['a', 'bad'])
-        self.assertEqual(result['a'], (123.0, 'test'))
-        self.assertEqual(result['bad'], (None, 'unavailable'))
+        self.assertEqual(sorted(calls), [('a', 'binance_futures'), ('bad', 'binance_futures')])
+        self.assertEqual(result[('a', 'binance_futures')], (123.0, 'test'))
+        self.assertEqual(result[('bad', 'binance_futures')], (None, 'unavailable'))
 
 
 if __name__ == '__main__':
