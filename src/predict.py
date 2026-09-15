@@ -81,8 +81,6 @@ def load_blend_weight(h):
         obj=json.loads(p.read_text(encoding='utf-8')); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0)); status=str(obj.get('status',''))
         calibrated_version=str(obj.get('model_version',''))
         current_version=regver(h)
-        # Never apply a blend weight fitted to a different production generation.
-        # Older files without a generation binding are treated as stale as well.
         if calibrated_version != current_version:return 0.20
         if n<400 or status not in {'accepted','rejected','insufficient_history'}: return 0.20
         if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.20
@@ -140,7 +138,7 @@ def main():
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
     if not data_complete:warnings.append('partial market-data coverage; confidence reduced')
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
     insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
