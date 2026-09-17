@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Retry only the latest eligible interrupted BTC workflow
+      - name: Retry recent eligible interrupted BTC workflows
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -29,33 +29,31 @@ jobs:
               echo "WARN: unable to inspect ${workflow}; continuing"
               continue
             }
-            latest=$(printf '%s' "$response" | jq -c '.workflow_runs[0] // empty')
-            [ -n "$latest" ] || { echo "No run found for ${workflow}"; continue; }
-            status=$(printf '%s' "$latest" | jq -r '.status // ""')
-            conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // ""')
-            run_id=$(printf '%s' "$latest" | jq -r '.id // 0')
-            attempt=$(printf '%s' "$latest" | jq -r '.run_attempt // 1')
-            updated=$(printf '%s' "$latest" | jq -r '.updated_at // ""')
-            updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
-            age=$((now - updated_epoch))
-            echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
-            if [ "$status" != "completed" ]; then
-              echo "Latest run is not completed; no retry for ${workflow}"
-              continue
-            fi
-            retryable=false
-            case "$conclusion" in
-              failure|cancelled|timed_out) retryable=true ;;
-            esac
-            if [ "$retryable" = true ] && [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
-              echo "Retrying eligible failed jobs for latest ${workflow} run ${run_id}"
-              if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
-                echo "Retry requested successfully for ${workflow} run ${run_id}"
-              else
-                echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
+            printf '%s' "$response" | jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,updated_at}' | while IFS= read -r run; do
+              [ -n "$run" ] || continue
+              status=$(printf '%s' "$run" | jq -r '.status // ""')
+              conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
+              run_id=$(printf '%s' "$run" | jq -r '.id // 0')
+              attempt=$(printf '%s' "$run" | jq -r '.run_attempt // 1')
+              updated=$(printf '%s' "$run" | jq -r '.updated_at // ""')
+              updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
+              age=$((now - updated_epoch))
+              echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
+              if [ "$status" != "completed" ]; then
+                continue
               fi
-            else
-              echo "No retry needed for ${workflow}"
-            fi
+              retryable=false
+              case "$conclusion" in
+                failure|cancelled|timed_out) retryable=true ;;
+              esac
+              if [ "$retryable" = true ] && [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
+                echo "Retrying eligible failed jobs for ${workflow} run ${run_id}"
+                if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
+                  echo "Retry requested successfully for ${workflow} run ${run_id}"
+                else
+                  echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
+                fi
+              fi
+            done
           done
           echo 'BTC workflow watchdog completed without masking core workflow results.'
