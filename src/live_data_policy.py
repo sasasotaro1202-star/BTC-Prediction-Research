@@ -2,30 +2,30 @@
 
 A production directional prediction is permitted only when every input that
 materially affects the current fusion path was actually retrieved successfully.
-No zero/default/fallback substitution is accepted by this policy.
+Inputs that are fetched only for diagnostics/monitoring remain optional so an
+unrelated venue/API outage cannot disable an otherwise valid prediction.
 """
 from __future__ import annotations
 
+# These sources are actually consumed by the current production fusion path.
+# Do not make an unused diagnostic input a production blocker.
 CRITICAL_STATUS_KEYS = (
     "binance_futures",
-    "binance_spot",
     "bybit_futures",
     "binance_depth",
     "bybit_depth",
     "binance_taker",
-    "bybit_funding",
+    "binance_premium",
 )
 
 
 def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int) -> None:
-    """Raise instead of predicting when required live inputs are incomplete."""
+    """Raise instead of predicting when production-critical inputs are incomplete."""
     if not isinstance(status, dict):
         raise ValueError("live_data_status_must_be_dict")
 
     if fut_rows < 40:
         raise ValueError("binance_futures_contiguous_history_insufficient")
-    if spot_rows < 40:
-        raise ValueError("binance_spot_contiguous_history_insufficient")
     if bybit_rows < 40:
         raise ValueError("bybit_futures_contiguous_history_insufficient")
 
