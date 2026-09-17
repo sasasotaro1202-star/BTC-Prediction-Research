@@ -11,6 +11,7 @@ on:
       - 'data/historical_research/**'
       - 'src/pit_oos_audit.py'
       - 'src/db.py'
+      - 'src/state_archive.py'
       - '.github/workflows/btc_pit_oos_audit.yml'
 
 concurrency:
@@ -29,23 +30,29 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - name: Require repository prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
       - name: Restore repository prediction state
         shell: bash
         run: |
           set -euo pipefail
-          if [ -s data/predictions.db.gz ]; then
-            python - <<'PY'
+          python - <<'PY'
           from pathlib import Path
           from src.state_archive import restore_db
           restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
           print('Restored prediction state for PIT/OOS audit.')
           PY
-          fi
+          test -s data/predictions.db
       - name: Run PIT and OOS integrity audit
         run: python src/pit_oos_audit.py
       - name: Upload PIT/OOS audit report
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: btc-pit-oos-audit
           path: data/historical_research/pit_oos_audit.json
+          if-no-files-found: error
           retention-days: 14
