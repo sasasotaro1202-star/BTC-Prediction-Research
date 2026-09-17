@@ -14,7 +14,7 @@ class TestPITSchema(unittest.TestCase):
         return {
             "event_time": (t - timedelta(seconds=5)).isoformat(),
             "available_at": t.isoformat(),
-            "retrieved_at": (t + timedelta(seconds=1)).isoformat(),
+            "retrieved_at": (t + timedelta(seconds=5)).isoformat(),
             "prediction_cutoff": (t + timedelta(seconds=2)).isoformat(),
             "publication_time": (t - timedelta(seconds=1)).isoformat(),
             "revision_time": None,
@@ -33,6 +33,7 @@ class TestPITSchema(unittest.TestCase):
     def test_rejects_available_after_cutoff(self):
         row = self.base()
         row["available_at"] = (datetime(2026, 9, 18, 0, 0, 3, tzinfo=timezone.utc)).isoformat()
+        row["retrieved_at"] = (datetime(2026, 9, 18, 0, 0, 4, tzinfo=timezone.utc)).isoformat()
         with self.assertRaisesRegex(ValueError, "available_at_after_prediction_cutoff"):
             validate_provenance(row)
 
