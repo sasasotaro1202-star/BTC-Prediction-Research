@@ -95,6 +95,8 @@ jobs:
         run: python src/production_artifact_audit.py
       - name: Generate next BTC prediction
         run: python src/predict.py
+      - name: Fail closed on incomplete live prediction inputs
+        run: python src/live_data_fail_closed.py
       - name: Run non-fatal BTC research health audit
         run: python src/research_health.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
