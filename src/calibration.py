@@ -113,20 +113,39 @@ def _settled_rows(con, horizon, actual_col, model_version):
     ).fetchall()
 
 
+def _calibration_state(path):
+    if not path.exists():
+        return None
+    try:
+        obj=json.loads(path.read_text(encoding='utf-8'))
+        return obj if isinstance(obj,dict) else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def calibration():
     init_db(); now=datetime.now(timezone.utc)
     for horizon in (5,10):
+        horizon_name=f'{horizon}m'
         actual_col=f'actual_direction_{horizon}m'
         with sqlite3.connect(DB) as con:
-            model_version=_current_registry_version(con,f'{horizon}m')
-            rows=_settled_rows(con,f'{horizon}m',actual_col,model_version)
+            model_version=_current_registry_version(con,horizon_name)
+            rows=_settled_rows(con,horizon_name,actual_col,model_version)
             if not rows:
-                print(horizon,'m: no settled predictions for current model generation',model_version)
+                print(horizon_name,': no settled predictions for current model generation',model_version)
                 continue
-            acc,ll,brier,ece=multiclass_metrics(rows,f'{horizon}m')
-            con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),f'{horizon}m',model_version,len(rows),acc,ll,brier,ece))
+            path=MODEL_DIR/f'{horizon_name}.calibration.json'
+            cached=_calibration_state(path)
+            if (cached and cached.get('horizon')==horizon_name
+                    and cached.get('model_version')==model_version
+                    and int(cached.get('n_settled',-1))==len(rows)
+                    and 0.5 <= float(cached.get('temperature',1.0)) <= 3.0):
+                print(horizon_name,': calibration unchanged; reusing cached temperature',cached.get('temperature'),'n_settled',len(rows),'model_version',model_version)
+                continue
+            acc,ll,brier,ece=multiclass_metrics(rows,horizon_name)
+            con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),horizon_name,model_version,len(rows),acc,ll,brier,ece))
         temperature,fit_ll,eval_ll=temperature_scale(rows)
-        save_temperature(f'{horizon}m',temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION,model_version)
-        print(horizon,'m',len(rows),'model_version',model_version,'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
+        save_temperature(horizon_name,temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION,model_version)
+        print(horizon_name,len(rows),'model_version',model_version,'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
 
 if __name__=='__main__': calibration()
