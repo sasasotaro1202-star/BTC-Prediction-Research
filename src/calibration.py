@@ -123,6 +123,20 @@ def _calibration_state(path):
         return None
 
 
+def _can_reuse_cached_calibration(cached, horizon, model_version, n_settled):
+    if not isinstance(cached, dict):
+        return False
+    try:
+        return (
+            cached.get('horizon') == horizon
+            and cached.get('model_version') == model_version
+            and int(cached.get('n_settled', -1)) == int(n_settled)
+            and 0.5 <= float(cached.get('temperature', 1.0)) <= 3.0
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def calibration():
     init_db(); now=datetime.now(timezone.utc)
     for horizon in (5,10):
@@ -136,10 +150,7 @@ def calibration():
                 continue
             path=MODEL_DIR/f'{horizon_name}.calibration.json'
             cached=_calibration_state(path)
-            if (cached and cached.get('horizon')==horizon_name
-                    and cached.get('model_version')==model_version
-                    and int(cached.get('n_settled',-1))==len(rows)
-                    and 0.5 <= float(cached.get('temperature',1.0)) <= 3.0):
+            if _can_reuse_cached_calibration(cached,horizon_name,model_version,len(rows)):
                 print(horizon_name,': calibration unchanged; reusing cached temperature',cached.get('temperature'),'n_settled',len(rows),'model_version',model_version)
                 continue
             acc,ll,brier,ece=multiclass_metrics(rows,horizon_name)
