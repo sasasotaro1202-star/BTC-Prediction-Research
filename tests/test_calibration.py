@@ -64,6 +64,27 @@ class TestCalibration(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertIsNone(con.sql)
 
+    def test_cache_reuse_requires_same_generation_and_sample_count(self):
+        cached = {
+            'horizon': '5m',
+            'model_version': 'bootstrap.example.v1',
+            'n_settled': 500,
+            'temperature': 1.1,
+        }
+        self.assertTrue(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500))
+        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '10m', 'bootstrap.example.v1', 500))
+        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v2', 500))
+        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 501))
+
+    def test_cache_reuse_rejects_malformed_temperature(self):
+        cached = {
+            'horizon': '5m',
+            'model_version': 'bootstrap.example.v1',
+            'n_settled': 500,
+            'temperature': 'not-a-number',
+        }
+        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500))
+
 
 if __name__ == '__main__':
     unittest.main()
