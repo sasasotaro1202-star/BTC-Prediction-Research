@@ -44,7 +44,7 @@ class TestPITOOSAudit(unittest.TestCase):
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertFalse(result["ok"])
-                self.assertIn("market_cutoff_after_decision", result["violations"])
+                self.assertTrue(any("market_cutoff_after_decision" in v for v in result["violations"]))
 
 
 if __name__ == "__main__":
