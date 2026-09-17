@@ -113,6 +113,11 @@ def main():
     except Exception as exc:status['bybit_funding']=f'error:{type(exc).__name__}'
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
     validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by))
+    # The PIT cutoff is defined only after all required inputs have been retrieved and validated.
+    # This records the actual information boundary visible to the predictor rather than a guessed
+    # pre-fetch timestamp.  Historical research must use source-native available_at instead.
+    prediction_cutoff=utcnow()
+    latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
     s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8})
     base5=model_probs(load_model('5m'),f); base10=model_probs(load_model('10m'),f)
     raw5,w5=fuse(base5,s5,m,True,'5m'); raw10,w10=fuse(base10,s10,m,True,'10m'); p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
@@ -122,8 +127,8 @@ def main():
     if abs(m['taker_imbalance'])>.55:warnings.append('taker-flow imbalance')
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
-    retrieved=utcnow().isoformat()
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':datetime.fromtimestamp(int(fut[-1][0])/1000,timezone.utc).isoformat(),'available_at':None,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':now.isoformat(),'revision_time':None,'policy':'no_inference_missing_availability'},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
+    retrieved=prediction_cutoff.isoformat()
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_cutoff_is_post_retrieval; historical_data_requires_source_native_available_at'},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
     insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
