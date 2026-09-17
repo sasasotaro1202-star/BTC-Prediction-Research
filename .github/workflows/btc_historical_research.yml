@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/btc_prediction_archive_cache
-          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}-${{ github.run_number }}
+          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}
           restore-keys: |
             btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}-
             btc-archive-${{ runner.os }}-
