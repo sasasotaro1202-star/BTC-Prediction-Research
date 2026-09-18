@@ -91,7 +91,7 @@ def calibrate_probs(probs,h):
     p=np.clip(np.asarray([probs['DOWN'],probs['FLAT'],probs['UP']],float),1e-6,1-1e-6); p/=p.sum(); z=np.log(p)/t; z-=z.max(); q=np.exp(z); q/=q.sum()
     return {'DOWN':float(q[0]),'FLAT':float(q[1]),'UP':float(q[2])}
 def fuse(base,struct,m,data_complete,horizon):
-    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap'])); base_w=load_blend_weight(horizon); w=(base_w+.08*agree) if data_complete else min(base_w,.15); w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
+    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); gap=m.get('cross_exchange_gap'); agree=max(0,1-4*abs(gap)) if gap is not None else 0.0; base_w=load_blend_weight(horizon); w=(base_w+.08*agree) if data_complete else min(base_w,.15); w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
 def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
