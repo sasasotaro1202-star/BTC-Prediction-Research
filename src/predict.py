@@ -114,8 +114,20 @@ def main():
             if rows:
                 byp=float(rows[0].get('lastPrice') or rows[0].get('markPrice'))
                 status['bybit_futures']='ok_current_only'
-        except Exception as exc:
-            status['bybit_futures']=f'error:{type(exc).__name__}'
+        except Exception:
+            # Reuse the already-required Bybit order-book request as a
+            # current-price fallback. This avoids a second independent network
+            # dependency while keeping the cross-venue signal on Bybit.
+            try:
+                book=binance_depth() if False else bybit_depth()
+                result=book.get('result',{}) if isinstance(book,dict) else {}
+                bids=result.get('b') or result.get('bids') or book.get('bids')
+                asks=result.get('a') or result.get('asks') or book.get('asks')
+                if bids and asks:
+                    byp=(float(bids[0][0])+float(asks[0][0]))/2.0
+                    status['bybit_futures']='ok_current_only'
+            except Exception as exc:
+                status['bybit_futures']=f'error:{type(exc).__name__}'
     if byp is not None and math.isfinite(byp) and byp>0:
         m['cross_exchange_gap']=byp/price-1
     else:
