@@ -142,7 +142,17 @@ def main():
             ticker=bybit_mark_price()
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
-                byp=_valid_price(rows[0].get('lastPrice') or rows[0].get('markPrice'))
+                row=rows[0]
+                # Bybit can occasionally return an empty lastPrice/markPrice
+                # while still exposing live top-of-book prices. Use those only
+                # as a bounded current-price fallback; never synthesize from
+                # stale/future data.
+                byp=_valid_price(row.get('lastPrice') or row.get('markPrice'))
+                if byp is None:
+                    bid=_valid_price(row.get('bid1Price'))
+                    ask=_valid_price(row.get('ask1Price'))
+                    if bid is not None and ask is not None and ask >= bid:
+                        byp=(bid+ask)/2.0
             if byp is not None:
                 status['bybit_futures']='ok_current_only'
         except Exception:
