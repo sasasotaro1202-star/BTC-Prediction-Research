@@ -7,8 +7,6 @@ unrelated venue/API outage cannot disable an otherwise valid prediction.
 """
 from __future__ import annotations
 
-# These sources are actually consumed by the current production fusion path.
-# Do not make an unused diagnostic input a production blocker.
 CRITICAL_STATUS_KEYS = (
     "binance_futures",
     "bybit_futures",
@@ -26,13 +24,21 @@ def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_r
 
     if fut_rows < 40:
         raise ValueError("binance_futures_contiguous_history_insufficient")
-    if bybit_rows < 40:
-        raise ValueError("bybit_futures_contiguous_history_insufficient")
+
+    # The production fusion path uses Bybit for the current cross-exchange
+    # price gap, not for the 15-feature model input itself. Fragmented Bybit
+    # candle history must therefore not block a prediction when a fresh current
+    # Bybit price is available. The separate Bybit order book remains critical.
+    if bybit_rows < 1:
+        raise ValueError("bybit_futures_current_price_unavailable")
 
     failures = []
     for key in CRITICAL_STATUS_KEYS:
         value = status.get(key)
-        if not isinstance(value, str) or value != "ok":
+        if key == "bybit_futures":
+            if value not in {"ok", "ok_current_only"}:
+                failures.append(f"{key}={value!r}")
+        elif not isinstance(value, str) or value != "ok":
             failures.append(f"{key}={value!r}")
 
     if status.get("price_feature_fallback") != "none":
