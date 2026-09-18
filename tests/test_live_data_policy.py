@@ -46,7 +46,7 @@ class TestLiveDataPolicy(unittest.TestCase):
 
     def test_allows_bybit_outage_as_explicit_optional_secondary_data(self):
         status = self.good()
-        status["bybit_futures"] = "error:HTTPError"
+        status["bybit_futures"] = "error:missing_current_price"
         status["bybit_depth"] = "error:HTTPError"
         validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=0)
         self.assertTrue(is_valid_status(status, fut_rows=40, spot_rows=0, bybit_rows=0))
