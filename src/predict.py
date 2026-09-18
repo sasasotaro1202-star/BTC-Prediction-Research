@@ -189,7 +189,9 @@ def main():
     validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=(1 if byp is not None else 0))
     prediction_cutoff=utcnow()
     latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
-    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8})
+    s5=structural(f,m)
+    gap=m.get('cross_exchange_gap')
+    s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
     base5=model_probs(load_model('5m'),f); base10=model_probs(load_model('10m'),f)
     data_complete = byp is not None and 'bybit_book_imbalance' in m
     raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m'); p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
