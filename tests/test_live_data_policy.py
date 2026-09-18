@@ -44,11 +44,18 @@ class TestLiveDataPolicy(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "contiguous_history_insufficient"):
             validate_live_inputs(self.good(), fut_rows=39, spot_rows=0, bybit_rows=40)
 
-    def test_rejects_missing_current_bybit_price(self):
+    def test_allows_bybit_outage_as_explicit_optional_secondary_data(self):
         status = self.good()
-        status["bybit_futures"] = "non_contiguous_or_insufficient"
-        with self.assertRaisesRegex(ValueError, "bybit_futures_current_price_unavailable"):
-            validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=0)
+        status["bybit_futures"] = "error:HTTPError"
+        status["bybit_depth"] = "error:HTTPError"
+        validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=0)
+        self.assertTrue(is_valid_status(status, fut_rows=40, spot_rows=0, bybit_rows=0))
+
+    def test_rejects_inconsistent_optional_bybit_rows(self):
+        status = self.good()
+        status["bybit_futures"] = "error:HTTPError"
+        with self.assertRaisesRegex(ValueError, "bybit_futures_status_inconsistent"):
+            validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=1)
 
     def test_unused_spot_outage_does_not_block_prediction(self):
         status = self.good()
