@@ -160,6 +160,11 @@ def resilient_1m_series(limit: int = 120):
         by = _latest_contiguous_suffix(by_raw, 40)
         by_current = _latest_row(by_raw)
         status["bybit_futures"] = "ok" if by else ("ok_current_only" if by_current else "non_contiguous_or_insufficient")
+        # The production predictor uses Bybit only for the current cross-exchange
+        # price when contiguous history is unavailable. Preserve that exact latest
+        # closed/current row so the predictor does not need a second network call.
+        if not by and by_current:
+            by = [by_current]
     except Exception as e:
         by = []
         by_current = None
