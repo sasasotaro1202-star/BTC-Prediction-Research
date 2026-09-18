@@ -106,30 +106,53 @@ def main():
     # Prefer the latest closed candle when available; otherwise query the
     # current linear-market ticker. This preserves the venue-divergence signal
     # without requiring an unrelated 40-bar contiguous Bybit history.
-    byp=None
-    if by:
-        byp=float(by[-1][4])
+    def _valid_price(value):
+        try:
+            value=float(value)
+            return value if math.isfinite(value) and value>0 else None
+        except (TypeError,ValueError):
+            return None
+
+    def _book_midprice(book):
+        if not isinstance(book,dict):
+            return None
+        result=book.get('result',{}) if isinstance(book.get('result',{}),dict) else {}
+        bids=result.get('b') or result.get('bids') or book.get('bids')
+        asks=result.get('a') or result.get('asks') or book.get('asks')
+        if not bids or not asks:
+            return None
+        try:
+            bid=_valid_price(bids[0][0]); ask=_valid_price(asks[0][0])
+            if bid is None or ask is None or ask < bid:
+                return None
+            return (bid+ask)/2.0
+        except (TypeError,ValueError,IndexError):
+            return None
+
+    # Prefer the already-fetched Bybit candle/current row. If that is not
+    # usable, try the ticker once; if that response is malformed or unavailable,
+    # fall back to the already-required order book. This closes the prior
+    # failure mode where a malformed ticker response prevented the order-book
+    # fallback from running.
+    byp=_valid_price(by[-1][4]) if by else None
+    if byp is not None:
+        status['bybit_futures']='ok_current_only' if len(by) == 1 else status.get('bybit_futures','ok')
     else:
         try:
             ticker=bybit_mark_price()
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
-                byp=float(rows[0].get('lastPrice') or rows[0].get('markPrice'))
+                byp=_valid_price(rows[0].get('lastPrice') or rows[0].get('markPrice'))
+            if byp is not None:
                 status['bybit_futures']='ok_current_only'
         except Exception:
-            # Reuse the already-required Bybit order-book request as a
-            # current-price fallback. This avoids a second independent network
-            # dependency while keeping the cross-venue signal on Bybit.
-            try:
-                book=bybit_book
-                result=book.get('result',{}) if isinstance(book,dict) else {}
-                bids=result.get('b') or result.get('bids') or book.get('bids')
-                asks=result.get('a') or result.get('asks') or book.get('asks')
-                if bids and asks:
-                    byp=(float(bids[0][0])+float(asks[0][0]))/2.0
-                    status['bybit_futures']='ok_current_only'
-            except Exception as exc:
-                status['bybit_futures']=f'error:{type(exc).__name__}'
+            pass
+        if byp is None:
+            byp=_book_midprice(bybit_book)
+            if byp is not None:
+                status['bybit_futures']='ok_current_only'
+            else:
+                status['bybit_futures']='error:missing_current_price'
     if byp is not None and math.isfinite(byp) and byp>0:
         m['cross_exchange_gap']=byp/price-1
     else:
