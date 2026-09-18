@@ -1,6 +1,6 @@
 """BTC-only resilient public market-data adapters for GitHub Actions."""
 from __future__ import annotations
-import csv, io, json, time, zipfile
+import csv, io, json, time, zipfile, math
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -159,10 +159,22 @@ def resilient_1m_series(limit: int = 120):
         by_raw = closed_bybit(bybit_klines(limit))
         by = _latest_contiguous_suffix(by_raw, 40)
         by_current = _latest_row(by_raw)
-        status["bybit_futures"] = "ok" if by else ("ok_current_only" if by_current else "non_contiguous_or_insufficient")
         # The production predictor uses Bybit only for the current cross-exchange
-        # price when contiguous history is unavailable. Preserve that exact latest
-        # closed/current row so the predictor does not need a second network call.
+        # price when contiguous history is unavailable. If kline data is empty or
+        # fragmented, obtain the current linear ticker once here and carry it forward
+        # so predict.py never needs a second network call.
+        if not by_current:
+            try:
+                ticker = bybit_mark_price()
+                ticker_rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
+                if ticker_rows:
+                    row = ticker_rows[0]
+                    px = float(row.get("lastPrice") or row.get("markPrice"))
+                    if math.isfinite(px) and px > 0:
+                        by_current = [int(time.time() * 1000), px, px, px, px, 0.0]
+            except Exception:
+                by_current = None
+        status["bybit_futures"] = "ok" if by else ("ok_current_only" if by_current else "non_contiguous_or_insufficient")
         if not by and by_current:
             by = [by_current]
     except Exception as e:
