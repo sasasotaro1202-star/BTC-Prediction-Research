@@ -6,7 +6,7 @@ from pathlib import Path
 import joblib, numpy as np
 from db import DB, init_db
 from live_data_policy import validate_live_inputs
-from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding
+from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 
 INTERVAL=300
 CLASSES=["DOWN","FLAT","UP"]
@@ -94,14 +94,32 @@ def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_j
 def main():
     init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
     if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient primary futures data')
-    f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None; byp=float(by[-1][4]) if len(by)>=40 else None
+    f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
     try:m['book_imbalance']=imbalance(binance_depth()); status['binance_depth']='ok'
     except Exception as exc:status['binance_depth']=f'error:{type(exc).__name__}'
     try:m['bybit_book_imbalance']=imbalance(bybit_depth()); status['bybit_depth']='ok'
     except Exception as exc:status['bybit_depth']=f'error:{type(exc).__name__}'
-    if byp is not None:m['cross_exchange_gap']=byp/price-1
-    else:status['bybit_futures']='error:missing_series'
+    # Bybit is used here only for the current cross-exchange price gap.
+    # Prefer the latest closed candle when available; otherwise query the
+    # current linear-market ticker. This preserves the venue-divergence signal
+    # without requiring an unrelated 40-bar contiguous Bybit history.
+    byp=None
+    if by:
+        byp=float(by[-1][4])
+    else:
+        try:
+            ticker=bybit_mark_price()
+            rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
+            if rows:
+                byp=float(rows[0].get('lastPrice') or rows[0].get('markPrice'))
+                status['bybit_futures']='ok_current_only'
+        except Exception as exc:
+            status['bybit_futures']=f'error:{type(exc).__name__}'
+    if byp is not None and math.isfinite(byp) and byp>0:
+        m['cross_exchange_gap']=byp/price-1
+    else:
+        status['bybit_futures']='error:missing_current_price'
     try:m['funding_binance']=float(binance_premium().get('lastFundingRate')); status['binance_premium']='ok'
     except Exception as exc:status['binance_premium']=f'error:{type(exc).__name__}'
     try:m['oi']=float(binance_oi().get('openInterest')); status['binance_oi']='ok'
@@ -112,7 +130,7 @@ def main():
     try:m['funding_bybit']=float(bybit_funding().get('result',{}).get('list',[{}])[0]['fundingRate']); status['bybit_funding']='ok'
     except Exception as exc:status['bybit_funding']=f'error:{type(exc).__name__}'
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
-    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by))
+    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=(1 if byp is not None else 0))
     prediction_cutoff=utcnow()
     latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
     s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8})
