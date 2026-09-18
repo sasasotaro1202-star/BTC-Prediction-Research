@@ -98,7 +98,9 @@ def main():
     m={}
     try:m['book_imbalance']=imbalance(binance_depth()); status['binance_depth']='ok'
     except Exception as exc:status['binance_depth']=f'error:{type(exc).__name__}'
-    try:m['bybit_book_imbalance']=imbalance(bybit_depth()); status['bybit_depth']='ok'
+    bybit_book=None
+    try:
+        bybit_book=bybit_depth(); m['bybit_book_imbalance']=imbalance(bybit_book); status['bybit_depth']='ok'
     except Exception as exc:status['bybit_depth']=f'error:{type(exc).__name__}'
     # Bybit is used here only for the current cross-exchange price gap.
     # Prefer the latest closed candle when available; otherwise query the
@@ -119,7 +121,7 @@ def main():
             # current-price fallback. This avoids a second independent network
             # dependency while keeping the cross-venue signal on Bybit.
             try:
-                book=binance_depth() if False else bybit_depth()
+                book=bybit_book
                 result=book.get('result',{}) if isinstance(book,dict) else {}
                 bids=result.get('b') or result.get('bids') or book.get('bids')
                 asks=result.get('a') or result.get('asks') or book.get('asks')
