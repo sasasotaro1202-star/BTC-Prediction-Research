@@ -94,7 +94,30 @@ jobs:
       - name: Audit BTC production artifact provenance
         run: python src/production_artifact_audit.py
       - name: Generate next BTC prediction
-        run: python src/predict.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(mktemp)"
+          err="$(mktemp)"
+          if python src/predict.py >"$out" 2>"$err"; then
+            cat "$out"
+            rm -f "$out" "$err"
+            exit 0
+          fi
+          cat "$out"
+          cat "$err" >&2
+          # A broad Binance market-data outage is a safe no-prediction state:
+          # do not manufacture a prediction or promote a fallback. Preserve the
+          # database and let diagnostics/state archival continue, while keeping
+          # real code/data-contract failures red.
+          if grep -q "live_prediction_inputs_incomplete:" "$err"              && grep -q "binance_futures='error:" "$err"              && grep -q "binance_depth='error:" "$err"              && grep -q "binance_taker='error:" "$err"              && grep -q "binance_premium='error:" "$err"; then
+            echo "BTC_LIVE_DEFERRED=1" >> "$GITHUB_ENV"
+            echo "BTC live prediction deferred: Binance critical market-data endpoints are unavailable. No prediction was fabricated." >&2
+            rm -f "$out" "$err"
+            exit 0
+          fi
+          rm -f "$out" "$err"
+          exit 1
       - name: Fail closed on incomplete live prediction inputs
         run: python src/live_data_fail_closed.py
       - name: Run non-fatal BTC research health audit
@@ -116,6 +139,13 @@ jobs:
           with sqlite3.connect(p) as con:
               n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
               if n <= 0: raise SystemExit('predictions table is empty')
+              if __import__('os').environ.get('BTC_LIVE_DEFERRED') == '1':
+                  latest=con.execute('SELECT created_at_utc,base_price FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+                  if latest:
+                      age=(datetime.now(timezone.utc)-datetime.fromisoformat(latest[0].replace('Z','+00:00'))).total_seconds()
+                      if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
+                  print('BTC live cycle deferred safely: no fresh prediction was created; existing state remains intact.')
+                  raise SystemExit(0)
               for cols in [('p_up_5m','p_down_5m','p_flat_5m'),('p_up_10m','p_down_10m','p_flat_10m')]:
                   a,b,c=cols
                   bad=con.execute(f'SELECT COUNT(*) FROM predictions WHERE abs(({a}+{b}+{c})-1.0)>0.00001 OR {a}<0 OR {b}<0 OR {c}<0').fetchone()[0]
