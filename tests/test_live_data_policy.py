@@ -22,6 +22,12 @@ class TestLiveDataPolicy(unittest.TestCase):
         validate_live_inputs(self.good(), fut_rows=40, spot_rows=0, bybit_rows=40)
         self.assertTrue(is_valid_status(self.good(), fut_rows=40, spot_rows=0, bybit_rows=40))
 
+    def test_accepts_current_only_bybit_price_when_history_is_fragmented(self):
+        status = self.good()
+        status["bybit_futures"] = "ok_current_only"
+        validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=1)
+        self.assertTrue(is_valid_status(status, fut_rows=40, spot_rows=0, bybit_rows=1))
+
     def test_rejects_any_failed_production_critical_source(self):
         status = self.good()
         status["binance_depth"] = "error:HTTPError"
@@ -37,6 +43,12 @@ class TestLiveDataPolicy(unittest.TestCase):
     def test_rejects_insufficient_primary_history(self):
         with self.assertRaisesRegex(ValueError, "contiguous_history_insufficient"):
             validate_live_inputs(self.good(), fut_rows=39, spot_rows=0, bybit_rows=40)
+
+    def test_rejects_missing_current_bybit_price(self):
+        status = self.good()
+        status["bybit_futures"] = "non_contiguous_or_insufficient"
+        with self.assertRaisesRegex(ValueError, "bybit_futures_current_price_unavailable"):
+            validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=0)
 
     def test_unused_spot_outage_does_not_block_prediction(self):
         status = self.good()
