@@ -166,9 +166,23 @@ def resilient_1m_series(limit: int = 120):
         if not by and by_current:
             by = [by_current]
     except Exception as e:
+        # If Bybit's kline endpoint is temporarily unavailable, obtain the
+        # current linear-market price once and carry it forward to the caller.
+        # This keeps the production path single-fetch and avoids a second
+        # network dependency inside predict.py.
         by = []
         by_current = None
-        status["bybit_futures"] = f"error:{type(e).__name__}"
+        try:
+            ticker = bybit_mark_price()
+            rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
+            if rows:
+                row = rows[0]
+                px = float(row.get("lastPrice") or row.get("markPrice"))
+                if px > 0:
+                    by_current = [int(time.time() * 1000), px, px, px, px, 0.0]
+        except Exception:
+            by_current = None
+        status["bybit_futures"] = "ok_current_only" if by_current else f"error:{type(e).__name__}"
     try:
         fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), 40)
         status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
@@ -217,6 +231,8 @@ def resilient_1m_series(limit: int = 120):
     else:
         status["price_feature_fallback"] = "none"
     status["spot_fallback"] = "unavailable" if len(spot) < 40 else "none"
+    if not by and by_current:
+        by = [by_current]
     status["bybit_series_available"] = len(by) >= 40
     status["bybit_current_price_available"] = by_current is not None
     status["live_series_fresh"] = status["price_feature_fallback"] in {"none", "bybit", "coinbase", "kraken", "fresh_bootstrap_cache"}
