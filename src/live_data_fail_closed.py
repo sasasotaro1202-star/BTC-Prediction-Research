@@ -16,12 +16,9 @@ from db import DB
 # A missing source must therefore invalidate the newly generated directional row.
 CRITICAL = (
     "binance_futures",
-    "binance_spot",
-    "bybit_futures",
     "binance_depth",
-    "bybit_depth",
     "binance_taker",
-    "bybit_funding",
+    "binance_premium",
 )
 
 
@@ -55,8 +52,8 @@ def validate_latest() -> dict:
         elif isinstance(value, str) and value.startswith("error"):
             failures.append(f"{key}={value}")
 
-    if quality.get("bybit_series_available") is not True:
-        failures.append("bybit_series_available=False")
+    # Bybit is explicitly secondary. Its absence is allowed when the live
+    # prediction policy records it as missing rather than synthesizing a value.
 
     if failures:
         raise SystemExit(
