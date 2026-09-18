@@ -43,7 +43,11 @@ def structural(f,m):
     score=(2.2*f['ret_1m']+1.6*f['ret_3m']+f['ret_5m']+.45*f['ret_10m']+.35*f['ret_15m']+.20*f['ret_30m'])/vol
     score+=.15*f['acceleration']/vol+.10*(1.2*f['ema_gap_5m']+.4*f['ema_gap_10m'])/vol
     score+=.07*math.log(max(.25,min(4,f['volume_ratio'])))+.05*(f['range_position_10m']-.5)+.04*(f['range_position_30m']-.5)
-    score+=.12*m['book_imbalance']+.08*m['cross_exchange_gap']/vol+.08*m['bybit_book_imbalance']
+    # Secondary venue signals are additive only when freshly available.
+    score+=.12*m.get('book_imbalance',0.0)
+    if m.get('cross_exchange_gap') is not None:
+        score+=.08*m['cross_exchange_gap']/vol
+    score+=.08*m.get('bybit_book_imbalance',0.0)
     if m['taker_imbalance']>.55: score+=.10
     elif m['taker_imbalance']<-.55: score-=.10
     crowd=max(-1.0,min(1.0,m['funding_binance']/0.0003)); score-=.05*crowd
@@ -87,7 +91,7 @@ def calibrate_probs(probs,h):
     p=np.clip(np.asarray([probs['DOWN'],probs['FLAT'],probs['UP']],float),1e-6,1-1e-6); p/=p.sum(); z=np.log(p)/t; z-=z.max(); q=np.exp(z); q/=q.sum()
     return {'DOWN':float(q[0]),'FLAT':float(q[1]),'UP':float(q[2])}
 def fuse(base,struct,m,data_complete,horizon):
-    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); agree=max(0,1-4*abs(m['cross_exchange_gap'])); base_w=load_blend_weight(horizon); w=(base_w+.08*agree) if data_complete else min(base_w,.15); w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
+    p=np.array([base['DOWN'],base['FLAT'],base['UP']]); q=np.array([struct['DOWN'],struct['FLAT'],struct['UP']]); gap=m.get('cross_exchange_gap'); agree=max(0,1-4*abs(gap)) if gap is not None else 0.0; base_w=load_blend_weight(horizon); w=(base_w+.08*agree) if data_complete else min(base_w,.15); w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum(); return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
 def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
@@ -102,7 +106,8 @@ def main():
     try:
         bybit_book=bybit_depth(); m['bybit_book_imbalance']=imbalance(bybit_book); status['bybit_depth']='ok'
     except Exception as exc:status['bybit_depth']=f'error:{type(exc).__name__}'
-    # Bybit is used here only for the current cross-exchange price gap.
+    # Bybit is a secondary cross-venue signal. It is useful when available,
+    # but an outage must not block an otherwise valid production prediction.
     # Prefer the latest closed candle when available; otherwise query the
     # current linear-market ticker. This preserves the venue-divergence signal
     # without requiring an unrelated 40-bar contiguous Bybit history.
@@ -166,7 +171,9 @@ def main():
     if byp is not None and math.isfinite(byp) and byp>0:
         m['cross_exchange_gap']=byp/price-1
     else:
-        status['bybit_futures']='error:missing_current_price'
+        # Explicitly record missing secondary data; do not fabricate a gap.
+        m['cross_exchange_gap']=None
+        status['bybit_futures']=status.get('bybit_futures','error:missing_current_price')
     try:m['funding_binance']=float(binance_premium().get('lastFundingRate')); status['binance_premium']='ok'
     except Exception as exc:status['binance_premium']=f'error:{type(exc).__name__}'
     try:m['oi']=float(binance_oi().get('openInterest')); status['binance_oi']='ok'
@@ -177,15 +184,20 @@ def main():
     try:m['funding_bybit']=float(bybit_funding().get('result',{}).get('list',[{}])[0]['fundingRate']); status['bybit_funding']='ok'
     except Exception as exc:status['bybit_funding']=f'error:{type(exc).__name__}'
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
+    # Binance is the production price/target venue. Bybit is optional
+    # secondary information and is handled fail-safe by the policy layer.
     validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=(1 if byp is not None else 0))
     prediction_cutoff=utcnow()
     latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
-    s5=structural(f,m); s10=structural(f,{**m,'cross_exchange_gap':m['cross_exchange_gap']*.8})
+    s5=structural(f,m)
+    gap=m.get('cross_exchange_gap')
+    s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
     base5=model_probs(load_model('5m'),f); base10=model_probs(load_model('10m'),f)
-    raw5,w5=fuse(base5,s5,m,True,'5m'); raw10,w10=fuse(base10,s10,m,True,'10m'); p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
+    data_complete = byp is not None and 'bybit_book_imbalance' in m
+    raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m'); p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
-    if abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
-    if abs(m['book_imbalance'])>.45 or abs(m['bybit_book_imbalance'])>.45:warnings.append('order-book imbalance')
+    if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
+    if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
     if abs(m['taker_imbalance'])>.55:warnings.append('taker-flow imbalance')
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
