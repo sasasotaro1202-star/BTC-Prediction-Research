@@ -131,6 +131,10 @@ def _latest_contiguous_suffix(rows, minimum: int = 40):
     return suffix if len(suffix) >= minimum else []
 
 
+def _latest_row(rows):
+    return max(rows, key=lambda r: int(r[0])) if rows else None
+
+
 def cache_rows(limit=120):
     try:
         obj = json.loads(CACHE.read_text(encoding="utf-8"))
@@ -152,10 +156,13 @@ def cache_rows(limit=120):
 def resilient_1m_series(limit: int = 120):
     status = {}
     try:
-        by = _latest_contiguous_suffix(closed_bybit(bybit_klines(limit)), 40)
-        status["bybit_futures"] = "ok" if by else "non_contiguous_or_insufficient"
+        by_raw = closed_bybit(bybit_klines(limit))
+        by = _latest_contiguous_suffix(by_raw, 40)
+        by_current = _latest_row(by_raw)
+        status["bybit_futures"] = "ok" if by else ("ok_current_only" if by_current else "non_contiguous_or_insufficient")
     except Exception as e:
         by = []
+        by_current = None
         status["bybit_futures"] = f"error:{type(e).__name__}"
     try:
         fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), 40)
@@ -206,6 +213,7 @@ def resilient_1m_series(limit: int = 120):
         status["price_feature_fallback"] = "none"
     status["spot_fallback"] = "unavailable" if len(spot) < 40 else "none"
     status["bybit_series_available"] = len(by) >= 40
+    status["bybit_current_price_available"] = by_current is not None
     status["live_series_fresh"] = status["price_feature_fallback"] in {"none", "bybit", "coinbase", "kraken", "fresh_bootstrap_cache"}
     return fut, spot, by, status
 
