@@ -7,6 +7,7 @@ source failed and was replaced by a default/zero/fallback value.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -23,6 +24,14 @@ CRITICAL = (
 
 
 def validate_latest() -> dict:
+    # A broad critical-market-data outage is explicitly handled by the live
+    # workflow as a safe deferred cycle. In that state predict.py did not create
+    # a fresh directional row, so this gate must not inspect an older row and
+    # incorrectly turn the whole cycle red. The downstream state validator
+    # independently verifies that the existing database remains intact.
+    if os.environ.get("BTC_LIVE_DEFERRED") == "1":
+        return {"ok": True, "mode": "deferred"}
+
     with sqlite3.connect(DB) as con:
         row = con.execute(
             "SELECT prediction_id, model_version, scenario_json "
