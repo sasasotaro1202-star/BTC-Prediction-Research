@@ -241,6 +241,12 @@ def main():
             'status':status.get(source_key),
         }
     scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'),'production_mode':('bybit_fallback' if use_bybit_fallback else 'binance_primary')}
-    insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
+    if use_bybit_fallback:
+        by5=json.loads((Path(DB).parent/'models'/'bybit_5m.json').read_text(encoding='utf-8'))['model_version']
+        by10=json.loads((Path(DB).parent/'models'/'bybit_10m.json').read_text(encoding='utf-8'))['model_version']
+        model_version=f'5m:{by5}|10m:{by10}'
+    else:
+        model_version=f'5m:{regver("5m")}|10m:{regver("10m")}'
+    insert_prediction(now,target5,target10,price,p5,p10,model_version,f,scenario)
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((Path(DB).parent/'models'/'bybit_5m.json').read_text(encoding='utf-8'))['model_version'] if use_bybit_fallback else regver('5m')),'model_10m':(json.loads((Path(DB).parent/'models'/'bybit_10m.json').read_text(encoding='utf-8'))['model_version'] if use_bybit_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
