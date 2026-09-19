@@ -1,9 +1,8 @@
 """BTC interaction-feature walk-forward research gate.
 
-Research-only: production artifacts are never modified here. The candidate set is
-fixed before evaluation, and the comparison uses identical chronological blocks,
-a purge, a protected final holdout, and an ensemble of regularized tree/linear
-models.
+Research-only: production artifacts are never modified here. Candidate selection
+uses chronological development OOS only. The final holdout is evaluated once
+with frozen choices and is never used for promotion decisions.
 """
 from __future__ import annotations
 
@@ -18,8 +17,16 @@ from sklearn.metrics import log_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from bootstrap_train import CLASSES, MIN_OOS, MIN_TRAIN, fetch_history, TARGET_ROWS, make_features
+from bootstrap_train import (
+    CLASSES,
+    MIN_OOS,
+    MIN_TRAIN,
+    TARGET_ROWS,
+    fetch_history,
+    make_features,
+)
 from interaction_features import add_interactions
+from selective_prediction import choose_threshold, evaluate
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "interaction_oos_report.json"
@@ -46,8 +53,6 @@ def build_dataset_dicts(rows, horizon):
     for i in range(30, len(rows) - h):
         history = rows[:i + 1]
         d = dict(zip(BASE_FEATURES, make_features(history)))
-        # Research-only higher-timeframe inputs. Keep them outside BASE_FEATURES
-        # so the production 15-feature schema is unchanged.
         close = np.asarray([r[4] for r in history], float)
         d["ret_15m"] = close[-1] / close[-16] - 1.0
         d["ret_30m"] = close[-1] / close[-31] - 1.0
@@ -127,6 +132,9 @@ def walk_forward(X, y, horizon, start, stop):
         "baseline": metrics(ys, base_preds),
         "interaction": metrics(ys, ix_preds),
         "blocks": block_deltas,
+        "y": np.asarray(ys),
+        "base_predictions": np.asarray(base_preds, float),
+        "interaction_predictions": np.asarray(ix_preds, float),
     }
 
 
@@ -146,14 +154,38 @@ def gate(result):
         ),
         "improved_block_ratio": ratio,
         "production_changed": False,
-        "reason": "requires lower logloss and brier, near-non-decreasing accuracy, and stability across chronological blocks",
+        "reason": "development-only gate: lower logloss and brier, near-non-decreasing accuracy, and stability across chronological blocks",
+    }
+
+
+def selective_report(dev, holdout):
+    """Choose thresholds on development OOS, then freeze them for holdout."""
+    y_dev = np.array([CLASSES.index(v) for v in dev["y"]], dtype=int)
+    y_hold = np.array([CLASSES.index(v) for v in holdout["y"]], dtype=int)
+    chosen = choose_threshold(y_dev, dev["interaction_predictions"])
+    frozen = {}
+    for target, item in chosen.items():
+        threshold = float(item["threshold"])
+        frozen[target] = {
+            "threshold": threshold,
+            "development": evaluate(
+                y_dev, dev["interaction_predictions"], threshold
+            ),
+            "final_holdout": evaluate(
+                y_hold, holdout["interaction_predictions"], threshold
+            ),
+        }
+    return {
+        "selection_source": "development_walk_forward_only",
+        "final_holdout_used_for_threshold_selection": False,
+        "frozen_thresholds": frozen,
     }
 
 
 def main():
     rows, source = fetch_history(TARGET_ROWS)
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "research_only": True,
         "production_artifacts_modified": False,
         "source": source,
@@ -172,10 +204,11 @@ def main():
         n = len(y)
         final_start = int(n * (1.0 - FINAL_HOLDOUT_FRAC))
         base = np.asarray([[d[k] for k in BASE_FEATURES] for d in fs], float)
-        ix = np.asarray([[add_interactions(d)[k] for k in BASE_FEATURES + IX_FEATURES] for d in fs], float)
+        ix = np.asarray(
+            [[add_interactions(d)[k] for k in BASE_FEATURES + IX_FEATURES] for d in fs],
+            float,
+        )
 
-        # Development OOS is the first 80%; the final 20% is evaluated once
-        # and never used to choose the interaction library.
         dev = walk_forward({"base": base, "ix": ix}, y, horizon, MIN_TRAIN, final_start)
         holdout = walk_forward({"base": base, "ix": ix}, y, horizon, final_start, n)
 
@@ -183,6 +216,8 @@ def main():
             report["horizons"][horizon] = {"status": "insufficient_oos", "samples": n}
             continue
 
+        # IMPORTANT: only development OOS can determine whether a candidate is
+        # eligible for review. The final holdout is descriptive evidence only.
         report["horizons"][horizon] = {
             "status": "evaluated",
             "samples": n,
@@ -202,8 +237,13 @@ def main():
                     k: holdout["interaction"][k] - holdout["baseline"][k]
                     for k in ("accuracy", "logloss", "brier")
                 },
-                "gate": gate(holdout),
+                "gate": {
+                    "eligible_for_review": None,
+                    "production_changed": False,
+                    "reason": "protected final holdout is descriptive only; no promotion decision is made from it",
+                },
             },
+            "selective_prediction": selective_report(dev, holdout),
         }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
