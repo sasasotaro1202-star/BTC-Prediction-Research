@@ -7,7 +7,7 @@ import joblib
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-FEATURE_COUNT = 15
+from feature_schema import FEATURE_COUNT, FEATURES
 CLASSES = ["DOWN", "FLAT", "UP"]
 
 
@@ -24,6 +24,7 @@ class RuntimeModelGuards(unittest.TestCase):
             self.assertEqual(meta.get("horizon"), horizon)
             self.assertEqual(meta.get("artifact"), f"{horizon}.joblib")
             self.assertEqual(meta.get("classes"), CLASSES)
+            self.assertEqual(meta.get("features"), list(FEATURES))
             self.assertEqual(len(meta.get("features", [])), FEATURE_COUNT)
             model = joblib.load(model_path)
             self.assertEqual(list(model.classes_), CLASSES)
