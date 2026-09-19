@@ -7,7 +7,7 @@ from information available before each test block.
 """
 from __future__ import annotations
 import math
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
 
 import numpy as np
 
@@ -53,7 +53,38 @@ def context_of(row, thresholds):
     return ("high_vol_" + base) if high else base
 
 
-def route_predictions(train_rows, test_rows, factory: Callable[[], object]):
+def _select_factory(rows, factories: Mapping[str, Callable[[], object]]):
+    """Select one estimator using only the tail of the context's training data."""
+    if len(rows) < MIN_SPECIALIST_TRAIN:
+        return None, None
+    split=max(int(len(rows)*0.80), len(rows)-100)
+    fit, valid=rows[:split], rows[split:]
+    if len(fit)<100 or len(valid)<50:
+        return None, None
+    names=[r['y'] for r in fit]
+    if len(set(names))<3:
+        return None, None
+    Xfit=np.asarray([r['x'] for r in fit],dtype=float); yfit=np.asarray(names)
+    Xv=np.asarray([r['x'] for r in valid],dtype=float); yv=np.asarray([r['y'] for r in valid])
+    best=None
+    for name, factory in factories.items():
+        try:
+            model=factory(); model.fit(Xfit,yfit)
+            p=model.predict_proba(Xv); classes=list(model.classes_); aligned=np.full((len(valid),3),1e-6,float)
+            for j,cls in enumerate(classes):
+                if cls in ('DOWN','FLAT','UP'): aligned[:,('DOWN','FLAT','UP').index(cls)]=p[:,j]
+            aligned/=aligned.sum(axis=1,keepdims=True)
+            yidx=np.asarray([('DOWN','FLAT','UP').index(v) for v in yv])
+            ll=float(-np.mean(np.log(np.clip(aligned[np.arange(len(yidx)),yidx],1e-12,1.0))))
+            brier=float(np.mean(np.sum((aligned-np.eye(3)[yidx])**2,axis=1)))
+            score=(ll,brier)
+            if best is None or score<best[0]: best=(score,name)
+        except Exception:
+            continue
+    return (factories[best[1]],best[1]) if best else (None,None)
+
+
+def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[], object]]):
     """Walk one already-defined chronological split using contextual specialists.
 
     A specialist is trained only when its context has enough historical rows.
@@ -63,7 +94,10 @@ def route_predictions(train_rows, test_rows, factory: Callable[[], object]):
         return None
 
     thresholds = fit_context_thresholds(train_rows)
-    global_model = factory()
+    global_factory, global_name = _select_factory(train_rows, factories)
+    if global_factory is None:
+        return None
+    global_model = global_factory()
     X = np.asarray([r["x"] for r in train_rows], dtype=float)
     y = np.asarray([r["y"] for r in train_rows])
     if len(set(y.tolist())) < 3:
@@ -76,7 +110,10 @@ def route_predictions(train_rows, test_rows, factory: Callable[[], object]):
         labels = {r["y"] for r in subset}
         if len(subset) < MIN_SPECIALIST_TRAIN or len(labels) < 3:
             continue
-        model = factory()
+        specialist_factory, specialist_name = _select_factory(subset, factories)
+        if specialist_factory is None:
+            continue
+        model = specialist_factory()
         model.fit(np.asarray([r["x"] for r in subset], dtype=float),
                   np.asarray([r["y"] for r in subset]))
         specialists[context] = model
@@ -108,6 +145,8 @@ def route_predictions(train_rows, test_rows, factory: Callable[[], object]):
         "routed_probs": routed,
         "contexts": [context_of(r, thresholds) for r in test_rows],
         "specialist_usage": used,
+        "global_model": global_name,
+        "specialist_models": {k: v for k, v in ((ctx, _select_factory([r for r in train_rows if context_of(r, thresholds) == ctx], factories)[1]) for ctx in CONTEXTS) if v},
         "thresholds": thresholds,
     }
 
