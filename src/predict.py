@@ -22,8 +22,14 @@ def _ema(v,span):
     a=2/(span+1); e=float(v[0])
     for x in v[1:]: e=a*float(x)+(1-a)*e
     return e
-def _ret(c,n): return c[-1]/c[-1-n]-1 if len(c)>n else 0.0
+def _ret(c,n):
+    """Return a past-to-current return, but fail closed if history is insufficient."""
+    if len(c) <= n:
+        raise ValueError(f"insufficient_price_history_for_return:{n}")
+    return c[-1]/c[-1-n]-1
 def features(rows):
+    if len(rows) < 31:
+        raise ValueError(f"insufficient_price_history_for_features:{len(rows)}")
     c=np.asarray([float(x[4]) for x in rows]); o=np.asarray([float(x[1]) for x in rows]); h=np.asarray([float(x[2]) for x in rows]); l=np.asarray([float(x[3]) for x in rows]); v=np.asarray([float(x[5]) for x in rows]); p=c[-1]
     r1,r3,r5,r10,r15,r30=[_ret(c,n) for n in (1,3,5,10,15,30)]; a=r1-r3/3
     rv5=float(np.std(np.diff(c[-6:])/c[-6:-1])); rv10=float(np.std(np.diff(c[-11:])/c[-11:-1])); hi,lo=max(h[-10:]),min(l[-10:]); rp=(p-lo)/(hi-lo) if hi>lo else .5
