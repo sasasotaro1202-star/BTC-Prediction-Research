@@ -61,10 +61,10 @@ jobs:
           exit 1
       - name: Compile research code
         run: python -m compileall -q src tests scripts
-      - name: Recalculate calibration metrics
-        run: python src/calibration.py
       - name: Run model research and adoption gate
         run: python src/model_compare.py
+      - name: Recalculate calibration metrics after any model adoption
+        run: python src/calibration.py
       - name: Audit production artifact provenance
         run: python src/production_artifact_audit.py
       - name: Validate model and provenance artifacts
