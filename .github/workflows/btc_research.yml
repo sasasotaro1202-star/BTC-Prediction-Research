@@ -80,6 +80,8 @@ jobs:
               n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
               if n <= 0:
                   raise SystemExit('predictions table is empty')
+          with sqlite3.connect(db) as con:
+              registry={h: (con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
           for h in ('5m','10m'):
               p=Path(f'models/{h}.joblib')
               if not p.exists() or p.stat().st_size == 0:
@@ -90,6 +92,17 @@ jobs:
               obj=json.loads(meta.read_text())
               if obj.get('horizon') != h or obj.get('candidate') is not False:
                   raise SystemExit(f'invalid production metadata: {meta}')
+              if registry[h] and obj.get('model_version') != registry[h]:
+                  raise SystemExit(f'production metadata/registry mismatch: {h}')
+              calibration=Path(f'models/{h}.calibration.json')
+              if not calibration.exists() or calibration.stat().st_size == 0:
+                  raise SystemExit(f'missing calibration artifact: {calibration}')
+              cal=json.loads(calibration.read_text())
+              if cal.get('horizon') != h or not (0.5 <= float(cal.get('temperature',1.0)) <= 3.0):
+                  raise SystemExit(f'invalid calibration artifact: {calibration}')
+              n_settled=int(cal.get('n_settled',0))
+              if n_settled >= 300 and registry[h] and cal.get('model_version') != registry[h]:
+                  raise SystemExit(f'calibration/registry mismatch: {h}')
           audit=Path('data/historical_research/production_artifact_audit.json')
           if not audit.exists():
               raise SystemExit('missing production artifact provenance audit')
