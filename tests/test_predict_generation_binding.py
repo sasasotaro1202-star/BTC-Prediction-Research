@@ -15,9 +15,11 @@ class TestPredictGenerationBinding(unittest.TestCase):
     def test_blend_weight_rejects_stale_generation(self):
         with tempfile.TemporaryDirectory() as td:
             old_db = predict.DB
+            old_model_dir = predict.MODEL_DIR
             try:
                 predict.DB = str(Path(td) / 'predictions.db')
                 model_dir = Path(td) / 'models'
+                predict.MODEL_DIR = model_dir
                 model_dir.mkdir()
                 (model_dir / '5m.blend.json').write_text(
                     json.dumps({
@@ -32,6 +34,7 @@ class TestPredictGenerationBinding(unittest.TestCase):
                     self.assertEqual(predict.load_blend_weight('5m'), 0.20)
             finally:
                 predict.DB = old_db
+                predict.MODEL_DIR = old_model_dir
 
     def test_blend_weight_accepts_current_generation(self):
         with tempfile.TemporaryDirectory() as td:
