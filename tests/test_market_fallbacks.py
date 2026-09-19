@@ -41,6 +41,22 @@ class TestMarketFallbacks(unittest.TestCase):
             self.assertEqual(len(rows[0]), 6)
             self.assertTrue(all(len(r) == 6 for r in rows))
 
+    def test_binance_taker_uses_futures_api_host(self):
+        original = market_data._get
+        seen = []
+        try:
+            market_data._get = lambda url: seen.append(url) or [
+                {'takerBuyVol': '2', 'takerSellVol': '1'}
+            ]
+            rows = market_data.binance_taker()
+            self.assertEqual(rows[0]['takerBuyVol'], '2')
+            self.assertEqual(len(seen), 1)
+            self.assertTrue(seen[0].startswith(
+                'https://fapi.binance.com/futures/data/takerBuySellVol?'
+            ))
+        finally:
+            market_data._get = original
+
     def test_bybit_orderbook_imbalance_uses_v5_shape(self):
         payload = {
             'result': {
