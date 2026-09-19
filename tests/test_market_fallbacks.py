@@ -67,6 +67,19 @@ class TestMarketFallbacks(unittest.TestCase):
         }
         self.assertAlmostEqual(predict.imbalance(payload, levels=25), 0.60, places=8)
 
+    def test_fallback_model_loader_selects_source_specific_artifact(self):
+        original_exists = predict.Path.exists
+        original_load = predict.joblib.load
+        seen = []
+        try:
+            predict.Path.exists = lambda self: True
+            predict.joblib.load = lambda path: seen.append(str(path)) or object()
+            predict.load_model('5m', 'coinbase')
+            self.assertTrue(seen[-1].endswith('/models/coinbase_5m.joblib'))
+        finally:
+            predict.Path.exists = original_exists
+            predict.joblib.load = original_load
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
