@@ -93,6 +93,7 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
         return None
 
     thresholds = fit_context_thresholds(train_rows)
+    # Freeze routing labels for both training and test from training-only thresholds.
     global_factory, global_name = _select_factory(train_rows, factories)
     if global_factory is None:
         return None
