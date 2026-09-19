@@ -18,7 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 AUDIT = ROOT / "data" / "historical_research" / "production_artifact_audit.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
-FEATURE_COUNT = 15
+FEATURES = [
+    "ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration",
+    "volatility_5m", "volatility_10m", "range_position_10m",
+    "body_1m", "upper_wick_1m", "lower_wick_1m", "volume_ratio",
+    "volume_trend", "ema_gap_5m", "ema_gap_10m",
+]
+FEATURE_COUNT = len(FEATURES)
 
 
 def sha256(path: Path) -> str:
@@ -51,6 +57,7 @@ def audit_one(horizon: str) -> dict:
         raise SystemExit(f"missing production model: {model_path}")
     if not meta_path.is_file() or meta_path.stat().st_size <= 0:
         raise SystemExit(f"missing production metadata: {meta_path}")
+
     obj = json.loads(meta_path.read_text(encoding="utf-8"))
     if obj.get("horizon") != horizon:
         raise SystemExit(f"{horizon}: metadata horizon mismatch")
@@ -58,10 +65,9 @@ def audit_one(horizon: str) -> dict:
         raise SystemExit(f"{horizon}: metadata artifact mismatch")
     if obj.get("classes") != CLASSES:
         raise SystemExit(f"{horizon}: metadata class order mismatch")
-    features = obj.get("features")
-    if not isinstance(features, list) or len(features) != FEATURE_COUNT or len(set(features)) != FEATURE_COUNT:
-        raise SystemExit(f"{horizon}: invalid feature metadata")
-
+    if obj.get("features") != FEATURES:
+        raise SystemExit(f"{horizon}: production feature schema mismatch")
+    
     try:
         loaded = joblib.load(model_path)
         estimator = _estimator_contract(loaded)
@@ -73,7 +79,7 @@ def audit_one(horizon: str) -> dict:
             raise SystemExit(f"{horizon}: serialized model feature count mismatch: {n_features}")
         probe = np.zeros((1, FEATURE_COUNT), dtype=float)
         probabilities = np.asarray(loaded.predict_proba(probe), dtype=float)
-        if probabilities.shape != (1, FEATURE_COUNT * 0 + len(CLASSES)):
+        if probabilities.shape != (1, len(CLASSES)):
             raise SystemExit(f"{horizon}: predict_proba shape mismatch: {probabilities.shape}")
         if not np.all(np.isfinite(probabilities)) or np.any(probabilities < 0):
             raise SystemExit(f"{horizon}: serialized model returned invalid probabilities")
@@ -100,7 +106,11 @@ def audit_one(horizon: str) -> dict:
 
 def main() -> None:
     records = [audit_one(h) for h in ("5m", "10m")]
-    fingerprint = [{k: r[k] for k in ("horizon", "model_version", "model_sha256", "metadata_sha256", "model_bytes", "metadata_bytes", "evaluation_milestone", "runtime_model_reload_ok", "runtime_classes", "runtime_feature_count")} for r in records]
+    fingerprint = [{k: r[k] for k in (
+        "horizon", "model_version", "model_sha256", "metadata_sha256",
+        "model_bytes", "metadata_bytes", "evaluation_milestone",
+        "runtime_model_reload_ok", "runtime_classes", "runtime_feature_count"
+    )} for r in records]
     previous = None
     if AUDIT.exists():
         try:
@@ -112,7 +122,7 @@ def main() -> None:
         AUDIT.write_text(json.dumps({
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "artifacts": fingerprint,
-            "policy": "sha256_plus_runtime_reload_contract_on_production_artifact_or_metadata_change",
+            "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_on_production_artifact_or_metadata_change",
         }, indent=2) + "\n", encoding="utf-8")
         changed = True
     else:
