@@ -19,13 +19,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 AUDIT = ROOT / "data" / "historical_research" / "production_artifact_audit.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
-FEATURES = [
-    "ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration",
-    "volatility_5m", "volatility_10m", "range_position_10m",
-    "body_1m", "upper_wick_1m", "lower_wick_1m", "volume_ratio",
-    "volume_trend", "ema_gap_5m", "ema_gap_10m",
-]
-FEATURE_COUNT = len(FEATURES)
 
 
 def sha256(path: Path) -> str:
@@ -66,7 +59,7 @@ def audit_one(horizon: str) -> dict:
         raise SystemExit(f"{horizon}: metadata artifact mismatch")
     if obj.get("classes") != CLASSES:
         raise SystemExit(f"{horizon}: metadata class order mismatch")
-    if obj.get("features") != FEATURES:
+    if obj.get("features") != list(FEATURES):
         raise SystemExit(f"{horizon}: production feature schema mismatch")
     
     try:
