@@ -31,6 +31,10 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertNotEqual('p_up_5mm', f'p_up_{"5m"}')
         self.assertNotEqual('p_up_10mm', f'p_up_{"10m"}')
 
+    def test_uses_canonical_root_model_directory(self):
+        self.assertEqual(blend_calibration.MODEL_DIR, ROOT / 'models')
+        self.assertNotEqual(blend_calibration.MODEL_DIR, ROOT / 'data' / 'models')
+
     def test_grid_is_bounded(self):
         self.assertGreaterEqual(float(blend_calibration.GRID.min()), 0.0)
         self.assertLessEqual(float(blend_calibration.GRID.max()), 0.45)
