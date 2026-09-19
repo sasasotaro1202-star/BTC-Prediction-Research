@@ -76,6 +76,10 @@ class TestCalibration(unittest.TestCase):
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v2', 500))
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 501))
 
+    def test_uses_canonical_root_model_directory(self):
+        self.assertEqual(calibration.MODEL_DIR, ROOT / 'models')
+        self.assertNotEqual(calibration.MODEL_DIR, ROOT / 'data' / 'models')
+
     def test_cache_reuse_rejects_malformed_temperature(self):
         cached = {
             'horizon': '5m',
