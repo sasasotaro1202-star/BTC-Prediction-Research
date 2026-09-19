@@ -149,8 +149,15 @@ def adopt_candidate(h,meta,version):
             try: os.unlink(meta_tmp)
             except FileNotFoundError: pass
 
-def better(c,p):
-    return c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
+def better(c,p,stability=None):
+    # Aggregate gains are necessary but not sufficient: require improvement
+    # across a majority of chronological test blocks.
+    stable = stability is None or (
+        stability.get('blocks',0) >= 8 and
+        stability.get('improved_logloss_ratio',0.0) >= 0.55 and
+        stability.get('improved_brier_ratio',0.0) >= 0.55
+    )
+    return stable and c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
 
 def loss_arrays(ys,prod,cand):
     idx={c:i for i,c in enumerate(CLASSES)}; y=np.array([idx[v] for v in ys]); one=np.eye(3)[y]; pp=normalize(prod); cp=normalize(cand)
@@ -251,12 +258,23 @@ def compare_h(h):
         if len(aligned_rows)!=len(wf['ids']): continue
         prod_aligned=[r['production'] for r in aligned_rows]
         candidate_metrics=metrics(wf['ys'],wf['probs']); production_aligned_metrics=metrics(wf['ys'],prod_aligned)
+        block_diffs=[]
+        for start in range(0,len(wf['ys']),TEST_BLOCK):
+            by=wf['ys'][start:start+TEST_BLOCK]; bp=prod_aligned[start:start+TEST_BLOCK]; bc=wf['probs'][start:start+TEST_BLOCK]
+            if len(by)<max(10,TEST_BLOCK//2): continue
+            pm=metrics(by,bp); cm=metrics(by,bc)
+            block_diffs.append({'logloss_delta':cm['logloss']-pm['logloss'],'brier_delta':cm['brier']-pm['brier']})
+        stability={
+            'blocks':len(block_diffs),
+            'improved_logloss_ratio':float(np.mean([d['logloss_delta']<0 for d in block_diffs])) if block_diffs else 0.0,
+            'improved_brier_ratio':float(np.mean([d['brier_delta']<0 for d in block_diffs])) if block_diffs else 0.0
+        }
         tests=statistical_tests(wf['ys'],prod_aligned,wf['probs'],h,alpha=corrected_alpha)
-        results[name]={'metrics':candidate_metrics,'production_aligned':production_aligned_metrics,'statistical_tests':tests,'n':len(wf['ids'])}
+        results[name]={'metrics':candidate_metrics,'production_aligned':production_aligned_metrics,'block_stability':stability,'statistical_tests':tests,'n':len(wf['ids'])}
         save_metric(h,name,len(wf['ids']),candidate_metrics,milestone); save_stat_test(h,name,milestone,len(wf['ids']),tests)
     eligible=[]
     for name,r in results.items():
-        if better(r['metrics'],r['production_aligned']) and r['statistical_tests']['both_significant']: eligible.append((name,r['metrics'],r['statistical_tests']))
+        if better(r['metrics'],r['production_aligned'],r.get('block_stability')) and r['statistical_tests']['both_significant']: eligible.append((name,r['metrics'],r['statistical_tests']))
     if not eligible:
         mark_checkpoint(h,milestone,'rejected'); return {'status':'rejected','milestone':milestone,'production':production,'candidates':results,'n':len(rows)}
     winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_candidate(development_rows,h,winner,cand[winner],milestone)
