@@ -85,11 +85,11 @@ def load_blend_weight(h):
     p=MODEL_DIR/f'{h}.blend.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0)); status=str(obj.get('status','')); calibrated_version=str(obj.get('model_version','')); current_version=regver(h)
-        if calibrated_version != current_version:return 0.20
-        if n<400 or status not in {'accepted','rejected','insufficient_history'}: return 0.20
-        if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.20
+        if calibrated_version != current_version:return 0.0
+        if n<400 or status != 'accepted': return 0.0
+        if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.0
         return w
-    except Exception:return 0.20
+    except Exception:return 0.0
 def calibrate_probs(probs,h):
     t=load_temperature(h)
     if t==1.0:return probs
