@@ -53,12 +53,14 @@ def _logloss_at_temperature(logits,y,t):
     return float(-np.mean(np.log(np.clip(p[np.arange(len(y)),y],1e-12,1.0))))
 
 
-def temperature_scale(rows):
+def temperature_scale(rows, purge_gap=0):
     if len(rows) < MIN_CALIBRATION:
         return 1.0, None, None
     logits,y=_probs_and_labels(rows)
     split=max(int(len(rows)*(1-HOLDOUT_FRACTION)),1)
-    fit_logits,fit_y=logits[:split],y[:split]
+    gap=max(0,int(purge_gap))
+    fit_end=max(1,split-gap)
+    fit_logits,fit_y=logits[:fit_end],y[:fit_end]
     eval_logits,eval_y=logits[split:],y[split:]
     if len(eval_y)<100 or len(set(fit_y.tolist()))<3:
         return 1.0,None,None
@@ -156,7 +158,7 @@ def calibration():
                 continue
             acc,ll,brier,ece=multiclass_metrics(rows,horizon_name)
             con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now.isoformat(),horizon_name,model_version,len(rows),acc,ll,brier,ece))
-        temperature,fit_ll,eval_ll=temperature_scale(rows)
+        temperature,fit_ll,eval_ll=temperature_scale(rows,purge_gap=horizon)
         save_temperature(horizon_name,temperature,len(rows),fit_ll,eval_ll,HOLDOUT_FRACTION,model_version)
         print(horizon_name,len(rows),'model_version',model_version,'accuracy',acc,'logloss',ll,'brier',brier,'ece',ece,'temperature',temperature,'fit_logloss',fit_ll,'holdout_logloss',eval_ll)
 
