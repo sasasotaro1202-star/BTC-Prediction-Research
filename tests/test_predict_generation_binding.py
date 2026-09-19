@@ -11,6 +11,12 @@ sys.path.insert(0, str(ROOT / 'src'))
 import predict  # noqa: E402
 
 
+class TestPredictFeatureSafety(unittest.TestCase):
+    def test_features_reject_insufficient_history(self):
+        rows=[[i,1.0,1.0,1.0,1.0,1.0] for i in range(30)]
+        with self.assertRaisesRegex(ValueError, "insufficient_price_history_for_features"):
+            predict.features(rows)
+
 class TestPredictGenerationBinding(unittest.TestCase):
     def test_blend_weight_rejects_stale_generation(self):
         with tempfile.TemporaryDirectory() as td:
