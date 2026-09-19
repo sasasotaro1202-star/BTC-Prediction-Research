@@ -2,6 +2,15 @@ name: BTC Interaction Research
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/interaction_features.py'
+      - 'src/interaction_oos.py'
+      - 'tests/test_interaction_features.py'
+      - '.github/workflows/btc_interaction_research.yml'
+      - 'src/bootstrap_train.py'
+      - 'requirements.txt'
   schedule:
     - cron: '17 12 * * *'
 
