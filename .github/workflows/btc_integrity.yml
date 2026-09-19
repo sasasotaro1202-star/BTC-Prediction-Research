@@ -76,6 +76,7 @@ jobs:
       - name: Run all BTC tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Fetch immutable upstream BTC cycle artifact
+        if: github.event_name == 'workflow_run'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,6 +87,7 @@ jobs:
           gh run download "${{ github.event.workflow_run.id }}"             --repo "${{ github.repository }}"             --name btc-predictions-db             --dir /tmp/btc_upstream_artifact
 
       - name: Validate upstream BTC live cycle outcome
+        if: github.event_name == 'workflow_run'
         shell: bash
         run: |
           set -euo pipefail
@@ -113,11 +115,11 @@ jobs:
           PY
 
       - name: Run production integrity gate
-        if: env.BTC_UPSTREAM_DEFERRED != '1'
+        if: github.event_name == 'workflow_dispatch' || env.BTC_UPSTREAM_DEFERRED != '1'
         run: python src/production_integrity.py
 
       - name: Confirm safe deferred BTC cycle
-        if: env.BTC_UPSTREAM_DEFERRED == '1'
+        if: github.event_name == 'workflow_run' && env.BTC_UPSTREAM_DEFERRED == '1'
         run: |
           echo "BTC upstream live cycle was explicitly deferred after fail-closed critical-data validation; no fresh prediction was expected or fabricated."
       - name: Validate Git diff
