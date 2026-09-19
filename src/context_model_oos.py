@@ -151,6 +151,19 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
     }
 
 
+def evaluate_routing(y_true, routed_probs, global_probs):
+    """Return descriptive metrics; never used for routing selection."""
+    names=("DOWN","FLAT","UP")
+    y=np.asarray([names.index(v) for v in y_true],dtype=int)
+    def m(p):
+        p=np.asarray(p,dtype=float)
+        ll=float(-np.mean(np.log(np.clip(p[np.arange(len(y)),y],1e-12,1.0))))
+        brier=float(np.mean(np.sum((p-np.eye(3)[y])**2,axis=1)))
+        acc=float(np.mean(np.argmax(p,axis=1)==y))
+        return {"accuracy":acc,"logloss":ll,"brier":brier,"n":int(len(y))}
+    return {"global":m(global_probs),"routed":m(routed_probs)}
+
+
 def strict_improvement(global_metrics, routed_metrics):
     """Promotion-style research gate; never call this from production."""
     if not global_metrics or not routed_metrics:
