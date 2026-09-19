@@ -37,6 +37,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Run interaction walk-forward research
         run: python src/interaction_oos.py
+      - name: Run regime robustness diagnostics
+        run: python src/robustness_oos.py
       - name: Record execution provenance
         run: |
           python - <<'PY'
@@ -74,5 +76,6 @@ jobs:
           path: |
             data/historical_research/interaction_oos_report.json
             data/historical_research/interaction_execution.json
+            data/historical_research/robustness_oos_report.json
           if-no-files-found: error
           retention-days: 30
