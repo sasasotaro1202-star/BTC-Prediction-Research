@@ -30,7 +30,14 @@ def _ret(c,n):
 def features(rows):
     if len(rows) < 31:
         raise ValueError(f"insufficient_price_history_for_features:{len(rows)}")
-    c=np.asarray([float(x[4]) for x in rows]); o=np.asarray([float(x[1]) for x in rows]); h=np.asarray([float(x[2]) for x in rows]); l=np.asarray([float(x[3]) for x in rows]); v=np.asarray([float(x[5]) for x in rows]); p=c[-1]
+    c=np.asarray([float(x[4]) for x in rows],dtype=float); o=np.asarray([float(x[1]) for x in rows],dtype=float); h=np.asarray([float(x[2]) for x in rows],dtype=float); l=np.asarray([float(x[3]) for x in rows],dtype=float); v=np.asarray([float(x[5]) for x in rows],dtype=float)
+    if not all(np.all(np.isfinite(a)) for a in (c,o,h,l,v)):
+        raise ValueError('invalid_price_history_nonfinite')
+    if np.any(c<=0) or np.any(o<=0) or np.any(h<=0) or np.any(l<=0) or np.any(v<0):
+        raise ValueError('invalid_price_history_domain')
+    if np.any(h < np.maximum(o,c)) or np.any(l > np.minimum(o,c)):
+        raise ValueError('invalid_ohlc_relationship')
+    p=c[-1]
     r1,r3,r5,r10,r15,r30=[_ret(c,n) for n in (1,3,5,10,15,30)]; a=r1-r3/3
     rv5=float(np.std(np.diff(c[-6:])/c[-6:-1])); rv10=float(np.std(np.diff(c[-11:])/c[-11:-1])); hi,lo=max(h[-10:]),min(l[-10:]); rp=(p-lo)/(hi-lo) if hi>lo else .5
     hi30,lo30=max(h[-30:]),min(l[-30:]); rp30=(p-lo30)/(hi30-lo30) if hi30>lo30 else .5
