@@ -202,7 +202,32 @@ def main():
     if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
     retrieved=prediction_cutoff.isoformat()
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':None,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_cutoff_is_post_retrieval; historical_data_requires_source_native_available_at'},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
+    # Conservative live provenance: the system's observation is treated as
+    # available no later than the end-of-acquisition cutoff. Source-native
+    # publication/revision timestamps are unknown unless the adapter exposes
+    # them, so they remain explicit nulls rather than invented values.
+    source_provenance={}
+    for source_key in ('binance_futures','binance_depth','binance_taker','binance_premium'):
+        source_provenance[source_key]={
+            'information_origin':'Binance',
+            'event_time':latest_event.isoformat(),
+            'available_at':retrieved,
+            'publication_time':None,
+            'retrieved_at':retrieved,
+            'revision_time':None,
+            'status':status.get(source_key),
+        }
+    for source_key in ('bybit_futures','bybit_depth','bybit_funding'):
+        source_provenance[source_key]={
+            'information_origin':'Bybit',
+            'event_time':latest_event.isoformat(),
+            'available_at':retrieved if status.get(source_key) in {'ok','ok_current_only'} else None,
+            'publication_time':None,
+            'retrieved_at':retrieved,
+            'revision_time':None,
+            'status':status.get(source_key),
+        }
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
     insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
