@@ -149,11 +149,14 @@ def fit_temperature(probs, y):
     z = logits[split:] / best_t; z -= z.max(axis=1, keepdims=True); q = np.exp(z); q /= q.sum(axis=1, keepdims=True)
     return best_t if log_loss(yi[split:], q, labels=[0, 1, 2]) < log_loss(yi[split:], normalize(p[split:]), labels=[0, 1, 2]) - 0.001 else 1.0
 
-def train_one(X, y):
-    """Select architecture on chronological validation, then audit on untouched OOS."""
+def train_one(X, y, purge_gap=0):
+    """Select architecture on chronological validation with a label-horizon purge."""
     n = len(y); train_end = int(n * 0.65); cal_end = int(n * 0.82)
-    Xtr, Xcal, Xte = X[:train_end], X[train_end:cal_end], X[cal_end:]
-    ytr, ycal, yte = y[:train_end], y[train_end:cal_end], y[cal_end:]
+    gap = max(0, int(purge_gap))
+    train_fit_end = max(0, train_end - gap)
+    cal_fit_end = max(train_end, cal_end - gap)
+    Xtr, Xcal, Xte = X[:train_fit_end], X[train_end:cal_end], X[cal_end:]
+    ytr, ycal, yte = y[:train_fit_end], y[train_end:cal_end], y[cal_end:]
     baseline = metrics(yte, np.tile(np.asarray([np.mean(ytr == c) for c in CLASSES]), (len(yte), 1)))
     candidates = [("logreg", Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(C=0.5, max_iter=3000))])), ("rf", RandomForestClassifier(n_estimators=300, max_depth=7, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=-1)), ("hgb", HistGradientBoostingClassifier(max_iter=220, max_leaf_nodes=15, learning_rate=0.04, l2_regularization=1.5, random_state=42))]
     validation_results = []
@@ -163,7 +166,7 @@ def train_one(X, y):
         validation_results.append((v["logloss"], v["brier"], -v["accuracy"], name, model))
     validation_results.sort(key=lambda r: r[:3])
     _, _, _, name, selected_model = validation_results[0]
-    selected_model.fit(np.concatenate([Xtr, Xcal]), np.concatenate([ytr, ycal]))
+    selected_model.fit(np.concatenate([X[:cal_fit_end],]), np.concatenate([y[:cal_fit_end],]))
     holdout_score = metrics(yte, normalize(selected_model.predict_proba(Xte)))
     return (holdout_score["logloss"], holdout_score["brier"], -holdout_score["accuracy"], name, selected_model, 1.0, holdout_score), baseline, len(yte), validation_results
 
@@ -188,7 +191,7 @@ def main():
     for horizon in ("5m", "10m"):
         X, y = build_dataset(rows, int(horizon[:-1]))
         if len(y) < MIN_TRAIN + MIN_OOS or len(set(y)) < 3: published.append({"horizon": horizon, "status": "insufficient_dataset", "rows": len(y)}); continue
-        best, baseline, holdout_n, validation_results = train_one(X, y); ok, meta = publish(horizon, best, baseline, holdout_n, validation_results); published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
+        best, baseline, holdout_n, validation_results = train_one(X, y, purge_gap=int(horizon[:-1])); ok, meta = publish(horizon, best, baseline, holdout_n, validation_results); published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
     write_status({"status": "complete", "source": source, "rows": len(rows), "published": published}); return 0
 
 if __name__ == "__main__":
