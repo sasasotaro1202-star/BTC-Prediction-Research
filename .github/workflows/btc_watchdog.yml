@@ -3,6 +3,8 @@ name: BTC Workflow Watchdog
 on:
   schedule:
     - cron: '*/15 * * * *'
+  # A watchdog-only change intentionally triggers one immediate health check;
+  # normal production/research workflows remain schedule/manual driven.
   push:
     branches: [main]
     paths:
