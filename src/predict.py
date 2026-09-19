@@ -8,6 +8,8 @@ from db import DB, init_db
 from live_data_policy import validate_live_inputs
 from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 
+ROOT=Path(__file__).resolve().parents[1]
+MODEL_DIR=ROOT/'models'
 INTERVAL=300
 CLASSES=["DOWN","FLAT","UP"]
 FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
@@ -56,7 +58,7 @@ def structural(f,m):
 def load_model(h, source='primary'):
     """Load the model artifact for the selected production source."""
     prefix = h if source == 'primary' else f'{source}_{h}'
-    p=Path(DB).parent/'models'/f'{prefix}.joblib'
+    p=MODEL_DIR/f'{prefix}.joblib'
     if not p.exists(): raise FileNotFoundError(f'model_missing:{source}:{h}')
     try:return joblib.load(p)
     except Exception as exc: raise RuntimeError(f'model_load_failed:{source}:{h}:{type(exc).__name__}') from exc
@@ -72,7 +74,7 @@ def regver(h):
     if not r or not r[0]: raise RuntimeError(f'model_registry_missing:{h}')
     return r[0]
 def load_temperature(h):
-    p=Path(DB).parent/'models'/f'{h}.calibration.json'
+    p=MODEL_DIR/f'{h}.calibration.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0)); calibrated_version=str(obj.get('model_version','')); current_version=regver(h)
         if calibrated_version != current_version:return 1.0
@@ -80,7 +82,7 @@ def load_temperature(h):
         return t
     except Exception:return 1.0
 def load_blend_weight(h):
-    p=Path(DB).parent/'models'/f'{h}.blend.json'
+    p=MODEL_DIR/f'{h}.blend.json'
     try:
         obj=json.loads(p.read_text(encoding='utf-8')); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0)); status=str(obj.get('status','')); calibrated_version=str(obj.get('model_version','')); current_version=regver(h)
         if calibrated_version != current_version:return 0.20
@@ -263,11 +265,11 @@ def main():
     scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else ('coinbase_fallback_model_only_uncalibrated' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
     if use_bybit_fallback or use_coinbase_fallback:
         prefix='bybit' if use_bybit_fallback else 'coinbase'
-        by5=json.loads((Path(DB).parent/'models'/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']
-        by10=json.loads((Path(DB).parent/'models'/f'{prefix}_10m.json').read_text(encoding='utf-8'))['model_version']
+        by5=json.loads((MODEL_DIR/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']
+        by10=json.loads((MODEL_DIR/f'{prefix}_10m.json').read_text(encoding='utf-8'))['model_version']
         model_version=f'5m:{by5}|10m:{by10}'
     else:
         model_version=f'5m:{regver("5m")}|10m:{regver("10m")}'
     insert_prediction(now,target5,target10,price,p5,p10,model_version,f,scenario)
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((Path(DB).parent/'models'/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((Path(DB).parent/'models'/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((MODEL_DIR/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((MODEL_DIR/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
