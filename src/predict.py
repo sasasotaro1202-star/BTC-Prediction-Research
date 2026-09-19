@@ -6,13 +6,13 @@ from pathlib import Path
 import joblib, numpy as np
 from db import DB, init_db
 from live_data_policy import validate_live_inputs
+from feature_schema import FEATURES
 from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
 INTERVAL=300
 CLASSES=["DOWN","FLAT","UP"]
-FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 
 def utcnow(): return datetime.now(timezone.utc)
 def jst(dt): return dt.astimezone(timezone(timedelta(hours=9))).isoformat()
