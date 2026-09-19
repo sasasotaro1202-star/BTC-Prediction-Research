@@ -92,3 +92,14 @@ class TestPredictGenerationBinding(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+    def test_secondary_venue_completeness_requires_valid_status(self):
+        status = {"bybit_futures": "ok_current_only", "bybit_depth": "error:Timeout"}
+        complete = (
+            True
+            and "bybit_book_imbalance" in {"bybit_book_imbalance": 0.1}
+            and status.get("bybit_futures") in {"ok", "ok_current_only"}
+            and status.get("bybit_depth") == "ok"
+        )
+        self.assertFalse(complete)
+
+
