@@ -118,7 +118,8 @@ def calibrate(horizon: str):
         }
 
     split = int(len(rows) * (1.0 - HOLDOUT_FRACTION))
-    train = rows[:split]
+    purge_gap = int(horizon[:-1])
+    train = rows[:max(1, split - purge_gap)]
     holdout = rows[split:]
     y = [r[3] for r in holdout]
     model_h = _norm([r[1] for r in holdout])
