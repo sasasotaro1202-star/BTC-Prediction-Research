@@ -219,7 +219,12 @@ def compare_h(h):
         # Do not checkpoint an unmet milestone: the dataset is still growing and
         # this exact milestone must be evaluated once enough settled OOS exists.
         return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
-    # Protect the final 20% of the available milestone data from candidate-selection\n    # decisions. It is evaluated only as a descriptive audit after development OOS.\n    split=max(MIN_TRAIN, int(len(rows)*0.80))\n    development_rows=rows[:split]\n    final_holdout_rows=rows[split:]\n    oos_rows=development_rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
+    # Protect the final 20% of the available milestone data from candidate selection.
+    # It is evaluated only as a descriptive production audit.
+    split=max(MIN_TRAIN, int(len(rows)*0.80))
+    development_rows=rows[:split]
+    final_holdout_rows=rows[split:]
+    oos_rows=development_rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
     production=metrics(ys,production_probs); save_metric(h,prod_ver(h),len(oos_rows),production,milestone)
     prod_by_id={r['id']:r for r in oos_rows}
     cand={
@@ -236,7 +241,7 @@ def compare_h(h):
     # statistical promotion; descriptive metrics remain unchanged.
     corrected_alpha=_adjusted_alpha(ALPHA,len(cand))
     for name,f in cand.items():
-        wf=walk_forward(rows,f,h)
+        wf=walk_forward(development_rows,f,h)
         if not wf: continue
         aligned_rows=[prod_by_id[i] for i in wf['ids'] if i in prod_by_id]
         if len(aligned_rows)!=len(wf['ids']): continue
@@ -254,7 +259,8 @@ def compare_h(h):
     if not meta:
         mark_checkpoint(h,milestone,'rejected_training'); return {'status':'rejected_training','milestone':milestone,'winner':winner}
     version=f'v3.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['statistical_significance']=wtest
-    holdout=metrics([r['y'] for r in final_holdout_rows],[r['production'] for r in final_holdout_rows]) if final_holdout_rows else None\n    if not adopt_candidate(h,meta,version):
+    holdout=metrics([r['y'] for r in final_holdout_rows],[r['production'] for r in final_holdout_rows]) if final_holdout_rows else None
+    if not adopt_candidate(h,meta,version):
         mark_checkpoint(h,milestone,'rejected_adoption'); return {'status':'rejected_adoption','milestone':milestone,'winner':winner}
     set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
     return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'final_holdout_production':holdout,'n':len(rows)}
