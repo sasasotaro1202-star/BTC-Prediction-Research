@@ -48,13 +48,14 @@ def structural(f,m):
     if m.get('cross_exchange_gap') is not None:
         score+=.08*m['cross_exchange_gap']/vol
     score+=.08*m.get('bybit_book_imbalance',0.0)
-    if m['taker_imbalance']>.55: score+=.10
-    elif m['taker_imbalance']<-.55: score-=.10
-    crowd=max(-1.0,min(1.0,m['funding_binance']/0.0003)); score-=.05*crowd
+    taker=m.get('taker_imbalance',0.0)
+    if taker>.55: score+=.10
+    elif taker<-.55: score-=.10
+    crowd=max(-1.0,min(1.0,m.get('funding_binance',m.get('funding_bybit',0.0))/0.0003)); score-=.05*crowd
     score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
 def load_model(h):
     p=Path(DB).parent/'models'/f'{h}.joblib'
-    if not p.exists(): raise FileNotFoundError(f'model_missing:{h}')
+    if not p.exists(): raise FileNotFoundError(f'model_missing:{source}:{h}')
     try:return joblib.load(p)
     except Exception as exc: raise RuntimeError(f'model_load_failed:{h}:{type(exc).__name__}') from exc
 def model_probs(model,f):
@@ -97,7 +98,8 @@ def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_j
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
 def main():
     init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
-    if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient primary futures data')
+    use_bybit_fallback = status.get('price_feature_fallback') == 'bybit'
+    if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient futures data')
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
     try:m['book_imbalance']=imbalance(binance_depth()); status['binance_depth']='ok'
@@ -186,15 +188,26 @@ def main():
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
     # Binance is the production price/target venue. Bybit is optional
     # secondary information and is handled fail-safe by the policy layer.
-    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=(1 if byp is not None else 0))
+    if use_bybit_fallback:
+        # Binance is geo-blocked on GitHub-hosted runners; use the explicitly
+        # trained Bybit fallback model with neutral Binance-only microstructure.
+        m['book_imbalance'] = m.get('bybit_book_imbalance', 0.0)
+        m['taker_imbalance'] = 0.0
+        m['funding_binance'] = 0.0
+    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=use_bybit_fallback)
     prediction_cutoff=utcnow()
     latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
     s5=structural(f,m)
     gap=m.get('cross_exchange_gap')
     s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
-    base5=model_probs(load_model('5m'),f); base10=model_probs(load_model('10m'),f)
+    model_source = 'bybit' if use_bybit_fallback else 'primary'
+    base5=model_probs(load_model('5m', model_source),f); base10=model_probs(load_model('10m', model_source),f)
     data_complete = byp is not None and 'bybit_book_imbalance' in m
-    raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m'); p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
+    if use_bybit_fallback:
+        raw5,raw10=base5,base10; w5=w10=0.0
+    else:
+        raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m')
+    p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
@@ -227,7 +240,7 @@ def main():
             'revision_time':None,
             'status':status.get(source_key),
         }
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'}
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'),'production_mode':('bybit_fallback' if use_bybit_fallback else 'binance_primary')}
     insert_prediction(now,target5,target10,price,p5,p10,f'5m:{regver("5m")}|10m:{regver("10m")}',f,scenario)
     print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':regver('5m'),'model_10m':regver('10m'),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
