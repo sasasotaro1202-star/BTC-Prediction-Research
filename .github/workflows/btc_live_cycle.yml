@@ -198,6 +198,43 @@ jobs:
           if not isinstance(flat_obj.get('counts'),dict) or not isinstance(flat_obj.get('window'),int) or flat_obj.get('window',0) <= 0: raise SystemExit('FLAT diagnostic malformed')
           print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, venue-drift, and FLAT diagnostic validation: OK')
           PY
+      - name: Record BTC live cycle outcome for downstream integrity gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sqlite3
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          db = Path('data/predictions.db')
+          mode = 'deferred' if os.environ.get('BTC_LIVE_DEFERRED') == '1' else 'prediction_created'
+          latest_id = None
+          latest_created = None
+          if db.exists():
+              with sqlite3.connect(db) as con:
+                  row = con.execute(
+                      'SELECT prediction_id, created_at_utc FROM predictions ORDER BY prediction_id DESC LIMIT 1'
+                  ).fetchone()
+                  if row:
+                      latest_id, latest_created = int(row[0]), row[1]
+          payload = {
+              'schema_version': 1,
+              'workflow_run_id': int(os.environ['GITHUB_RUN_ID']),
+              'workflow_run_number': int(os.environ['GITHUB_RUN_NUMBER']),
+              'head_sha': os.environ['GITHUB_SHA'],
+              'mode': mode,
+              'completed_at_utc': datetime.now(timezone.utc).isoformat(),
+              'latest_prediction_id': latest_id,
+              'latest_prediction_created_at_utc': latest_created,
+          }
+          Path('data/live_cycle_status.json').write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + '\\n',
+              encoding='utf-8'
+          )
+          print(json.dumps(payload, sort_keys=True))
+          PY
+
       - name: Compress validated BTC prediction database for repository storage
         shell: bash
         run: |
@@ -239,7 +276,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db.gz data/historical_research models 2>/dev/null || true
+          git add data/predictions.db.gz data/live_cycle_status.json data/historical_research models 2>/dev/null || true
           git rm --cached data/predictions.db 2>/dev/null || true
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
@@ -275,7 +312,7 @@ jobs:
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
-            git add data/predictions.db.gz data/historical_research models 2>/dev/null || true
+            git add data/predictions.db.gz data/live_cycle_status.json data/historical_research models 2>/dev/null || true
             git rm --cached data/predictions.db 2>/dev/null || true
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
