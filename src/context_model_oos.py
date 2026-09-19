@@ -56,6 +56,9 @@ def _select_factory(rows, factories: Mapping[str, Callable[[], object]]):
     """Select one estimator using only the tail of the context's training data."""
     if len(rows) < MIN_SPECIALIST_TRAIN:
         return None, None
+    # Reserve only the most recent tail of the context-training window for
+    # estimator selection. The chosen factory is then refit on all available
+    # context rows by the caller; no test rows or labels enter this choice.
     split=max(int(len(rows)*0.80), len(rows)-100)
     fit, valid=rows[:split], rows[split:]
     if len(fit)<100 or len(valid)<50:
@@ -105,6 +108,7 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
     global_model.fit(X, y)
 
     specialists = {}
+    specialist_names = {}
     for context in CONTEXTS:
         subset = [r for r in train_rows if context_of(r, thresholds) == context]
         labels = {r["y"] for r in subset}
@@ -117,6 +121,7 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
         model.fit(np.asarray([r["x"] for r in subset], dtype=float),
                   np.asarray([r["y"] for r in subset]))
         specialists[context] = model
+        specialist_names[context] = specialist_name
 
     def aligned(model, rows):
         probs = np.asarray(model.predict_proba(np.asarray([r["x"] for r in rows], dtype=float)), dtype=float)
@@ -146,7 +151,7 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
         "contexts": [context_of(r, thresholds) for r in test_rows],
         "specialist_usage": used,
         "global_model": global_name,
-        "specialist_models": {k: v for k, v in ((ctx, _select_factory([r for r in train_rows if context_of(r, thresholds) == ctx], factories)[1]) for ctx in CONTEXTS) if v},
+        "specialist_models": specialist_names,
         "thresholds": thresholds,
     }
 
