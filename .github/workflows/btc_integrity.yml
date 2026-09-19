@@ -16,6 +16,8 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  BTC_EXPECTED_LIVE_RUN_ID: ${{ github.event.workflow_run.id || '0' }}
+  BTC_EXPECTED_LIVE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   # Code pushes validate repository/model integrity without being blocked by an
   # intentionally stale prediction state. Manual integrity runs prove freshness.
   BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
@@ -73,6 +75,29 @@ jobs:
         run: python -m compileall -q src tests
       - name: Run all BTC tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Validate upstream BTC live cycle outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          p = Path('data/live_cycle_status.json')
+          if not p.exists():
+              raise SystemExit('BTC live cycle status is missing')
+          obj = json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('schema_version') != 1:
+              raise SystemExit('BTC live cycle status schema mismatch')
+          if obj.get('workflow_run_id') != int(os.environ['BTC_EXPECTED_LIVE_RUN_ID']):
+              raise SystemExit('BTC live cycle status does not belong to the completed upstream live run')
+          if obj.get('head_sha') != os.environ['BTC_EXPECTED_LIVE_SHA']:
+              raise SystemExit('BTC live cycle status head SHA mismatch')
+          if obj.get('mode') not in {'prediction_created', 'deferred'}:
+              raise SystemExit('BTC live cycle status mode invalid')
+          print(json.dumps(obj, sort_keys=True))
+          PY
+
       - name: Run production integrity gate
         run: python src/production_integrity.py
       - name: Validate Git diff
