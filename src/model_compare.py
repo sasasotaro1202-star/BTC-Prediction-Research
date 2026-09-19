@@ -158,7 +158,7 @@ def loss_arrays(ys,prod,cand):
     prod_br=np.sum((pp-one)**2,axis=1); cand_br=np.sum((cp-one)**2,axis=1)
     return {'logloss':cand_ll-prod_ll,'brier':cand_br-prod_br}
 
-def hac_test(diff,lag):
+def hac_test(diff,lag,alpha=ALPHA):
     d=np.asarray(diff,float); n=len(d); mean=float(d.mean())
     if n<30:return {'mean_diff':mean,'stat':None,'p_value':None,'significant':False,'lag':lag}
     centered=d-mean; lrv=float(np.mean(centered*centered))
@@ -166,11 +166,15 @@ def hac_test(diff,lag):
         gamma=float(np.mean(centered[k:]*centered[:-k])); lrv += 2.0*(1-k/(lag+1))*gamma
     if not math.isfinite(lrv) or lrv<=0:return {'mean_diff':mean,'stat':None,'p_value':None,'significant':False,'lag':lag}
     stat=mean/math.sqrt(lrv/n); p=0.5*math.erfc(-stat/math.sqrt(2.0))
-    return {'mean_diff':mean,'stat':float(stat),'p_value':float(p),'significant':bool(p<ALPHA and mean<0),'lag':lag}
+    return {'mean_diff':mean,'stat':float(stat),'p_value':float(p),'significant':bool(p<alpha and mean<0),'lag':lag}
 
-def statistical_tests(ys,production,candidate,h):
-    lag=PURGE_BARS[h]; diffs=loss_arrays(ys,production,candidate); tests={k:hac_test(v,lag) for k,v in diffs.items()}
-    tests['both_significant']=bool(tests['logloss']['significant'] and tests['brier']['significant']); return tests
+def statistical_tests(ys,production,candidate,h,alpha=ALPHA):
+    lag=PURGE_BARS[h]
+    diffs=loss_arrays(ys,production,candidate)
+    tests={k:hac_test(v,lag,alpha=alpha) for k,v in diffs.items()}
+    tests['alpha']=float(alpha)
+    tests['both_significant']=bool(tests['logloss']['significant'] and tests['brier']['significant'])
+    return tests
 
 def save_metric(h,v,n,m,milestone):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,f'{v}@{milestone}',n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
@@ -179,7 +183,7 @@ def save_stat_test(h,model_version,milestone,n,tests):
     with sqlite3.connect(DB) as con:
         con.execute('''CREATE TABLE IF NOT EXISTS model_stat_tests (id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at_utc TEXT NOT NULL,horizon TEXT NOT NULL,milestone INTEGER NOT NULL,model_version TEXT NOT NULL,n INTEGER NOT NULL,logloss_mean_diff REAL,logloss_stat REAL,logloss_p REAL,brier_mean_diff REAL,brier_stat REAL,brier_p REAL,alpha REAL NOT NULL,both_significant INTEGER NOT NULL)''')
         ll=tests['logloss']; br=tests['brier']
-        con.execute('INSERT INTO model_stat_tests(evaluated_at_utc,horizon,milestone,model_version,n,logloss_mean_diff,logloss_stat,logloss_p,brier_mean_diff,brier_stat,brier_p,alpha,both_significant) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now(),h,milestone,model_version,n,ll['mean_diff'],ll['stat'],ll['p_value'],br['mean_diff'],br['stat'],br['p_value'],ALPHA,int(tests['both_significant'])))
+        con.execute('INSERT INTO model_stat_tests(evaluated_at_utc,horizon,milestone,model_version,n,logloss_mean_diff,logloss_stat,logloss_p,brier_mean_diff,brier_stat,brier_p,alpha,both_significant) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now(),h,milestone,model_version,n,ll['mean_diff'],ll['stat'],ll['p_value'],br['mean_diff'],br['stat'],br['p_value'],float(tests.get('alpha',ALPHA)),int(tests['both_significant'])))
 
 def ensure_checkpoint_table():
     with sqlite3.connect(DB) as con: con.execute('CREATE TABLE IF NOT EXISTS research_checkpoints (horizon TEXT NOT NULL, milestone INTEGER NOT NULL, evaluated_at_utc TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(horizon,milestone))')
@@ -222,6 +226,11 @@ def compare_h(h):
       'hgb':lambda:HistGradientBoostingClassifier(max_iter=250,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.0,random_state=42)
     }
     results={}
+    # Multiple candidate families are tested at each milestone. Apply a
+    # Bonferroni family-wise correction so adding candidates cannot silently
+    # inflate the false-adoption rate. The corrected alpha is used only for
+    # statistical promotion; descriptive metrics remain unchanged.
+    corrected_alpha=ALPHA/max(1,len(cand))
     for name,f in cand.items():
         wf=walk_forward(rows,f,h)
         if not wf: continue
@@ -229,7 +238,7 @@ def compare_h(h):
         if len(aligned_rows)!=len(wf['ids']): continue
         prod_aligned=[r['production'] for r in aligned_rows]
         candidate_metrics=metrics(wf['ys'],wf['probs']); production_aligned_metrics=metrics(wf['ys'],prod_aligned)
-        tests=statistical_tests(wf['ys'],prod_aligned,wf['probs'],h)
+        tests=statistical_tests(wf['ys'],prod_aligned,wf['probs'],h,alpha=corrected_alpha)
         results[name]={'metrics':candidate_metrics,'production_aligned':production_aligned_metrics,'statistical_tests':tests,'n':len(wf['ids'])}
         save_metric(h,name,len(wf['ids']),candidate_metrics,milestone); save_stat_test(h,name,milestone,len(wf['ids']),tests)
     eligible=[]
