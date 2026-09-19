@@ -5,7 +5,8 @@ import numpy as np
 from db import DB, init_db
 
 CLASSES = ['UP','DOWN','FLAT']
-MODEL_DIR = Path(DB).parent / 'models'
+ROOT = Path(__file__).resolve().parents[1]
+MODEL_DIR = ROOT / 'models'
 MIN_CALIBRATION = 300
 HOLDOUT_FRACTION = 0.25
 
