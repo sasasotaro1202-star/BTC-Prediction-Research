@@ -33,14 +33,16 @@ def _metrics(y, p):
 
 def _regimes(rows):
     # Expanding median volatility: no future observations are used to define the
-    # high/low volatility boundary at each prediction cutoff.
+    # high/low volatility boundary at each prediction cutoff. The first
+    # observation is forced to LOW_VOL because the expanding median is itself
+    # the current observation and otherwise makes the first label trivially high.
     vols=[]; out=[]
     for r in rows:
         v=float(r["vol"])
         vols.append(v)
         med=float(np.median(vols))
         trend="UP_MOMENTUM" if r["ret"]>0 else "DOWN_MOMENTUM" if r["ret"]<0 else "FLAT_MOMENTUM"
-        vol="HIGH_VOL" if v>=med else "LOW_VOL"
+        vol="HIGH_VOL" if len(vols)>1 and v>med else "LOW_VOL"
         out.append(f"{trend}|{vol}")
     return out
 
