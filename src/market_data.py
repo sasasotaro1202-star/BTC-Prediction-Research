@@ -268,7 +268,8 @@ def binance_oi():
 
 
 def binance_taker():
-    return _binance("futures/data/takerBuySellVol", {"symbol": "BTCUSDT", "period": "5m", "limit": 1})
+    # Taker-flow is a Binance Futures endpoint; keep the fapi host explicit.
+    return _binance("fapi.binance.com/futures/data/takerBuySellVol", {"symbol": "BTCUSDT", "period": "5m", "limit": 1})
 
 
 def bybit_funding():
