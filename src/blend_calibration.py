@@ -22,7 +22,8 @@ from sklearn.metrics import log_loss
 
 from db import DB, init_db
 
-MODEL_DIR = Path(DB).parent / "models"
+ROOT = Path(__file__).resolve().parents[1]
+MODEL_DIR = ROOT / "models"
 CLASSES = ["UP", "DOWN", "FLAT"]
 MIN_ROWS = 400
 HOLDOUT_FRACTION = 0.25
