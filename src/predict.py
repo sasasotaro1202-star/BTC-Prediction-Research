@@ -99,6 +99,8 @@ def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_j
 def main():
     init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
     use_bybit_fallback = status.get('price_feature_fallback') == 'bybit'
+    use_coinbase_fallback = status.get('price_feature_fallback') == 'coinbase'
+    use_fallback = use_bybit_fallback or use_coinbase_fallback
     if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient futures data')
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
@@ -194,16 +196,16 @@ def main():
         m['book_imbalance'] = m.get('bybit_book_imbalance', 0.0)
         m['taker_imbalance'] = 0.0
         m['funding_binance'] = 0.0
-    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=use_bybit_fallback)
+    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=use_bybit_fallback,allow_coinbase_fallback=use_coinbase_fallback)
     prediction_cutoff=utcnow()
     latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
     s5=structural(f,m)
     gap=m.get('cross_exchange_gap')
     s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
-    model_source = 'bybit' if use_bybit_fallback else 'primary'
+    model_source = 'bybit' if use_bybit_fallback else ('coinbase' if use_coinbase_fallback else 'primary')
     base5=model_probs(load_model('5m', model_source),f); base10=model_probs(load_model('10m', model_source),f)
     data_complete = byp is not None and 'bybit_book_imbalance' in m
-    if use_bybit_fallback:
+    if use_fallback:
         raw5,raw10=base5,base10; w5=w10=0.0
     else:
         raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m')
@@ -240,10 +242,11 @@ def main():
             'revision_time':None,
             'status':status.get(source_key),
         }
-    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend'),'production_mode':('bybit_fallback' if use_bybit_fallback else 'binance_primary')}
-    if use_bybit_fallback:
-        by5=json.loads((Path(DB).parent/'models'/'bybit_5m.json').read_text(encoding='utf-8'))['model_version']
-        by10=json.loads((Path(DB).parent/'models'/'bybit_10m.json').read_text(encoding='utf-8'))['model_version']
+    scenario={'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else ('coinbase_fallback_model_only_uncalibrated' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
+    if use_bybit_fallback or use_coinbase_fallback:
+        prefix='bybit' if use_bybit_fallback else 'coinbase'
+        by5=json.loads((Path(DB).parent/'models'/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']
+        by10=json.loads((Path(DB).parent/'models'/f'{prefix}_10m.json').read_text(encoding='utf-8'))['model_version']
         model_version=f'5m:{by5}|10m:{by10}'
     else:
         model_version=f'5m:{regver("5m")}|10m:{regver("10m")}'
