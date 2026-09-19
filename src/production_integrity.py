@@ -93,6 +93,40 @@ def check_db() -> dict:
         scenario = json.loads(row[10] or "{}")
         if not isinstance(scenario.get("data_quality"), dict):
             fail("latest prediction lacks data_quality metadata")
+        if row[8] != "DEGRADED_NO_FRESH_DATA":
+            prov=scenario.get("provenance")
+            if not isinstance(prov,dict):
+                fail("latest prediction lacks provenance envelope")
+            required=("event_time","available_at","retrieved_at","prediction_cutoff","publication_time","revision_time")
+            if any(k not in prov for k in required):
+                fail("latest prediction provenance envelope incomplete")
+            try:
+                event_time=datetime.fromisoformat(str(prov["event_time"]).replace("Z","+00:00"))
+                available_at=datetime.fromisoformat(str(prov["available_at"]).replace("Z","+00:00"))
+                retrieved_at=datetime.fromisoformat(str(prov["retrieved_at"]).replace("Z","+00:00"))
+                cutoff=datetime.fromisoformat(str(prov["prediction_cutoff"]).replace("Z","+00:00"))
+            except (TypeError,ValueError):
+                fail("latest prediction provenance timestamps invalid")
+            if not (event_time <= available_at <= retrieved_at <= cutoff):
+                fail("latest prediction provenance ordering invalid")
+            sources=prov.get("sources")
+            if not isinstance(sources,dict) or not sources:
+                fail("latest prediction lacks per-source provenance")
+            for source_name, source in sources.items():
+                if not isinstance(source,dict):
+                    fail(f"source provenance malformed: {source_name}")
+                if source.get("status") == "ok":
+                    for key in ("event_time","available_at","retrieved_at"):
+                        if not source.get(key):
+                            fail(f"successful source missing provenance: {source_name}:{key}")
+                    try:
+                        se=datetime.fromisoformat(str(source["event_time"]).replace("Z","+00:00"))
+                        sa=datetime.fromisoformat(str(source["available_at"]).replace("Z","+00:00"))
+                        sr=datetime.fromisoformat(str(source["retrieved_at"]).replace("Z","+00:00"))
+                    except (TypeError,ValueError):
+                        fail(f"source provenance timestamps invalid: {source_name}")
+                    if not (se <= sa <= sr <= cutoff):
+                        fail(f"source provenance ordering invalid: {source_name}")
         degraded = row[8] == "DEGRADED_NO_FRESH_DATA"
         if degraded:
             if float(row[1]) != 0.0:
