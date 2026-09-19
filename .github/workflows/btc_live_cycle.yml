@@ -1,14 +1,11 @@
 name: BTC Live Cycle
 
+# Production execution is schedule/manual only. Code pushes must not trigger
+# a second state-writing live run and race the 5-minute scheduler.
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'data/**'
-      - 'models/**'
 
 concurrency:
   group: btc-state-main
