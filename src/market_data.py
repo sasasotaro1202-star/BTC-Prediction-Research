@@ -4,6 +4,7 @@ import csv, io, json, time, zipfile, math
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone, timedelta
 
 UA = "BTC-Prediction-Research/8.0"
@@ -16,6 +17,16 @@ def http_json(url: str, timeout: int = 12):
     req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
     with urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def _error_label(exc: Exception) -> str:
+    """Return a stable, non-secret diagnostic label for live-source failures."""
+    if isinstance(exc, HTTPError):
+        return f"HTTPError:{exc.code}"
+    if isinstance(exc, URLError):
+        reason = getattr(exc, "reason", None)
+        return f"URLError:{type(reason).__name__}" if reason is not None else "URLError"
+    return type(exc).__name__
 
 
 def _get(url: str, attempts: int = 3):
@@ -194,19 +205,19 @@ def resilient_1m_series(limit: int = 120):
                     by_current = [int(time.time() * 1000), px, px, px, px, 0.0]
         except Exception:
             by_current = None
-        status["bybit_futures"] = "ok_current_only" if by_current else f"error:{type(e).__name__}"
+        status["bybit_futures"] = "ok_current_only" if by_current else f"error:{_error_label(e)}"
     try:
         fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), 40)
         status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
     except Exception as e:
         fut = []
-        status["binance_futures"] = f"error:{type(e).__name__}"
+        status["binance_futures"] = f"error:{_error_label(e)}"
     try:
         spot = _latest_contiguous_suffix(closed_binance(binance_klines(True, limit)), 40)
         status["binance_spot"] = "ok" if spot else "non_contiguous_or_insufficient"
     except Exception as e:
         spot = []
-        status["binance_spot"] = f"error:{type(e).__name__}"
+        status["binance_spot"] = f"error:{_error_label(e)}"
 
     if len(fut) < 40 and len(by) >= 40:
         fut = by
@@ -220,7 +231,7 @@ def resilient_1m_series(limit: int = 120):
             else:
                 raise RuntimeError("insufficient contiguous Coinbase candles")
         except Exception as e:
-            status["coinbase_futures"] = f"error:{type(e).__name__}"
+            status["coinbase_futures"] = f"error:{_error_label(e)}"
             try:
                 kr = _latest_contiguous_suffix(kraken_rows(max(120, limit)), 40)
                 if len(kr) >= 40:
@@ -229,7 +240,7 @@ def resilient_1m_series(limit: int = 120):
                 else:
                     raise RuntimeError("insufficient contiguous Kraken candles")
             except Exception as e2:
-                status["kraken_futures"] = f"error:{type(e2).__name__}"
+                status["kraken_futures"] = f"error:{_error_label(e2)}"
                 cached, created, age_ms, fresh = cache_rows(limit)
                 status["cache_created_at_utc"] = created
                 status["cache_age_seconds"] = None if age_ms is None else int(age_ms / 1000)
