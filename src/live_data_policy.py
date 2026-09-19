@@ -15,14 +15,17 @@ CRITICAL_STATUS_KEYS = (
 )
 
 
-def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False) -> None:
+def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False, allow_coinbase_fallback: bool = False) -> None:
     """Raise instead of predicting when production-critical inputs are incomplete."""
     if not isinstance(status, dict):
         raise ValueError("live_data_status_must_be_dict")
     fallback = status.get("price_feature_fallback") == "bybit"
-    if fallback:
-        if not allow_bybit_fallback:
+    coinbase_fallback = status.get("price_feature_fallback") == "coinbase"
+    if fallback or coinbase_fallback:
+        if fallback and not allow_bybit_fallback:
             raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_not_enabled")
+        if coinbase_fallback and not allow_coinbase_fallback:
+            raise ValueError("live_prediction_inputs_incomplete:coinbase_fallback_not_enabled")
         if bybit_rows < 40:
             raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_history_insufficient")
         return
@@ -54,9 +57,9 @@ def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_r
         raise ValueError(f"bybit_futures_status_invalid:{bybit_status!r}")
 
 
-def is_valid_status(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False) -> bool:
+def is_valid_status(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False, allow_coinbase_fallback: bool = False) -> bool:
     try:
-        validate_live_inputs(status, fut_rows=fut_rows, spot_rows=spot_rows, bybit_rows=bybit_rows, allow_bybit_fallback=allow_bybit_fallback)
+        validate_live_inputs(status, fut_rows=fut_rows, spot_rows=spot_rows, bybit_rows=bybit_rows, allow_bybit_fallback=allow_bybit_fallback, allow_coinbase_fallback=allow_coinbase_fallback)
     except ValueError:
         return False
     return True
