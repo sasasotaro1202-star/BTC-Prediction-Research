@@ -179,6 +179,10 @@ def statistical_tests(ys,production,candidate,h,alpha=ALPHA):
 def save_metric(h,v,n,m,milestone):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_metrics(evaluated_at_utc,horizon,model_version,n,accuracy,logloss,brier,calibration_error) VALUES(?,?,?,?,?,?,?,?)',(now(),h,f'{v}@{milestone}',n,m['accuracy'],m['logloss'],m['brier'],m['calibration_error']))
 
+def _adjusted_alpha(alpha, tests_count):
+    """Bonferroni family-wise alpha, with a stable lower bound on test count."""
+    return float(alpha) / max(1, int(tests_count))
+
 def save_stat_test(h,model_version,milestone,n,tests):
     with sqlite3.connect(DB) as con:
         con.execute('''CREATE TABLE IF NOT EXISTS model_stat_tests (id INTEGER PRIMARY KEY AUTOINCREMENT,evaluated_at_utc TEXT NOT NULL,horizon TEXT NOT NULL,milestone INTEGER NOT NULL,model_version TEXT NOT NULL,n INTEGER NOT NULL,logloss_mean_diff REAL,logloss_stat REAL,logloss_p REAL,brier_mean_diff REAL,brier_stat REAL,brier_p REAL,alpha REAL NOT NULL,both_significant INTEGER NOT NULL)''')
@@ -230,7 +234,7 @@ def compare_h(h):
     # Bonferroni family-wise correction so adding candidates cannot silently
     # inflate the false-adoption rate. The corrected alpha is used only for
     # statistical promotion; descriptive metrics remain unchanged.
-    corrected_alpha=ALPHA/max(1,len(cand))
+    corrected_alpha=_adjusted_alpha(ALPHA,len(cand))
     for name,f in cand.items():
         wf=walk_forward(rows,f,h)
         if not wf: continue
