@@ -93,22 +93,24 @@ def check_db() -> dict:
         scenario = json.loads(row[10] or "{}")
         if not isinstance(scenario.get("data_quality"), dict):
             fail("latest prediction lacks data_quality metadata")
-        if scenario.get("production_mode") == "bybit_fallback":
+        if scenario.get("production_mode") in {"bybit_fallback", "coinbase_fallback"}:
+            prefix = "bybit" if scenario.get("production_mode") == "bybit_fallback" else "coinbase"
+            label = "Bybit" if prefix == "bybit" else "Coinbase"
             for horizon in ("5m", "10m"):
-                meta_path = MODEL_DIR / f"bybit_{horizon}.json"
-                model_path = MODEL_DIR / f"bybit_{horizon}.joblib"
+                meta_path = MODEL_DIR / f"{prefix}_{horizon}.json"
+                model_path = MODEL_DIR / f"{prefix}_{horizon}.joblib"
                 if not meta_path.is_file() or not model_path.is_file():
-                    fail(f"missing Bybit fallback artifact for {horizon}")
+                    fail(f"missing {label} fallback artifact for {horizon}")
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 if meta.get("horizon") != horizon or meta.get("artifact") != model_path.name:
-                    fail(f"{horizon}: Bybit fallback metadata mismatch")
+                    fail(f"{horizon}: {label} fallback metadata mismatch")
                 if meta.get("classes") != CLASSES or meta.get("features") != FEATURES:
-                    fail(f"{horizon}: Bybit fallback feature/class contract mismatch")
-                if not str(meta.get("model_version", "")).startswith("bybit_fallback."):
-                    fail(f"{horizon}: invalid Bybit fallback model version")
+                    fail(f"{horizon}: {label} fallback feature/class contract mismatch")
+                if not str(meta.get("model_version", "")).startswith(f"{prefix}_fallback."):
+                    fail(f"{horizon}: invalid {label} fallback model version")
                 model = joblib.load(model_path)
                 if [str(x) for x in getattr(model, "classes_", [])] != CLASSES:
-                    fail(f"{horizon}: Bybit fallback serialized classes mismatch")
+                    fail(f"{horizon}: {label} fallback serialized classes mismatch")
                 if meta["model_version"] not in str(row[8]):
                     fail(f"{horizon}: latest prediction model identity does not match fallback artifact")
         if row[8] != "DEGRADED_NO_FRESH_DATA":
