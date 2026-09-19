@@ -7,7 +7,7 @@ from information available before each test block.
 """
 from __future__ import annotations
 import math
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Mapping
 
 import numpy as np
 
@@ -145,6 +145,8 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
         "routed_probs": routed,
         "contexts": [context_of(r, thresholds) for r in test_rows],
         "specialist_usage": used,
+        "global_model": global_name,
+        "specialist_models": {ctx: _select_factory([r for r in train_rows if context_of(r, thresholds) == ctx], factories)[1] for ctx in CONTEXTS},
         "global_model": global_name,
         "specialist_models": {k: v for k, v in ((ctx, _select_factory([r for r in train_rows if context_of(r, thresholds) == ctx], factories)[1]) for ctx in CONTEXTS) if v},
         "thresholds": thresholds,
