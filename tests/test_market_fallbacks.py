@@ -1,5 +1,6 @@
 import sys
 import unittest
+from urllib.error import HTTPError
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +66,10 @@ class TestMarketFallbacks(unittest.TestCase):
             }
         }
         self.assertAlmostEqual(predict.imbalance(payload, levels=25), 0.60, places=8)
+
+    def test_error_label_exposes_http_status_without_response_body(self):
+        err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
+        self.assertEqual(market_data._error_label(err), "HTTPError:403")
 
 
 if __name__ == '__main__':
