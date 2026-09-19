@@ -214,7 +214,16 @@ def main():
     s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
     model_source = 'bybit' if use_bybit_fallback else ('coinbase' if use_coinbase_fallback else 'primary')
     base5=model_probs(load_model('5m', model_source),f); base10=model_probs(load_model('10m', model_source),f)
-    data_complete = byp is not None and 'bybit_book_imbalance' in m
+    # Secondary venue completeness is descriptive only unless the feature has
+    # source-native timing/provenance. Bybit current snapshots may be useful for
+    # diagnostics, but they must not silently increase model weight merely because
+    # a response exists.
+    data_complete = (
+        byp is not None
+        and 'bybit_book_imbalance' in m
+        and status.get('bybit_futures') in {'ok', 'ok_current_only'}
+        and status.get('bybit_depth') == 'ok'
+    )
     if use_fallback:
         raw5,raw10=base5,base10; w5=w10=0.0
     else:
