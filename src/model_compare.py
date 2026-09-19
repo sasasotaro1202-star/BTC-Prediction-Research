@@ -219,7 +219,7 @@ def compare_h(h):
         # Do not checkpoint an unmet milestone: the dataset is still growing and
         # this exact milestone must be evaluated once enough settled OOS exists.
         return {'status':'insufficient_oos','n':len(rows),'milestone':milestone,'required':MIN_TRAIN+MIN_OOS}
-    oos_rows=rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
+    # Protect the final 20% of the available milestone data from candidate-selection\n    # decisions. It is evaluated only as a descriptive audit after development OOS.\n    split=max(MIN_TRAIN, int(len(rows)*0.80))\n    development_rows=rows[:split]\n    final_holdout_rows=rows[split:]\n    oos_rows=development_rows[MIN_TRAIN:]; ys=[r['y'] for r in oos_rows]; production_probs=[r['production'] for r in oos_rows]
     production=metrics(ys,production_probs); save_metric(h,prod_ver(h),len(oos_rows),production,milestone)
     prod_by_id={r['id']:r for r in oos_rows}
     cand={
@@ -250,14 +250,14 @@ def compare_h(h):
         if better(r['metrics'],r['production_aligned']) and r['statistical_tests']['both_significant']: eligible.append((name,r['metrics'],r['statistical_tests']))
     if not eligible:
         mark_checkpoint(h,milestone,'rejected'); return {'status':'rejected','milestone':milestone,'production':production,'candidates':results,'n':len(rows)}
-    winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_candidate(rows,h,winner,cand[winner],milestone)
+    winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_candidate(development_rows,h,winner,cand[winner],milestone)
     if not meta:
         mark_checkpoint(h,milestone,'rejected_training'); return {'status':'rejected_training','milestone':milestone,'winner':winner}
     version=f'v3.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['statistical_significance']=wtest
-    if not adopt_candidate(h,meta,version):
+    holdout=metrics([r['y'] for r in final_holdout_rows],[r['production'] for r in final_holdout_rows]) if final_holdout_rows else None\n    if not adopt_candidate(h,meta,version):
         mark_checkpoint(h,milestone,'rejected_adoption'); return {'status':'rejected_adoption','milestone':milestone,'winner':winner}
     set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
-    return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'n':len(rows)}
+    return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'final_holdout_production':holdout,'n':len(rows)}
 
 def compare():
     init_db(); ensure_checkpoint_table(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
