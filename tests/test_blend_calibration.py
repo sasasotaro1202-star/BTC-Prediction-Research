@@ -35,6 +35,9 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertEqual(blend_calibration.MODEL_DIR, ROOT / 'models')
         self.assertNotEqual(blend_calibration.MODEL_DIR, ROOT / 'data' / 'models')
 
+    def test_rejected_or_unvalidated_blend_fails_closed(self):
+        self.assertEqual(blend_calibration.FALLBACK_WEIGHT, 0.0)
+
     def test_grid_is_bounded(self):
         self.assertGreaterEqual(float(blend_calibration.GRID.min()), 0.0)
         self.assertLessEqual(float(blend_calibration.GRID.max()), 0.45)
