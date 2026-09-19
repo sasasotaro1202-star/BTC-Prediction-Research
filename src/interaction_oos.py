@@ -44,7 +44,13 @@ def build_dataset_dicts(rows, horizon):
     h = int(horizon[:-1])
     fs, ys = [], []
     for i in range(30, len(rows) - h):
-        d = dict(zip(BASE_FEATURES, make_features(rows[:i + 1])))
+        history = rows[:i + 1]
+        d = dict(zip(BASE_FEATURES, make_features(history)))
+        # Research-only higher-timeframe inputs. Keep them outside BASE_FEATURES
+        # so the production 15-feature schema is unchanged.
+        close = np.asarray([r[4] for r in history], float)
+        d["ret_15m"] = close[-1] / close[-16] - 1.0
+        d["ret_30m"] = close[-1] / close[-31] - 1.0
         future_return = rows[i + h][4] / rows[i][4] - 1.0
         y = "UP" if future_return > 0.00020 else "DOWN" if future_return < -0.00020 else "FLAT"
         fs.append(d)
