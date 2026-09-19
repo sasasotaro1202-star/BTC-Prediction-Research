@@ -96,7 +96,7 @@ jobs:
           if obj.get('mode') not in {'prediction_created', 'deferred'}:
               raise SystemExit('BTC live cycle status mode invalid')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
-              fh.write('BTC_UPSTREAM_DEFERRED=' + ('1' if obj['mode'] == 'deferred' else '0') + '\\n')
+              fh.write('BTC_UPSTREAM_DEFERRED=' + ('1' if obj['mode'] == 'deferred' else '0') + '\n')
           print(json.dumps(obj, sort_keys=True))
           PY
 
