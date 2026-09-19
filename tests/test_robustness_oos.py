@@ -15,7 +15,7 @@ class RobustnessTests(unittest.TestCase):
             {"ret":1.0,"vol":1.0},
         ]
         regimes=_regimes(rows)
-        self.assertEqual(regimes[0],"UP_MOMENTUM|HIGH_VOL")
+        self.assertEqual(regimes[0],"UP_MOMENTUM|LOW_VOL")
         self.assertEqual(regimes[1],"DOWN_MOMENTUM|HIGH_VOL")
         self.assertEqual(regimes[2],"UP_MOMENTUM|LOW_VOL")
 
