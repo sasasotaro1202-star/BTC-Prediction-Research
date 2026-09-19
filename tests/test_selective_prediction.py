@@ -6,6 +6,9 @@ class SelectivePredictionTests(unittest.TestCase):
     def test_evaluate_respects_threshold(self):
         y=np.array([0,1,2,1])
         p=np.array([[.9,.05,.05],[.1,.8,.1],[.1,.1,.8],[.34,.33,.33]])
+        summary=evaluate(y,p,0.0)
+        self.assertEqual(summary["coverage"],1.0)
+        self.assertEqual(summary["n"],4)
         low=evaluate(y,p,.5)
         high=evaluate(y,p,.85)
         self.assertEqual(low["n"],3)
