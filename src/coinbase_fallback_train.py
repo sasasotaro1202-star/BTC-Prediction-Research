@@ -53,7 +53,7 @@ def main():
     for horizon in ('5m','10m'):
         X,y=build_dataset(rows,int(horizon[:-1]))
         if len(y)<1500 or len(set(y))<3: raise RuntimeError(f'coinbase_fallback_insufficient_dataset:{horizon}:{len(y)}')
-        best,baseline,holdout_n,validation_results=train_one(X,y)
+        best,baseline,holdout_n,validation_results=train_one(X,y,purge_gap=int(horizon[:-1]))
         _,_,_,name,model,_,score=best
         if score['logloss']>=baseline['logloss']-0.005: raise RuntimeError(f'coinbase_fallback_holdout_rejected:{horizon}')
         artifact=MODEL_DIR/f'coinbase_{horizon}.joblib'
