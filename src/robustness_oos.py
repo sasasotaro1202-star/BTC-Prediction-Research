@@ -20,7 +20,10 @@ def _metrics(y, p):
     if len(y)<1: return None
     idx={c:i for i,c in enumerate(CLASSES)}
     yy=np.array([idx[v] for v in y],dtype=int)
-    pp=np.clip(np.asarray(p,float),1e-6,1.0)
+    # Stored prediction columns are UP,DOWN,FLAT; diagnostics use
+    # canonical DOWN,FLAT,UP ordering consistently with labels.
+    raw=np.asarray(p,float)
+    pp=np.clip(raw[:,[1,2,0]],1e-6,1.0)
     pp=pp/pp.sum(axis=1,keepdims=True)
     pred=pp.argmax(1)
     one=np.eye(3)[yy]
