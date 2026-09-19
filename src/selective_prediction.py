@@ -15,9 +15,9 @@ OUT=ROOT/"data"/"historical_research"/"selective_prediction_report.json"
 def _metrics(y,p):
     y=np.asarray(y); p=np.asarray(p,float)
     pred=p.argmax(1); conf=p.max(1)
-    sel=pred==pred
     if not len(y): return {"coverage":0.0,"accuracy":None,"logloss":None}
-    return {"coverage":float(sel.mean()),"accuracy":float((pred==y).mean())}
+    # Unthresholded summary: every observation is eligible.
+    return {"coverage":1.0,"n":int(len(y)),"accuracy":float((pred==y).mean())}
 
 def evaluate(y,p,threshold):
     y=np.asarray(y); p=np.asarray(p,float)
@@ -32,11 +32,6 @@ def evaluate(y,p,threshold):
 def choose_threshold(y,p,target_coverages=(0.50,0.60,0.70,0.80,0.90)):
     y=np.asarray(y); p=np.asarray(p,float); conf=p.max(1)
     candidates=np.unique(np.round(conf,6))
-    out=[]
-    for c in candidates:
-        m=evaluate(y,p,float(c))
-        if m["n"]>=max(100,int(len(y)*0.05)):
-            out.append((abs(m["coverage"]-0.70),-m["accuracy"],float(c),m))
     chosen={}
     for target in target_coverages:
         valid=[(abs(m["coverage"]-target),-m["accuracy"],float(c),m)
