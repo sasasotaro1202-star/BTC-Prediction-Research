@@ -1,16 +1,12 @@
 name: BTC Historical Research
 
+# Historical research is intentionally periodic/manual. Running the expensive
+# 6-hour job on every code push wastes compute and can overlap production
+# state updates. Integrity tests validate code changes; the full research run
+# remains auditable through its nightly schedule or explicit dispatch.
 on:
   schedule:
     - cron: '17 1 * * *'
-  push:
-    paths:
-      - 'src/historical_research.py'
-      - 'src/historical_research_runner.py'
-      - 'scripts/historical_research_spot_fallback.py'
-      - '.github/workflows/btc_historical_research.yml'
-      - 'requirements.txt'
-      - 'scripts/binance_archive_smoke.py'
   workflow_dispatch:
 
 concurrency:
