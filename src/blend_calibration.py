@@ -28,6 +28,9 @@ CLASSES = ["UP", "DOWN", "FLAT"]
 MIN_ROWS = 400
 HOLDOUT_FRACTION = 0.25
 DEFAULT_WEIGHT = 0.20
+# A structural overlay must earn its production weight on unseen settled data.
+# Until then (or after rejection), fail closed to the validated ML model alone.
+FALLBACK_WEIGHT = 0.0
 MAX_WEIGHT = 0.45
 GRID = np.linspace(0.0, MAX_WEIGHT, 19)
 MIN_LOGLOSS_GAIN = 0.001
@@ -112,7 +115,7 @@ def calibrate(horizon: str):
         return {
             "horizon": horizon,
             "model_version": model_version,
-            "base_weight": DEFAULT_WEIGHT,
+            "base_weight": FALLBACK_WEIGHT,
             "n": len(rows),
             "status": "insufficient_history",
         }
@@ -146,7 +149,7 @@ def calibrate(horizon: str):
         cand_ll <= baseline_ll - MIN_LOGLOSS_GAIN
         and cand_br <= baseline_br - MIN_BRIER_GAIN
     )
-    final_w = best_w if accepted else DEFAULT_WEIGHT
+    final_w = best_w if accepted else FALLBACK_WEIGHT
     return {
         "horizon": horizon,
         "model_version": model_version,
