@@ -92,12 +92,14 @@ jobs:
           python src/coinbase_fallback_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
-      - name: Recalculate BTC calibration metrics
-        run: python src/calibration.py
-      - name: Recalibrate BTC live structural blend on chronological holdout
-        run: python src/blend_calibration.py
+      # Model adoption must precede both calibration layers so a newly
+      # adopted generation is never left running with stale calibration.
       - name: Run BTC model comparison and adoption gate
         run: python src/model_compare.py
+      - name: Recalculate BTC calibration metrics after model adoption
+        run: python src/calibration.py
+      - name: Recalibrate BTC live structural blend after model adoption
+        run: python src/blend_calibration.py
       - name: Audit BTC production artifact provenance
         run: python src/production_artifact_audit.py
       - name: Generate next BTC prediction
