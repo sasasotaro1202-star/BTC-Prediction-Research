@@ -229,7 +229,7 @@ jobs:
               'latest_prediction_created_at_utc': latest_created,
           }
           Path('data/live_cycle_status.json').write_text(
-              json.dumps(payload, sort_keys=True, indent=2) + '\\n',
+              json.dumps(payload, sort_keys=True, indent=2) + '\n',
               encoding='utf-8'
           )
           print(json.dumps(payload, sort_keys=True))
