@@ -7,9 +7,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
 from db import DB, init_db
+from feature_schema import FEATURES
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
-FEATURES=['ret_1m','ret_3m','ret_5m','ret_10m','acceleration','volatility_5m','volatility_10m','range_position_10m','body_1m','upper_wick_1m','lower_wick_1m','volume_ratio','volume_trend','ema_gap_5m','ema_gap_10m']
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
 # Five-minute and ten-minute labels resolve into the future. Keep a conservative
 # one-hour embargo before each test block in addition to the target-overlap purge.
