@@ -1,5 +1,5 @@
 {
-  "checked_at_utc": "2026-09-19T04:32:10.372992+00:00",
+  "checked_at_utc": "2026-09-19T04:35:36.542787+00:00",
   "ok": true,
   "checks": {
     "schema": {
@@ -7,17 +7,17 @@
       "ok": true
     },
     "database": {
-      "predictions": 96435,
+      "predictions": 96436,
       "null_probability_rows": 0,
       "ok": true
     },
     "5m": {
-      "rows": 96435,
+      "rows": 96436,
       "invalid_probability_rows": 0,
       "ok": true
     },
     "10m": {
-      "rows": 96435,
+      "rows": 96436,
       "invalid_probability_rows": 0,
       "ok": true
     },
@@ -28,7 +28,15 @@
         "classes_ok": true,
         "feature_count": 15
       },
-      "artifact_pair_ok": true
+      "artifact_pair_ok": true,
+      "calibration": {
+        "json_ok": true,
+        "bounds_ok": true
+      },
+      "blend": {
+        "json_ok": true,
+        "bounds_ok": true
+      }
     },
     "model_10m": {
       "ok": true,
@@ -37,7 +45,11 @@
         "classes_ok": true,
         "feature_count": 15
       },
-      "artifact_pair_ok": true
+      "artifact_pair_ok": true,
+      "blend": {
+        "json_ok": true,
+        "bounds_ok": true
+      }
     }
   }
 }
