@@ -1,11 +1,9 @@
 name: BTC Integrity Gate
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'data/**'
-      - 'models/**'
+  workflow_run:
+    workflows: ["BTC Live Cycle"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +23,10 @@ env:
 
 jobs:
   integrity:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
