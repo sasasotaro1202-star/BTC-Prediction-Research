@@ -114,31 +114,6 @@ class TestPredictGenerationBinding(unittest.TestCase):
         self.assertFalse(complete)
 
 
+
 if __name__ == '__main__':
     unittest.main()
-    def test_secondary_venue_completeness_requires_valid_status(self):
-    def test_features_fail_closed_on_nonfinite_or_invalid_ohlc(self):
-        import src.predict as predict
-        rows=[]
-        for i in range(31):
-            price=100.0+i
-            rows.append((i, price, price+1, price-1, price, 10.0))
-        bad=list(rows)
-        bad[-1]=(30, 131.0, 132.0, 130.0, float("nan"), 10.0)
-        with self.assertRaisesRegex(ValueError, "invalid_price_history_nonfinite"):
-            predict.features(bad)
-        bad=list(rows)
-        bad[-1]=(30, 131.0, 129.0, 130.0, 131.0, 10.0)
-        with self.assertRaisesRegex(ValueError, "invalid_ohlc_relationship"):
-            predict.features(bad)
-
-        status = {"bybit_futures": "ok_current_only", "bybit_depth": "error:Timeout"}
-        complete = (
-            True
-            and "bybit_book_imbalance" in {"bybit_book_imbalance": 0.1}
-            and status.get("bybit_futures") in {"ok", "ok_current_only"}
-            and status.get("bybit_depth") == "ok"
-        )
-        self.assertFalse(complete)
-
-
