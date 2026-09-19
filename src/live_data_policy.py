@@ -15,10 +15,18 @@ CRITICAL_STATUS_KEYS = (
 )
 
 
-def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int) -> None:
+def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False) -> None:
     """Raise instead of predicting when production-critical inputs are incomplete."""
     if not isinstance(status, dict):
         raise ValueError("live_data_status_must_be_dict")
+    fallback = status.get("price_feature_fallback") == "bybit"
+    if fallback:
+        if not allow_bybit_fallback:
+            raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_not_enabled")
+        if bybit_rows < 40:
+            raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_history_insufficient")
+        return
+
     if fut_rows < 40:
         raise ValueError("binance_futures_contiguous_history_insufficient")
 
@@ -28,7 +36,6 @@ def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_r
         if not isinstance(value, str) or value != "ok":
             failures.append(f"{key}={value!r}")
 
-    # Never promote a fallback history source into the production model.
     if status.get("price_feature_fallback") != "none":
         failures.append(f"price_feature_fallback={status.get('price_feature_fallback')!r}")
     if failures:
@@ -47,9 +54,9 @@ def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_r
         raise ValueError(f"bybit_futures_status_invalid:{bybit_status!r}")
 
 
-def is_valid_status(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int) -> bool:
+def is_valid_status(status: dict, *, fut_rows: int, spot_rows: int, bybit_rows: int, allow_bybit_fallback: bool = False) -> bool:
     try:
-        validate_live_inputs(status, fut_rows=fut_rows, spot_rows=spot_rows, bybit_rows=bybit_rows)
+        validate_live_inputs(status, fut_rows=fut_rows, spot_rows=spot_rows, bybit_rows=bybit_rows, allow_bybit_fallback=allow_bybit_fallback)
     except ValueError:
         return False
     return True
