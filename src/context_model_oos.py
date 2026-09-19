@@ -72,7 +72,7 @@ def _select_factory(rows, factories: Mapping[str, Callable[[], object]]):
     for name, factory in factories.items():
         try:
             model=factory(); model.fit(Xfit,yfit)
-            p=model.predict_proba(Xv); classes=list(model.classes_); aligned=np.full((len(valid),3),1e-6,float)
+            p=np.asarray(model.predict_proba(Xv),dtype=float); classes=list(model.classes_); aligned=np.full((len(valid),3),1e-6,float)
             for j,cls in enumerate(classes):
                 if cls in ('DOWN','FLAT','UP'): aligned[:,('DOWN','FLAT','UP').index(cls)]=p[:,j]
             aligned/=aligned.sum(axis=1,keepdims=True)
