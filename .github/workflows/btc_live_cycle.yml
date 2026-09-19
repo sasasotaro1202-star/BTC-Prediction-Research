@@ -239,7 +239,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db.gz data/historical_research 2>/dev/null || true
+          git add data/predictions.db.gz data/historical_research models 2>/dev/null || true
           git rm --cached data/predictions.db 2>/dev/null || true
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
@@ -273,7 +273,7 @@ jobs:
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
-            git add data/predictions.db.gz data/historical_research 2>/dev/null || true
+            git add data/predictions.db.gz data/historical_research models 2>/dev/null || true
             git rm --cached data/predictions.db 2>/dev/null || true
             git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
             sleep $((5 * attempt))
