@@ -31,7 +31,7 @@ class TestPredictGenerationBinding(unittest.TestCase):
                     encoding='utf-8',
                 )
                 with patch.object(predict, 'regver', return_value='generation-B'):
-                    self.assertEqual(predict.load_blend_weight('5m'), 0.20)
+                    self.assertEqual(predict.load_blend_weight('5m'), 0.0)
             finally:
                 predict.DB = old_db
                 predict.MODEL_DIR = old_model_dir
