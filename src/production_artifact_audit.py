@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 from datetime import datetime, timezone
+from feature_schema import FEATURES
 from pathlib import Path
 
 import joblib
