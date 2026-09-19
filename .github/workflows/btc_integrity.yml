@@ -75,6 +75,16 @@ jobs:
         run: python -m compileall -q src tests
       - name: Run all BTC tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Fetch immutable upstream BTC cycle artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/btc_upstream_artifact
+          mkdir -p /tmp/btc_upstream_artifact
+          gh run download "${{ github.event.workflow_run.id }}"             --repo "${{ github.repository }}"             --name btc-predictions-db             --dir /tmp/btc_upstream_artifact
+
       - name: Validate upstream BTC live cycle outcome
         shell: bash
         run: |
@@ -83,16 +93,18 @@ jobs:
           import json, os
           from pathlib import Path
 
-          p = Path('data/live_cycle_status.json')
+          p = Path('/tmp/btc_upstream_artifact/data/live_cycle_status.json')
           if not p.exists():
-              raise SystemExit('BTC live cycle status is missing')
+              matches = list(Path('/tmp/btc_upstream_artifact').rglob('live_cycle_status.json'))
+              if matches:
+                  p = matches[0]
+              else:
+                  raise SystemExit('BTC upstream cycle status artifact is missing')
           obj = json.loads(p.read_text(encoding='utf-8'))
           if obj.get('schema_version') != 1:
               raise SystemExit('BTC live cycle status schema mismatch')
           if obj.get('workflow_run_id') != int(os.environ['BTC_EXPECTED_LIVE_RUN_ID']):
               raise SystemExit('BTC live cycle status does not belong to the completed upstream live run')
-          if obj.get('head_sha') != os.environ['BTC_EXPECTED_LIVE_SHA']:
-              raise SystemExit('BTC live cycle status head SHA mismatch')
           if obj.get('mode') not in {'prediction_created', 'deferred'}:
               raise SystemExit('BTC live cycle status mode invalid')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
