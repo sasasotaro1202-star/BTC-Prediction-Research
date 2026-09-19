@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 from db import DB, init_db
 from binance_history import binance_archive_rows
+from feature_schema import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
@@ -26,7 +27,6 @@ DATA_DIR = ROOT / "data" / "historical_research"
 CACHE = DATA_DIR / "btc_bootstrap_1m.json"
 STATUS = DATA_DIR / "bootstrap_status.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
-FEATURES = ["ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration", "volatility_5m", "volatility_10m", "range_position_10m", "body_1m", "upper_wick_1m", "lower_wick_1m", "volume_ratio", "volume_trend", "ema_gap_5m", "ema_gap_10m"]
 THRESHOLD = 0.00020
 MIN_BOOTSTRAP_ROWS = 10_000
 TARGET_ROWS = 30_000
