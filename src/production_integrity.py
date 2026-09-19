@@ -92,6 +92,7 @@ def check_db() -> dict:
             fail("latest prediction probabilities invalid")
         scenario = json.loads(row[10] or "{}")
         if not isinstance(scenario.get("data_quality"), dict):
+            fail("latest prediction lacks data_quality metadata")
         if scenario.get("production_mode") == "bybit_fallback":
             for horizon in ("5m", "10m"):
                 meta_path = MODEL_DIR / f"bybit_{horizon}.json"
@@ -110,7 +111,6 @@ def check_db() -> dict:
                     fail(f"{horizon}: Bybit fallback serialized classes mismatch")
                 if meta["model_version"] not in str(row[8]):
                     fail(f"{horizon}: latest prediction model identity does not match fallback artifact")
-            fail("latest prediction lacks data_quality metadata")
         if row[8] != "DEGRADED_NO_FRESH_DATA":
             prov=scenario.get("provenance")
             if not isinstance(prov,dict):
