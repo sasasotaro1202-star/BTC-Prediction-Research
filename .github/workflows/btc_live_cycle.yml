@@ -83,16 +83,16 @@ jobs:
           done
           if [ "${missing}" -eq 0 ]; then exit 0; fi
           python src/bootstrap_train.py
-      - name: Ensure gated Bybit fallback models exist
+      - name: Ensure gated Coinbase fallback models exist
         shell: bash
         run: |
           set -euo pipefail
           missing=0
           for horizon in 5m 10m; do
-            if [ ! -s "models/bybit_${horizon}.joblib" ] || [ ! -s "models/bybit_${horizon}.json" ]; then missing=1; fi
+            if [ ! -s "models/coinbase_${horizon}.joblib" ] || [ ! -s "models/coinbase_${horizon}.json" ]; then missing=1; fi
           done
           if [ "${missing}" -eq 0 ]; then exit 0; fi
-          python src/bybit_fallback_train.py
+          python src/coinbase_fallback_train.py
       - name: Settle due BTC predictions
         run: python src/settle.py
       - name: Recalculate BTC calibration metrics
