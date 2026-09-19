@@ -26,8 +26,8 @@ def validate_live_inputs(status: dict, *, fut_rows: int, spot_rows: int, bybit_r
             raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_not_enabled")
         if coinbase_fallback and not allow_coinbase_fallback:
             raise ValueError("live_prediction_inputs_incomplete:coinbase_fallback_not_enabled")
-        if bybit_rows < 40:
-            raise ValueError("live_prediction_inputs_incomplete:bybit_fallback_history_insufficient")
+        if (fallback and bybit_rows < 40) or (coinbase_fallback and fut_rows < 40):
+            raise ValueError("live_prediction_inputs_incomplete:fallback_history_insufficient")
         return
 
     if fut_rows < 40:
