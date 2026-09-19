@@ -1,0 +1,37 @@
+name: BTC Binance Runner Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/binance_runner_probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - name: Probe Binance USD-M Futures endpoint
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.request, urllib.error, platform
+          url='https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1m&limit=2'
+          req=urllib.request.Request(url, headers={'User-Agent':'BTC-Prediction-Research/runner-probe','Accept':'application/json'})
+          try:
+              with urllib.request.urlopen(req, timeout=15) as r:
+                  body=r.read(200)
+                  print(json.dumps({'platform':platform.platform(),'status':r.status,'body_prefix':body.decode('utf-8','replace')}))
+          except urllib.error.HTTPError as e:
+              print(json.dumps({'platform':platform.platform(),'status':e.code,'error':'HTTPError'}))
+          except Exception as e:
+              print(json.dumps({'platform':platform.platform(),'error':type(e).__name__,'detail':str(e)[:200]}))
+          PY
