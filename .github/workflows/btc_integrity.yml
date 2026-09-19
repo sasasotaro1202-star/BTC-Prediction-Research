@@ -122,5 +122,20 @@ jobs:
         if: github.event_name == 'workflow_run' && env.BTC_UPSTREAM_DEFERRED == '1'
         run: |
           echo "BTC upstream live cycle was explicitly deferred after fail-closed critical-data validation; no fresh prediction was expected or fabricated."
+      - name: Run research-only regime robustness diagnostics
+        run: python src/robustness_oos.py
+      - name: Validate research-only robustness artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/robustness_oos_report.json')
+          if not p.exists(): raise SystemExit('robustness report missing')
+          obj=json.loads(p.read_text())
+          if obj.get('research_only') is not True: raise SystemExit('robustness report is not research-only')
+          if obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('robustness policy mismatch')
+          if set(obj.get('horizons',{})) != {'5m','10m'}: raise SystemExit('5m/10m robustness results missing')
+          print('research-only regime robustness artifact: OK')
+          PY
       - name: Validate Git diff
         run: git diff --check
