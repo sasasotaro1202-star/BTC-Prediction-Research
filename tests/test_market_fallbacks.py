@@ -80,6 +80,10 @@ class TestMarketFallbacks(unittest.TestCase):
             predict.Path.exists = original_exists
             predict.joblib.load = original_load
 
+    def test_predict_model_directory_matches_production_artifacts(self):
+        self.assertTrue(str(predict.MODEL_DIR).endswith('/models'))
+        self.assertNotIn('/data/models', str(predict.MODEL_DIR))
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
