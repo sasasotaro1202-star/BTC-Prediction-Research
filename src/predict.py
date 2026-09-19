@@ -223,8 +223,8 @@ def main():
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
-    if abs(m['taker_imbalance'])>.55:warnings.append('taker-flow imbalance')
-    if abs(m['funding_binance'])>.0002:warnings.append('elevated funding')
+    if abs(m.get('taker_imbalance',0.0))>.55:warnings.append('taker-flow imbalance')
+    if abs(m.get('funding_binance',0.0))>.0002:warnings.append('elevated funding')
     if abs(f['ret_15m'])>.003 or abs(f['ret_30m'])>.005:warnings.append('higher-timeframe impulse')
     retrieved=prediction_cutoff.isoformat()
     # Conservative live provenance: the system's observation is treated as
