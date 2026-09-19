@@ -53,11 +53,13 @@ def structural(f,m):
     elif taker<-.55: score-=.10
     crowd=max(-1.0,min(1.0,m.get('funding_binance',m.get('funding_bybit',0.0))/0.0003)); score-=.05*crowd
     score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
-def load_model(h):
-    p=Path(DB).parent/'models'/f'{h}.joblib'
+def load_model(h, source='primary'):
+    """Load the model artifact for the selected production source."""
+    prefix = h if source == 'primary' else f'{source}_{h}'
+    p=Path(DB).parent/'models'/f'{prefix}.joblib'
     if not p.exists(): raise FileNotFoundError(f'model_missing:{source}:{h}')
     try:return joblib.load(p)
-    except Exception as exc: raise RuntimeError(f'model_load_failed:{h}:{type(exc).__name__}') from exc
+    except Exception as exc: raise RuntimeError(f'model_load_failed:{source}:{h}:{type(exc).__name__}') from exc
 def model_probs(model,f):
     raw=model.predict_proba(np.array([[f[k] for k in FEATURES]]))[0]; out={c:1e-6 for c in CLASSES}
     for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
@@ -209,7 +211,13 @@ def main():
         raw5,raw10=base5,base10; w5=w10=0.0
     else:
         raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m')
-    p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
+    # Fallback artifacts are deliberately uncalibrated until their own
+    # chronological calibration is independently validated. Never apply the
+    # primary Binance model's calibration to a different-source artifact.
+    if use_fallback:
+        p5,p10=raw5,raw10
+    else:
+        p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
