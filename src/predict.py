@@ -242,10 +242,14 @@ def main():
             'revision_time':None,
             'status':status.get(source_key),
         }
+    # Bybit adapters used here expose current market snapshots but do not expose
+    # a trustworthy source-native event/publication timestamp. Never borrow the
+    # Binance candle timestamp for another venue: that would falsely imply PIT
+    # alignment. Keep event_time explicitly unknown until the adapter supplies it.
     for source_key in ('bybit_futures','bybit_depth','bybit_funding'):
         source_provenance[source_key]={
             'information_origin':'Bybit',
-            'event_time':latest_event.isoformat(),
+            'event_time':None,
             'available_at':retrieved if status.get(source_key) in {'ok','ok_current_only'} else None,
             'publication_time':None,
             'retrieved_at':retrieved,
