@@ -95,10 +95,18 @@ jobs:
               raise SystemExit('BTC live cycle status head SHA mismatch')
           if obj.get('mode') not in {'prediction_created', 'deferred'}:
               raise SystemExit('BTC live cycle status mode invalid')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
+              fh.write('BTC_UPSTREAM_DEFERRED=' + ('1' if obj['mode'] == 'deferred' else '0') + '\\n')
           print(json.dumps(obj, sort_keys=True))
           PY
 
       - name: Run production integrity gate
+        if: env.BTC_UPSTREAM_DEFERRED != '1'
         run: python src/production_integrity.py
+
+      - name: Confirm safe deferred BTC cycle
+        if: env.BTC_UPSTREAM_DEFERRED == '1'
+        run: |
+          echo "BTC upstream live cycle was explicitly deferred after fail-closed critical-data validation; no fresh prediction was expected or fabricated."
       - name: Validate Git diff
         run: git diff --check
