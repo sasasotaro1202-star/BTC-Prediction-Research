@@ -53,16 +53,16 @@ def context_of(row, thresholds):
 
 
 def _validation_slices(rows):
-    """Return two chronological validation slices from the pre-test window."""
+    """Return two chronological validation index ranges from the pre-test window."""
     if len(rows) < MIN_SPECIALIST_TRAIN:
         return []
-    split=max(int(len(rows)*0.70), len(rows)-150)
-    tail=rows[split:]
-    if len(tail)<50:
+    split = max(int(len(rows) * 0.70), len(rows) - 150)
+    tail_len = len(rows) - split
+    if tail_len < 50:
         return []
-    mid=max(25, len(tail)//2)
-    slices=[tail[:mid], tail[mid:]]
-    return [s for s in slices if len(s)>=25]
+    mid = max(25, tail_len // 2)
+    ranges = [(split, split + mid), (split + mid, len(rows))]
+    return [r for r in ranges if (r[1] - r[0]) >= 25]
 
 
 def _score_factory(factory, fit_rows, valid_rows):
@@ -99,9 +99,10 @@ def _select_factory(rows, factories: Mapping[str, Callable[[], object]]):
     scores={}
     for name,factory in factories.items():
         per=[]
-        for valid in slices:
-            fit=rows[:rows.index(valid[0])] if valid else []
-            score=_score_factory(factory,fit,valid)
+        for start, end in slices:
+            fit = rows[:start]
+            valid = rows[start:end]
+            score = _score_factory(factory, fit, valid)
             if score is not None:
                 per.append(score)
         if len(per)!=len(slices):
@@ -217,9 +218,10 @@ def dynamic_ensemble_weights(train_rows, factories, min_weight=0.10, temperature
     scores={}
     for name,factory in factories.items():
         per=[]
-        for valid in slices:
-            fit=train_rows[:train_rows.index(valid[0])] if valid else []
-            score=_score_factory(factory,fit,valid)
+        for start, end in slices:
+            fit = train_rows[:start]
+            valid = train_rows[start:end]
+            score = _score_factory(factory, fit, valid)
             if score is not None:
                 per.append(score[0])
         if len(per)==len(slices):
