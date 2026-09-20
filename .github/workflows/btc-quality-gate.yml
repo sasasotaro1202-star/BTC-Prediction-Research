@@ -41,10 +41,29 @@ jobs:
       - name: Verify production tree is unchanged by research-only router
         shell: bash
         run: |
-          if grep -R "context_model_oos" -n src --exclude=context_model_oos.py >/tmp/production_router_refs.txt 2>/dev/null; then
-            echo "ERROR: production source imports research-only contextual router:"
-            cat /tmp/production_router_refs.txt
-            exit 1
-          fi
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          bad = []
+          for path in Path("src").rglob("*.py"):
+              if path.name == "context_model_oos.py":
+                  continue
+              try:
+                  tree = ast.parse(path.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  raise SystemExit(f"Could not parse {path}: {exc}")
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      names = [a.name for a in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      names = [node.module or ""]
+                  else:
+                      continue
+                  if any(name.endswith("context_model_oos") for name in names):
+                      bad.append(str(path))
+          if bad:
+              raise SystemExit("Production imports research-only router: " + ", ".join(bad))
+          PY
           grep -n "production_changed" tests/test_context_model_oos.py >/dev/null
           echo "Research-only production guard is present."
