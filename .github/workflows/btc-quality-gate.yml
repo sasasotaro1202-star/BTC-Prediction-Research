@@ -1,0 +1,53 @@
+name: BTC Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install available dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then python -m pip install -e .; fi
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tests
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Verify production tree is unchanged by research-only router
+        shell: bash
+        run: |
+          if grep -R "context_model_oos" -n src tests >/tmp/router_refs.txt 2>/dev/null; then
+            echo "Router references found:"
+            cat /tmp/router_refs.txt
+          fi
+          if grep -R "production_changed" -n tests/test_context_model_oos.py >/dev/null 2>&1; then
+            echo "Research-only production guard is present."
+          else
+            echo "Production guard test marker not found."
+            exit 1
+          fi
