@@ -11,17 +11,13 @@ from pathlib import Path
 import joblib
 
 from db import DB, init_db
+from feature_schema import FEATURES as CANONICAL_FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 HEALTH = ROOT / "data" / "historical_research" / "research_health.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
-FEATURES = [
-    "ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration",
-    "volatility_5m", "volatility_10m", "range_position_10m", "body_1m",
-    "upper_wick_1m", "lower_wick_1m", "volume_ratio", "volume_trend",
-    "ema_gap_5m", "ema_gap_10m",
-]
+FEATURES = list(CANONICAL_FEATURES)
 DEFAULT_MAX_AGE_SECONDS = 900
 
 
