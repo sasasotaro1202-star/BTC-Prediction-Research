@@ -156,6 +156,116 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
     }
 
 
+def dynamic_ensemble_weights(train_rows, factories, min_weight=0.10, temperature=1.0):
+    """Estimate soft model weights from a frozen chronological validation tail.
+
+    This is research-only. Scores are computed before the caller's test block and
+    therefore cannot use test labels. A floor prevents a single noisy validation
+    slice from eliminating every alternative model.
+    """
+    if len(train_rows) < MIN_SPECIALIST_TRAIN:
+        return {}
+    split=max(int(len(train_rows)*0.80), len(train_rows)-100)
+    fit, valid=train_rows[:split], train_rows[split:]
+    if len(fit)<100 or len(valid)<50:
+        return {}
+    Xfit=np.asarray([r["x"] for r in fit],dtype=float); yfit=np.asarray([r["y"] for r in fit])
+    Xv=np.asarray([r["x"] for r in valid],dtype=float); yv=[r["y"] for r in valid]
+    scores={}
+    for name,factory in factories.items():
+        try:
+            model=factory(); model.fit(Xfit,yfit)
+            p=aligned_for_router(model, valid)
+            yi=np.asarray([("DOWN","FLAT","UP").index(v) for v in yv])
+            ll=float(-np.mean(np.log(np.clip(p[np.arange(len(yi)),yi],1e-12,1.0))))
+            scores[name]=ll
+        except Exception:
+            continue
+    if not scores:
+        return {}
+    raw={name:float(np.exp(-(score-min(scores.values()))/max(float(temperature),1e-6))) for name,score in scores.items()}
+    total=sum(raw.values())
+    weights={name:max(float(min_weight),value/total) for name,value in raw.items()}
+    z=sum(weights.values())
+    return {name:value/z for name,value in weights.items()}
+
+
+def aligned_for_router(model, rows):
+    probs=np.asarray(model.predict_proba(np.asarray([r["x"] for r in rows],dtype=float)),dtype=float)
+    classes=list(model.classes_)
+    out=np.full((len(rows),3),1e-6,dtype=float)
+    names=("DOWN","FLAT","UP")
+    for j,cls in enumerate(classes):
+        if cls in names:
+            out[:,names.index(cls)]=probs[:,j]
+    return out/out.sum(axis=1,keepdims=True)
+
+
+def dynamic_route_predictions(train_rows, test_rows, factories):
+    """Research-only soft routing: blend global and contextual specialists.
+
+    Context thresholds, specialist selection and model weights are frozen from
+    train_rows. If a specialist is unavailable, the global model remains the
+    fallback. No test labels participate in any routing decision.
+    """
+    base=route_predictions(train_rows,test_rows,factories)
+    if base is None:
+        return None
+    thresholds=base["thresholds"]
+    global_weights=dynamic_ensemble_weights(train_rows,factories)
+    if not global_weights:
+        return base
+    # Train one model per factory once on the complete pre-test window.
+    models={}
+    X=np.asarray([r["x"] for r in train_rows],dtype=float)
+    y=np.asarray([r["y"] for r in train_rows])
+    for name,factory in factories.items():
+        try:
+            m=factory(); m.fit(X,y); models[name]=m
+        except Exception:
+            pass
+    if not models:
+        return base
+    global_mix=np.zeros((len(test_rows),3),dtype=float)
+    for name,w in global_weights.items():
+        if name in models:
+            global_mix += w*aligned_for_router(models[name],test_rows)
+    routed=global_mix.copy()
+    context_weights={}
+    for context in CONTEXTS:
+        idx=[i for i,r in enumerate(test_rows) if context_of(r,thresholds)==context]
+        if not idx: continue
+        subset=[r for r in train_rows if context_of(r,thresholds)==context]
+        if len(subset)<MIN_SPECIALIST_TRAIN or len({r["y"] for r in subset})<3:
+            context_weights[context]={"specialist":False,"n":len(idx)}
+            continue
+        weights=dynamic_ensemble_weights(subset,factories)
+        if not weights:
+            context_weights[context]={"specialist":False,"n":len(idx)}
+            continue
+        # Specialists are blended with a conservative 70/30 global/context mix.
+        Xs=np.asarray([r["x"] for r in subset],dtype=float); ys=np.asarray([r["y"] for r in subset])
+        mix=np.zeros((len(idx),3),dtype=float)
+        for name,w in weights.items():
+            try:
+                m=factories[name](); m.fit(Xs,ys)
+                mix += w*aligned_for_router(m,[test_rows[i] for i in idx])
+            except Exception:
+                pass
+        if np.any(mix):
+            routed[idx]=0.70*global_mix[idx]+0.30*mix
+            context_weights[context]={"specialist":True,"n":len(idx),"weights":weights}
+    routed/=routed.sum(axis=1,keepdims=True)
+    return {
+        **base,
+        "routed_probs":routed,
+        "routing_mode":"soft_dynamic_ensemble",
+        "global_weights":global_weights,
+        "context_weights":context_weights,
+        "production_changed":False,
+        "research_only":True,
+    }
+
 def evaluate_routing(y_true, routed_probs, global_probs):
     """Return descriptive metrics; never used for routing selection."""
     names=("DOWN","FLAT","UP")
