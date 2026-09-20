@@ -89,6 +89,18 @@ class TestPredictGenerationBinding(unittest.TestCase):
                 predict.DB = old_db
                 predict.MODEL_DIR = old_model_dir
 
+    def test_latest_event_time_rejects_stale_and_future_data(self):
+        current = predict.datetime(2026, 9, 20, 5, 0, tzinfo=predict.timezone.utc)
+        stale = int((current - predict.timedelta(seconds=181)).timestamp() * 1000)
+        with self.assertRaisesRegex(ValueError, "stale_live_market_event"):
+            predict.validate_latest_event_time(stale, now=current)
+        future = int((current + predict.timedelta(seconds=61)).timestamp() * 1000)
+        with self.assertRaisesRegex(ValueError, "future_live_market_event"):
+            predict.validate_latest_event_time(future, now=current)
+        fresh = int((current - predict.timedelta(seconds=120)).timestamp() * 1000)
+        event = predict.validate_latest_event_time(fresh, now=current)
+        self.assertEqual(event, current - predict.timedelta(seconds=120))
+
     def test_features_fail_closed_on_nonfinite_or_invalid_ohlc(self):
         rows=[]
         for i in range(31):
