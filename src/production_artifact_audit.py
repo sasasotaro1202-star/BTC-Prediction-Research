@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 AUDIT = ROOT / "data" / "historical_research" / "production_artifact_audit.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
+FEATURE_COUNT = len(FEATURES)
 
 
 def sha256(path: Path) -> str:
