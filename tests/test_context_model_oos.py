@@ -58,5 +58,28 @@ class ContextRouterTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertAlmostEqual(sum(result["global_weights"].values()), 1.0, places=6)
 
+
+    def test_multi_model_router_uses_stable_weights_and_shrinkage(self):
+        train = make_rows(420)
+        test = make_rows(40, offset=500)
+        factories = {
+            "logreg_c01": lambda: LogisticRegression(C=0.1, max_iter=1000, random_state=42),
+            "logreg_c10": lambda: LogisticRegression(C=10.0, max_iter=1000, random_state=42),
+        }
+        result = dynamic_route_predictions(train, test, factories)
+        self.assertIsNotNone(result)
+        weights = result["global_weights"]
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=6)
+        self.assertTrue(all(0.0 <= w <= 1.0 for w in weights.values()))
+        self.assertTrue(all(w >= 0.10 for w in weights.values()))
+
+    def test_router_remains_research_only_when_context_evidence_is_weak(self):
+        train = make_rows(320)
+        test = make_rows(30, offset=700)
+        result = dynamic_route_predictions(train, test, {"logreg": factory})
+        self.assertIsNotNone(result)
+        self.assertEqual(result["routing_mode"], "soft_dynamic_ensemble")
+        self.assertTrue(result["research_only"])
+
 if __name__ == "__main__":
     unittest.main()
