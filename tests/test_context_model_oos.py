@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from src.context_model_oos import route_predictions, dynamic_route_predictions, fit_context_thresholds, context_of
+from src.context_model_oos import route_predictions, dynamic_route_predictions, fit_context_thresholds, context_of, _validation_slices
 
 def factory():
     return LogisticRegression(max_iter=1000, random_state=42)
@@ -58,6 +58,13 @@ class ContextRouterTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertAlmostEqual(sum(result["global_weights"].values()), 1.0, places=6)
 
+
+    def test_validation_slices_use_positions_not_duplicate_row_identity(self):
+        rows = make_rows(420)
+        slices = _validation_slices(rows)
+        self.assertEqual(len(slices), 2)
+        self.assertTrue(all(end > start for start, end in slices))
+        self.assertEqual(slices[0][0], max(int(len(rows) * 0.70), len(rows) - 150))
 
     def test_multi_model_router_uses_stable_weights_and_shrinkage(self):
         train = make_rows(420)
