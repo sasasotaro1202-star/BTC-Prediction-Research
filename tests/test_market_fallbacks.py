@@ -90,6 +90,23 @@ class TestMarketFallbacks(unittest.TestCase):
         self.assertIn(429, runner.RETRYABLE_HTTP)
         self.assertIn(503, runner.RETRYABLE_HTTP)
 
+    def test_historical_runner_routes_binance_418_to_archive_fallback(self):
+        import historical_research_runner as runner
+        original_request = runner._ORIGINAL_REQ_JSON
+        original_fallback = runner._archive_fallback
+        try:
+            runner._ORIGINAL_REQ_JSON = lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("HTTP Error 418: I'm a teapot")
+            )
+            seen = []
+            runner._archive_fallback = lambda url, optional=False: seen.append((url, optional)) or [["archive-row"]]
+            url = "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1m&startTime=1000&endTime=2000"
+            self.assertEqual(runner.resilient_req_json(url), [["archive-row"]])
+            self.assertEqual(seen, [(url, False)])
+        finally:
+            runner._ORIGINAL_REQ_JSON = original_request
+            runner._archive_fallback = original_fallback
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
