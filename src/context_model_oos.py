@@ -52,38 +52,89 @@ def context_of(row, thresholds):
     return ("high_vol_" + base) if high else base
 
 
+def _validation_slices(rows):
+    """Return two chronological validation slices from the pre-test window."""
+    if len(rows) < MIN_SPECIALIST_TRAIN:
+        return []
+    split=max(int(len(rows)*0.70), len(rows)-150)
+    tail=rows[split:]
+    if len(tail)<50:
+        return []
+    mid=max(25, len(tail)//2)
+    slices=[tail[:mid], tail[mid:]]
+    return [s for s in slices if len(s)>=25]
+
+
+def _score_factory(factory, fit_rows, valid_rows):
+    """Score one factory on a chronological validation slice."""
+    if len(fit_rows)<100 or len(valid_rows)<25:
+        return None
+    labels=[r["y"] for r in fit_rows]
+    if len(set(labels))<3:
+        return None
+    try:
+        model=factory()
+        model.fit(np.asarray([r["x"] for r in fit_rows],dtype=float),np.asarray(labels))
+        p=aligned_for_router(model,valid_rows)
+        yi=np.asarray([("DOWN","FLAT","UP").index(r["y"]) for r in valid_rows])
+        ll=float(-np.mean(np.log(np.clip(p[np.arange(len(yi)),yi],1e-12,1.0))))
+        br=float(np.mean(np.sum((p-np.eye(3)[yi])**2,axis=1)))
+        return ll,br
+    except Exception:
+        return None
+
+
 def _select_factory(rows, factories: Mapping[str, Callable[[], object]]):
-    """Select one estimator using only the tail of the context's training data."""
+    """Select a specialist using multiple chronological validation slices.
+
+    Selection uses only historical rows before the caller's test block. A model
+    must be competitive across the recent slices; otherwise the router falls
+    back to the global ensemble instead of chasing one noisy validation tail.
+    """
     if len(rows) < MIN_SPECIALIST_TRAIN:
         return None, None
-    # Reserve only the most recent tail of the context-training window for
-    # estimator selection. The chosen factory is then refit on all available
-    # context rows by the caller; no test rows or labels enter this choice.
-    split=max(int(len(rows)*0.80), len(rows)-100)
-    fit, valid=rows[:split], rows[split:]
-    if len(fit)<100 or len(valid)<50:
+    slices=_validation_slices(rows)
+    if len(slices)<2:
         return None, None
-    names=[r['y'] for r in fit]
-    if len(set(names))<3:
-        return None, None
-    Xfit=np.asarray([r['x'] for r in fit],dtype=float); yfit=np.asarray(names)
-    Xv=np.asarray([r['x'] for r in valid],dtype=float); yv=np.asarray([r['y'] for r in valid])
-    best=None
-    for name, factory in factories.items():
-        try:
-            model=factory(); model.fit(Xfit,yfit)
-            p=np.asarray(model.predict_proba(Xv),dtype=float); classes=list(model.classes_); aligned=np.full((len(valid),3),1e-6,float)
-            for j,cls in enumerate(classes):
-                if cls in ('DOWN','FLAT','UP'): aligned[:,('DOWN','FLAT','UP').index(cls)]=p[:,j]
-            aligned/=aligned.sum(axis=1,keepdims=True)
-            yidx=np.asarray([('DOWN','FLAT','UP').index(v) for v in yv])
-            ll=float(-np.mean(np.log(np.clip(aligned[np.arange(len(yidx)),yidx],1e-12,1.0))))
-            brier=float(np.mean(np.sum((aligned-np.eye(3)[yidx])**2,axis=1)))
-            score=(ll,brier)
-            if best is None or score<best[0]: best=(score,name)
-        except Exception:
+    scores={}
+    for name,factory in factories.items():
+        per=[]
+        for valid in slices:
+            fit=rows[:rows.index(valid[0])] if valid else []
+            score=_score_factory(factory,fit,valid)
+            if score is not None:
+                per.append(score)
+        if len(per)!=len(slices):
             continue
-    return (factories[best[1]],best[1]) if best else (None,None)
+        scores[name]=per
+    if not scores:
+        return None,None
+    # Normalize each metric by the cross-model median on each validation slice.
+    # This prevents log loss scale from dominating Brier and reduces dependence
+    # on any single metric's absolute magnitude.
+    total={}
+    for name,per in scores.items():
+        vals=[]
+        for j in range(len(slices)):
+            ll_med=float(np.median([v[j][0] for v in scores.values()]))
+            br_med=float(np.median([v[j][1] for v in scores.values()]))
+            vals.append(0.70*(per[j][0]/max(ll_med,1e-12))+0.30*(per[j][1]/max(br_med,1e-12)))
+        total[name]=float(np.mean(vals))
+    ordered=sorted(total.items(),key=lambda kv:kv[1])
+    winner,win_score=ordered[0]
+    # Require the winner not to be materially worse on either recent slice.
+    for valid_idx in range(len(slices)):
+        winner_ll,winner_br=scores[winner][valid_idx]
+        for _,per in scores.items():
+            if per[valid_idx][0] < winner_ll and per[valid_idx][1] < winner_br:
+                winner_score=0.70*(winner_ll/max(float(np.median([v[valid_idx][0] for v in scores.values()])),1e-12))+0.30*(winner_br/max(float(np.median([v[valid_idx][1] for v in scores.values()])),1e-12))
+                break
+        else:
+            continue
+        # A dominated winner is rejected; caller uses the global fallback.
+        if winner_score>1.03:
+            return None,None
+    return factories[winner],winner
 
 
 def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[], object]]):
@@ -157,35 +208,32 @@ def route_predictions(train_rows, test_rows, factories: Mapping[str, Callable[[]
 
 
 def dynamic_ensemble_weights(train_rows, factories, min_weight=0.10, temperature=1.0):
-    """Estimate soft model weights from a frozen chronological validation tail.
-
-    This is research-only. Scores are computed before the caller's test block and
-    therefore cannot use test labels. A floor prevents a single noisy validation
-    slice from eliminating every alternative model.
-    """
+    """Estimate stable soft model weights from multiple pre-test validation slices."""
     if len(train_rows) < MIN_SPECIALIST_TRAIN:
         return {}
-    split=max(int(len(train_rows)*0.80), len(train_rows)-100)
-    fit, valid=train_rows[:split], train_rows[split:]
-    if len(fit)<100 or len(valid)<50:
+    slices=_validation_slices(train_rows)
+    if len(slices)<2:
         return {}
-    Xfit=np.asarray([r["x"] for r in fit],dtype=float); yfit=np.asarray([r["y"] for r in fit])
-    Xv=np.asarray([r["x"] for r in valid],dtype=float); yv=[r["y"] for r in valid]
     scores={}
     for name,factory in factories.items():
-        try:
-            model=factory(); model.fit(Xfit,yfit)
-            p=aligned_for_router(model, valid)
-            yi=np.asarray([("DOWN","FLAT","UP").index(v) for v in yv])
-            ll=float(-np.mean(np.log(np.clip(p[np.arange(len(yi)),yi],1e-12,1.0))))
-            scores[name]=ll
-        except Exception:
-            continue
+        per=[]
+        for valid in slices:
+            fit=train_rows[:train_rows.index(valid[0])] if valid else []
+            score=_score_factory(factory,fit,valid)
+            if score is not None:
+                per.append(score[0])
+        if len(per)==len(slices):
+            scores[name]=float(np.mean(per))
     if not scores:
         return {}
     raw={name:float(np.exp(-(score-min(scores.values()))/max(float(temperature),1e-6))) for name,score in scores.items()}
     total=sum(raw.values())
-    weights={name:max(float(min_weight),value/total) for name,value in raw.items()}
+    if total<=0:
+        return {}
+    # Shrink toward uniform weights so a short/noisy regime cannot monopolize the ensemble.
+    uniform=1.0/len(raw)
+    weights={name:(1.0-0.25)*(value/total)+0.25*uniform for name,value in raw.items()}
+    weights={name:max(float(min_weight),value) for name,value in weights.items()}
     z=sum(weights.values())
     return {name:value/z for name,value in weights.items()}
 
