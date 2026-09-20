@@ -66,6 +66,18 @@ def check_model(horizon: str) -> dict:
     classes = [str(x) for x in getattr(model, "classes_", [])]
     if classes != CLASSES:
         fail(f"{horizon}: serialized model classes mismatch: {classes}")
+    if len(meta.get("features", [])) != len(FEATURES):
+        fail(f"{horizon}: serialized feature count mismatch")
+    try:
+        import numpy as np
+        probe = np.zeros((1, len(FEATURES)), dtype=float)
+        probs = np.asarray(model.predict_proba(probe), dtype=float)
+    except Exception as exc:
+        fail(f"{horizon}: serialized model probability probe failed: {type(exc).__name__}: {exc}")
+    if probs.shape != (1, len(CLASSES)):
+        fail(f"{horizon}: serialized model probability shape mismatch: {probs.shape}")
+    if not np.isfinite(probs).all() or (probs < 0).any() or not np.isclose(float(probs.sum()), 1.0, atol=1e-6):
+        fail(f"{horizon}: serialized model probability output invalid")
     if not meta.get("model_version"):
         fail(f"{horizon}: missing model_version")
     return {"horizon": horizon, "model_version": meta["model_version"], "feature_count": len(FEATURES)}
