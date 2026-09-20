@@ -84,6 +84,12 @@ class TestMarketFallbacks(unittest.TestCase):
         self.assertTrue(str(predict.MODEL_DIR).endswith('/models'))
         self.assertNotIn('/data/models', str(predict.MODEL_DIR))
 
+    def test_historical_runner_treats_binance_418_as_recoverable(self):
+        import historical_research_runner as runner
+        self.assertIn(418, runner.RETRYABLE_HTTP)
+        self.assertIn(429, runner.RETRYABLE_HTTP)
+        self.assertIn(503, runner.RETRYABLE_HTTP)
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
