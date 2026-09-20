@@ -176,7 +176,7 @@ jobs:
                   if obj.get('horizon') != horizon: raise SystemExit(f'{horizon} horizon mismatch')
                   if obj.get('artifact') != f'{horizon}.joblib': raise SystemExit(f'{horizon} artifact mismatch')
                   if obj.get('classes') and obj['classes'] != ['DOWN','FLAT','UP']: raise SystemExit(f'{horizon} class order mismatch')
-                  if obj.get('features') and len(obj['features']) != 15: raise SystemExit(f'{horizon} feature count mismatch')
+                  if obj.get('features') and obj['features'] != list(__import__('src.feature_schema', fromlist=['FEATURES']).FEATURES): raise SystemExit(f'{horizon} feature schema mismatch')
               if mj.exists() and not mf.exists(): raise SystemExit(f'{horizon} model artifact missing')
               cp=Path(f'models/{horizon}.calibration.json')
               if cp.exists():
