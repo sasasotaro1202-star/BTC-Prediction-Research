@@ -3,8 +3,6 @@ name: BTC Workflow Watchdog
 on:
   schedule:
     - cron: '*/15 * * * *'
-  # A watchdog-only change intentionally triggers one immediate health check;
-  # normal production/research workflows remain schedule/manual driven.
   push:
     branches: [main]
     paths:
@@ -27,14 +25,11 @@ jobs:
         shell: bash
         run: |
           set -u
-          workflows=(btc_live_cycle.yml btc_integrity.yml btc_research.yml)
+          workflows=(btc_live_cycle.yml btc_integrity.yml btc_research.yml btc_pit_oos_audit.yml btc_historical_research.yml)
           now=$(date -u +%s)
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || {
-              echo "WARN: unable to inspect ${workflow}; continuing"
-              continue
-            }
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
             printf '%s' "$response" | jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,updated_at}' | while IFS= read -r run; do
               [ -n "$run" ] || continue
               status=$(printf '%s' "$run" | jq -r '.status // ""')
@@ -45,43 +40,39 @@ jobs:
               updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
               age=$((now - updated_epoch))
               echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
-              if [ "$status" != "completed" ]; then
-                continue
-              fi
-              retryable=false
+              if [ "$status" != "completed" ]; then continue; fi
               case "$conclusion" in
-                failure|cancelled|timed_out) retryable=true ;;
+                failure|cancelled|timed_out)
+                  if [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
+                    if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
+                      echo "Retry requested successfully for ${workflow} run ${run_id}"
+                    else
+                      echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
+                    fi
+                  fi
+                  ;;
               esac
-              if [ "$retryable" = true ] && [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
-                echo "Retrying eligible failed jobs for ${workflow} run ${run_id}"
-                if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
-                  echo "Retry requested successfully for ${workflow} run ${run_id}"
-                else
-                  echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
-                fi
-              fi
             done
           done
-          # Recover a silently stalled schedule without masking real failures.
-          # If no Live Cycle is running/queued and the newest Live Cycle is older
-          # than 10 minutes, explicitly dispatch one using the Actions write token.
-          live_response=$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?per_page=10" 2>/dev/null || true)
-          if [ -n "$live_response" ]; then
-            latest_live=$(printf '%s' "$live_response" | jq -c '[.workflow_runs[]? | select(.status == "completed")] | sort_by(.updated_at) | last // empty')
-            live_running=$(printf '%s' "$live_response" | jq '[.workflow_runs[]? | select(.status == "queued" or .status == "in_progress")] | length')
-            latest_updated=$(printf '%s' "$latest_live" | jq -r '.updated_at // ""')
+
+          recover_if_stale() {
+            workflow="$1"
+            threshold="$2"
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
+            if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
+            latest=$(printf '%s' "$response" | jq -c '[.workflow_runs[]? | select(.status == "completed")] | sort_by(.updated_at) | last // empty')
+            running=$(printf '%s' "$response" | jq '[.workflow_runs[]? | select(.status == "queued" or .status == "in_progress")] | length')
+            latest_updated=$(printf '%s' "$latest" | jq -r '.updated_at // ""')
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
-            live_age=$((now - latest_epoch))
-            echo "live_latest=${latest_updated:-none} live_age=${live_age}s live_running=${live_running}"
-            if [ "$live_running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$live_age" -ge 600 ]; }; then
-              echo 'Live Cycle appears stale; dispatching a recovery run.'
-              if gh workflow run btc_live_cycle.yml --ref main >/dev/null 2>&1; then
-                echo 'Live Cycle recovery dispatch succeeded.'
-              else
-                echo 'WARN: Live Cycle recovery dispatch failed; leaving state unchanged.'
-              fi
+            age=$((now - latest_epoch))
+            echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s"
+            if [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
+              echo "${workflow} appears stale; dispatching recovery run."
+              if gh workflow run "$workflow" --ref main >/dev/null 2>&1; then echo "${workflow} recovery dispatch succeeded."; else echo "WARN: ${workflow} recovery dispatch failed; leaving state unchanged."; fi
             fi
-          else
-            echo 'WARN: unable to inspect Live Cycle freshness; no recovery dispatch attempted.'
-          fi
+          }
+
+          recover_if_stale btc_live_cycle.yml 600
+          recover_if_stale btc_pit_oos_audit.yml 7200
+          recover_if_stale btc_historical_research.yml 93600
           echo 'BTC workflow watchdog completed without masking core workflow results.'
