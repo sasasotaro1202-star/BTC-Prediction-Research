@@ -62,6 +62,8 @@ def audit_one(horizon: str) -> dict:
         raise SystemExit(f"{horizon}: metadata class order mismatch")
     if obj.get("features") != list(FEATURES):
         raise SystemExit(f"{horizon}: production feature schema mismatch")
+    if not isinstance(obj.get("model_version"), str) or not obj["model_version"].strip():
+        raise SystemExit(f"{horizon}: missing production model_version")
     
     try:
         loaded = joblib.load(model_path)
