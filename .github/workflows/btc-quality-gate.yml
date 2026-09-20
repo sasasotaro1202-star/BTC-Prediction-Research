@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 */3 * * *"
 
 permissions:
   contents: read
@@ -41,13 +41,10 @@ jobs:
       - name: Verify production tree is unchanged by research-only router
         shell: bash
         run: |
-          if grep -R "context_model_oos" -n src tests >/tmp/router_refs.txt 2>/dev/null; then
-            echo "Router references found:"
-            cat /tmp/router_refs.txt
-          fi
-          if grep -R "production_changed" -n tests/test_context_model_oos.py >/dev/null 2>&1; then
-            echo "Research-only production guard is present."
-          else
-            echo "Production guard test marker not found."
+          if grep -R "context_model_oos" -n src --exclude=context_model_oos.py >/tmp/production_router_refs.txt 2>/dev/null; then
+            echo "ERROR: production source imports research-only contextual router:"
+            cat /tmp/production_router_refs.txt
             exit 1
           fi
+          grep -n "production_changed" tests/test_context_model_oos.py >/dev/null
+          echo "Research-only production guard is present."
