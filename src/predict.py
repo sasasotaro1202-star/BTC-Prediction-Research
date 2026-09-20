@@ -12,12 +12,23 @@ from market_data import resilient_1m_series, binance_depth, bybit_depth, binance
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
 INTERVAL=300
+MAX_LIVE_EVENT_AGE_SECONDS=180
 CLASSES=["DOWN","FLAT","UP"]
 
 def utcnow(): return datetime.now(timezone.utc)
 def jst(dt): return dt.astimezone(timezone(timedelta(hours=9))).isoformat()
 def next_grid(dt,steps=1):
     ts=int(dt.timestamp()); return datetime.fromtimestamp(((ts//INTERVAL)+steps)*INTERVAL,timezone.utc)
+def validate_latest_event_time(event_ms, *, now=None):
+    """Reject stale/future market candles before a directional prediction."""
+    current=utcnow() if now is None else now
+    event=datetime.fromtimestamp(int(event_ms)/1000,timezone.utc)
+    age=(current-event).total_seconds()
+    if age > MAX_LIVE_EVENT_AGE_SECONDS:
+        raise ValueError(f"stale_live_market_event:{age:.0f}s")
+    if age < -60:
+        raise ValueError(f"future_live_market_event:{age:.0f}s")
+    return event
 def _ema(v,span):
     a=2/(span+1); e=float(v[0])
     for x in v[1:]: e=a*float(x)+(1-a)*e
@@ -215,7 +226,7 @@ def main():
         m['funding_binance'] = 0.0
     validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=use_bybit_fallback,allow_coinbase_fallback=use_coinbase_fallback)
     prediction_cutoff=utcnow()
-    latest_event_ms=int(fut[-1][0]); latest_event=datetime.fromtimestamp(latest_event_ms/1000,timezone.utc)
+    latest_event_ms=int(fut[-1][0]); latest_event=validate_latest_event_time(latest_event_ms, now=prediction_cutoff)
     s5=structural(f,m)
     gap=m.get('cross_exchange_gap')
     s10=structural(f,{**m,'cross_exchange_gap':(gap*.8 if gap is not None else None)})
