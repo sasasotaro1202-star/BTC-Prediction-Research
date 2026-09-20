@@ -14,13 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from db import DB, init_db
+from feature_schema import FEATURES as CANONICAL_FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 OUT = ROOT / "data" / "historical_research" / "research_health.json"
 HORIZONS = ("5m", "10m")
 CLASSES = ("DOWN", "FLAT", "UP")
-EXPECTED_FEATURES = 15
+EXPECTED_FEATURES = len(CANONICAL_FEATURES)
 
 
 def table_columns(con, table: str) -> set[str]:
@@ -81,10 +82,11 @@ def audit() -> dict:
                     "artifact_ok": obj.get("artifact") == f"{h}.joblib",
                     "classes_ok": obj.get("classes") in (None, list(CLASSES)),
                     "feature_count": len(obj.get("features", [])) if obj.get("features") else None,
+                    "feature_schema_ok": obj.get("features") in (None, list(CANONICAL_FEATURES)),
                 }
                 if not check["model_metadata"]["artifact_ok"] or not check["model_metadata"]["classes_ok"]:
                     check["ok"] = False
-                if obj.get("features") and len(obj["features"]) != EXPECTED_FEATURES:
+                if obj.get("features") and (len(obj["features"]) != EXPECTED_FEATURES or obj["features"] != list(CANONICAL_FEATURES)):
                     check["ok"] = False
             except Exception as exc:
                 check["ok"] = False
