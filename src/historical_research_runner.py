@@ -10,7 +10,7 @@ ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaw
 ARCHIVE_SAFETY_DAYS=3
 ARCHIVE_CACHE=Path("/tmp/btc_prediction_archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
 CORE_ENDPOINT="klines"; OPTIONAL_ENDPOINTS={"markPriceKlines","premiumIndexKlines"}; FALLBACK_ENDPOINTS={CORE_ENDPOINT,*OPTIONAL_ENDPOINTS}
-RETRYABLE_HTTP={403,429,451,500,502,503,504}
+RETRYABLE_HTTP={403,418,429,451,500,502,503,504}
 _ORIGINAL_REQ_JSON=hr.req_json
 
 def _download(url,timeout=90):
