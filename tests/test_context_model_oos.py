@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from src.context_model_oos import route_predictions, fit_context_thresholds, context_of
+from src.context_model_oos import route_predictions, dynamic_route_predictions, fit_context_thresholds, context_of
 
 def factory():
     return LogisticRegression(max_iter=1000, random_state=42)
@@ -38,6 +38,25 @@ class ContextRouterTests(unittest.TestCase):
 
     def test_insufficient_training_data_fails_closed(self):
         self.assertIsNone(route_predictions(make_rows(100), make_rows(20), {"logreg": factory}))
+
+    def test_dynamic_router_is_research_only_and_label_invariant(self):
+        train = make_rows(320)
+        test_a = make_rows(40, offset=200)
+        test_b = [dict(r, y=("UP" if r["y"] == "DOWN" else "DOWN")) for r in test_a]
+        factories = {"logreg": factory}
+        a = dynamic_route_predictions(train, test_a, factories)
+        b = dynamic_route_predictions(train, test_b, factories)
+        self.assertIsNotNone(a)
+        self.assertTrue(a["research_only"])
+        self.assertFalse(a["production_changed"])
+        np.testing.assert_allclose(a["routed_probs"], b["routed_probs"])
+        self.assertEqual(a["routing_mode"], "soft_dynamic_ensemble")
+
+    def test_dynamic_router_weights_are_normalized(self):
+        train = make_rows(320)
+        result = dynamic_route_predictions(train, make_rows(20, offset=400), {"logreg": factory})
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(sum(result["global_weights"].values()), 1.0, places=6)
 
 if __name__ == "__main__":
     unittest.main()
