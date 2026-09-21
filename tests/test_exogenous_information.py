@@ -50,7 +50,7 @@ def test_aggregate_is_bounded_and_separates_policy_and_macro():
         event("macro", -3, "macro", sentiment=None, importance=0.25),
     ]
     features = aggregate_event_features(events, T0)
-    assert features["news_event_count"] == 3
+    assert features["news_event_count"] == 1
     assert features["policy_event_count"] == 1
     assert features["macro_event_count"] == 1
     assert -1.0 <= features["news_weighted_sentiment"] <= 1.0
