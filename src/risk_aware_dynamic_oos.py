@@ -60,7 +60,7 @@ def _weights_from_losses(
     max_weight=MAX_WEIGHT,
 ):
     """Convert only prior completed-block diagnostics into bounded weights."""
-    if not losses:
+    if losses is None or len(losses) == 0:
         return ()
     ll = np.asarray([float(x) for x in losses], dtype=float)
     n = len(ll)
@@ -247,7 +247,12 @@ def evaluate(horizon: str):
             continue
         equal_w = tuple(1.0 / len(parts) for _ in parts)
         risk_w = (
-            _weights_from_losses(ema_losses, ema_redundancy)
+            _weights_from_losses(
+                ema_losses,
+                briers=ema_briers,
+                eces=ema_eces,
+                redundancy=ema_redundancy,
+            )
             if ema_losses is not None
             else equal_w
         )
@@ -257,13 +262,28 @@ def evaluate(horizon: str):
         em = metrics(y, eq)
         rm = metrics(y, risk)
 
-        component_losses = [_block_logloss(y, p) for p in parts]
+        component_metrics = [metrics(y, p) for p in parts]
+        component_losses = [m["logloss"] for m in component_metrics]
+        component_briers = [m["brier"] for m in component_metrics]
+        component_eces = [m["calibration_error"] for m in component_metrics]
         component_redundancy = _pairwise_redundancy(parts)
         ema_losses = (
             np.asarray(component_losses, dtype=float)
             if ema_losses is None
             else alpha * np.asarray(component_losses, dtype=float)
             + (1.0 - alpha) * ema_losses
+        )
+        ema_briers = (
+            np.asarray(component_briers, dtype=float)
+            if ema_briers is None
+            else alpha * np.asarray(component_briers, dtype=float)
+            + (1.0 - alpha) * ema_briers
+        )
+        ema_eces = (
+            np.asarray(component_eces, dtype=float)
+            if ema_eces is None
+            else alpha * np.asarray(component_eces, dtype=float)
+            + (1.0 - alpha) * ema_eces
         )
         ema_redundancy = (
             np.asarray(component_redundancy, dtype=float)
@@ -317,7 +337,12 @@ def evaluate(horizon: str):
     equal_hold_w = tuple(1.0 / len(hold_parts) for _ in hold_parts)
     equal_hold = _mix_parts(hold_parts, equal_hold_w)
     risk_hold_w = (
-        _weights_from_losses(ema_losses, ema_redundancy)
+        _weights_from_losses(
+            ema_losses,
+            briers=ema_briers,
+            eces=ema_eces,
+            redundancy=ema_redundancy,
+        )
         if ema_losses is not None
         else equal_hold_w
     )
