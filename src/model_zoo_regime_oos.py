@@ -14,14 +14,15 @@ ROOT_DIR=SRC_DIR.parent
 for _path in (ROOT_DIR,SRC_DIR):
     if str(_path) not in sys.path: sys.path.insert(0,str(_path))
 from model_compare import HORIZONS, metrics, _temperature, apply_temperature
-from bootstrap_train import fetch_history, make_features, TARGET_ROWS, THRESHOLD
+from binance_history import binance_archive_rows
+from bootstrap_train import make_features, THRESHOLD
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 OUT=ROOT_DIR/"data/historical_research/model_zoo_regime_oos.json"
-CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=300; MAX_ROWS=12000
+CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=300; MAX_ROWS=30000; MAX_OOS_BLOCKS=24
 TREND_INDEX=2
 VOL_INDEX=6
 MIN_HISTORY_PER_REGIME=180; FLOOR=0.10; MAX_WEIGHT=0.55; SHRINKAGE=0.30
@@ -98,7 +99,8 @@ def _mix(parts,weights):
 
 def _historical_rows(horizon):
     """Build runtime-compatible causal rows from closed 1-minute BTC history."""
-    raw, source = fetch_history(TARGET_ROWS)
+    raw = binance_archive_rows(MAX_ROWS)
+    source = "binance_vision_archive"
     steps=int(horizon[:-1])
     out=[]
     for i in range(30, len(raw)-steps):
@@ -119,7 +121,12 @@ def evaluate(horizon):
     split=int(len(rows)*0.80); development=rows[:split]; holdout=rows[split:]
     if len(development)<MIN_TRAIN+TEST_BLOCK or len(holdout)<100:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_split"}
     mf=factories(); names=list(mf); history=[]; blocks=[]
-    for end in range(MIN_TRAIN,len(development),TEST_BLOCK):
+    all_endpoints=list(range(MIN_TRAIN,len(development),TEST_BLOCK))
+    if len(all_endpoints)>MAX_OOS_BLOCKS:
+        endpoints=sorted(set(int(v) for v in np.linspace(all_endpoints[0],all_endpoints[-1],MAX_OOS_BLOCKS)))
+    else:
+        endpoints=all_endpoints
+    for end in endpoints:
         train_end=max(0,end-int(horizon[:-1])-60); train=development[:train_end]; test=development[end:min(end+TEST_BLOCK,len(development))]
         if len(train)<MIN_TRAIN or len(test)<TEST_BLOCK//2:continue
         thresholds=_regime_thresholds(train); keys=[regime_key(r,thresholds) for r in test]
@@ -156,7 +163,7 @@ def evaluate(horizon):
         })
     if len(blocks)<8:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_valid_oos_blocks"}
     ll=np.asarray([b["delta"]["logloss"] for b in blocks]); br=np.asarray([b["delta"]["brier"] for b in blocks]); ac=np.asarray([b["delta"]["accuracy"] for b in blocks])
-    summary={"blocks":len(blocks),"samples":int(sum(b["n"] for b in blocks)),"mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005))}
+    summary={"blocks":len(blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005))}
     thresholds=_regime_thresholds(development); hold_keys=[regime_key(r,thresholds) for r in holdout]
     hold_parts=[_fit_calibrated(development,holdout,mf[name]) for name in names]
     if any(p is None for p in hold_parts):return {"status":"DEFERRED","n":len(rows),"reason":"holdout_prediction_failed"}
