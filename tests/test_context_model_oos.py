@@ -90,3 +90,12 @@ class ContextRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+def test_context_router_factory_includes_lightgbm_candidate():
+    from src.context_router_oos import factories
+
+    fs = factories()
+    assert "lightgbm" in fs
+    model = fs["lightgbm"]()
+    assert model.n_estimators == 180
+    assert model.num_leaves == 15
