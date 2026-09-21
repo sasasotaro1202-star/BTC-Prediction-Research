@@ -8,10 +8,10 @@ class ModelZooRegimeTests(unittest.TestCase):
         self.assertAlmostEqual(float(w.sum()),1.0,places=10)
         self.assertTrue(np.all(w>=0.10-1e-12)); self.assertTrue(np.all(w<=0.55+1e-12))
     def test_regime_thresholds_are_train_derived(self):
-        rows=[{"x":[0,0,(-1 if i<5 else 1)*(0.002 if i<9 else 0.003),0,0,0,0.0002+i*0.00001,0,0,0,0,0,0,0,0]} for i in range(10)]
+        rows=[{"x":[0,0,(-1 if i<5 else 1)*(0.002 if i<9 else 0.003),0,0,0,0,0,0.0002+i*0.00001,0,0,0,0,0,0]} for i in range(10)]
         t=_regime_thresholds(rows)
         self.assertGreater(t["trend_q"],0.0); self.assertGreater(t["vol_q"],0.0)
         self.assertEqual(regime_key(rows[-1],t),"TREND_UP|HIGH_VOL")
     def test_range_regime(self):
-        rows=[{"x":[0,0,0.000001,0,0,0,0.00005,0,0,0,0,0,0,0,0]} for _ in range(10)]
+        rows=[{"x":[0,0,0.000001,0,0,0,0,0,0.00005,0,0,0,0,0,0]} for _ in range(10)]
         t=_regime_thresholds(rows); self.assertEqual(regime_key(rows[0],t),"RANGE|LOW_VOL")
