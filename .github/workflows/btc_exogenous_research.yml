@@ -37,6 +37,14 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore cumulative exogenous research cache
+        uses: actions/cache/restore@v5
+        with:
+          path: data/exogenous
+          key: btc-exogenous-${{ github.run_id }}
+          restore-keys: |
+            btc-exogenous-
+
       - name: Compile
         run: python -m compileall -q src tests scripts
       - name: Unit test exogenous collector
@@ -63,6 +71,11 @@ jobs:
           if m.get('complete') is not True: raise SystemExit('GDELT collection incomplete; refusing partial research input')
           print('GDELT exogenous research manifest: OK')
           PY
+      - name: Save cumulative exogenous research cache
+        uses: actions/cache/save@v5
+        with:
+          path: data/exogenous
+          key: btc-exogenous-${{ github.run_id }}
       - uses: actions/upload-artifact@v6
         with:
           name: btc-exogenous-research
