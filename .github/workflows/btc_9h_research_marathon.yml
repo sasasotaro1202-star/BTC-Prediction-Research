@@ -207,6 +207,32 @@ jobs:
         run: python src/production_artifact_audit.py
       - name: Run PIT/OOS audit
         run: python src/pit_oos_audit.py
+      - name: Run fail-closed promotion safety gate
+        run: python src/promotion_gate.py
+      - name: Validate promotion gate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/promotion_gate.json')
+          if not p.is_file():
+              raise SystemExit('promotion gate artifact missing')
+          obj=json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('promotion gate must remain research-only')
+          if obj.get('final_holdout_protected') is not True:
+              raise SystemExit('promotion gate must protect final holdout')
+          if obj.get('production_safety_gate') != 'PASS':
+              raise SystemExit('production safety gate is not PASS')
+          if obj.get('promotion_status') not in {'ELIGIBLE_PENDING_EXPLICIT_PROMOTION','HOLD'}:
+              raise SystemExit('unexpected promotion status')
+          if not isinstance(obj.get('promotion_allowed'), bool):
+              raise SystemExit('promotion_allowed must be boolean')
+          print('promotion gate evidence: VERIFIED')
+          print(json.dumps(obj, indent=2, sort_keys=True))
+          PY
       - name: Upload complete 9h evidence
         if: always()
         uses: actions/upload-artifact@v6
