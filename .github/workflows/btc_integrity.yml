@@ -116,7 +116,9 @@ jobs:
 
       - name: Run production integrity gate
         if: github.event_name == 'workflow_dispatch' || env.BTC_UPSTREAM_DEFERRED != '1'
-        run: python src/production_integrity.py
+        run: |
+          mkdir -p data/historical_research
+          python src/production_integrity.py > data/historical_research/production_integrity.json
 
       - name: Confirm safe deferred BTC cycle
         if: github.event_name == 'workflow_run' && env.BTC_UPSTREAM_DEFERRED == '1'
@@ -137,5 +139,93 @@ jobs:
           if set(obj.get('horizons',{})) != {'5m','10m'}: raise SystemExit('5m/10m robustness results missing')
           print('research-only regime robustness artifact: OK')
           PY
+      - name: Evaluate final promotion safety gate
+        if: success() && env.BTC_UPSTREAM_DEFERRED != '1'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('data/historical_research')
+          prod = json.loads((root / 'production_integrity.json').read_text())
+          robust = json.loads((root / 'robustness_oos_report.json').read_text())
+          blends = {}
+          for horizon in ('5m', '10m'):
+              p = Path('models') / f'{horizon}.blend.json'
+              blends[horizon] = json.loads(p.read_text()) if p.exists() else {'status': 'missing'}
+          robust_ok = (
+              robust.get('research_only') is True
+              and robust.get('policy') == 'diagnostic_only_no_model_input_no_promotion_effect'
+              and set(robust.get('horizons', {})) == {'5m', '10m'}
+              and all(robust['horizons'][h].get('status') == 'ok' for h in ('5m', '10m'))
+              and all(robust['horizons'][h].get('final_holdout_protected') is True for h in ('5m', '10m'))
+          )
+          production_ok = prod.get('status') == 'PASS'
+          candidate_ready = all(blends[h].get('status') == 'accepted' for h in ('5m', '10m'))
+          promotion_allowed = bool(production_ok and robust_ok and candidate_ready)
+          if promotion_allowed:
+              status = 'ELIGIBLE_PENDING_EXPLICIT_PROMOTION'
+              reason = 'all safety evidence passed and both horizon candidates are explicitly accepted'
+          else:
+              status = 'HOLD'
+              reasons = []
+              if not production_ok: reasons.append('production_integrity_not_pass')
+              if not robust_ok: reasons.append('robustness_evidence_invalid_or_incomplete')
+              if not candidate_ready: reasons.append('candidate_not_accepted_for_both_horizons')
+              reason = ';'.join(reasons)
+          out = {
+              'schema_version': 1,
+              'research_only': True,
+              'final_holdout_protected': True,
+              'production_safety_gate': 'PASS' if production_ok and robust_ok else 'HOLD',
+              'promotion_allowed': promotion_allowed,
+              'promotion_status': status,
+              'reason': reason,
+              'candidate_status': {h: blends[h].get('status') for h in ('5m', '10m')},
+              'policy': 'no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence',
+          }
+          (root / 'promotion_gate.json').write_text(json.dumps(out, indent=2, sort_keys=True))
+          print(json.dumps(out, indent=2, sort_keys=True))
+          if not production_ok or not robust_ok:
+              raise SystemExit('promotion safety gate failed')
+          PY
+
+      - name: Record safe deferred promotion gate
+        if: env.BTC_UPSTREAM_DEFERRED == '1'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('data/historical_research')
+          root.mkdir(parents=True, exist_ok=True)
+          (root / 'production_integrity.json').write_text(json.dumps({
+              'status': 'SKIPPED_DEFERRED',
+              'reason': 'upstream live cycle was explicitly deferred by fail-closed input validation'
+          }, indent=2))
+          (root / 'promotion_gate.json').write_text(json.dumps({
+              'schema_version': 1,
+              'research_only': True,
+              'final_holdout_protected': True,
+              'production_safety_gate': 'HOLD',
+              'promotion_allowed': False,
+              'promotion_status': 'HOLD',
+              'reason': 'upstream_live_cycle_deferred',
+              'policy': 'no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence',
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload final integrity evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-final-integrity-evidence
+          path: |
+            data/historical_research/production_integrity.json
+            data/historical_research/robustness_oos_report.json
+            data/historical_research/promotion_gate.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Validate Git diff
         run: git diff --check
