@@ -17,9 +17,14 @@ from sklearn.metrics import log_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from db import DB, init_db
-from binance_history import binance_archive_rows
-from feature_schema import FEATURES
+try:
+    from db import DB, init_db
+    from binance_history import binance_archive_rows
+    from feature_schema import FEATURES
+except ModuleNotFoundError:
+    from src.db import DB, init_db
+    from src.binance_history import binance_archive_rows
+    from src.feature_schema import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
