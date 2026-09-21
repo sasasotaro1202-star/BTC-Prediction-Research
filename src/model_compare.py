@@ -410,12 +410,16 @@ def compare_h(h):
     winner,wmin,wtest=min(eligible,key=lambda z:(z[1]['logloss'],z[1]['brier'])); meta=train_candidate(development_rows,h,winner,cand[winner],milestone)
     if not meta:
         mark_checkpoint(h,milestone,'rejected_training'); return {'status':'rejected_training','milestone':milestone,'winner':winner}
-    version=f'v3.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['statistical_significance']=wtest
+    version=f'candidate.v3.m{milestone}.{datetime.now(timezone.utc).strftime("%Y%m%d%H%M")}'; meta['model_version']=version; meta['statistical_significance']=wtest
+    # Candidate promotion is deliberately two-phase. This research workflow may
+    # train and validate artifacts, but it must never change the Champion/production
+    # registry automatically. Explicit promotion requires the independent
+    # promotion gate plus a separate human-approved deployment action.
+    candidate_meta_path=MODEL_DIR/f'{h}.candidate.m{milestone}.{winner}.json'
+    candidate_meta_path.write_text(json.dumps(meta,indent=2,sort_keys=True),encoding='utf-8')
     holdout=metrics([r['y'] for r in final_holdout_rows],[r['production'] for r in final_holdout_rows]) if final_holdout_rows else None
-    if not adopt_candidate(h,meta,version):
-        mark_checkpoint(h,milestone,'rejected_adoption'); return {'status':'rejected_adoption','milestone':milestone,'winner':winner}
-    set_prod(h,version); mark_checkpoint(h,milestone,'adopted')
-    return {'status':'adopted','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'final_holdout_production':holdout,'n':len(rows)}
+    mark_checkpoint(h,milestone,'eligible_pending_explicit_promotion')
+    return {'status':'eligible_pending_explicit_promotion','milestone':milestone,'version':version,'source':winner,'old':production,'new':wmin,'statistical_tests':wtest,'final_holdout_production':holdout,'n':len(rows),'production_changed':False}
 
 def compare():
     init_db(); ensure_checkpoint_table(); print(json.dumps({h:compare_h(h) for h in HORIZONS},indent=2))
