@@ -73,7 +73,7 @@ jobs:
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
             latest=$(printf '%s' "$response" | jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty')
-            running=$(printf '%s' "$response" | jq '[.workflow_runs[]? | select(.status == "queued" or .status == "in_progress")] | length')
+            running=$(printf '%s' "$response" | jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length')
             latest_updated=$(printf '%s' "$latest" | jq -r '.updated_at // ""')
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
             age=$((now - latest_epoch))
