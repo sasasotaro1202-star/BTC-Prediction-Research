@@ -1,0 +1,53 @@
+name: BTC Rolling Challenger Research
+
+on:
+  schedule:
+    - cron: '47 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-rolling-challenger
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  rolling_challenger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile research code
+        run: python -m compileall -q src scripts tests
+      - name: Run rolling challenger OOS
+        run: |
+          set -euo pipefail
+          python src/rolling_challenger_oos.py
+          test -s data/historical_research/rolling_challenger_oos.json
+      - name: Upload rolling challenger evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-rolling-challenger
+          path: data/historical_research/rolling_challenger_oos.json
+          retention-days: 14
