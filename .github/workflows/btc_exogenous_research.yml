@@ -2,6 +2,7 @@ name: BTC Exogenous Research
 
 # Research-only data collection. It never writes production prediction state.
 on:
+  pull_request:
   schedule:
     - cron: '7 * * * *'
   workflow_dispatch:
