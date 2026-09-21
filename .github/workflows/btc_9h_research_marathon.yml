@@ -26,7 +26,10 @@ on:
 
 concurrency:
   group: btc-9h-research-marathon
-  cancel-in-progress: false
+  # Research is disposable: when a relevant code change lands, abandon the
+  # stale run and restart from the newest main SHA rather than spending hours
+  # on obsolete evidence. Production workflows are not governed by this group.
+  cancel-in-progress: true
 
 permissions:
   contents: read
