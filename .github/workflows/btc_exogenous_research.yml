@@ -81,8 +81,10 @@ jobs:
           import json
           from pathlib import Path
           p=Path('data/exogenous/gdelt_events.manifest.json')
+          cpath=Path('data/exogenous/gdelt_coverage.json')
           if not p.exists(): raise SystemExit('GDELT manifest missing')
-          c=json.loads(c.read_text())
+          if not cpath.exists(): raise SystemExit('GDELT coverage manifest missing')
+          c=json.loads(cpath.read_text())
           if c.get('schema_version') != 1: raise SystemExit('coverage schema mismatch')
           if c.get('source') != 'GDELT_GKG': raise SystemExit('coverage source mismatch')
           m=json.loads(p.read_text())
