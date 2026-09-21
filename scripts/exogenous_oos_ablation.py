@@ -28,7 +28,7 @@ from sklearn.metrics import log_loss
 
 from model_compare import CLASSES, HORIZONS, load_rows, walk_forward, metrics
 from exogenous_information import aggregate_event_features, events_from_records
-from gdelt_exogenous_research import coverage_complete
+from gdelt_exogenous_research import coverage_complete, _load_coverage
 
 EVENTS = ROOT / "data" / "exogenous" / "gdelt_events.jsonl"
 COVERAGE = ROOT / "data" / "exogenous" / "gdelt_coverage.json"
