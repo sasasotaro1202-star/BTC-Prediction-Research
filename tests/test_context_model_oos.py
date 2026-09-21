@@ -103,6 +103,19 @@ def test_multi_model_weight_floor_survives_normalization():
     assert all(w >= 0.10 for w in weights.values())
 
 
+
+    def test_context_confidence_factor_penalizes_ambiguous_disagreement(self):
+        confident = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
+        same = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
+        low = np.tile(np.asarray([[1/3, 1/3, 1/3]]), (20, 1))
+        disagree = np.tile(np.asarray([[0.01, 0.01, 0.98]]), (20, 1))
+        self.assertGreater(
+            adaptive._context_confidence_factor([confident, same]),
+            adaptive._context_confidence_factor([low, disagree]),
+        )
+        value = adaptive._context_confidence_factor([confident, disagree])
+        self.assertTrue(0.35 <= value <= 1.0)
+
 if __name__ == "__main__":
     unittest.main()
 
