@@ -428,6 +428,9 @@ jobs:
           PY
       - name: Run production artifact audit
         run: python src/production_artifact_audit.py
+      - name: Run strict research input audit
+        run: python src/research_input_audit.py
+
       - name: Run PIT/OOS audit
         run: python src/pit_oos_audit.py
       - name: Run fail-closed promotion safety gate
