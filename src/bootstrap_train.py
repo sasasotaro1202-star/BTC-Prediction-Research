@@ -154,36 +154,195 @@ def fit_temperature(probs, y):
     z = logits[split:] / best_t; z -= z.max(axis=1, keepdims=True); q = np.exp(z); q /= q.sum(axis=1, keepdims=True)
     return best_t if log_loss(yi[split:], q, labels=[0, 1, 2]) < log_loss(yi[split:], normalize(p[split:]), labels=[0, 1, 2]) - 0.001 else 1.0
 
+def _fit_model(model, X, y):
+    model.fit(np.asarray(X, dtype=float), np.asarray(y))
+    return model
+
+
 def train_one(X, y, purge_gap=0):
-    """Select architecture on chronological validation with a label-horizon purge."""
-    n = len(y); train_end = int(n * 0.65); cal_end = int(n * 0.82)
+    """Nested chronological development selection with a frozen descriptive holdout.
+
+    Model selection and publication use only train/selection/gate regions.
+    The final holdout is never used for selection, gating, thresholding, or
+    artifact publication; it is evaluated once for description only.
+    """
+    n = len(y)
+    if n < 3000:
+        raise ValueError("bootstrap dataset too small for nested chronological split")
+
     gap = max(0, int(purge_gap))
-    train_fit_end = max(0, train_end - gap)
-    cal_fit_end = max(train_end, cal_end - gap)
-    Xtr, Xcal, Xte = X[:train_fit_end], X[train_end:cal_end], X[cal_end:]
-    ytr, ycal, yte = y[:train_fit_end], y[train_end:cal_end], y[cal_end:]
-    baseline = metrics(yte, np.tile(np.asarray([np.mean(ytr == c) for c in CLASSES]), (len(yte), 1)))
-    candidates = [("logreg", Pipeline([("scale", StandardScaler()), ("model", LogisticRegression(C=0.5, max_iter=3000))])), ("rf", RandomForestClassifier(n_estimators=300, max_depth=7, min_samples_leaf=12, max_features="sqrt", random_state=42, n_jobs=-1)), ("hgb", HistGradientBoostingClassifier(max_iter=220, max_leaf_nodes=15, learning_rate=0.04, l2_regularization=1.5, random_state=42))]
+    train_end = int(n * 0.55)
+    select_end = int(n * 0.70)
+    gate_end = int(n * 0.85)
+
+    train_stop = max(0, train_end - gap)
+    select_stop = max(train_end, select_end - gap)
+    gate_stop = max(select_end, gate_end - gap)
+
+    Xtr, ytr = X[:train_stop], y[:train_stop]
+    Xsel, ysel = X[train_end:select_end], y[train_end:select_end]
+    Xgate, ygate = X[select_end:gate_end], y[select_end:gate_end]
+    Xhold, yhold = X[gate_end:], y[gate_end:]
+
+    if min(len(ytr), len(ysel), len(ygate), len(yhold)) < 100:
+        raise ValueError("nested chronological split produced insufficient rows")
+
+    baseline_gate = metrics(
+        ygate,
+        np.tile(
+            np.asarray([np.mean(ytr == c) for c in CLASSES], dtype=float),
+            (len(ygate), 1),
+        ),
+    )
+
+    candidates = [
+        (
+            "logreg",
+            Pipeline(
+                [
+                    ("scale", StandardScaler()),
+                    ("model", LogisticRegression(C=0.5, max_iter=3000)),
+                ]
+            ),
+        ),
+        (
+            "rf",
+            RandomForestClassifier(
+                n_estimators=300,
+                max_depth=7,
+                min_samples_leaf=12,
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
+            "hgb",
+            HistGradientBoostingClassifier(
+                max_iter=220,
+                max_leaf_nodes=15,
+                learning_rate=0.04,
+                l2_regularization=1.5,
+                random_state=42,
+            ),
+        ),
+    ]
+
     validation_results = []
     for name, model in candidates:
-        model.fit(Xtr, ytr)
-        v = metrics(ycal, normalize(model.predict_proba(Xcal)))
-        validation_results.append((v["logloss"], v["brier"], -v["accuracy"], name, model))
-    validation_results.sort(key=lambda r: r[:3])
-    _, _, _, name, selected_model = validation_results[0]
-    selected_model.fit(np.concatenate([X[:cal_fit_end],]), np.concatenate([y[:cal_fit_end],]))
-    holdout_score = metrics(yte, normalize(selected_model.predict_proba(Xte)))
-    return (holdout_score["logloss"], holdout_score["brier"], -holdout_score["accuracy"], name, selected_model, 1.0, holdout_score), baseline, len(yte), validation_results
+        _fit_model(model, Xtr, ytr)
+        v = metrics(ysel, normalize(model.predict_proba(Xsel)))
+        validation_results.append(
+            {
+                "model": name,
+                "logloss": float(v["logloss"]),
+                "brier": float(v["brier"]),
+                "accuracy": float(v["accuracy"]),
+            }
+        )
 
-def publish(horizon, best, baseline, holdout_n, validation_results):
-    _, _, _, name, model, temperature, score = best
-    safe_gain = score["logloss"] < baseline["logloss"] - 0.01 and score["brier"] < baseline["brier"] - 0.005
-    if not safe_gain: return False, {"status": "holdout_rejected", "model": name, "candidate": score, "baseline": baseline, "holdout_n": holdout_n, "selection": "chronological_17pct_validation"}
-    MODEL_DIR.mkdir(parents=True, exist_ok=True); joblib.dump(model, MODEL_DIR / f"{horizon}.joblib"); version = f"bootstrap.{name}.v5.2"
-    validation_summary = [{"model": r[3], "logloss": r[0], "brier": r[1], "accuracy": -r[2]} for r in validation_results]
-    meta = {"model_version": version, "horizon": horizon, "classes": list(model.classes_), "features": FEATURES, "artifact": f"{horizon}.joblib", "candidate": False, "bootstrap": True, "selection_method": "chronological_17pct_validation", "final_fit_fraction": 0.82, "holdout_n": holdout_n, "holdout_metrics": score, "baseline_metrics": baseline, "validation_metrics": validation_summary, "temperature": float(temperature), "trained_at_utc": datetime.now(timezone.utc).isoformat()}
-    (MODEL_DIR / f"{horizon}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    with sqlite3.connect(DB) as con: con.execute("INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc", (horizon, version, datetime.now(timezone.utc).isoformat()))
+    validation_results.sort(key=lambda r: (r["logloss"], r["brier"], -r["accuracy"]))
+    selected_name = validation_results[0]["model"]
+    factories = {name: model for name, model in candidates}
+    selected_for_gate = factories[selected_name]
+    _fit_model(selected_for_gate, X[:select_stop], y[:select_stop])
+    gate_score = metrics(ygate, normalize(selected_for_gate.predict_proba(Xgate)))
+
+    # Publication gate is based only on the independent development gate slice.
+    safe_gain = (
+        gate_score["logloss"] < baseline_gate["logloss"] - 0.01
+        and gate_score["brier"] < baseline_gate["brier"] - 0.005
+        and gate_score["accuracy"] >= baseline_gate["accuracy"] - 0.005
+    )
+
+    # Only after the development gate passes is the final model refit on all
+    # non-holdout observations. The holdout remains untouched until scoring.
+    final_model = factories[selected_name]
+    if safe_gain:
+        _fit_model(final_model, X[:gate_stop], y[:gate_stop])
+    else:
+        # Still provide a descriptive holdout result without publishing.
+        _fit_model(final_model, X[:gate_stop], y[:gate_stop])
+
+    holdout_score = metrics(
+        yhold,
+        normalize(final_model.predict_proba(Xhold)),
+    )
+
+    return {
+        "model_name": selected_name,
+        "model": final_model,
+        "baseline_gate": baseline_gate,
+        "gate_score": gate_score,
+        "holdout_score": holdout_score,
+        "holdout_n": len(yhold),
+        "validation_results": validation_results,
+        "promotion_allowed": bool(safe_gain),
+        "selection_method": "nested_chronological_selection_gate_holdout",
+        "holdout_used_for_selection": False,
+        "holdout_used_for_gate": False,
+        "holdout_is_descriptive_only": True,
+        "train_n": len(ytr),
+        "selection_n": len(ysel),
+        "gate_n": len(ygate),
+    }
+
+
+def publish(horizon, result):
+    name = result["model_name"]
+    model = result["model"]
+    if not result["promotion_allowed"]:
+        return False, {
+            "status": "development_gate_rejected",
+            "model": name,
+            "gate_metrics": result["gate_score"],
+            "baseline_gate_metrics": result["baseline_gate"],
+            "holdout_metrics": result["holdout_score"],
+            "holdout_n": result["holdout_n"],
+            "selection": result["validation_results"],
+            "selection_method": result["selection_method"],
+            "holdout_used_for_selection": False,
+            "holdout_used_for_gate": False,
+            "holdout_is_descriptive_only": True,
+        }
+
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, MODEL_DIR / f"{horizon}.joblib")
+    version = f"bootstrap.{name}.v5.3"
+    meta = {
+        "model_version": version,
+        "horizon": horizon,
+        "classes": list(model.classes_),
+        "features": FEATURES,
+        "artifact": f"{horizon}.joblib",
+        "candidate": False,
+        "bootstrap": True,
+        "selection_method": result["selection_method"],
+        "holdout_used_for_selection": False,
+        "holdout_used_for_gate": False,
+        "holdout_is_descriptive_only": True,
+        "train_n": result["train_n"],
+        "selection_n": result["selection_n"],
+        "gate_n": result["gate_n"],
+        "holdout_n": result["holdout_n"],
+        "gate_metrics": result["gate_score"],
+        "baseline_gate_metrics": result["baseline_gate"],
+        "final_holdout_metrics": result["holdout_score"],
+        "validation_metrics": result["validation_results"],
+        "final_fit_fraction": 0.85,
+        "trained_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    (MODEL_DIR / f"{horizon}.json").write_text(
+        json.dumps(meta, indent=2),
+        encoding="utf-8",
+    )
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            "INSERT INTO model_registry(horizon,production_version,updated_at_utc) "
+            "VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET "
+            "production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc",
+            (horizon, version, datetime.now(timezone.utc).isoformat()),
+        )
     return True, meta
 
 def main():
@@ -196,7 +355,16 @@ def main():
     for horizon in ("5m", "10m"):
         X, y = build_dataset(rows, int(horizon[:-1]))
         if len(y) < MIN_TRAIN + MIN_OOS or len(set(y)) < 3: published.append({"horizon": horizon, "status": "insufficient_dataset", "rows": len(y)}); continue
-        best, baseline, holdout_n, validation_results = train_one(X, y, purge_gap=int(horizon[:-1])); ok, meta = publish(horizon, best, baseline, holdout_n, validation_results); published.append({"horizon": horizon, "published": ok, "model": meta.get("model") if isinstance(meta, dict) else None, "status": meta.get("status") if isinstance(meta, dict) else "published"})
+        result = train_one(X, y, purge_gap=int(horizon[:-1]))
+        ok, meta = publish(horizon, result)
+        published.append({
+            "horizon": horizon,
+            "published": ok,
+            "model": result["model_name"],
+            "status": meta.get("status") if isinstance(meta, dict) else "published",
+            "holdout_used_for_selection": False,
+            "holdout_is_descriptive_only": True,
+        })
     write_status({"status": "complete", "source": source, "rows": len(rows), "published": published}); return 0
 
 if __name__ == "__main__":
