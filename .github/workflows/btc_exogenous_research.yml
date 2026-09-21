@@ -53,6 +53,25 @@ jobs:
         run: python scripts/gdelt_exogenous_research.py --hours 1
       - name: Run research-only exogenous OOS ablation
         run: python scripts/exogenous_oos_ablation.py
+      - name: Validate exogenous OOS ablation artifact
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/exogenous_oos_ablation.json')
+          if not p.exists(): raise SystemExit('exogenous OOS artifact missing')
+          x=json.loads(p.read_text())
+          if x.get('schema_version') != 1: raise SystemExit('exogenous OOS schema mismatch')
+          if x.get('research_only') is not True: raise SystemExit('exogenous OOS is not research-only')
+          if x.get('production_changed') is not False: raise SystemExit('exogenous OOS reports production mutation')
+          if x.get('final_holdout_protected') is not True: raise SystemExit('exogenous OOS holdout protection missing')
+          horizons=x.get('horizons')
+          if not isinstance(horizons, dict) or not {'5m','10m'} <= set(horizons): raise SystemExit('missing horizon results')
+          for h,r in horizons.items():
+              if r.get('status') not in {'OK','DEFERRED'}: raise SystemExit(f'{h}: invalid research status')
+          print('Exogenous OOS artifact: OK')
+          PY
       - name: Validate research-only manifest
         run: |
           set -euo pipefail
