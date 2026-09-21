@@ -52,35 +52,67 @@ def _aligned(model, rows):
 
 def _weights_from_losses(
     losses,
+    briers=None,
+    eces=None,
     redundancy=None,
     temperature=TEMPERATURE,
     floor=FLOOR,
     max_weight=MAX_WEIGHT,
 ):
+    """Convert only prior completed-block diagnostics into bounded weights."""
     if not losses:
         return ()
-    vals = np.asarray([float(x) for x in losses], dtype=float)
-    n = len(vals)
+    ll = np.asarray([float(x) for x in losses], dtype=float)
+    n = len(ll)
     uniform = np.full(n, 1.0 / n)
-    if n == 0 or not np.all(np.isfinite(vals)):
+    if n == 0 or not np.all(np.isfinite(ll)):
         return tuple(float(x) for x in uniform)
-    score = vals.copy()
+
+    def ratio(values):
+        if values is None:
+            return None
+        arr = np.asarray([float(x) for x in values], dtype=float)
+        if arr.shape != ll.shape or not np.all(np.isfinite(arr)):
+            return None
+        arr = np.maximum(arr, 0.0)
+        med = float(np.median(arr))
+        return np.ones(n, dtype=float) if med <= 1e-12 else arr / med
+
+    llr = ratio(ll)
+    if llr is None:
+        return tuple(float(x) for x in uniform)
+    score = 0.65 * llr
+
+    if briers is not None:
+        br = ratio(briers)
+        if br is None:
+            return tuple(float(x) for x in uniform)
+        score += 0.20 * br
+
+    if eces is not None:
+        ec = ratio(eces)
+        if ec is None:
+            return tuple(float(x) for x in uniform)
+        score += 0.15 * ec
+
     if redundancy is not None:
         red = np.asarray([float(x) for x in redundancy], dtype=float)
-        if red.shape != vals.shape or not np.all(np.isfinite(red)):
+        if red.shape != ll.shape or not np.all(np.isfinite(red)):
             return tuple(float(x) for x in uniform)
-        red = np.clip(red, 0.0, 1.0)
-        score = score + DIVERSITY_PENALTY * red
+        score += DIVERSITY_PENALTY * np.clip(red, 0.0, 1.0)
+
     lower = float(floor)
     upper = float(max_weight)
     if n * lower > 1.0 or n * upper < 1.0:
         return tuple(float(x) for x in uniform)
+
     z = max(float(temperature), 1e-6)
     shifted = score - float(score.min())
     raw = np.exp(-shifted / z)
     raw /= raw.sum()
     w = (1.0 - SHRINKAGE) * raw + SHRINKAGE * uniform
     w = np.clip(w, lower, upper)
+
     for _ in range(20):
         diff = 1.0 - float(w.sum())
         if abs(diff) <= 1e-12:
@@ -198,6 +230,8 @@ def evaluate(horizon: str):
 
     blocks = []
     ema_losses = None
+    ema_briers = None
+    ema_eces = None
     ema_redundancy = None
     alpha = 0.30
 
@@ -244,6 +278,8 @@ def evaluate(horizon: str):
             "risk_aware": rm,
             "weights_before_block": list(risk_w),
             "component_logloss": component_losses,
+            "component_brier": component_briers,
+            "component_ece": component_eces,
             "component_redundancy": component_redundancy.tolist(),
             "redundancy_before_block": (
                 None if ema_redundancy is None else ema_redundancy.tolist()
@@ -295,7 +331,7 @@ def evaluate(horizon: str):
         "production_changed": False,
         "final_holdout_protected": True,
         "final_holdout_used_for_selection": False,
-        "policy": "causal_blockwise_ema_loss_plus_redundancy_softmax_with_weight_floor_and_uniform_shrinkage",
+        "policy": "causal_blockwise_ema_logloss_brier_ece_plus_redundancy_softmax_with_bounded_weights_and_uniform_shrinkage",
         "summary": summary,
         "development_n": len(development),
         "final_holdout_n": len(holdout),
