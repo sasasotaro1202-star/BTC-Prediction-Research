@@ -105,8 +105,8 @@ def _settled_rows(con, horizon, actual_col, model_version):
         return []
     prob_suffix=horizon  # 5m -> p_up_5m; never append another 'm'.
     prefix=f'{horizon}:{model_version}|%'
-    return con.execute(
-        f'''SELECT p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},{actual_col}
+    raw = con.execute(
+        f'''SELECT p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},{actual_col},scenario_json
             FROM predictions
             WHERE {actual_col} IS NOT NULL
               AND model_version LIKE ?
@@ -114,6 +114,19 @@ def _settled_rows(con, horizon, actual_col, model_version):
             ORDER BY created_at_utc''',
         (prefix,)
     ).fetchall()
+    # Production calibration is a Binance-primary benchmark. Fallback venue
+    # predictions remain useful observation data, but mixing them into the
+    # production calibration estimate would change the evaluated input domain.
+    out = []
+    for row in raw:
+        try:
+            scenario = json.loads(row[4] or '{}')
+        except (TypeError, ValueError, json.JSONDecodeError):
+            scenario = {}
+        if scenario.get('production_mode') != 'binance_primary':
+            continue
+        out.append(tuple(row[:4]))
+    return out
 
 
 def _calibration_state(path):
