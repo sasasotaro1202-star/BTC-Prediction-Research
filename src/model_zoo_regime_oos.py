@@ -13,14 +13,18 @@ SRC_DIR=Path(__file__).resolve().parent
 ROOT_DIR=SRC_DIR.parent
 for _path in (ROOT_DIR,SRC_DIR):
     if str(_path) not in sys.path: sys.path.insert(0,str(_path))
-from model_compare import HORIZONS, load_strict_rows, metrics, _temperature, apply_temperature
+from model_compare import HORIZONS, metrics, _temperature, apply_temperature
+import historical_research as hr
+import historical_research_runner  # patches Binance HTTP access to verified archive fallbacks
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 OUT=ROOT_DIR/"data/historical_research/model_zoo_regime_oos.json"
-CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=150; MAX_ROWS=7000
+CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=300; MAX_ROWS=12000
+TREND_INDEX=2
+VOL_INDEX=8
 MIN_HISTORY_PER_REGIME=180; FLOOR=0.10; MAX_WEIGHT=0.55; SHRINKAGE=0.30
 
 def factories():
@@ -33,10 +37,10 @@ def factories():
 
 def _regime_thresholds(train):
     x=np.asarray([r["x"] for r in train],dtype=float)
-    return {"trend_q":float(np.quantile(np.abs(x[:,2]),0.55)),"vol_q":float(np.quantile(x[:,6],0.70))}
+    return {"trend_q":float(np.quantile(np.abs(x[:,TREND_INDEX]),0.55)),"vol_q":float(np.quantile(x[:,VOL_INDEX],0.70))}
 
 def regime_key(row,thresholds):
-    x=np.asarray(row["x"],dtype=float); trend=float(x[2]); vol=float(x[6])
+    x=np.asarray(row["x"],dtype=float); trend=float(x[TREND_INDEX]); vol=float(x[VOL_INDEX])
     trend_cut=max(abs(float(thresholds["trend_q"])),1e-8)
     direction="RANGE" if abs(trend)<=trend_cut else ("TREND_UP" if trend>0 else "TREND_DOWN")
     vol_cut=max(float(thresholds["vol_q"]),1e-10)
@@ -93,8 +97,18 @@ def _mix(parts,weights):
     for p,w in zip(parts,weights): out+=float(w)*p
     out=np.clip(out,1e-7,1.0); return out/out.sum(axis=1,keepdims=True)
 
+def _historical_rows(horizon):
+    """Build causal rows directly from closed Binance historical market data."""
+    raw=hr.build_panel()
+    steps=int(horizon[:-1])
+    X,y,ts,base=hr.labels(raw,steps)
+    return [{"id":str(int(t)),"created":str(int(t)),"x":np.asarray(x,dtype=float),"y":str(yy)} for x,yy,t in zip(X,y,ts)]
+
 def evaluate(horizon):
-    rows=load_strict_rows(horizon)
+    try:
+        rows=_historical_rows(horizon)
+    except Exception as exc:
+        return {"status":"DEFERRED","n":0,"reason":"historical_source_unavailable","error":f"{type(exc).__name__}: {exc}"}
     if len(rows)>MAX_ROWS: rows=rows[-MAX_ROWS:]
     if len(rows)<MIN_TRAIN+TEST_BLOCK+200:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_rows"}
     split=int(len(rows)*0.80); development=rows[:split]; holdout=rows[split:]
