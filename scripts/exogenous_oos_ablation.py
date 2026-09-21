@@ -8,7 +8,12 @@ is insufficient, the evaluator writes DEFERRED instead of fabricating joins.
 from __future__ import annotations
 
 import json
+import sys
+from datetime import datetime
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -20,7 +25,6 @@ from model_compare import CLASSES, HORIZONS, load_rows
 from exogenous_feature_join import aggregate_records_for_prediction
 
 
-ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "data" / "exogenous" / "gdelt_events.jsonl"
 OUT = ROOT / "data" / "historical_research" / "exogenous_oos_ablation.json"
 EXO_KEYS = (
@@ -61,7 +65,8 @@ def _evaluate(horizon, records):
     rows = load_rows(horizon)
     joined = []
     for row in rows:
-        features = aggregate_records_for_prediction(records, row["created"])
+        prediction_time = datetime.fromisoformat(str(row["created"]).replace("Z", "+00:00"))
+        features = aggregate_records_for_prediction(records, prediction_time)
         # Require at least one event-window observation. Zero-event rows are
         # valid in production research, but cannot establish archive coverage.
         if features["news_event_count"] <= 0:
