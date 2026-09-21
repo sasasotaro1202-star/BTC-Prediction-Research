@@ -91,3 +91,19 @@ def test_persisted_malformed_record_fails_closed():
 
     with pytest.raises(ValueError):
         events_from_records([{"source": "test", "event_id": "bad"}])
+
+def test_non_finite_values_fail_closed():
+    from math import inf, nan
+    bad_importance = event("nan-importance", -1, importance=nan)
+    bad_sentiment = event("inf-sentiment", -1, sentiment=inf)
+    bad_surprise = InformationEvent(
+        source="test",
+        event_id="nan-surprise",
+        published_at=T0 - timedelta(minutes=1),
+        available_at=T0 - timedelta(minutes=1),
+        event_type="news",
+        surprise=nan,
+    )
+    for bad in (bad_importance, bad_sentiment, bad_surprise):
+        with pytest.raises(ValueError):
+            pit_safe_events([bad], T0)
