@@ -297,15 +297,17 @@ jobs:
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3 4 5; do
-            if git push origin HEAD:main; then exit 0; fi
+            if timeout 90s git push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
             if [ -f data/historical_research/flat_diagnostic.json ]; then cp data/historical_research/flat_diagnostic.json /tmp/btc_local_flat_diagnostic.json; fi
-            git rebase --abort 2>/dev/null || true
-            git fetch --prune origin main
+            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+              git rebase --abort
+            fi
+            timeout 90s git fetch --prune origin main
             git reset --hard origin/main
             python - <<'PY'
           from pathlib import Path
