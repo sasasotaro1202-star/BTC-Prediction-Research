@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from datetime import datetime, timezone
 from exogenous_sources import _parse_seen_time
 
