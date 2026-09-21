@@ -28,6 +28,7 @@ def factories():
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
+    from lightgbm import LGBMClassifier
 
     return {
         "logreg_c0.1": lambda: Pipeline([
@@ -41,6 +42,19 @@ def factories():
         "hgb": lambda: HistGradientBoostingClassifier(
             max_iter=250, max_leaf_nodes=15, learning_rate=0.04,
             l2_regularization=1.0, random_state=42,
+        ),
+        "lightgbm": lambda: LGBMClassifier(
+            n_estimators=180,
+            num_leaves=15,
+            learning_rate=0.03,
+            min_child_samples=30,
+            subsample=0.85,
+            colsample_bytree=0.85,
+            reg_alpha=0.05,
+            reg_lambda=1.0,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
         ),
     }
 
