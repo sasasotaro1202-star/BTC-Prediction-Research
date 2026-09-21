@@ -13,9 +13,10 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from db import DB, init_db
-from ensemble_model import SoftVotingEnsemble
-from model_compare import (
+try:
+    from db import DB, init_db
+    from ensemble_model import SoftVotingEnsemble
+    from model_compare import (
     HORIZONS, CLASSES, MIN_TRAIN, MIN_OOS, TEST_BLOCK,
     metrics, normalize, aligned, _temperature, apply_temperature,
     hac_test, _adjusted_alpha,
