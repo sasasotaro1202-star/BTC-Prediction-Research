@@ -6,13 +6,18 @@ from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, HistG
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
-from db import DB, init_db
+try:
+    from db import DB, init_db
+    from feature_schema import FEATURES
+    from ensemble_model import SoftVotingEnsemble
+except ModuleNotFoundError:
+    from src.db import DB, init_db
+    from src.feature_schema import FEATURES
+    from src.ensemble_model import SoftVotingEnsemble
 try:
     from lightgbm import LGBMClassifier
 except ImportError:
     LGBMClassifier = None
-from feature_schema import FEATURES
-from ensemble_model import SoftVotingEnsemble
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000,12000,14000,16000,18000,20000,24000,30000,40000,50000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
