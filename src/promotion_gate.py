@@ -41,9 +41,8 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
             )
         except (TypeError, ValueError):
             calibration_ok = False
-    promotion_allowed = bool(
-        production_ok and robust_ok and candidate_ready and pit_ok and calibration_ok
-    )
+    safety_ok = bool(production_ok and robust_ok and pit_ok and calibration_ok)
+    promotion_allowed = bool(safety_ok and candidate_ready)
 
     if promotion_allowed:
         status = "ELIGIBLE_PENDING_EXPLICIT_PROMOTION"
@@ -67,7 +66,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         "schema_version": 1,
         "research_only": True,
         "final_holdout_protected": True,
-        "production_safety_gate": "PASS" if production_ok and robust_ok else "HOLD",
+        "production_safety_gate": "PASS" if safety_ok else "HOLD",
         "promotion_allowed": promotion_allowed,
         "promotion_status": status,
         "reason": reason,
