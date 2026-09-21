@@ -19,6 +19,8 @@ class SoftVotingEnsembleTests(unittest.TestCase):
         self.assertTrue(np.isfinite(probs).all())
         self.assertTrue(np.all(probs >= 0))
         np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-7)
+        np.testing.assert_allclose(model.weights_.sum(), 1.0, atol=1e-12)
+        self.assertIn(model.weight_learning_, {"chronological_internal_validation", "constructor_default"})
 
     def test_requires_three_classes(self):
         X = np.zeros((30, 15), dtype=float)
