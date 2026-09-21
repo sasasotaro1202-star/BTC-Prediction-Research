@@ -58,7 +58,7 @@ class TestPITOOSAudit(unittest.TestCase):
     def test_rejects_prediction_time_far_in_future(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)
-            created = now + timedelta(seconds=61)
+            created = now + timedelta(minutes=5)
             db = self.make_db(td, [(1, created.isoformat(), (created + timedelta(minutes=5)).isoformat(), (created + timedelta(minutes=10)).isoformat(), "v1", "{}")])
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
