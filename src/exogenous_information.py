@@ -82,7 +82,7 @@ def aggregate_event_features(
         if e.sentiment is not None
     ]
     return {
-        "news_event_count": len(safe),
+        "news_event_count": sum(e.event_type == "news" for e in safe),
         "news_weighted_sentiment": (
             sum(sentiment) / weight_sum if weight_sum > 0 and sentiment else 0.0
         ),
