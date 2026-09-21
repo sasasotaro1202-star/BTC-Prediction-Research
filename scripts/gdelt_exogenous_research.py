@@ -122,6 +122,21 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     seen: set[str] = set()
     records: list[dict] = []
+    # Reuse the restored research cache so hourly runs accumulate a bounded
+    # historical event archive instead of discarding prior slices.
+    if output.exists():
+        try:
+            with output.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    event_id = item.get("event_id")
+                    if event_id and item.get("source") == "GDELT_GKG":
+                        seen.add(event_id)
+                        records.append(item)
+        except Exception as exc:
+            raise RuntimeError(f"existing exogenous cache is malformed: {exc}") from exc
     cur = start
     attempted = 0
     missing = 0
