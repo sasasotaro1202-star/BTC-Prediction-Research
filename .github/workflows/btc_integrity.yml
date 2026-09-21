@@ -190,6 +190,31 @@ jobs:
               raise SystemExit('promotion safety gate failed')
           PY
 
+      - name: Record safe deferred promotion gate
+        if: env.BTC_UPSTREAM_DEFERRED == '1'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('data/historical_research')
+          root.mkdir(parents=True, exist_ok=True)
+          (root / 'production_integrity.json').write_text(json.dumps({
+              'status': 'SKIPPED_DEFERRED',
+              'reason': 'upstream live cycle was explicitly deferred by fail-closed input validation'
+          }, indent=2))
+          (root / 'promotion_gate.json').write_text(json.dumps({
+              'schema_version': 1,
+              'research_only': True,
+              'final_holdout_protected': True,
+              'production_safety_gate': 'HOLD',
+              'promotion_allowed': False,
+              'promotion_status': 'HOLD',
+              'reason': 'upstream_live_cycle_deferred',
+              'policy': 'no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence',
+          }, indent=2, sort_keys=True))
+          PY
+
       - name: Upload final integrity evidence
         if: always()
         uses: actions/upload-artifact@v6
