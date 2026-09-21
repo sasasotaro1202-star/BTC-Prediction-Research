@@ -67,3 +67,9 @@ def test_record_join_is_deterministic_and_bounded():
     f = aggregate_records_for_prediction(records, T0)
     assert f["news_event_count"] == 1
     assert -1.0 <= f["news_weighted_sentiment"] <= 1.0
+
+
+def test_join_includes_exact_availability_boundary_and_normalizes_timezone():
+    boundary = _event("boundary", datetime(2026, 9, 21, 14, 0, tzinfo=timezone(timedelta(hours=2))))
+    selected = events_for_prediction([boundary], T0, timedelta(hours=1))
+    assert [x.event_id for x in selected] == ["boundary"]
