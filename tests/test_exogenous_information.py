@@ -67,3 +67,27 @@ def test_malformed_timestamp_fails_closed():
     )
     with pytest.raises(ValueError):
         pit_safe_events([bad], T0)
+
+
+def test_persisted_records_reuse_the_same_pit_validation():
+    from exogenous_information import events_from_records
+
+    records = [{
+        "source": "test",
+        "event_id": "persisted",
+        "published_at": "2026-09-21T11:59:00+00:00",
+        "available_at": "2026-09-21T12:00:00+00:00",
+        "event_type": "news",
+        "importance": 0.5,
+        "sentiment": 0.25,
+    }]
+    parsed = events_from_records(records)
+    assert parsed[0].event_id == "persisted"
+    assert pit_safe_events(parsed, T0)[0].event_id == "persisted"
+
+
+def test_persisted_malformed_record_fails_closed():
+    from exogenous_information import events_from_records
+
+    with pytest.raises(ValueError):
+        events_from_records([{"source": "test", "event_id": "bad"}])
