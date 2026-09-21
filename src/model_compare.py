@@ -31,20 +31,48 @@ def safe_json(t):
     try:return json.loads(t)
     except:return {}
 
+def _parse_utc(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def prediction_precedes_target(created_at_utc, target_at_utc):
+    """Return True only when a prediction was recorded strictly before its target.
+
+    Rows created at or after their target time are not valid point-in-time
+    research observations and must be excluded fail-closed from OOS evaluation.
+    """
+    created = _parse_utc(created_at_utc)
+    target = _parse_utc(target_at_utc)
+    return bool(created is not None and target is not None and created < target)
+
+
 def load_rows(h):
     ac,*_=HORIZONS[h]
+    target_col = "target_5m" if h == "5m" else "target_10m"
     with sqlite3.connect(DB) as con:
-        rows=con.execute(f'SELECT prediction_id,created_at_utc,feature_json,{ac},p_up_{h},p_down_{h},p_flat_{h},model_version FROM predictions WHERE {ac} IS NOT NULL ORDER BY created_at_utc,prediction_id').fetchall()
+        rows=con.execute(
+            f"""SELECT prediction_id,created_at_utc,{target_col},feature_json,
+                       {ac},p_up_{h},p_down_{h},p_flat_{h},model_version
+                FROM predictions
+                WHERE {ac} IS NOT NULL
+                ORDER BY created_at_utc,prediction_id"""
+        ).fetchall()
     out=[]
     for r in rows:
-        f=safe_json(r[2])
-        if not all(k in f for k in FEATURES) or r[3] not in CLASSES: continue
+        # Strict chronology gate: backfilled/mis-timestamped rows cannot enter OOS.
+        if not prediction_precedes_target(r[1], r[2]):
+            continue
+        f=safe_json(r[3])
+        if not all(k in f for k in FEATURES) or r[4] not in CLASSES: continue
         x=[float(f[k]) for k in FEATURES]
         if all(math.isfinite(v) for v in x):
             # DB storage is UP,DOWN,FLAT; research class order is DOWN,FLAT,UP.
-            production=[float(r[5]),float(r[6]),float(r[4])]
+            production=[float(r[6]),float(r[7]),float(r[5])]
             if all(math.isfinite(v) and v>=0 for v in production) and sum(production)>0:
-                out.append({'id':r[0],'created':r[1],'x':x,'y':r[3],'production':production,'model_version':r[7]})
+                out.append({'id':r[0],'created':r[1],'target':r[2],'x':x,'y':r[4],'production':production,'model_version':r[8]})
     return out
 
 def normalize(probs):

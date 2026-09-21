@@ -127,6 +127,9 @@ jobs:
         if: github.event_name == 'workflow_run' && env.BTC_UPSTREAM_DEFERRED == '1'
         run: |
           echo "BTC upstream live cycle was explicitly deferred after fail-closed critical-data validation; no fresh prediction was expected or fabricated."
+      - name: Run strict research input audit
+        run: python src/research_input_audit.py
+
       - name: Run research-only regime robustness diagnostics
         run: python src/robustness_oos.py
       - name: Validate research-only robustness artifact
@@ -201,6 +204,7 @@ jobs:
             data/historical_research/robustness_oos_report.json
             data/historical_research/context_router_oos.json
             data/historical_research/promotion_gate.json
+            data/historical_research/research_input_audit.json
           if-no-files-found: error
           retention-days: 14
 

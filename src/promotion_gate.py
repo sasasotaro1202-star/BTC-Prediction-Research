@@ -14,7 +14,7 @@ HORIZONS = ("5m", "10m")
 POLICY = "no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence"
 
 
-def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dict[str, dict[str, Any]], pit: dict[str, Any] | None = None, calibrations: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dict[str, dict[str, Any]], pit: dict[str, Any] | None = None, calibrations: dict[str, dict[str, Any]] | None = None, research_input: dict[str, Any] | None = None) -> dict[str, Any]:
     robust_ok = (
         robust.get("research_only") is True
         and robust.get("policy") == "diagnostic_only_no_model_input_no_promotion_effect"
@@ -41,7 +41,8 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
             )
         except (TypeError, ValueError):
             calibration_ok = False
-    safety_ok = bool(production_ok and robust_ok and pit_ok and calibration_ok)
+    research_input_ok = isinstance(research_input, dict) and research_input.get("ok") is True
+    safety_ok = bool(production_ok and robust_ok and pit_ok and calibration_ok and research_input_ok)
     promotion_allowed = bool(safety_ok and candidate_ready)
 
     if promotion_allowed:
@@ -60,6 +61,8 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
             reasons.append("pit_oos_audit_not_verified")
         if not calibration_ok:
             reasons.append("calibration_evidence_invalid_or_missing")
+        if not research_input_ok:
+            reasons.append("research_input_audit_not_pass")
         reason = ";".join(reasons)
 
     return {
@@ -73,6 +76,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         "candidate_status": {h: blends.get(h, {}).get("status", "missing") for h in HORIZONS},
         "pit_oos_verified": pit_ok,
         "calibration_verified": calibration_ok,
+        "research_input_audit_verified": research_input_ok,
         "policy": POLICY,
     }
 
@@ -130,6 +134,9 @@ def run(root: Path) -> dict[str, Any]:
     robust = json.loads((evidence / "robustness_oos_report.json").read_text(encoding="utf-8"))
     pit_path = evidence / "pit_oos_audit.json"
     pit = json.loads(pit_path.read_text(encoding="utf-8")) if pit_path.exists() else None
+    research_input_path = evidence / "research_input_audit.json"
+    research_input = json.loads(research_input_path.read_text(encoding="utf-8")) if research_input_path.exists() else None
+
     calibrations = {}
     for horizon in HORIZONS:
         cpath = root / "models" / f"{horizon}.calibration.json"
@@ -139,7 +146,7 @@ def run(root: Path) -> dict[str, Any]:
         path = root / "models" / f"{horizon}.blend.json"
         blends[horizon] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"status": "missing"}
 
-    result = evaluate_promotion(prod, robust, blends, pit, calibrations)
+    result = evaluate_promotion(prod, robust, blends, pit, calibrations, research_input)
     (evidence / "promotion_gate.json").write_text(
         json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
     )

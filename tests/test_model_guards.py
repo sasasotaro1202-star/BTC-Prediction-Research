@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, metrics, normalize  # noqa: E402
+from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, metrics, normalize, prediction_precedes_target  # noqa: E402
 
 
 class TestModelGuards(unittest.TestCase):
@@ -36,6 +36,21 @@ class TestModelGuards(unittest.TestCase):
         self.assertEqual(PURGE_BARS['10m'], 10)
         self.assertGreaterEqual(EMBARGO_BARS['5m'], 60)
         self.assertGreaterEqual(EMBARGO_BARS['10m'], 60)
+
+    def test_prediction_must_precede_target_strictly(self):
+        self.assertTrue(prediction_precedes_target(
+            '2026-09-21T18:55:58+00:00',
+            '2026-09-21T19:00:00+00:00',
+        ))
+        self.assertFalse(prediction_precedes_target(
+            '2026-09-21T19:00:00+00:00',
+            '2026-09-21T19:00:00+00:00',
+        ))
+        self.assertFalse(prediction_precedes_target(
+            '2026-09-21T19:00:01+00:00',
+            '2026-09-21T19:00:00+00:00',
+        ))
+        self.assertFalse(prediction_precedes_target('bad', '2026-09-21T19:00:00+00:00'))
 
 
 if __name__ == '__main__':

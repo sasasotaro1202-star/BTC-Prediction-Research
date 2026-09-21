@@ -15,6 +15,8 @@ on:
       - 'src/production_artifact_audit.py'
       - 'src/pit_oos_audit.py'
       - 'src/ensemble_model.py'
+      - 'src/model_compare.py'
+      - 'src/research_input_audit.py'
       - 'src/context_model_oos.py'
       - 'src/context_router_oos.py'
       - 'src/adaptive_ensemble_oos.py'
@@ -355,6 +357,8 @@ jobs:
           PY
       - name: Compile all research code
         run: python -m compileall -q src scripts tests
+      - name: Run strict research input audit
+        run: python src/research_input_audit.py
       - name: Historical research with bounded retries
         shell: bash
         run: |
@@ -413,6 +417,8 @@ jobs:
               raise SystemExit('production safety gate is not PASS')
           if obj.get('promotion_status') not in {'ELIGIBLE_PENDING_EXPLICIT_PROMOTION','HOLD'}:
               raise SystemExit('unexpected promotion status')
+          if not isinstance(obj.get('research_input_audit_verified'), bool):
+              raise SystemExit('research input audit verification field missing')
           if not isinstance(obj.get('promotion_allowed'), bool):
               raise SystemExit('promotion_allowed must be boolean')
           print('promotion gate evidence: VERIFIED')
