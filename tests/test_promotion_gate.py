@@ -1,0 +1,50 @@
+import unittest
+
+from src.promotion_gate import evaluate_promotion
+
+
+class PromotionGateTests(unittest.TestCase):
+    def _robust(self):
+        return {
+            "research_only": True,
+            "policy": "diagnostic_only_no_model_input_no_promotion_effect",
+            "horizons": {
+                "5m": {"status": "ok", "final_holdout_protected": True},
+                "10m": {"status": "ok", "final_holdout_protected": True},
+            },
+        }
+
+    def test_candidate_rejection_is_safe_hold(self):
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            self._robust(),
+            {"5m": {"status": "rejected"}, "10m": {"status": "insufficient_history"}},
+        )
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "PASS")
+        self.assertEqual(result["promotion_status"], "HOLD")
+        self.assertIn("candidate_not_accepted_for_both_horizons", result["reason"])
+
+    def test_missing_or_invalid_robustness_is_fail_closed(self):
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            {"research_only": True, "horizons": {}},
+            {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
+        )
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("robustness_evidence_invalid_or_incomplete", result["reason"])
+
+    def test_all_evidence_is_only_eligible_not_auto_promoted(self):
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            self._robust(),
+            {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
+        )
+        self.assertTrue(result["promotion_allowed"])
+        self.assertEqual(result["promotion_status"], "ELIGIBLE_PENDING_EXPLICIT_PROMOTION")
+        self.assertTrue(result["research_only"])
+
+
+if __name__ == "__main__":
+    unittest.main()
