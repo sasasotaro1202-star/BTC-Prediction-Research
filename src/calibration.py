@@ -149,7 +149,26 @@ def calibration():
             model_version=_current_registry_version(con,horizon_name)
             rows=_settled_rows(con,horizon_name,actual_col,model_version)
             if not rows:
-                print(horizon_name,': no settled predictions for current model generation',model_version)
+                # Always materialize a fail-safe calibration artifact for the
+                # current production generation. A generation with no settled
+                # examples must remain uncalibrated (temperature=1.0), but the
+                # artifact itself is required so integrity validation cannot
+                # confuse "not enough evidence" with a broken deployment.
+                save_temperature(
+                    horizon_name,
+                    1.0,
+                    0,
+                    None,
+                    None,
+                    HOLDOUT_FRACTION,
+                    model_version,
+                )
+                print(
+                    horizon_name,
+                    ': no settled predictions for current model generation',
+                    model_version,
+                    '; wrote safe uncalibrated artifact',
+                )
                 continue
             path=MODEL_DIR/f'{horizon_name}.calibration.json'
             cached=_calibration_state(path)
