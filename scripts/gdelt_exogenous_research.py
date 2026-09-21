@@ -154,8 +154,11 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
         "end_utc": end.isoformat(),
         "slices_attempted": attempted,
         "slices_unavailable": missing,
+        "complete": missing == 0,
         "events": len(records),
     }
+    if missing == attempted:
+        raise RuntimeError("all requested GDELT slices were unavailable; refusing empty research input")
     output.with_suffix(".manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
