@@ -323,7 +323,19 @@ jobs:
   historical_and_integrity:
     name: Incremental historical research + integrity
     needs: [context_router, interaction, robustness, adaptive_ensemble, risk_aware_dynamic, rolling_challenger, extended_features, model_zoo_regime]
-    if: always()
+    # Integrate evidence only when every parallel research lane completed
+    # successfully. Cancelled/failed lanes remain visible and are retried by the
+    # watchdog; the final integrator must not consume another long runner on
+    # incomplete evidence.
+    if: >-
+      needs.context_router.result == 'success' &&
+      needs.interaction.result == 'success' &&
+      needs.robustness.result == 'success' &&
+      needs.adaptive_ensemble.result == 'success' &&
+      needs.risk_aware_dynamic.result == 'success' &&
+      needs.rolling_challenger.result == 'success' &&
+      needs.extended_features.result == 'success' &&
+      needs.model_zoo_regime.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
