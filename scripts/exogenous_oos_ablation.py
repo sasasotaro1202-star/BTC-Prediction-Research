@@ -195,6 +195,7 @@ def _evaluate(horizon, records, coverage):
         "status": "OK",
         "research_only": True,
         "final_holdout_protected": True,
+        "frozen_future_holdout": False,
         "holdout_is_descriptive_only": True,
         "covered_rows": len(joined),
         "event_positive_rows": event_positive,
@@ -222,6 +223,7 @@ def main():
         "research_only": True,
         "policy": "diagnostic_only_no_model_input_no_promotion_effect",
         "final_holdout_protected": True,
+        "frozen_future_holdout": False,
         "production_changed": False,
         "coverage_contract": {
             "lookback": "1h",
