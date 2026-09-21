@@ -86,11 +86,11 @@ def _event_features_by_bucket(records):
     return buckets
 
 
-def _features_for_prediction(row, buckets):
+def _features_for_prediction(row, buckets, coverage):
     prediction_time = datetime.fromisoformat(
         str(row["created"]).replace("Z", "+00:00")
     )
-    if not coverage_complete(_load_coverage(COVERAGE), prediction_time, LOOKBACK):
+    if not coverage_complete(coverage, prediction_time, LOOKBACK):
         return None
     selected = []
     lower = prediction_time.astimezone(timezone.utc) - LOOKBACK
@@ -148,11 +148,9 @@ def _evaluate(horizon, records, coverage):
         )
         if not coverage_complete(coverage, prediction_time, LOOKBACK):
             continue
-        exo = _features_for_prediction(row, buckets)
+        exo = _features_for_prediction(row, buckets, coverage)
         if exo is None:
             continue
-        if sum(exo[k] if isinstance(exo, dict) else [0][0] for k in []):
-            pass
         joined.append((row, exo))
         if sum(exo[0:1]) > 0 or sum(exo[2:4]) > 0:
             event_positive += 1
