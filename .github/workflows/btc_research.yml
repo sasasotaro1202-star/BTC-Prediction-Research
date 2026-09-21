@@ -60,8 +60,34 @@ jobs:
           exit 1
       - name: Compile research code
         run: python -m compileall -q src tests scripts
-      - name: Run model research and adoption gate
+      - name: Snapshot Champion registry before research
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          p=Path('data/predictions.db')
+          with sqlite3.connect(p) as con:
+              obj={h:(con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
+          Path('/tmp/btc_registry_before.json').write_text(json.dumps(obj,sort_keys=True),encoding='utf-8')
+          print(json.dumps(obj,sort_keys=True))
+          PY
+      - name: Run model research (candidate-only, no production adoption)
         run: python src/model_compare.py
+      - name: Assert research did not mutate Champion registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          with sqlite3.connect('data/predictions.db') as con:
+              after={h:(con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
+          before=json.loads(Path('/tmp/btc_registry_before.json').read_text(encoding='utf-8'))
+          if after != before:
+              raise SystemExit(f'Champion registry changed during research: before={before} after={after}')
+          print('Champion registry unchanged by candidate research: VERIFIED')
       - name: Recalculate calibration metrics after any model adoption
         run: python src/calibration.py
       - name: Audit production artifact provenance
