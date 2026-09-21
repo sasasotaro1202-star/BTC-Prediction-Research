@@ -117,10 +117,6 @@ def audit() -> dict:
                 decision = parse_utc(str(decision_raw))
                 if abs((decision - created).total_seconds()) > MAX_FUTURE_SKEW_SECONDS:
                     violations.append(f"{prediction_id}:decision_time_mismatch")
-                if target5 <= decision:
-                    violations.append(f"{prediction_id}:5m_target_not_after_decision")
-                if target10 <= decision:
-                    violations.append(f"{prediction_id}:10m_target_not_after_decision")
                 cutoff_raw = scenario.get("market_data_cutoff_utc")
                 if cutoff_raw:
                     cutoff = parse_utc(str(cutoff_raw))
@@ -129,6 +125,13 @@ def audit() -> dict:
             except Exception:
                 violations.append(f"{prediction_id}:invalid_pit_metadata")
                 decision = created
+
+        # A prediction must always precede both future targets, even for legacy
+        # rows that predate the explicit decision_time/provenance contract.
+        if target5 <= decision:
+            violations.append(f"{prediction_id}:5m_target_not_after_decision")
+        if target10 <= decision:
+            violations.append(f"{prediction_id}:10m_target_not_after_decision")
 
         # Enforce the stronger PIT contract when provenance is present:
         # every explicitly available input must have become available no later
