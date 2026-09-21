@@ -251,6 +251,27 @@ def aligned_for_router(model, rows):
     return out/out.sum(axis=1,keepdims=True)
 
 
+def _context_blend_weight(sample_count, weights, max_blend=0.30):
+    """Scale specialist influence by pre-test support and ensemble stability.
+
+    Smaller contexts and highly concentrated model weights get less influence.
+    The global ensemble remains the default and the context specialist can
+    never exceed ``max_blend``.
+    """
+    n = max(int(sample_count), 0)
+    if n < MIN_SPECIALIST_TRAIN or not weights:
+        return 0.0
+    vals = np.asarray([max(float(v), 0.0) for v in weights.values()], dtype=float)
+    total = float(vals.sum())
+    if total <= 0:
+        return 0.0
+    p = vals / total
+    entropy = float(-np.sum(p * np.log(np.clip(p, 1e-12, 1.0))))
+    max_entropy = float(np.log(len(p))) if len(p) > 1 else 1.0
+    stability = entropy / max_entropy if max_entropy > 0 else 1.0
+    support = min(1.0, np.sqrt(n / 1000.0))
+    return float(max_blend * support * stability)
+
 def dynamic_route_predictions(train_rows, test_rows, factories):
     """Research-only soft routing: blend global and contextual specialists.
 
@@ -303,8 +324,9 @@ def dynamic_route_predictions(train_rows, test_rows, factories):
             except Exception:
                 pass
         if np.any(mix):
-            routed[idx]=0.70*global_mix[idx]+0.30*mix
-            context_weights[context]={"specialist":True,"n":len(idx),"weights":weights}
+            blend = _context_blend_weight(len(subset), weights)
+            routed[idx]=(1.0-blend)*global_mix[idx]+blend*mix
+            context_weights[context]={"specialist":True,"n":len(idx),"weights":weights,"blend":blend}
     routed/=routed.sum(axis=1,keepdims=True)
     return {
         **base,
