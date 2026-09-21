@@ -17,6 +17,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
+try:
+    from lightgbm import LGBMClassifier
+except ImportError:
+    LGBMClassifier = None
 
 from feature_schema import FEATURES
 from model_compare import CLASSES, TEST_BLOCK, MIN_TRAIN, MIN_OOS, PURGE_BARS, EMBARGO_BARS, metrics, aligned, apply_temperature, _temperature
@@ -78,7 +82,7 @@ def load_rows(horizon: str):
 
 
 def factories():
-    return {
+    factories = {
         "logreg_extended": lambda: Pipeline([
             ("scale", StandardScaler()),
             ("model", LogisticRegression(C=0.3, max_iter=3000)),
@@ -99,6 +103,22 @@ def factories():
             random_state=42,
         ),
     }
+    if LGBMClassifier is not None:
+        factories["lightgbm_extended"] = lambda: LGBMClassifier(
+            objective="multiclass",
+            num_class=3,
+            n_estimators=300,
+            learning_rate=0.03,
+            num_leaves=31,
+            min_child_samples=30,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            reg_lambda=1.0,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+    return factories
 
 
 def candidate_block(factory, train, test):
