@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -43,6 +44,18 @@ EXO_KEYS = (
 LOOKBACK = timedelta(hours=1)
 MIN_COVERED = 1500
 HOLDOUT_FRAC = 0.20
+
+
+def _prediction_rows_available():
+    from db import DB
+    if not DB.exists():
+        return False
+    try:
+        with sqlite3.connect(DB) as con:
+            row = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='predictions'").fetchone()
+        return row is not None
+    except sqlite3.Error:
+        return False
 
 
 def _read_events():
@@ -218,6 +231,7 @@ def _evaluate(horizon, records, coverage):
 def main():
     records = _read_events()
     coverage = _load_coverage(COVERAGE)
+    db_ready = _prediction_rows_available()
     result = {
         "schema_version": 2,
         "research_only": True,
@@ -232,7 +246,8 @@ def main():
         },
         "event_records": len(records),
         "coverage_slices": len(coverage),
-        "horizons": {h: _evaluate(h, records, coverage) for h in HORIZONS},
+        "database_ready": db_ready,
+        "horizons": ({h: _evaluate(h, records, coverage) for h in HORIZONS} if db_ready else {h: {"status": "DEFERRED", "reason": "production_prediction_database_unavailable"} for h in HORIZONS}),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
