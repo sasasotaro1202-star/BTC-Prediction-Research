@@ -87,12 +87,12 @@ jobs:
           set -euo pipefail
           python -m compileall -q src scripts tests
           python src/interaction_oos.py
-          test -s data/historical_research/interaction_oos.json
+          test -s data/historical_research/interaction_oos_report.json
       - name: Upload interaction evidence
         uses: actions/upload-artifact@v6
         with:
           name: btc-9h-interaction
-          path: data/historical_research/interaction_oos.json
+          path: data/historical_research/interaction_oos_report.json
           retention-days: 14
 
   robustness:
