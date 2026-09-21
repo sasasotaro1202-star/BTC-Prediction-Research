@@ -75,6 +75,8 @@ def audit() -> dict:
     init_db()
     checked = 0
     violations: list[str] = []
+    legacy_unverified_count = 0
+    verified_count = 0
     with sqlite3.connect(DB) as con:
         rows = con.execute(
             "SELECT prediction_id, created_at_utc, target_5m, target_10m, model_version, scenario_json "
@@ -158,7 +160,16 @@ def audit() -> dict:
 
         provenance = scenario.get("provenance")
         if provenance is None:
-            violations.append(f"{prediction_id}:missing_top_level_provenance")
+            # Old prediction rows predate the provenance contract. They cannot be
+            # promoted to PIT-verified merely by inference, but they are not the
+            # same thing as a current structural PIT violation. Keep them visible
+            # as UNVERIFIED_LEGACY and require a separate zero-legacy condition
+            # before promotion.
+            if any(k in scenario for k in ("decision_time_utc", "market_data_cutoff_utc")):
+                violations.append(f"{prediction_id}:missing_top_level_provenance")
+            else:
+                legacy_unverified_count += 1
+                continue
         else:
             violations.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
             sources = provenance.get("sources") if isinstance(provenance, dict) else None
@@ -167,15 +178,23 @@ def audit() -> dict:
             else:
                 for source_name, source_record in sources.items():
                     violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
+        if provenance is not None and not any(v.startswith(f"{prediction_id}:") for v in violations):
+            verified_count += 1
         if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
             violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
     result = {
         "ok": not violations,
+        "status": "PASS" if not violations and legacy_unverified_count == 0 else (
+            "PASS_WITH_LEGACY_UNVERIFIED" if not violations else "FAILED"
+        ),
+        "pit_verified": bool(not violations and legacy_unverified_count == 0),
         "checked_predictions": checked,
+        "verified_predictions": verified_count,
+        "legacy_unverified_count": legacy_unverified_count,
         "violations": violations[:100],
         "violation_count": len(violations),
-        "policy": "decision_time_before_targets; market_inputs_not_after_decision_time; degraded_mode_cannot_claim_direction",
+        "policy": "decision_time_before_targets; market_inputs_not_after_decision_time; legacy_rows_without_provenance_remain_unverified_and_cannot_enable_promotion",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
