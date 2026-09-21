@@ -230,7 +230,17 @@ def _evaluate_development(rows, horizon: str):
         and summary["mean_brier_delta"] <= -0.0015
         and summary["non_worse_accuracy_ratio"] >= 0.80
     )
-    return summary, blocks, bool(eligible)
+    stable_eligible = (
+        summary["stable_blocks"] >= 8
+        and summary["stable_improved_logloss_ratio"] is not None
+        and summary["stable_improved_brier_ratio"] is not None
+        and summary["stable_mean_logloss_delta"] <= -0.003
+        and summary["stable_mean_brier_delta"] <= -0.0015
+        and summary["stable_improved_logloss_ratio"] >= 0.60
+        and summary["stable_improved_brier_ratio"] >= 0.60
+        and summary["non_worse_accuracy_ratio"] >= 0.80
+    )
+    return summary, blocks, bool(eligible), bool(stable_eligible), stable_blocks
 
 
 def evaluate(horizon: str):
