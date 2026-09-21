@@ -75,5 +75,71 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertTrue(any("market_cutoff_after_decision" in v for v in result["violations"]))
 
 
+    def test_rejects_available_at_after_prediction_cutoff(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            scenario = {
+                "provenance": {
+                    "event_time": now.isoformat(),
+                    "available_at": (now + timedelta(seconds=1)).isoformat(),
+                    "retrieved_at": (now + timedelta(seconds=2)).isoformat(),
+                    "prediction_cutoff": now.isoformat(),
+                    "sources": {
+                        "binance_futures": {
+                            "event_time": now.isoformat(),
+                            "available_at": (now + timedelta(seconds=1)).isoformat(),
+                            "retrieved_at": (now + timedelta(seconds=2)).isoformat(),
+                            "prediction_cutoff": now.isoformat(),
+                        }
+                    },
+                }
+            }
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("available_at_after_prediction_cutoff" in v for v in result["violations"]))
+
+    def test_rejects_missing_source_provenance(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            scenario = {
+                "provenance": {
+                    "event_time": now.isoformat(),
+                    "available_at": now.isoformat(),
+                    "retrieved_at": now.isoformat(),
+                    "prediction_cutoff": now.isoformat(),
+                }
+            }
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("missing_source_provenance" in v for v in result["violations"]))
+
+    def test_accepts_provenance_with_unknown_event_time_but_valid_available_at(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            scenario = {
+                "provenance": {
+                    "event_time": now.isoformat(),
+                    "available_at": now.isoformat(),
+                    "retrieved_at": now.isoformat(),
+                    "prediction_cutoff": now.isoformat(),
+                    "sources": {
+                        "bybit_futures": {
+                            "event_time": None,
+                            "available_at": now.isoformat(),
+                            "retrieved_at": now.isoformat(),
+                            "prediction_cutoff": now.isoformat(),
+                        }
+                    },
+                }
+            }
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+
 if __name__ == "__main__":
     unittest.main()
