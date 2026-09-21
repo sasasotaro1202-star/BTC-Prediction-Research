@@ -48,6 +48,7 @@ jobs:
           if m.get('production_changed') is not False: raise SystemExit('production mutation flag is not false')
           if m.get('final_holdout_protected') is not True: raise SystemExit('holdout protection flag missing')
           if int(m.get('slices_attempted',0)) <= 0: raise SystemExit('no slices attempted')
+          if m.get('complete') is not True: raise SystemExit('GDELT collection incomplete; refusing partial research input')
           print('GDELT exogenous research manifest: OK')
           PY
       - uses: actions/upload-artifact@v6
