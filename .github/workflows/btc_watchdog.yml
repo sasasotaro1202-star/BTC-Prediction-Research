@@ -29,6 +29,12 @@ jobs:
         run: |
           set -u
           workflows=(btc_live_cycle.yml btc_integrity.yml btc_research.yml btc_pit_oos_audit.yml btc_historical_research.yml)
+          main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
+          if [ -z "$main_sha" ]; then
+            echo "WARN: unable to resolve current main SHA; failed-run retries will be skipped for safety."
+          else
+            echo "Current main SHA: ${main_sha}"
+          fi
           now=$(date -u +%s)
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
@@ -39,6 +45,7 @@ jobs:
               conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
               run_id=$(printf '%s' "$run" | jq -r '.id // 0')
               attempt=$(printf '%s' "$run" | jq -r '.run_attempt // 1')
+              head_sha=$(printf '%s' "$run" | jq -r '.head_sha // ""')
               updated=$(printf '%s' "$run" | jq -r '.updated_at // ""')
               updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
               age=$((now - updated_epoch))
@@ -46,12 +53,14 @@ jobs:
               if [ "$status" != "completed" ]; then continue; fi
               case "$conclusion" in
                 failure|cancelled|timed_out)
-                  if [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
+                  if [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ] && [ -n "$main_sha" ] && [ "$head_sha" = "$main_sha" ]; then
                     if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
                       echo "Retry requested successfully for ${workflow} run ${run_id}"
                     else
                       echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
                     fi
+                  elif [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
+                    echo "Skip retry for ${workflow} run ${run_id}: head SHA ${head_sha:-unknown} is not current main."
                   fi
                   ;;
               esac
