@@ -1,0 +1,51 @@
+name: BTC PIT OOS Audit
+
+# The audit is periodic/manual. Do not rerun it on every 5-minute state
+# archive update; the hourly schedule provides the recurring integrity check.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-pit-oos-audit
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require repository prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+      - name: Restore repository prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored prediction state for PIT/OOS audit.')
+          PY
+          test -s data/predictions.db
+      - name: Run PIT and OOS integrity audit
+        run: python src/pit_oos_audit.py
+      - name: Upload PIT/OOS audit report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-pit-oos-audit
+          path: data/historical_research/pit_oos_audit.json
+          if-no-files-found: error
+          retention-days: 3

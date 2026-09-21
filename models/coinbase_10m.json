@@ -1,0 +1,62 @@
+{
+  "model_version": "coinbase_fallback.rf.v1",
+  "source": "Coinbase Exchange BTC-USD 1m candles",
+  "horizon": "10m",
+  "classes": [
+    "DOWN",
+    "FLAT",
+    "UP"
+  ],
+  "features": [
+    "ret_1m",
+    "ret_3m",
+    "ret_5m",
+    "ret_10m",
+    "acceleration",
+    "volatility_5m",
+    "volatility_10m",
+    "range_position_10m",
+    "body_1m",
+    "upper_wick_1m",
+    "lower_wick_1m",
+    "volume_ratio",
+    "volume_trend",
+    "ema_gap_5m",
+    "ema_gap_10m"
+  ],
+  "artifact": "coinbase_10m.joblib",
+  "selection_method": "chronological_17pct_validation",
+  "holdout_n": 5393,
+  "holdout_metrics": {
+    "accuracy": 0.4604116447246431,
+    "logloss": 0.9827342381221769,
+    "brier": 0.6016298515016048
+  },
+  "baseline_metrics": {
+    "accuracy": 0.4296310031522344,
+    "logloss": 0.9938813381104085,
+    "brier": 0.6060783809297744
+  },
+  "validation_metrics": [
+    {
+      "model": "rf",
+      "logloss": 1.0481220243997666,
+      "brier": 0.636935194460568,
+      "accuracy": 0.4223443942666405
+    },
+    {
+      "model": "hgb",
+      "logloss": 1.054598579063734,
+      "brier": 0.6413136769682635,
+      "accuracy": 0.39858629491458863
+    },
+    {
+      "model": "logreg",
+      "logloss": 1.0557889004861643,
+      "brier": 0.6409747223971197,
+      "accuracy": 0.4093854309837031
+    }
+  ],
+  "calibration": "not_calibrated_until_fallback_live_settlement",
+  "trained_at_utc": "2026-09-19T04:23:10.952836+00:00"
+}

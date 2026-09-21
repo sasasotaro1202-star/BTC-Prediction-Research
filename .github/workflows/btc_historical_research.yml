@@ -1,0 +1,127 @@
+name: BTC Historical Research
+
+# Historical research is intentionally periodic/manual. Running the expensive
+# 6-hour job on every code push wastes compute and can overlap production
+# state updates. Integrity tests validate code changes; the full research run
+# remains auditable through its nightly schedule or explicit dispatch.
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-historical-research
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore historical archive cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/btc_prediction_archive_cache
+          key: btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}
+          restore-keys: |
+            btc-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}-
+            btc-archive-${{ runner.os }}-
+      - name: Install dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
+            sleep $((15 * attempt))
+          done
+          exit 1
+      - name: Compile all research code
+        run: python -m compileall -q src scripts
+      - name: Preflight Binance public archive
+        run: python scripts/binance_archive_smoke.py
+      - name: Run historical walk-forward research with retry
+        shell: bash
+        run: |
+          set -u
+          for attempt in 1 2 3; do
+            echo "=== historical research attempt ${attempt}/3 ==="
+            set +e
+            python scripts/historical_research_spot_fallback.py
+            status=$?
+            set -e
+            if [ "${status}" -eq 0 ]; then exit 0; fi
+            echo "research attempt ${attempt} failed with status ${status}"
+            if [ "${attempt}" -lt 3 ]; then sleep $((30 * attempt)); fi
+          done
+          exit 1
+      - name: Validate research artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/report.json')
+          if not p.exists(): raise SystemExit('report.json was not produced')
+          r=json.loads(p.read_text())
+          assert r.get('protocol_version') == 'historical-v6-microstructure-incremental-cache'
+          assert set(r.get('horizons', {})) >= {'5m','10m'}
+          for h in ('5m','10m'):
+              hz=r['horizons'][h]
+              assert hz['samples'] > 0
+              assert 'baseline' in hz and 'models' in hz and 'ensemble' in hz
+          print('research artifact validation: OK')
+          PY
+      - name: Reject raw archive files in Git workspace
+        run: |
+          if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then exit 1; fi
+      - name: Commit historical research results with conflict-safe retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          # Keep large reproducibility caches and the derived aligned panel in
+          # Actions artifacts/cache rather than the Git repository. This avoids
+          # repository bloat and reduces state-writer conflict surface.
+          git rm -r --cached --ignore-unmatch data/historical_research/cache data/historical_research/aligned_panel.csv
+          git add data/historical_research/report.json data/historical_research/oos_*.csv
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Update BTC historical research results'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push attempt ${attempt} rejected; rebuilding research state on origin/main"
+            cp -a data/historical_research /tmp/btc_local_historical_research
+            git rebase --abort 2>/dev/null || true
+            git fetch --prune origin main
+            git reset --hard origin/main
+            rm -rf data/historical_research
+            cp -a /tmp/btc_local_historical_research data/historical_research
+            git rm -r --cached --ignore-unmatch data/historical_research/cache data/historical_research/aligned_panel.csv
+            git add data/historical_research/report.json data/historical_research/oos_*.csv
+            git diff --cached --quiet || git commit -m 'Merge BTC historical research state safely'
+            sleep $((5 * attempt))
+          done
+          exit 1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: btc-historical-research
+          path: |
+            data/historical_research/report.json
+            data/historical_research/research_health.json
+            data/historical_research/production_artifact_audit.json
+            data/historical_research/venue_drift.json
+          if-no-files-found: error
+          retention-days: 3

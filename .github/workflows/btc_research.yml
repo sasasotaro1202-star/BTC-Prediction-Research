@@ -1,0 +1,238 @@
+name: BTC Research
+
+on:
+  schedule:
+    - cron: '17 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Serialize every BTC workflow that can write predictions/models to main.
+  group: btc-state-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore BTC prediction database from repository archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='data/predictions.db.gz'
+          db='data/predictions.db'
+          if [ -s "$archive" ]; then
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored predictions.db from compressed repository state.')
+          PY
+          elif [ -s "$db" ]; then
+            echo 'Legacy uncompressed predictions.db detected; it will be migrated after validation.'
+          else
+            echo 'No existing prediction database found; expected only if repository has not initialized state.'
+          fi
+      - name: Install research dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            echo "pip install attempt ${attempt} failed"
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Compile research code
+        run: python -m compileall -q src tests scripts
+      - name: Snapshot Champion registry before research
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          p=Path('data/predictions.db')
+          with sqlite3.connect(p) as con:
+              obj={h:(con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
+          Path('/tmp/btc_registry_before.json').write_text(json.dumps(obj,sort_keys=True),encoding='utf-8')
+          print(json.dumps(obj,sort_keys=True))
+          PY
+      - name: Run model research (candidate-only, no production adoption)
+        run: python src/model_compare.py
+      - name: Assert research did not mutate Champion registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          with sqlite3.connect('data/predictions.db') as con:
+              after={h:(con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
+          before=json.loads(Path('/tmp/btc_registry_before.json').read_text(encoding='utf-8'))
+          if after != before:
+              raise SystemExit(f'Champion registry changed during research: before={before} after={after}')
+          print('Champion registry unchanged by candidate research: VERIFIED')
+      - name: Recalculate calibration metrics after any model adoption
+        run: python src/calibration.py
+      - name: Audit production artifact provenance
+        run: python src/production_artifact_audit.py
+      - name: Validate model and provenance artifacts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, sqlite3
+          db=Path('data/predictions.db')
+          if not db.exists() or db.stat().st_size == 0:
+              raise SystemExit('missing or empty predictions.db')
+          with sqlite3.connect(db) as con:
+              n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+              if n <= 0:
+                  raise SystemExit('predictions table is empty')
+          with sqlite3.connect(db) as con:
+              registry={h: (con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone() or [None])[0] for h in ('5m','10m')}
+          for h in ('5m','10m'):
+              p=Path(f'models/{h}.joblib')
+              if not p.exists() or p.stat().st_size == 0:
+                  raise SystemExit(f'missing production model: {p}')
+              meta=Path(f'models/{h}.json')
+              if not meta.exists():
+                  raise SystemExit(f'missing model metadata: {meta}')
+              obj=json.loads(meta.read_text())
+              if obj.get('horizon') != h or obj.get('candidate') is not False:
+                  raise SystemExit(f'invalid production metadata: {meta}')
+              if registry[h] and obj.get('model_version') != registry[h]:
+                  raise SystemExit(f'production metadata/registry mismatch: {h}')
+              calibration=Path(f'models/{h}.calibration.json')
+              if not calibration.exists() or calibration.stat().st_size == 0:
+                  raise SystemExit(f'missing calibration artifact: {calibration}')
+              cal=json.loads(calibration.read_text())
+              if cal.get('horizon') != h or not (0.5 <= float(cal.get('temperature',1.0)) <= 3.0):
+                  raise SystemExit(f'invalid calibration artifact: {calibration}')
+              n_settled=int(cal.get('n_settled',0))
+              if n_settled >= 300 and registry[h] and cal.get('model_version') != registry[h]:
+                  raise SystemExit(f'calibration/registry mismatch: {h}')
+          audit=Path('data/historical_research/production_artifact_audit.json')
+          if not audit.exists():
+              raise SystemExit('missing production artifact provenance audit')
+          obj=json.loads(audit.read_text())
+          artifacts=obj.get('artifacts')
+          if not isinstance(artifacts,list) or len(artifacts) != 2:
+              raise SystemExit('invalid production artifact provenance audit')
+          for item in artifacts:
+              if item.get('horizon') not in {'5m','10m'}:
+                  raise SystemExit('invalid audit horizon')
+              if len(str(item.get('model_sha256',''))) != 64 or len(str(item.get('metadata_sha256',''))) != 64:
+                  raise SystemExit('invalid production artifact fingerprint')
+          print('prediction database, production model, and provenance artifact validation: OK')
+          PY
+      - name: Compress validated BTC prediction database for repository storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import compress_db, restore_db
+          import tempfile
+          db=Path('data/predictions.db')
+          archive=Path('data/predictions.db.gz')
+          info=compress_db(db, archive)
+          print(f'Compressed BTC state: {info["bytes"]} bytes, sha256={info["sha256"]}')
+          if info['bytes'] >= 95 * 1024 * 1024:
+              raise SystemExit('compressed BTC state is still too large for safe GitHub storage')
+          if archive.stat().st_size >= db.stat().st_size:
+              raise SystemExit('BTC state compression produced no size reduction')
+          with tempfile.TemporaryDirectory() as td:
+              probe=Path(td)/'predictions.db'
+              restore_db(archive, probe)
+              if probe.read_bytes() != db.read_bytes():
+                  raise SystemExit('BTC state archive round-trip mismatch; refusing to delete source DB')
+          db.unlink()
+          print('Exact archive round-trip verified before deleting uncompressed DB.')
+          PY
+      - name: Upload BTC research state after validation and compression
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-research-state
+          path: |
+            data/predictions.db.gz
+            data/historical_research/production_artifact_audit.json
+            models/*.json
+            models/*.joblib
+          retention-days: 14
+      - name: Commit adopted model and provenance state with conflict-safe retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/predictions.db.gz data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
+          git rm --cached data/predictions.db 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo 'No research-state changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Update BTC model research state'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "git push attempt ${attempt} failed; preserving local research state and rebuilding on origin/main"
+            cp data/predictions.db.gz /tmp/btc_research_predictions.db.gz
+            rm -rf /tmp/btc_research_models
+            mkdir -p /tmp/btc_research_models
+            cp -a models/. /tmp/btc_research_models/
+            if [ -f data/historical_research/production_artifact_audit.json ]; then cp data/historical_research/production_artifact_audit.json /tmp/btc_research_artifact_audit.json; fi
+            git rebase --abort 2>/dev/null || true
+            git fetch --prune origin main
+            git reset --hard origin/main
+            mkdir -p data
+            if [ -s data/predictions.db.gz ]; then
+              python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+            fi
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db, compress_db
+          import subprocess
+          local=Path('/tmp/btc_research_predictions.db.gz')
+          origin=Path('data/predictions.db')
+          restore_db(local, Path('/tmp/btc_research_predictions.db'))
+          if origin.exists():
+              subprocess.run(['python','scripts/merge_prediction_state.py','/tmp/btc_research_predictions.db',str(origin)],check=True)
+          else:
+              origin.parent.mkdir(parents=True,exist_ok=True)
+              origin.write_bytes(Path('/tmp/btc_research_predictions.db').read_bytes())
+          compress_db(origin, Path('data/predictions.db.gz'))
+          origin.unlink()
+          PY
+            rm -rf models
+            mkdir -p models
+            cp -a /tmp/btc_research_models/. models/
+            if [ -f /tmp/btc_research_artifact_audit.json ]; then cp /tmp/btc_research_artifact_audit.json data/historical_research/production_artifact_audit.json; fi
+            git add data/predictions.db.gz data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
+            git rm --cached data/predictions.db 2>/dev/null || true
+            git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
+            sleep $((5 * attempt))
+          done
+          echo 'git push failed after 5 attempts'
+          exit 1

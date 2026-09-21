@@ -1,0 +1,138 @@
+name: BTC Exogenous Research
+
+# Research-only news ingestion. It must never write production prediction
+# state or production model artifacts.
+on:
+  push:
+    paths:
+      - 'src/exogenous_information.py'
+      - 'src/exogenous_feature_join.py'
+      - 'tests/test_exogenous_information.py'
+      - 'tests/test_exogenous_feature_join.py'
+      - 'scripts/gdelt_exogenous_research.py'
+      - 'tests/test_gdelt_exogenous_research.py'
+      - 'scripts/exogenous_oos_ablation.py'
+      - '.github/workflows/btc_exogenous_research.yml'
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-exogenous-research
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore cumulative exogenous research cache
+        uses: actions/cache/restore@v5
+        with:
+          path: data/exogenous
+          key: btc-exogenous-${{ github.run_id }}
+          restore-keys: |
+            btc-exogenous-
+
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+      - name: Unit test exogenous collector
+        run: python -m pytest -q tests/test_exogenous_information.py tests/test_exogenous_feature_join.py tests/test_gdelt_exogenous_research.py
+      - name: Collect recent GDELT research events
+        run: python scripts/gdelt_exogenous_research.py --hours 1
+      - name: Prepare research-only exogenous OOS database contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sqlite3
+          root = Path('.')
+          candidates = [root / 'data' / 'btc.db', root / 'data' / 'predictions.db']
+          for path in candidates:
+              if path.exists():
+                  print(f'Using existing database: {path}')
+                  break
+          else:
+              print('No production database artifact present; OOS will remain DEFERRED.')
+          PY
+
+      - name: Run research-only exogenous OOS ablation
+        run: python scripts/exogenous_oos_ablation.py
+      - name: Validate exogenous OOS ablation artifact
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/exogenous_oos_ablation.json')
+          c=Path('data/exogenous/gdelt_coverage.json')
+          if not c.exists(): raise SystemExit('GDELT coverage manifest missing')
+          if not p.exists(): raise SystemExit('exogenous OOS artifact missing')
+          x=json.loads(p.read_text())
+          if x.get('schema_version') != 2: raise SystemExit('exogenous OOS schema mismatch')
+          if x.get('research_only') is not True: raise SystemExit('exogenous OOS is not research-only')
+          if x.get('production_changed') is not False: raise SystemExit('exogenous OOS reports production mutation')
+          if x.get('final_holdout_protected') is not True: raise SystemExit('exogenous OOS holdout protection missing')
+          horizons=x.get('horizons')
+          if not isinstance(horizons, dict) or not {'5m','10m'} <= set(horizons): raise SystemExit('missing horizon results')
+          for h,r in horizons.items():
+              if r.get('status') not in {'OK','DEFERRED'}: raise SystemExit(f'{h}: invalid research status')
+          print('Exogenous OOS artifact: OK')
+          PY
+      - name: Validate research-only manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/exogenous/gdelt_events.manifest.json')
+          cpath=Path('data/exogenous/gdelt_coverage.json')
+          if not p.exists(): raise SystemExit('GDELT manifest missing')
+          if not cpath.exists(): raise SystemExit('GDELT coverage manifest missing')
+          c=json.loads(cpath.read_text())
+          if c.get('schema_version') != 1: raise SystemExit('coverage schema mismatch')
+          if c.get('source') != 'GDELT_GKG': raise SystemExit('coverage source mismatch')
+          if not isinstance(c.get('successful_slices'), list): raise SystemExit('coverage slice list missing')
+          m=json.loads(p.read_text())
+          if m.get('schema_version') != 1: raise SystemExit('manifest schema mismatch')
+          if m.get('source') != 'GDELT_GKG': raise SystemExit('manifest source mismatch')
+          if m.get('research_only') is not True: raise SystemExit('not research-only')
+          if m.get('production_changed') is not False: raise SystemExit('production mutation flag is not false')
+          if m.get('final_holdout_protected') is not True: raise SystemExit('holdout protection flag missing')
+          if int(m.get('slices_attempted',0)) <= 0: raise SystemExit('no slices attempted')
+          if m.get('complete') is not True:
+              o=Path('data/historical_research/exogenous_oos_ablation.json')
+              if not o.exists(): raise SystemExit('incomplete GDELT collection without OOS artifact')
+              x=json.loads(o.read_text())
+              hs=x.get('horizons', {})
+              if set(hs) != {'5m','10m'} or any(v.get('status') != 'DEFERRED' for v in hs.values()):
+                  raise SystemExit('GDELT incomplete but research was not safely DEFERRED')
+              print('GDELT exogenous research: DEFERRED (partial coverage; no research input promoted)')
+          else:
+              print('GDELT exogenous research manifest: OK')
+          PY
+      - name: Save cumulative exogenous research cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: data/exogenous
+          key: btc-exogenous-${{ github.run_id }}
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: btc-exogenous-research
+          path: |
+            data/exogenous
+            data/historical_research/exogenous_oos_ablation.json
+          retention-days: 14
+          if-no-files-found: warn

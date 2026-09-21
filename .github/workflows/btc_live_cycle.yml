@@ -1,0 +1,343 @@
+name: BTC Live Cycle
+
+# Production execution is schedule/manual only. Code pushes must not trigger
+# a second state-writing live run and race the 5-minute scheduler.
+on:
+  schedule:
+    # Offset the 5-minute cadence by one minute to reduce hourly-load contention
+    # and reactivate the schedule if GitHub had disabled its previous schedule.
+    - cron: '1-59/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-state-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore BTC prediction database from repository archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='data/predictions.db.gz'
+          db='data/predictions.db'
+          if [ -s "$archive" ]; then
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored predictions.db from compressed repository state.')
+          PY
+          elif [ -s "$db" ]; then
+            echo 'Legacy uncompressed predictions.db detected; it will be migrated after validation.'
+          else
+            echo 'No existing prediction database found; workflow may initialize it.'
+          fi
+      - name: Install research dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
+            sleep $((10 * attempt))
+          done
+          exit 1
+      - name: Compile research code
+        run: python -m compileall -q src tests scripts
+      - name: Run deterministic BTC guard tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import unittest
+          suite=unittest.defaultTestLoader.discover('tests',pattern='test_*.py')
+          count=suite.countTestCases()
+          print(f'Discovered BTC guard tests: {count}')
+          if count == 0: raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
+          PY
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Ensure BTC production models exist without retraining every 5 minutes
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for horizon in 5m 10m; do
+            if [ ! -s "models/${horizon}.joblib" ] || [ ! -s "models/${horizon}.json" ]; then missing=1; fi
+          done
+          if [ "${missing}" -eq 0 ]; then exit 0; fi
+          python src/bootstrap_train.py
+      - name: Ensure gated Coinbase fallback models exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for horizon in 5m 10m; do
+            if [ ! -s "models/coinbase_${horizon}.joblib" ] || [ ! -s "models/coinbase_${horizon}.json" ]; then missing=1; fi
+          done
+          if [ "${missing}" -eq 0 ]; then exit 0; fi
+          python src/coinbase_fallback_train.py
+      - name: Settle due BTC predictions
+        run: python src/settle.py
+      # Model adoption must precede both calibration layers so a newly
+      # adopted generation is never left running with stale calibration.
+      - name: Run BTC model comparison and adoption gate
+        run: python src/model_compare.py
+      - name: Recalculate BTC calibration metrics after model adoption
+        run: python src/calibration.py
+      - name: Recalibrate BTC live structural blend after model adoption
+        run: python src/blend_calibration.py
+      - name: Audit BTC production artifact provenance
+        run: python src/production_artifact_audit.py
+      - name: Generate next BTC prediction
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(mktemp)"
+          err="$(mktemp)"
+          if python src/predict.py >"$out" 2>"$err"; then
+            cat "$out"
+            rm -f "$out" "$err"
+            exit 0
+          fi
+          cat "$out"
+          cat "$err" >&2
+          # A broad Binance market-data outage is a safe no-prediction state:
+          # do not manufacture a prediction or promote a fallback. Preserve the
+          # database and let diagnostics/state archival continue, while keeping
+          # real code/data-contract failures red.
+          if grep -q "live_prediction_inputs_incomplete:" "$err"              && grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err"; then
+            echo "BTC_LIVE_DEFERRED=1" >> "$GITHUB_ENV"
+            echo "BTC live prediction deferred: Binance critical market-data endpoints are unavailable. No prediction was fabricated." >&2
+            rm -f "$out" "$err"
+            exit 0
+          fi
+          rm -f "$out" "$err"
+          exit 1
+      - name: Fail closed on incomplete live prediction inputs
+        run: python src/live_data_fail_closed.py
+      - name: Run non-fatal BTC research health audit
+        run: python src/research_health.py
+      - name: Audit Coinbase Binance Bybit venue distribution drift
+        run: python src/venue_drift.py
+      - name: Diagnose FLAT disappearance by prediction pipeline stage
+        run: python src/flat_diagnostic.py
+      - name: Validate BTC prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,sqlite3
+          from pathlib import Path
+          from datetime import datetime,timezone
+          p=Path('data/predictions.db')
+          if not p.exists() or p.stat().st_size == 0: raise SystemExit('predictions.db missing')
+          with sqlite3.connect(p) as con:
+              n=con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+              if n <= 0: raise SystemExit('predictions table is empty')
+              if __import__('os').environ.get('BTC_LIVE_DEFERRED') == '1':
+                  latest=con.execute('SELECT created_at_utc,base_price FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+                  if latest:
+                      age=(datetime.now(timezone.utc)-datetime.fromisoformat(latest[0].replace('Z','+00:00'))).total_seconds()
+                      if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
+                  print('BTC live cycle deferred safely: no fresh prediction was created; existing state remains intact.')
+                  raise SystemExit(0)
+              for cols in [('p_up_5m','p_down_5m','p_flat_5m'),('p_up_10m','p_down_10m','p_flat_10m')]:
+                  a,b,c=cols
+                  bad=con.execute(f'SELECT COUNT(*) FROM predictions WHERE abs(({a}+{b}+{c})-1.0)>0.00001 OR {a}<0 OR {b}<0 OR {c}<0').fetchone()[0]
+                  if bad: raise SystemExit(f'probability integrity failure {cols}: {bad}')
+              latest=con.execute('SELECT created_at_utc,base_price,model_version,scenario_json FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+              if not latest: raise SystemExit('latest prediction missing')
+              age=(datetime.now(timezone.utc)-datetime.fromisoformat(latest[0].replace('Z','+00:00'))).total_seconds()
+              if age > 900: raise SystemExit(f'latest prediction is stale: {age:.0f}s')
+              if age < -60: raise SystemExit(f'latest prediction timestamp is in the future: {age:.0f}s')
+              scenario=json.loads(latest[3]) if latest[3] else {}
+              degraded=(latest[2]=='DEGRADED_NO_FRESH_DATA')
+              if not degraded and latest[1] <= 0: raise SystemExit('latest BTC base price is invalid')
+              if degraded and latest[1] != 0: raise SystemExit('degraded BTC prediction must not claim a market base price')
+              if not degraded and not scenario.get('data_quality'): raise SystemExit('live BTC prediction is missing data-quality metadata')
+          for horizon in ('5m','10m'):
+              mj=Path(f'models/{horizon}.json'); mf=Path(f'models/{horizon}.joblib')
+              if mj.exists():
+                  obj=json.loads(mj.read_text())
+                  if obj.get('horizon') != horizon: raise SystemExit(f'{horizon} horizon mismatch')
+                  if obj.get('artifact') != f'{horizon}.joblib': raise SystemExit(f'{horizon} artifact mismatch')
+                  if obj.get('classes') and obj['classes'] != ['DOWN','FLAT','UP']: raise SystemExit(f'{horizon} class order mismatch')
+                  if obj.get('features') and obj['features'] != list(__import__('src.feature_schema', fromlist=['FEATURES']).FEATURES): raise SystemExit(f'{horizon} feature schema mismatch')
+              if mj.exists() and not mf.exists(): raise SystemExit(f'{horizon} model artifact missing')
+              cp=Path(f'models/{horizon}.calibration.json')
+              if cp.exists():
+                  obj=json.loads(cp.read_text()); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0))
+                  if not 0.5 <= t <= 3.0 or n < 0: raise SystemExit(f'{horizon} calibration invalid')
+              bp=Path(f'models/{horizon}.blend.json')
+              if bp.exists():
+                  obj=json.loads(bp.read_text()); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0))
+                  if not 0.0 <= w <= 0.45 or n < 0: raise SystemExit(f'{horizon} blend invalid')
+          audit=Path('data/historical_research/production_artifact_audit.json')
+          if not audit.exists(): raise SystemExit('production artifact audit output missing')
+          audit_obj=json.loads(audit.read_text())
+          if not isinstance(audit_obj.get('artifacts'),list) or len(audit_obj['artifacts']) != 2: raise SystemExit('production artifact audit malformed')
+          for item in audit_obj['artifacts']:
+              if item.get('horizon') not in {'5m','10m'} or len(str(item.get('model_sha256',''))) != 64 or len(str(item.get('metadata_sha256',''))) != 64: raise SystemExit('production artifact fingerprint invalid')
+          health=Path('data/historical_research/research_health.json')
+          if not health.exists(): raise SystemExit('research health audit output missing')
+          if not isinstance(json.loads(health.read_text()).get('ok'),bool): raise SystemExit('research health audit malformed')
+          drift=Path('data/historical_research/venue_drift.json')
+          if not drift.exists(): raise SystemExit('venue drift audit output missing')
+          drift_obj=json.loads(drift.read_text())
+          if drift_obj.get('policy') != 'monitor_only_no_model_input_no_promotion_effect': raise SystemExit('venue drift audit policy mismatch')
+          if not isinstance(drift_obj.get('source_counts'),dict) or not isinstance(drift_obj.get('cross_exchange_gap'),dict): raise SystemExit('venue drift audit malformed')
+          flat=Path('data/historical_research/flat_diagnostic.json')
+          if not flat.exists(): raise SystemExit('FLAT diagnostic output missing')
+          flat_obj=json.loads(flat.read_text())
+          if flat_obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('FLAT diagnostic policy mismatch')
+          if not isinstance(flat_obj.get('counts'),dict) or not isinstance(flat_obj.get('window'),int) or flat_obj.get('window',0) <= 0: raise SystemExit('FLAT diagnostic malformed')
+          print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, venue-drift, and FLAT diagnostic validation: OK')
+          PY
+      - name: Record BTC live cycle outcome for downstream integrity gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sqlite3
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          db = Path('data/predictions.db')
+          mode = 'deferred' if os.environ.get('BTC_LIVE_DEFERRED') == '1' else 'prediction_created'
+          latest_id = None
+          latest_created = None
+          if db.exists():
+              with sqlite3.connect(db) as con:
+                  row = con.execute(
+                      'SELECT prediction_id, created_at_utc FROM predictions ORDER BY prediction_id DESC LIMIT 1'
+                  ).fetchone()
+                  if row:
+                      latest_id, latest_created = int(row[0]), row[1]
+          payload = {
+              'schema_version': 1,
+              'workflow_run_id': int(os.environ['GITHUB_RUN_ID']),
+              'workflow_run_number': int(os.environ['GITHUB_RUN_NUMBER']),
+              'head_sha': os.environ['GITHUB_SHA'],
+              'mode': mode,
+              'completed_at_utc': datetime.now(timezone.utc).isoformat(),
+              'latest_prediction_id': latest_id,
+              'latest_prediction_created_at_utc': latest_created,
+          }
+          Path('data/live_cycle_status.json').write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + '\n',
+              encoding='utf-8'
+          )
+          print(json.dumps(payload, sort_keys=True))
+          PY
+
+      - name: Compress validated BTC prediction database for repository storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import compress_db, restore_db
+          import tempfile
+          db=Path('data/predictions.db')
+          archive=Path('data/predictions.db.gz')
+          info=compress_db(db, archive)
+          print(f'Compressed BTC state: {info["bytes"]} bytes, sha256={info["sha256"]}')
+          if info['bytes'] >= 95 * 1024 * 1024:
+              raise SystemExit('compressed BTC state is still too large for safe GitHub storage')
+          if archive.stat().st_size >= db.stat().st_size:
+              raise SystemExit('BTC state compression produced no size reduction')
+          with tempfile.TemporaryDirectory() as td:
+              probe=Path(td)/'predictions.db'
+              restore_db(archive, probe)
+              if probe.read_bytes() != db.read_bytes():
+                  raise SystemExit('BTC state archive round-trip mismatch; refusing to delete source DB')
+          db.unlink()
+          print('Exact archive round-trip verified before deleting uncompressed DB.')
+          PY
+      - name: Upload minimal BTC cycle handoff artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-predictions-db
+          path: |
+            data/predictions.db.gz
+            data/live_cycle_status.json
+          if-no-files-found: error
+          retention-days: 3
+      - name: Check repository diff before commit
+        run: git diff --check
+      - name: Commit BTC research state with conflict-safe merge retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- data/predictions.db.gz data/live_cycle_status.json
+          if [ -d data/historical_research ]; then git add -- data/historical_research; fi
+          if [ -d models ]; then git add -- models; fi
+          if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
+            git rm --cached -- data/predictions.db
+          fi
+          if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
+          git commit -m 'Update BTC research state'
+          for attempt in 1 2 3 4 5; do
+            if timeout 90s git push origin HEAD:main; then exit 0; fi
+            echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
+            cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
+            if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
+            if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
+            if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
+            if [ -f data/historical_research/flat_diagnostic.json ]; then cp data/historical_research/flat_diagnostic.json /tmp/btc_local_flat_diagnostic.json; fi
+            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+              git rebase --abort
+            fi
+            timeout 90s git fetch --prune origin main
+            git reset --hard origin/main
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db, compress_db
+          import subprocess, shutil
+          archive=Path('data/predictions.db.gz')
+          if archive.exists():
+              restore_db(archive, Path('data/predictions.db'))
+          else:
+              Path('data').mkdir(exist_ok=True)
+          restore_db(Path('/tmp/btc_local_predictions.db.gz'), Path('/tmp/btc_local_predictions.db'))
+          if Path('data/predictions.db').exists():
+              subprocess.run(['python','scripts/merge_prediction_state.py','/tmp/btc_local_predictions.db','data/predictions.db'],check=True)
+          else:
+              shutil.copy2('/tmp/btc_local_predictions.db','data/predictions.db')
+          compress_db(Path('data/predictions.db'), archive)
+          Path('data/predictions.db').unlink()
+          PY
+            if [ -d /tmp/btc_local_models ]; then rm -rf models && cp -R /tmp/btc_local_models models; fi
+            if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
+            if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
+            if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
+            git add -- data/predictions.db.gz data/live_cycle_status.json
+            if [ -d data/historical_research ]; then git add -- data/historical_research; fi
+            if [ -d models ]; then git add -- models; fi
+            if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
+              git rm --cached -- data/predictions.db
+            fi
+            git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
+            sleep $((5 * attempt))
+          done
+          exit 1
+
+# Operational trigger: keep the scheduled production cycle recoverable and auditable.

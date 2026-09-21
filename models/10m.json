@@ -1,0 +1,42 @@
+{
+  "model_version": "bootstrap.bootstrap_rf",
+  "horizon": "10m",
+  "classes": [
+    "DOWN",
+    "FLAT",
+    "UP"
+  ],
+  "features": [
+    "ret_1m",
+    "ret_3m",
+    "ret_5m",
+    "ret_10m",
+    "acceleration",
+    "volatility_5m",
+    "volatility_10m",
+    "range_position_10m",
+    "body_1m",
+    "upper_wick_1m",
+    "lower_wick_1m",
+    "volume_ratio",
+    "volume_trend",
+    "ema_gap_5m",
+    "ema_gap_10m"
+  ],
+  "artifact": "10m.joblib",
+  "candidate": false,
+  "bootstrap": true,
+  "holdout_n": 2153,
+  "holdout_metrics": {
+    "accuracy": 0.37714816535067347,
+    "logloss": 1.1038622636440982,
+    "brier": 0.6694110279022045
+  },
+  "baseline_metrics": {
+    "accuracy": 0.31026474686483974,
+    "logloss": 1.1482091305444282,
+    "brier": 0.6953118285795079
+  },
+  "temperature": 0.7999999999999999,
+  "trained_at_utc": "2026-09-13T06:28:41.631342+00:00"
+}
