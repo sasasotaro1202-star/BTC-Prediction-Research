@@ -107,6 +107,9 @@ jobs:
               raise SystemExit('BTC live cycle status schema mismatch')
           if obj.get('workflow_run_id') != int(os.environ['BTC_EXPECTED_LIVE_RUN_ID']):
               raise SystemExit('BTC live cycle status does not belong to the completed upstream live run')
+          expected_sha = os.environ['BTC_EXPECTED_LIVE_SHA']
+          if expected_sha and obj.get('head_sha') != expected_sha:
+              raise SystemExit('BTC live cycle status head SHA does not match the completed upstream live run')
           if obj.get('mode') not in {'prediction_created', 'deferred'}:
               raise SystemExit('BTC live cycle status mode invalid')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
