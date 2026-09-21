@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "context_router_oos.json"
 MIN_TRAIN = 1000
 TEST_BLOCK = 25
+MAX_BLOCKS = 24
 
 
 def factories():
@@ -52,6 +53,18 @@ def _metric_delta(global_m, routed_m):
     }
 
 
+def _test_endpoints(n_rows):
+    """Sample chronological test blocks without exploding CI compute."""
+    endpoints = list(range(MIN_TRAIN, n_rows, TEST_BLOCK))
+    if len(endpoints) <= MAX_BLOCKS:
+        return endpoints
+    # Preserve the full time span while bounding the number of expensive
+    # specialist-training evaluations. The selection itself uses no labels.
+    return sorted(set(int(x) for x in np.linspace(
+        endpoints[0], endpoints[-1], num=MAX_BLOCKS
+    )))
+
+
 def evaluate_horizon(horizon):
     rows = load_rows(horizon)
     if len(rows) < MIN_TRAIN + TEST_BLOCK:
@@ -62,7 +75,7 @@ def evaluate_horizon(horizon):
         }
 
     blocks = []
-    for end in range(MIN_TRAIN, len(rows), TEST_BLOCK):
+    for end in _test_endpoints(len(rows)):
         train = rows[:end]
         test = rows[end:min(end + TEST_BLOCK, len(rows))]
         if len(test) < max(10, TEST_BLOCK // 2):
