@@ -18,7 +18,11 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from model_compare import HORIZONS, load_rows, metrics
-from ensemble_model import SoftVotingEnsemble
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from lightgbm import LGBMClassifier
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "historical_research" / "risk_aware_dynamic_oos.json"
 MIN_TRAIN = 2000
@@ -45,52 +49,74 @@ def _aligned(model, rows):
     return out / out.sum(axis=1, keepdims=True)
 
 
-def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weight=MAX_WEIGHT):
+def _weights_from_losses(losses, temperature=TEMPERATURE, floor=0.08, max_weight=0.50):
     if not losses:
-        return (1.0 / 3.0,) * 3
+        return ()
     vals = np.asarray([float(x) for x in losses], dtype=float)
-    if vals.shape != (3,) or not np.all(np.isfinite(vals)):
-        return (1.0 / 3.0,) * 3
+    n = len(vals)
+    uniform = np.full(n, 1.0 / n)
+    if n == 0 or not np.all(np.isfinite(vals)):
+        return tuple(float(x) for x in uniform)
+    lower = float(floor)
+    upper = float(max_weight)
+    if n * lower > 1.0 or n * upper < 1.0:
+        return tuple(float(x) for x in uniform)
     z = max(float(temperature), 1e-6)
     shifted = vals - float(vals.min())
     raw = np.exp(-shifted / z)
     raw /= raw.sum()
-    uniform = np.full(3, 1.0 / 3.0)
     w = (1.0 - SHRINKAGE) * raw + SHRINKAGE * uniform
-    w = np.asarray(w, dtype=float)
-    lower = float(floor)
-    upper = float(max_weight)
-    if lower < 0 or upper < lower or 3 * lower > 1.0 or 3 * upper < 1.0:
-        return tuple(float(x) for x in uniform)
     w = np.clip(w, lower, upper)
     for _ in range(20):
         diff = 1.0 - float(w.sum())
         if abs(diff) <= 1e-12:
             break
         if diff > 0:
-            free = w < upper - 1e-12
-            if not np.any(free):
+            room = upper - w
+            active = room > 1e-12
+            if not np.any(active):
                 break
-            room = upper - w[free]
-            w[free] += diff * room / room.sum()
+            w[active] += diff * room[active] / room[active].sum()
         else:
-            free = w > lower + 1e-12
-            if not np.any(free):
+            room = w - lower
+            active = room > 1e-12
+            if not np.any(active):
                 break
-            room = w[free] - lower
-            w[free] += diff * room / room.sum()
+            w[active] += diff * room[active] / room[active].sum()
     w = np.clip(w, lower, upper)
     w /= w.sum()
     return tuple(float(x) for x in w)
 
 
+def _factories():
+    return (
+        lambda: Pipeline([
+            ("scale", StandardScaler()),
+            ("model", LogisticRegression(C=0.25, max_iter=3000)),
+        ]),
+        lambda: ExtraTreesClassifier(
+            n_estimators=240, max_depth=14, min_samples_leaf=12,
+            max_features="sqrt", random_state=42, n_jobs=-1,
+        ),
+        lambda: HistGradientBoostingClassifier(
+            max_iter=180, max_leaf_nodes=15, learning_rate=0.04,
+            l2_regularization=1.5, random_state=42,
+        ),
+        lambda: LGBMClassifier(
+            n_estimators=220, num_leaves=15, learning_rate=0.04,
+            min_child_samples=20, reg_lambda=2.0, random_state=42,
+            n_jobs=-1, verbosity=-1,
+        ),
+    )
+
+
 def _fit_parts(train, test):
-    factory = SoftVotingEnsemble(learn_weights=False)
+    factories = _factories()
     X = np.asarray([r["x"] for r in train], dtype=float)
     y = np.asarray([r["y"] for r in train])
     models = []
-    for sub_factory in factory._factories():
-        model = sub_factory()
+    for factory in factories:
+        model = factory()
         model.fit(X, y)
         models.append(model)
     return [_aligned(model, test) for model in models]
