@@ -6,7 +6,7 @@ retrieval time, so they are safe for live diagnostics but are NOT historical
 release-time truth.
 """
 from __future__ import annotations
-import argparse, json, urllib.parse, urllib.request
+import argparse, json, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
@@ -19,27 +19,68 @@ UA="BTC-Prediction-Research/exogenous-research"
 OUT=Path("data/exogenous_research")
 GDELT="https://api.gdeltproject.org/api/v2/doc/doc"
 BLS="https://api.bls.gov/publicAPI/v1/timeseries/data/"
+GOOGLE_NEWS="https://news.google.com/rss/search"
 
 def _get_json(url: str) -> dict:
-    req=urllib.request.Request(url,headers={"User-Agent":UA})
-    with urllib.request.urlopen(req,timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
+    last=None
+    for attempt in range(1,4):
+        try:
+            req=urllib.request.Request(url,headers={"User-Agent":UA})
+            with urllib.request.urlopen(req,timeout=30) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as exc:
+            last=exc
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"source request failed after 3 attempts: {last}") from last
+
+def _get_text(url: str) -> str:
+    last=None
+    for attempt in range(1,4):
+        try:
+            req=urllib.request.Request(url,headers={"User-Agent":UA})
+            with urllib.request.urlopen(req,timeout=30) as r:
+                return r.read().decode("utf-8", errors="replace")
+        except Exception as exc:
+            last=exc
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"source request failed after 3 attempts: {last}") from last
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 def fetch_news() -> list[InformationEvent]:
     params={"query":"(bitcoin OR btc OR cryptocurrency)","mode":"ArtList","maxrecords":"75","timespan":"1h","sort":"datedesc","format":"json"}
-    payload=_get_json(GDELT+"?"+urllib.parse.urlencode(params))
+    try:
+        payload=_get_json(GDELT+"?"+urllib.parse.urlencode(params))
+        events=[]
+        for item in payload.get("articles",[]):
+            seen=item.get("seendate"); url=item.get("url")
+            available=_parse_seen_time(seen) if seen else None
+            if available is None or not url:
+                continue
+            events.append(InformationEvent(
+                source="gdelt_doc_2", event_id=url, published_at=available,
+                available_at=available, event_type="news", importance=1.0))
+        if events:
+            return events
+    except Exception as exc:
+        print(f"[WARN] GDELT unavailable; using Google News RSS retrieval-time fallback: {exc}")
+    rss_url=GOOGLE_NEWS+"?"+urllib.parse.urlencode({
+        "q":"bitcoin OR btc","hl":"en-US","gl":"US","ceid":"US:en"})
+    root=ET.fromstring(_get_text(rss_url))
+    available=_now()
     events=[]
-    for item in payload.get("articles",[]):
-        seen=item.get("seendate"); url=item.get("url")
-        available=_parse_seen_time(seen) if seen else None
-        if available is None or not url:
+    for item in root.findall("./channel/item"):
+        link=(item.findtext("link") or "").strip()
+        guid=(item.findtext("guid") or link).strip()
+        if not link:
             continue
         events.append(InformationEvent(
-            source="gdelt_doc_2", event_id=url, published_at=available,
-            available_at=available, event_type="news", importance=1.0))
+            source="google_news_rss", event_id=guid,
+            published_at=available, available_at=available,
+            event_type="news", importance=0.7))
     return events
 
 def fetch_bls() -> list[InformationEvent]:
