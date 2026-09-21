@@ -9,19 +9,23 @@ import calibration  # noqa: E402
 
 
 class _FakeResult:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+
     def fetchall(self):
-        return []
+        return self.rows
 
 
 class _FakeConnection:
-    def __init__(self):
+    def __init__(self, rows=None):
         self.sql = None
         self.params = None
+        self.rows = rows or []
 
     def execute(self, sql, params):
         self.sql = sql
         self.params = params
-        return _FakeResult()
+        return _FakeResult(self.rows)
 
 
 class TestCalibration(unittest.TestCase):
@@ -40,6 +44,17 @@ class TestCalibration(unittest.TestCase):
         self.assertNotIn('p_down_5mm', con.sql)
         self.assertNotIn('p_flat_5mm', con.sql)
         self.assertEqual(con.params, ('5m:bootstrap.example.v1|%',))
+
+    def test_settled_rows_excludes_fallback_venue_from_production_calibration(self):
+        rows = [
+            (0.80, 0.10, 0.10, 'UP', '{"production_mode":"coinbase_fallback"}'),
+            (0.70, 0.20, 0.10, 'UP', '{"production_mode":"binance_primary"}'),
+        ]
+        con = _FakeConnection(rows)
+        out = calibration._settled_rows(
+            con, '5m', 'actual_direction_5m', 'bootstrap.example.v1'
+        )
+        self.assertEqual(out, [(0.70, 0.20, 0.10, 'UP')])
 
     def test_settled_rows_uses_10m_schema(self):
         con = _FakeConnection()
