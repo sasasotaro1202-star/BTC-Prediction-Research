@@ -39,7 +39,7 @@ jobs:
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
-            printf '%s' "$response" | jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,updated_at}' | while IFS= read -r run; do
+            printf '%s' "$response" | jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' | while IFS= read -r run; do
               [ -n "$run" ] || continue
               status=$(printf '%s' "$run" | jq -r '.status // ""')
               conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
@@ -49,7 +49,7 @@ jobs:
               updated=$(printf '%s' "$run" | jq -r '.updated_at // ""')
               updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
               age=$((now - updated_epoch))
-              echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} age=${age}s"
+              echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} head_sha=${head_sha:-unknown} age=${age}s"
               if [ "$status" != "completed" ]; then continue; fi
               case "$conclusion" in
                 failure|cancelled|timed_out)
