@@ -127,5 +127,25 @@ class TestPredictGenerationBinding(unittest.TestCase):
 
 
 
+
+class TestPredictBlendSafety(unittest.TestCase):
+    def test_unvalidated_context_agreement_cannot_add_live_blend_weight(self):
+        base = {"DOWN": 0.45, "FLAT": 0.20, "UP": 0.35}
+        structural = {"DOWN": 0.20, "FLAT": 0.50, "UP": 0.30}
+        market = {"cross_exchange_gap": 0.0}
+        with patch.object(predict, "load_blend_weight", return_value=0.0):
+            _, weight = predict.fuse(base, structural, market, True, "5m")
+        self.assertEqual(weight, 0.0)
+
+    def test_accepted_blend_uses_only_validated_weight(self):
+        base = {"DOWN": 0.45, "FLAT": 0.20, "UP": 0.35}
+        structural = {"DOWN": 0.20, "FLAT": 0.50, "UP": 0.30}
+        market = {"cross_exchange_gap": 0.0}
+        with patch.object(predict, "load_blend_weight", return_value=0.20):
+            _, weight = predict.fuse(base, structural, market, True, "5m")
+        self.assertAlmostEqual(weight, 0.20, places=12)
+
+
+
 if __name__ == '__main__':
     unittest.main()
