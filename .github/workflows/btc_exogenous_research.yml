@@ -66,5 +66,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: btc-exogenous-research
-          path: data/exogenous
+          path: |
+            data/exogenous
+            data/historical_research/exogenous_oos_ablation.json
           retention-days: 14
