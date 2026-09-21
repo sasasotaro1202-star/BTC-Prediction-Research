@@ -60,9 +60,11 @@ jobs:
           import json
           from pathlib import Path
           p=Path('data/historical_research/exogenous_oos_ablation.json')
+          c=Path('data/exogenous/gdelt_coverage.json')
+          if not c.exists(): raise SystemExit('GDELT coverage manifest missing')
           if not p.exists(): raise SystemExit('exogenous OOS artifact missing')
           x=json.loads(p.read_text())
-          if x.get('schema_version') != 1: raise SystemExit('exogenous OOS schema mismatch')
+          if x.get('schema_version') != 2: raise SystemExit('exogenous OOS schema mismatch')
           if x.get('research_only') is not True: raise SystemExit('exogenous OOS is not research-only')
           if x.get('production_changed') is not False: raise SystemExit('exogenous OOS reports production mutation')
           if x.get('final_holdout_protected') is not True: raise SystemExit('exogenous OOS holdout protection missing')
@@ -80,6 +82,9 @@ jobs:
           from pathlib import Path
           p=Path('data/exogenous/gdelt_events.manifest.json')
           if not p.exists(): raise SystemExit('GDELT manifest missing')
+          c=json.loads(c.read_text())
+          if c.get('schema_version') != 1: raise SystemExit('coverage schema mismatch')
+          if c.get('source') != 'GDELT_GKG': raise SystemExit('coverage source mismatch')
           m=json.loads(p.read_text())
           if m.get('schema_version') != 1: raise SystemExit('manifest schema mismatch')
           if m.get('source') != 'GDELT_GKG': raise SystemExit('manifest source mismatch')
