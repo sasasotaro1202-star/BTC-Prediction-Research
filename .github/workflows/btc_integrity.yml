@@ -139,6 +139,25 @@ jobs:
           if set(obj.get('horizons',{})) != {'5m','10m'}: raise SystemExit('5m/10m robustness results missing')
           print('research-only regime robustness artifact: OK')
           PY
+      - name: Evaluate research-only context model router
+        run: python src/context_router_oos.py
+      - name: Validate research-only context router artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/context_router_oos.json')
+          if not p.exists(): raise SystemExit('context router OOS report missing')
+          obj=json.loads(p.read_text())
+          if obj.get('research_only') is not True: raise SystemExit('context router is not research-only')
+          if obj.get('production_changed') is not False: raise SystemExit('context router changed production state')
+          if obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('context router policy mismatch')
+          if set(obj.get('horizons',{})) != {'5m','10m'}: raise SystemExit('context router 5m/10m results missing')
+          for h, report in obj['horizons'].items():
+              if report.get('status') == 'OK' and report.get('final_holdout_protected') is not True:
+                  raise SystemExit(f'{h}: final holdout is not protected')
+          print('research-only context router OOS artifact: OK')
+          PY
       - name: Evaluate final promotion safety gate
         if: success() && env.BTC_UPSTREAM_DEFERRED != '1'
         shell: bash
@@ -223,6 +242,7 @@ jobs:
           path: |
             data/historical_research/production_integrity.json
             data/historical_research/robustness_oos_report.json
+            data/historical_research/context_router_oos.json
             data/historical_research/promotion_gate.json
           if-no-files-found: error
           retention-days: 14
