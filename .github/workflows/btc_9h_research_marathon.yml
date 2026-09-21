@@ -131,6 +131,42 @@ jobs:
           path: data/historical_research/adaptive_ensemble_oos.json
           retention-days: 14
 
+
+  rolling_challenger:
+    name: Rolling challenger chronological OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run rolling challenger OOS
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/rolling_challenger_oos.py
+          test -s data/historical_research/rolling_challenger_oos.json
+      - name: Upload rolling challenger evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-rolling-challenger
+          path: data/historical_research/rolling_challenger_oos.json
+          retention-days: 14
+
   robustness:
     name: Regime robustness OOS
     runs-on: ubuntu-latest
@@ -168,7 +204,7 @@ jobs:
 
   historical_and_integrity:
     name: Incremental historical research + integrity
-    needs: [context_router, interaction, robustness, adaptive_ensemble]
+    needs: [context_router, interaction, robustness, adaptive_ensemble, rolling_challenger]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -218,6 +254,7 @@ jobs:
               "btc-9h-context-router": "context_router_oos.json",
               "btc-9h-interaction": "interaction_oos_report.json",
               "btc-9h-robustness": "robustness_oos_report.json",
+              "btc-9h-rolling-challenger": "rolling_challenger_oos.json",
           }
           for directory, filename in expected.items():
               path = root / directory / filename
