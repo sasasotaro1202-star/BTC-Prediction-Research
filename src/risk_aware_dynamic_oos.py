@@ -49,7 +49,13 @@ def _aligned(model, rows):
     return out / out.sum(axis=1, keepdims=True)
 
 
-def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weight=MAX_WEIGHT):
+def _weights_from_losses(
+    losses,
+    redundancy=None,
+    temperature=TEMPERATURE,
+    floor=FLOOR,
+    max_weight=MAX_WEIGHT,
+):
     if not losses:
         return ()
     vals = np.asarray([float(x) for x in losses], dtype=float)
@@ -57,12 +63,19 @@ def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weigh
     uniform = np.full(n, 1.0 / n)
     if n == 0 or not np.all(np.isfinite(vals)):
         return tuple(float(x) for x in uniform)
+    score = vals.copy()
+    if redundancy is not None:
+        red = np.asarray([float(x) for x in redundancy], dtype=float)
+        if red.shape != vals.shape or not np.all(np.isfinite(red)):
+            return tuple(float(x) for x in uniform)
+        red = np.clip(red, 0.0, 1.0)
+        score = score + DIVERSITY_PENALTY * red
     lower = float(floor)
     upper = float(max_weight)
     if n * lower > 1.0 or n * upper < 1.0:
         return tuple(float(x) for x in uniform)
     z = max(float(temperature), 1e-6)
-    shifted = vals - float(vals.min())
+    shifted = score - float(score.min())
     raw = np.exp(-shifted / z)
     raw /= raw.sum()
     w = (1.0 - SHRINKAGE) * raw + SHRINKAGE * uniform
@@ -86,6 +99,31 @@ def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weigh
     w = np.clip(w, lower, upper)
     w /= w.sum()
     return tuple(float(x) for x in w)
+
+
+def _pairwise_redundancy(parts):
+    """Return each model's mean absolute probability correlation to peers."""
+    if len(parts) < 2:
+        return np.zeros(len(parts), dtype=float)
+    vectors = [np.asarray(p, dtype=float).reshape(-1) for p in parts]
+    out = np.zeros(len(vectors), dtype=float)
+    for i in range(len(vectors)):
+        pair_values = []
+        for j in range(len(vectors)):
+            if i == j:
+                continue
+            a, c = vectors[i], vectors[j]
+            if len(a) < 2 or len(c) != len(a):
+                return np.ones(len(vectors), dtype=float)
+            if float(np.std(a)) <= 1e-12 or float(np.std(c)) <= 1e-12:
+                pair_values.append(1.0)
+                continue
+            corr = float(np.corrcoef(a, c)[0, 1])
+            if not np.isfinite(corr):
+                return np.ones(len(vectors), dtype=float)
+            pair_values.append(abs(corr))
+        out[i] = float(np.mean(pair_values)) if pair_values else 0.0
+    return np.clip(out, 0.0, 1.0)
 
 
 def _factories():
