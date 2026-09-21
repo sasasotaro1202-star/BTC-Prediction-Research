@@ -7,8 +7,15 @@ from pathlib import Path
 
 import numpy as np
 
-from model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
-from ensemble_model import SoftVotingEnsemble
+try:
+    from model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
+    from ensemble_model import SoftVotingEnsemble
+except ModuleNotFoundError:
+    # Support both execution modes used by CI and the test suite:
+    #   python src/adaptive_ensemble_oos.py
+    #   from src import adaptive_ensemble_oos
+    from src.model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
+    from src.ensemble_model import SoftVotingEnsemble
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "adaptive_ensemble_oos.json"
