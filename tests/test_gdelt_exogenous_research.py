@@ -69,7 +69,7 @@ def test_coverage_normalizes_prediction_timezone():
     from datetime import timedelta
     from gdelt_exogenous_research import coverage_complete, _slice_stamps_for_window
     t = datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc)
-    equivalent = datetime(2026, 9, 21, 14, 0, tzinfo=timezone(timedelta(hours=2)))
+    equivalent = datetime(2026, 9, 21, 16, 0, tzinfo=timezone(timedelta(hours=2)))
     required = set(_slice_stamps_for_window(t, timedelta(hours=1)))
     assert coverage_complete(required, t, timedelta(hours=1))
     assert coverage_complete(required, equivalent, timedelta(hours=1))
