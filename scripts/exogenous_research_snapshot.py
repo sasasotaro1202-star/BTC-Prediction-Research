@@ -9,6 +9,9 @@ from __future__ import annotations
 import argparse, json, urllib.parse, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from exogenous_information import InformationEvent, source_metadata
 from exogenous_sources import _parse_seen_time
 
