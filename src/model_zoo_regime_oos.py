@@ -14,8 +14,7 @@ ROOT_DIR=SRC_DIR.parent
 for _path in (ROOT_DIR,SRC_DIR):
     if str(_path) not in sys.path: sys.path.insert(0,str(_path))
 from model_compare import HORIZONS, metrics, _temperature, apply_temperature
-import historical_research as hr
-import historical_research_runner  # patches Binance HTTP access to verified archive fallbacks
+from bootstrap_train import fetch_history, make_features, TARGET_ROWS, THRESHOLD
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -24,7 +23,7 @@ from lightgbm import LGBMClassifier
 OUT=ROOT_DIR/"data/historical_research/model_zoo_regime_oos.json"
 CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=300; MAX_ROWS=12000
 TREND_INDEX=2
-VOL_INDEX=8
+VOL_INDEX=6
 MIN_HISTORY_PER_REGIME=180; FLOOR=0.10; MAX_WEIGHT=0.55; SHRINKAGE=0.30
 
 def factories():
@@ -98,11 +97,17 @@ def _mix(parts,weights):
     out=np.clip(out,1e-7,1.0); return out/out.sum(axis=1,keepdims=True)
 
 def _historical_rows(horizon):
-    """Build causal rows directly from closed Binance historical market data."""
-    raw=hr.build_panel()
+    """Build runtime-compatible causal rows from closed 1-minute BTC history."""
+    raw, source = fetch_history(TARGET_ROWS)
     steps=int(horizon[:-1])
-    X,y,ts,base=hr.labels(raw,steps)
-    return [{"id":str(int(t)),"created":str(int(t)),"x":np.asarray(x,dtype=float),"y":str(yy)} for x,yy,t in zip(X,y,ts)]
+    out=[]
+    for i in range(30, len(raw)-steps):
+        x=make_features(raw[:i+1])
+        future_return=raw[i+steps][4]/raw[i][4]-1.0
+        y="UP" if future_return>THRESHOLD else "DOWN" if future_return<-THRESHOLD else "FLAT"
+        if all(np.isfinite(v) for v in x):
+            out.append({"id":str(int(raw[i][0])),"created":str(int(raw[i][0])),"x":np.asarray(x,dtype=float),"y":y,"source":source})
+    return out
 
 def evaluate(horizon):
     try:
@@ -159,7 +164,7 @@ def evaluate(horizon):
     equal_hold=_mix(hold_parts,np.full(len(hold_parts),1.0/len(hold_parts)))
     routed_hold=np.asarray([_mix([p[i:i+1] for p in hold_parts],regime_w.get(hold_keys[i],global_w))[0] for i in range(len(holdout))])
     y_hold=[r["y"] for r in holdout]
-    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"causal_prior_oos_regime_loss_weighting_with_global_fallback_soft_routing","final_holdout_protected":True,"final_holdout_used_for_selection":False,"model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":metrics(y_hold,equal_hold),"routed":metrics(y_hold,routed_hold),"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
+    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"runtime_15_feature_causal_prior_oos_regime_loss_weighting_with_global_fallback_soft_routing","final_holdout_protected":True,"final_holdout_used_for_selection":False,"feature_schema":"bootstrap_train.FEATURES_compatible_runtime_15", "model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":metrics(y_hold,equal_hold),"routed":metrics(y_hold,routed_hold),"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
 
 def main():
     payload={"schema_version":1,"research_only":True,"production_changed":False,"horizons":{h:evaluate(h) for h in HORIZONS}}
