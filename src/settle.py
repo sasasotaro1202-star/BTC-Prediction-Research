@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from db import DB, init_db
 from settlement_source import preferred_source_from_scenario, target_close_preferred
+from label_policy import direction_from_prices, NEUTRAL_BPS
 
-THRESHOLD = 0.00020  # 2 bps
 MAX_TARGET_WORKERS = 4
 
 
@@ -84,7 +84,7 @@ def settle():
             if actual5 is None and target5 <= now.isoformat():
                 px, _ = resolved.get((target5, source), (None, 'unavailable'))
                 if px is not None:
-                    actual_dir = direction(base, px)
+                    actual_dir = direction_from_prices(base, px)
                     pred_dir = max((('UP', up5), ('DOWN', down5), ('FLAT', flat5)), key=lambda x: x[1])[0]
                     con.execute('''UPDATE predictions SET actual_price_5m=?, actual_direction_5m=?, correct_5m=?, settled_5m_at_utc=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), prediction_id))
                     settled += 1
@@ -93,13 +93,13 @@ def settle():
             if actual10 is None and target10 <= now.isoformat():
                 px, _ = resolved.get((target10, source), (None, 'unavailable'))
                 if px is not None:
-                    actual_dir = direction(base, px)
+                    actual_dir = direction_from_prices(base, px)
                     pred_dir = max((('UP', up10), ('DOWN', down10), ('FLAT', flat10)), key=lambda x: x[1])[0]
                     con.execute('''UPDATE predictions SET actual_price_10m=?, actual_direction_10m=?, correct_10m=?, settled_10m_at_utc=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), prediction_id))
                     settled += 1
                 else:
                     unavailable += 1
-    print('settled_fields', settled, 'unavailable_fields', unavailable, 'skipped_degraded', skipped_degraded, 'threshold_bps', THRESHOLD * 10000)
+    print('settled_fields', settled, 'unavailable_fields', unavailable, 'skipped_degraded', skipped_degraded, 'threshold_bps', NEUTRAL_BPS)
 
 
 if __name__ == '__main__':
