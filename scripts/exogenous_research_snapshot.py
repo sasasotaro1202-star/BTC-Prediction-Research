@@ -85,8 +85,19 @@ def fetch_news() -> list[InformationEvent]:
 
 def fetch_bls() -> list[InformationEvent]:
     year=str(_now().year)
-    payload=_get_json(BLS+"?"+urllib.parse.urlencode({
-        "seriesid":"CUSR0000SA0,LNS14000000","startyear":year,"endyear":year}))
+    body=json.dumps({
+        "seriesid":["CUSR0000SA0","LNS14000000"],
+        "startyear":year,
+        "endyear":year,
+    }).encode("utf-8")
+    req=urllib.request.Request(
+        BLS,
+        data=body,
+        headers={"User-Agent":UA,"Content-Type":"application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req,timeout=30) as response:
+        payload=json.loads(response.read().decode("utf-8"))
     available=_now(); events=[]
     for series in payload.get("Results",{}).get("series",[]):
         sid=series.get("seriesID")
