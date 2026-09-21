@@ -23,7 +23,25 @@ class TestPITOOSAudit(unittest.TestCase):
     def test_accepts_ordered_future_targets(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)
-            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps({"decision_time_utc": now.isoformat(), "market_data_cutoff_utc": (now - timedelta(minutes=1)).isoformat()}))])
+            scenario = {
+                "decision_time_utc": now.isoformat(),
+                "market_data_cutoff_utc": (now - timedelta(minutes=1)).isoformat(),
+                "provenance": {
+                    "event_time": now.isoformat(),
+                    "available_at": now.isoformat(),
+                    "retrieved_at": now.isoformat(),
+                    "prediction_cutoff": now.isoformat(),
+                    "sources": {
+                        "binance_futures": {
+                            "event_time": now.isoformat(),
+                            "available_at": now.isoformat(),
+                            "retrieved_at": now.isoformat(),
+                            "prediction_cutoff": now.isoformat(),
+                        }
+                    },
+                },
+            }
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps(scenario))])
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
