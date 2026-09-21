@@ -270,16 +270,15 @@ jobs:
           db.unlink()
           print('Exact archive round-trip verified before deleting uncompressed DB.')
           PY
-      - name: Upload BTC research artifacts
+      - name: Upload minimal BTC cycle handoff artifact
         uses: actions/upload-artifact@v6
         with:
           name: btc-predictions-db
           path: |
             data/predictions.db.gz
             data/live_cycle_status.json
-            data/historical_research/**
-            models/**
-          retention-days: 14
+          if-no-files-found: error
+          retention-days: 3
       - name: Check repository diff before commit
         run: git diff --check
       - name: Commit BTC research state with conflict-safe merge retry

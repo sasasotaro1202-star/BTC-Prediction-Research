@@ -118,5 +118,10 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: btc-historical-research
-          path: data/historical_research
-          retention-days: 14
+          path: |
+            data/historical_research/report.json
+            data/historical_research/research_health.json
+            data/historical_research/production_artifact_audit.json
+            data/historical_research/venue_drift.json
+          if-no-files-found: error
+          retention-days: 3

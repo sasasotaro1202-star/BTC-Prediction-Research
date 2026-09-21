@@ -73,7 +73,7 @@ jobs:
         with:
           name: btc-9h-context-router
           path: data/historical_research/context_router_oos.json
-          retention-days: 14
+          retention-days: 3
 
   interaction:
     name: Interaction chronological OOS
@@ -108,7 +108,7 @@ jobs:
         with:
           name: btc-9h-interaction
           path: data/historical_research/interaction_oos_report.json
-          retention-days: 14
+          retention-days: 3
 
   adaptive_ensemble:
     name: Adaptive ensemble chronological OOS
@@ -143,7 +143,7 @@ jobs:
         with:
           name: btc-9h-adaptive-ensemble
           path: data/historical_research/adaptive_ensemble_oos.json
-          retention-days: 14
+          retention-days: 3
 
 
 
@@ -180,7 +180,7 @@ jobs:
         with:
           name: btc-9h-risk-aware-dynamic
           path: data/historical_research/risk_aware_dynamic_oos.json
-          retention-days: 14
+          retention-days: 3
 
   model_zoo_regime:
     name: Model-zoo regime-aware soft-routing chronological OOS
@@ -215,7 +215,7 @@ jobs:
         with:
           name: btc-9h-model-zoo-regime
           path: data/historical_research/model_zoo_regime_oos.json
-          retention-days: 14
+          retention-days: 3
 
   extended_features:
     name: Extended feature chronological OOS
@@ -250,7 +250,7 @@ jobs:
         with:
           name: btc-9h-extended-features
           path: data/historical_research/extended_features_oos.json
-          retention-days: 14
+          retention-days: 3
 
   rolling_challenger:
     name: Rolling challenger chronological OOS
@@ -285,7 +285,7 @@ jobs:
         with:
           name: btc-9h-rolling-challenger
           path: data/historical_research/rolling_challenger_oos.json
-          retention-days: 14
+          retention-days: 3
 
   robustness:
     name: Regime robustness OOS
@@ -320,7 +320,7 @@ jobs:
         with:
           name: btc-9h-robustness
           path: data/historical_research/robustness_oos_report.json
-          retention-days: 14
+          retention-days: 3
 
   historical_and_integrity:
     name: Incremental historical research + integrity
@@ -460,7 +460,12 @@ jobs:
         with:
           name: btc-9h-marathon-final
           path: |
-            data/historical_research
-            data/historical_research/9h_evidence
+            data/historical_research/report.json
+            data/historical_research/research_input_audit.json
+            data/historical_research/production_integrity.json
+            data/historical_research/robustness_oos_report.json
+            data/historical_research/context_router_oos.json
+            data/historical_research/promotion_gate.json
+            data/historical_research/9h_evidence/**/*.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
