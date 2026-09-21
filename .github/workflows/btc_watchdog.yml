@@ -85,10 +85,15 @@ jobs:
               else
                 echo "WARN: could not enable ${workflow}; attempting dispatch anyway."
               fi
+              # Prefer the CLI helper, then fall back to the explicit workflow_dispatch
+              # REST endpoint. Both paths remain fail-closed: a failed recovery request
+              # must never mutate prediction state or be reported as successful.
               if gh workflow run "$workflow" --ref main >/dev/null 2>&1; then
-                echo "${workflow} recovery dispatch succeeded."
+                echo "${workflow} recovery dispatch succeeded via gh workflow run."
+              elif gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
+                echo "${workflow} recovery dispatch succeeded via workflow_dispatch API."
               else
-                echo "WARN: ${workflow} recovery dispatch failed; leaving state unchanged."
+                echo "WARN: ${workflow} recovery dispatch failed through both supported paths; leaving state unchanged."
               fi
             fi
           }
