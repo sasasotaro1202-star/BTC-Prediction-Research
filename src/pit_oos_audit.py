@@ -158,9 +158,12 @@ def audit() -> dict:
         except Exception:
             violations.append(f"{prediction_id}:invalid_pit_provenance")
 
-        provenance = scenario.get("provenance")
+        # Degraded predictions must always satisfy the explicit safety policy,
+        # including legacy rows. Check this before legacy provenance handling so
+        # an old degraded record cannot bypass the policy contract.
         if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
             violations.append(f"{prediction_id}:degraded_policy_mismatch")
+        provenance = scenario.get("provenance")
         if provenance is None:
             # Old prediction rows predate the provenance contract. They cannot be
             # promoted to PIT-verified merely by inference, but they are not the
