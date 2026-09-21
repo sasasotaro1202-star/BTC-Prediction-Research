@@ -51,6 +51,21 @@ jobs:
         run: python -m pytest -q tests/test_exogenous_information.py tests/test_exogenous_feature_join.py tests/test_gdelt_exogenous_research.py
       - name: Collect recent GDELT research events
         run: python scripts/gdelt_exogenous_research.py --hours 1
+      - name: Prepare research-only exogenous OOS database contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sqlite3
+          root = Path('.')
+          candidates = [root / 'data' / 'btc.db', root / 'data' / 'predictions.db']
+          for path in candidates:
+              if path.exists():
+                  print(f'Using existing database: {path}')
+                  break
+          else:
+              print('No production database artifact present; OOS will remain DEFERRED.')
+          PY
+
       - name: Run research-only exogenous OOS ablation
         run: python scripts/exogenous_oos_ablation.py
       - name: Validate exogenous OOS ablation artifact
