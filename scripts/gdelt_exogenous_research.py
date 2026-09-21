@@ -207,6 +207,8 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
         stamp for stamp in coverage
         if _parse_gdelt_dt(stamp) is not None and _parse_gdelt_dt(stamp) >= retention_cutoff
     }
+    # Coverage is an independent provenance contract: missing slices are never
+    # interpreted as zero-event observations.
     records.sort(key=lambda x: (x["available_at"], x["event_id"]))
     with output.open("w", encoding="utf-8") as fh:
         for item in records:
