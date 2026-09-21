@@ -68,18 +68,9 @@ def _predict_block(factory, train, test):
     return apply_temperature(probs, temp)
 
 
-def evaluate(horizon: str):
-    rows = load_rows(horizon)
-    if len(rows) > MAX_ROWS:
-        rows = rows[-MAX_ROWS:]
-    if len(rows) < MIN_TRAIN + TEST_BLOCK:
-        return {"status": "DEFERRED", "n": len(rows), "reason": "insufficient_rows"}
-
+def _evaluate_development(rows, horizon: str):
     equal_factory = lambda: SoftVotingEnsemble(learn_weights=False)
     adaptive_factory = lambda: SoftVotingEnsemble(learn_weights=True)
-    equal_preds = []
-    adaptive_preds = []
-    ys = []
     blocks = []
 
     for end in _endpoints(len(rows)):
@@ -105,12 +96,8 @@ def evaluate(horizon: str):
                 "brier": am["brier"] - em["brier"],
             },
         })
-        equal_preds.extend(eq.tolist())
-        adaptive_preds.extend(ad.tolist())
-        ys.extend(y)
-
     if not blocks:
-        return {"status": "DEFERRED", "n": len(rows), "reason": "no_valid_blocks"}
+        return None
 
     ll = np.asarray([b["delta"]["logloss"] for b in blocks], dtype=float)
     br = np.asarray([b["delta"]["brier"] for b in blocks], dtype=float)
@@ -133,15 +120,79 @@ def evaluate(horizon: str):
         and summary["mean_brier_delta"] <= -0.0015
         and summary["non_worse_accuracy_ratio"] >= 0.80
     )
+    return summary, blocks, bool(eligible)
+
+
+def evaluate(horizon: str):
+    rows = load_rows(horizon)
+    if len(rows) > MAX_ROWS:
+        rows = rows[-MAX_ROWS:]
+
+    if len(rows) < MIN_TRAIN + TEST_BLOCK + 100:
+        return {
+            "status": "DEFERRED",
+            "n": len(rows),
+            "reason": "insufficient_rows_for_protected_holdout",
+        }
+
+    split = int(len(rows) * 0.80)
+    development = rows[:split]
+    holdout = rows[split:]
+    if len(development) < MIN_TRAIN + TEST_BLOCK:
+        return {
+            "status": "DEFERRED",
+            "n": len(rows),
+            "reason": "insufficient_development_rows",
+        }
+
+    dev_result = _evaluate_development(development, horizon)
+    if dev_result is None:
+        return {
+            "status": "DEFERRED",
+            "n": len(rows),
+            "reason": "no_valid_development_blocks",
+        }
+    summary, blocks, eligible = dev_result
+
+    # Final 20% is protected. No threshold, weight, or eligibility decision
+    # is made from it; it is evaluated once using the frozen development
+    # protocol and the full development history as training data.
+    equal_factory = lambda: SoftVotingEnsemble(learn_weights=False)
+    adaptive_factory = lambda: SoftVotingEnsemble(learn_weights=True)
+    eq = _predict_block(equal_factory, development, holdout)
+    ad = _predict_block(adaptive_factory, development, holdout)
+    if eq is None or ad is None:
+        final_holdout = {
+            "status": "DEFERRED",
+            "reason": "holdout_prediction_failed",
+        }
+    else:
+        y_hold = [r["y"] for r in holdout]
+        em = metrics(y_hold, eq)
+        am = metrics(y_hold, ad)
+        final_holdout = {
+            "equal": em,
+            "adaptive": am,
+            "delta": {
+                "accuracy": am["accuracy"] - em["accuracy"],
+                "logloss": am["logloss"] - em["logloss"],
+                "brier": am["brier"] - em["brier"],
+            },
+        }
+
     return {
         "status": "OK",
         "schema_version": 1,
         "research_only": True,
         "production_changed": False,
         "final_holdout_protected": True,
+        "final_holdout_used_for_selection": False,
         "policy": "adaptive_ensemble_weight_learning_on_pre_test_training_window_only",
         "eligible_pending_frozen_holdout_confirmation": bool(eligible),
         "summary": summary,
+        "development_n": len(development),
+        "final_holdout_n": len(holdout),
+        "final_holdout": final_holdout,
         "blocks": blocks,
     }
 

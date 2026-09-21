@@ -49,16 +49,34 @@ def _regimes(rows):
         out.append(f"{trend}|{vol}")
     return out
 
+def robust_generation_prefix(horizon, generation):
+    return f"{horizon}:{generation}|%"
+
+
+def current_generation(horizon):
+    with sqlite3.connect(DB) as con:
+        row=con.execute(
+            "SELECT production_version FROM model_registry WHERE horizon=?",
+            (horizon,),
+        ).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
 def load(h):
     actual=HORIZONS[h]
+    generation=current_generation(h)
+    if not generation:
+        return []
+    prefix=robust_generation_prefix(h, generation)
     with sqlite3.connect(DB) as con:
         rows=con.execute(f"""
           SELECT prediction_id,created_at_utc,feature_json,{actual},
-                 p_up_{h},p_down_{h},p_flat_{h}
+                 p_up_{h},p_down_{h},p_flat_{h},model_version
           FROM predictions
           WHERE {actual} IS NOT NULL
+            AND model_version LIKE ?
           ORDER BY created_at_utc,prediction_id
-        """).fetchall()
+        """,(prefix,)).fetchall()
     result=[]
     for r in rows:
         try:
@@ -67,7 +85,7 @@ def load(h):
             probs=[float(r[4]),float(r[5]),float(r[6])]
             if not all(math.isfinite(x) for x in vals+probs): continue
             if r[3] not in CLASSES or min(probs)<0 or sum(probs)<=0: continue
-            result.append({"id":r[0],"created":r[1],"ret":vals[0],"vol":vals[1],"y":r[3],"p":probs})
+            result.append({"id":r[0],"created":r[1],"ret":vals[0],"vol":vals[1],"y":r[3],"p":probs,"model_version":r[7]})
         except (TypeError,ValueError,KeyError,json.JSONDecodeError): continue
     return result
 

@@ -1,8 +1,17 @@
 import json, tempfile, unittest
 from pathlib import Path
-from src.robustness_oos import _metrics, _regimes
+from src.robustness_oos import _metrics, _regimes, robust_generation_prefix
 
 class RobustnessTests(unittest.TestCase):
+    def test_generation_prefix_is_horizon_specific(self):
+        self.assertEqual(
+            robust_generation_prefix("5m", "bootstrap.bootstrap_rf"),
+            "5m:bootstrap.bootstrap_rf|%",
+        )
+        self.assertEqual(
+            robust_generation_prefix("10m", "bootstrap.bootstrap_rf"),
+            "10m:bootstrap.bootstrap_rf|%",
+        )
     def test_metrics_normalize_probabilities(self):
         m=_metrics(["UP","DOWN","FLAT"],[[2,0,0],[0,3,0],[0,0,4]])
         self.assertEqual(m["n"],3)
