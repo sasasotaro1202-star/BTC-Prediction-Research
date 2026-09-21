@@ -243,7 +243,11 @@ def compare_h(h):
       # test ExtraTrees under the same chronological/purged/calibrated gate rather than
       # assuming the research-only result transfers to production.
       'extra_trees_500':lambda:ExtraTreesClassifier(n_estimators=500,max_depth=7,min_samples_leaf=8,max_features='sqrt',random_state=42,n_jobs=-1),
-      'hgb':lambda:HistGradientBoostingClassifier(max_iter=250,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.0,random_state=42)
+      'hgb':lambda:HistGradientBoostingClassifier(max_iter=250,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.0,random_state=42),
+      # A compact heterogeneous soft-vote candidate tests whether probability
+      # averaging improves generalization over any single estimator. It remains
+      # a candidate until the same chronological/HAC gate proves a real gain.
+      'soft_ensemble':lambda:__import__('ensemble_model',fromlist=['SoftVotingEnsemble']).SoftVotingEnsemble()
     }
     results={}
     # Multiple candidate families are tested at each milestone. Apply a
