@@ -35,6 +35,7 @@ FLOOR = 0.10
 MAX_WEIGHT = 0.55
 SHRINKAGE = 0.20
 TEMPERATURE = 0.25
+DIVERSITY_PENALTY = 0.05
 
 
 def _aligned(model, rows):
@@ -197,6 +198,7 @@ def evaluate(horizon: str):
 
     blocks = []
     ema_losses = None
+    ema_redundancy = None
     alpha = 0.30
 
     for end in _block_endpoints(len(development)):
@@ -206,20 +208,34 @@ def evaluate(horizon: str):
         if len(train) < MIN_TRAIN or len(test) < 50:
             continue
 
-        equal_w = (1.0 / 3.0,) * 3
-        risk_w = _weights_from_losses(ema_losses) if ema_losses is not None else equal_w
         parts = _fit_parts(train, test)
+        if len(parts) < 3:
+            continue
+        equal_w = tuple(1.0 / len(parts) for _ in parts)
+        risk_w = (
+            _weights_from_losses(ema_losses, ema_redundancy)
+            if ema_losses is not None
+            else equal_w
+        )
         eq = _mix_parts(parts, equal_w)
         risk = _mix_parts(parts, risk_w)
         y = [r["y"] for r in test]
         em = metrics(y, eq)
         rm = metrics(y, risk)
-        # Model-specific loss is measured from the same fitted models.
+
         component_losses = [_block_logloss(y, p) for p in parts]
+        component_redundancy = _pairwise_redundancy(parts)
         ema_losses = (
             np.asarray(component_losses, dtype=float)
             if ema_losses is None
-            else alpha * np.asarray(component_losses, dtype=float) + (1.0 - alpha) * ema_losses
+            else alpha * np.asarray(component_losses, dtype=float)
+            + (1.0 - alpha) * ema_losses
+        )
+        ema_redundancy = (
+            np.asarray(component_redundancy, dtype=float)
+            if ema_redundancy is None
+            else alpha * np.asarray(component_redundancy, dtype=float)
+            + (1.0 - alpha) * ema_redundancy
         )
 
         blocks.append({
@@ -228,6 +244,10 @@ def evaluate(horizon: str):
             "risk_aware": rm,
             "weights_before_block": list(risk_w),
             "component_logloss": component_losses,
+            "component_redundancy": component_redundancy.tolist(),
+            "redundancy_before_block": (
+                None if ema_redundancy is None else ema_redundancy.tolist()
+            ),
             "delta": {
                 "accuracy": rm["accuracy"] - em["accuracy"],
                 "logloss": rm["logloss"] - em["logloss"],
@@ -250,12 +270,21 @@ def evaluate(horizon: str):
         "improved_logloss_ratio": float(np.mean(ll < 0)),
         "improved_brier_ratio": float(np.mean(br < 0)),
         "non_worse_accuracy_ratio": float(np.mean(ac >= -0.005)),
+        "mean_redundancy": float(
+            np.mean([
+                np.mean(b["component_redundancy"]) for b in blocks
+            ])
+        ),
     }
 
-    # One descriptive holdout pass; all adaptive state was updated before the holdout.
     hold_parts = _fit_parts(development, holdout)
-    equal_hold = _mix_parts(hold_parts, (1.0 / 3.0,) * 3)
-    risk_hold_w = _weights_from_losses(ema_losses) if ema_losses is not None else (1.0 / 3.0,) * 3
+    equal_hold_w = tuple(1.0 / len(hold_parts) for _ in hold_parts)
+    equal_hold = _mix_parts(hold_parts, equal_hold_w)
+    risk_hold_w = (
+        _weights_from_losses(ema_losses, ema_redundancy)
+        if ema_losses is not None
+        else equal_hold_w
+    )
     risk_hold = _mix_parts(hold_parts, risk_hold_w)
     yh = [r["y"] for r in holdout]
 
@@ -266,7 +295,7 @@ def evaluate(horizon: str):
         "production_changed": False,
         "final_holdout_protected": True,
         "final_holdout_used_for_selection": False,
-        "policy": "causal_blockwise_ema_loss_softmax_with_weight_floor_and_uniform_shrinkage",
+        "policy": "causal_blockwise_ema_loss_plus_redundancy_softmax_with_weight_floor_and_uniform_shrinkage",
         "summary": summary,
         "development_n": len(development),
         "final_holdout_n": len(holdout),
