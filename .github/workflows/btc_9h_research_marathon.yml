@@ -1,0 +1,219 @@
+name: BTC 9H Research Marathon
+
+# Research-only marathon. It never changes Champion/production model files.
+# Three independent OOS diagnostics run in parallel for up to 3h, followed by
+# up to 6h of incremental historical research + final integrity checks.
+# Total wall-clock envelope: up to 9h. Scheduled daily outside the hourly load peak.
+on:
+  schedule:
+    - cron: '37 13 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_9h_research_marathon.yml'
+
+concurrency:
+  group: btc-9h-research-marathon
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  context_router:
+    name: Context-router chronological OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run router OOS
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/context_router_oos.py
+          test -s data/historical_research/context_router_oos.json
+      - name: Upload router evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-context-router
+          path: data/historical_research/context_router_oos.json
+          retention-days: 14
+
+  interaction:
+    name: Interaction chronological OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run interaction OOS
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/interaction_oos.py
+          test -s data/historical_research/interaction_oos.json
+      - name: Upload interaction evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-interaction
+          path: data/historical_research/interaction_oos.json
+          retention-days: 14
+
+  robustness:
+    name: Regime robustness OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run robustness OOS
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/robustness_oos.py
+          test -s data/historical_research/robustness_oos_report.json
+      - name: Upload robustness evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-robustness
+          path: data/historical_research/robustness_oos_report.json
+          retention-days: 14
+
+  historical_and_integrity:
+    name: Incremental historical research + integrity
+    needs: [context_router, interaction, robustness]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore historical archive cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/btc_prediction_archive_cache
+          key: btc-9h-archive-${{ runner.os }}-${{ hashFiles('src/historical_research_runner.py', 'scripts/historical_research_spot_fallback.py') }}
+          restore-keys: |
+            btc-9h-archive-${{ runner.os }}-
+            btc-archive-${{ runner.os }}-
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Download parallel research evidence
+        uses: actions/download-artifact@v6
+        with:
+          pattern: btc-9h-*
+          path: data/historical_research/9h_evidence
+          merge-multiple: false
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile all research code
+        run: python -m compileall -q src scripts tests
+      - name: Historical research with bounded retries
+        shell: bash
+        run: |
+          set -u
+          for attempt in 1 2 3; do
+            echo "=== 9h historical research attempt ${attempt}/3 ==="
+            set +e
+            python scripts/historical_research_spot_fallback.py
+            status=$?
+            set -e
+            if [ "${status}" -eq 0 ]; then exit 0; fi
+            echo "historical research attempt ${attempt} failed: ${status}"
+            if [ "${attempt}" -lt 3 ]; then sleep $((30 * attempt)); fi
+          done
+          exit 1
+      - name: Validate historical evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/report.json')
+          if not p.exists():
+              raise SystemExit('historical report missing')
+          r=json.loads(p.read_text())
+          if r.get('protocol_version') != 'historical-v6-microstructure-incremental-cache':
+              raise SystemExit('unexpected historical protocol')
+          for h in ('5m','10m'):
+              hz=r.get('horizons',{}).get(h,{})
+              if hz.get('samples',0) <= 0:
+                  raise SystemExit(f'{h}: no historical samples')
+          print('historical evidence: VERIFIED')
+          PY
+      - name: Run production artifact audit
+        run: python src/production_artifact_audit.py
+      - name: Run PIT/OOS audit
+        run: python src/pit_oos_audit.py
+      - name: Upload complete 9h evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-marathon-final
+          path: |
+            data/historical_research
+            data/historical_research/9h_evidence
+          if-no-files-found: warn
+          retention-days: 14
