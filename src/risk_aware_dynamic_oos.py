@@ -57,8 +57,29 @@ def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weigh
     raw /= raw.sum()
     uniform = np.full(3, 1.0 / 3.0)
     w = (1.0 - SHRINKAGE) * raw + SHRINKAGE * uniform
-    w = np.minimum(w, float(max_weight))
-    w = np.maximum(w, float(floor))
+    w = np.asarray(w, dtype=float)
+    lower = float(floor)
+    upper = float(max_weight)
+    if lower < 0 or upper < lower or 3 * lower > 1.0 or 3 * upper < 1.0:
+        return tuple(float(x) for x in uniform)
+    w = np.clip(w, lower, upper)
+    for _ in range(20):
+        diff = 1.0 - float(w.sum())
+        if abs(diff) <= 1e-12:
+            break
+        if diff > 0:
+            free = w < upper - 1e-12
+            if not np.any(free):
+                break
+            room = upper - w[free]
+            w[free] += diff * room / room.sum()
+        else:
+            free = w > lower + 1e-12
+            if not np.any(free):
+                break
+            room = w[free] - lower
+            w[free] += diff * room / room.sum()
+    w = np.clip(w, lower, upper)
     w /= w.sum()
     return tuple(float(x) for x in w)
 
