@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from typing import Iterable, Mapping
 
 
@@ -30,10 +31,15 @@ class InformationEvent:
                 raise ValueError("information timestamps must be timezone-aware")
         if self.available_at < self.published_at:
             raise ValueError("available_at cannot precede published_at")
-        if not 0.0 <= float(self.importance) <= 1.0:
-            raise ValueError("importance must be in [0, 1]")
-        if self.sentiment is not None and not -1.0 <= float(self.sentiment) <= 1.0:
-            raise ValueError("sentiment must be in [-1, 1]")
+        importance = float(self.importance)
+        if not math.isfinite(importance) or not 0.0 <= importance <= 1.0:
+            raise ValueError("importance must be finite and in [0, 1]")
+        if self.sentiment is not None:
+            sentiment = float(self.sentiment)
+            if not math.isfinite(sentiment) or not -1.0 <= sentiment <= 1.0:
+                raise ValueError("sentiment must be finite and in [-1, 1]")
+        if self.surprise is not None and not math.isfinite(float(self.surprise)):
+            raise ValueError("surprise must be finite when present")
 
 
 def pit_safe_events(
