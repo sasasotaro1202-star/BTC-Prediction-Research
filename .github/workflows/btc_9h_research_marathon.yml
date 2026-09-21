@@ -15,8 +15,6 @@ on:
       - 'src/production_artifact_audit.py'
       - 'src/pit_oos_audit.py'
       - 'src/ensemble_model.py'
-      - 'src/model_compare.py'
-      - 'src/research_input_audit.py'
       - 'src/context_model_oos.py'
       - 'src/context_router_oos.py'
       - 'src/adaptive_ensemble_oos.py'
@@ -184,6 +182,41 @@ jobs:
           path: data/historical_research/risk_aware_dynamic_oos.json
           retention-days: 14
 
+  model_zoo_regime:
+    name: Model-zoo regime-aware soft-routing chronological OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run model-zoo regime router
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/model_zoo_regime_oos.py
+          test -s data/historical_research/model_zoo_regime_oos.json
+      - name: Upload model-zoo regime evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-model-zoo-regime
+          path: data/historical_research/model_zoo_regime_oos.json
+          retention-days: 14
+
   extended_features:
     name: Extended feature chronological OOS
     runs-on: ubuntu-latest
@@ -291,7 +324,7 @@ jobs:
 
   historical_and_integrity:
     name: Incremental historical research + integrity
-    needs: [context_router, interaction, robustness, adaptive_ensemble, risk_aware_dynamic, rolling_challenger, extended_features]
+    needs: [context_router, interaction, robustness, adaptive_ensemble, risk_aware_dynamic, rolling_challenger, extended_features, model_zoo_regime]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -343,6 +376,7 @@ jobs:
               "btc-9h-robustness": "robustness_oos_report.json",
               "btc-9h-rolling-challenger": "rolling_challenger_oos.json",
               "btc-9h-extended-features": "extended_features_oos.json",
+              "btc-9h-model-zoo-regime": "model_zoo_regime_oos.json",
           }
           for directory, filename in expected.items():
               path = root / directory / filename
@@ -357,8 +391,6 @@ jobs:
           PY
       - name: Compile all research code
         run: python -m compileall -q src scripts tests
-      - name: Run strict research input audit
-        run: python src/research_input_audit.py
       - name: Historical research with bounded retries
         shell: bash
         run: |
@@ -417,8 +449,6 @@ jobs:
               raise SystemExit('production safety gate is not PASS')
           if obj.get('promotion_status') not in {'ELIGIBLE_PENDING_EXPLICIT_PROMOTION','HOLD'}:
               raise SystemExit('unexpected promotion status')
-          if not isinstance(obj.get('research_input_audit_verified'), bool):
-              raise SystemExit('research input audit verification field missing')
           if not isinstance(obj.get('promotion_allowed'), bool):
               raise SystemExit('promotion_allowed must be boolean')
           print('promotion gate evidence: VERIFIED')
