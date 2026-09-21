@@ -1,0 +1,57 @@
+name: BTC Exogenous Research
+
+# Research-only data collection. It never writes production prediction state.
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-exogenous-research
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+      - name: Unit tests
+        run: python -m pytest -q tests/test_exogenous_information.py tests/test_exogenous_sources.py
+      - name: Collect free exogenous snapshot
+        run: python scripts/exogenous_research_snapshot.py
+      - name: Validate research-only artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ("news.jsonl", "macro.jsonl"):
+              p=Path("data/exogenous_research")/name
+              if not p.exists(): raise SystemExit(f"missing {p}")
+              for line in p.read_text().splitlines():
+                  row=json.loads(line)
+                  if row["available_at"] < row["published_at"]:
+                      raise SystemExit("availability precedes publication")
+          print("exogenous research artifact: OK")
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: btc-exogenous-research
+          path: data/exogenous_research
+          retention-days: 7
