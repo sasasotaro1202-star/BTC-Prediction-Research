@@ -273,6 +273,30 @@ def aligned_for_router(model, rows):
     return out/out.sum(axis=1,keepdims=True)
 
 
+def _context_confidence_factor(parts):
+    """Estimate label-free confidence from ensemble entropy and disagreement."""
+    if not parts:
+        return 0.35
+    arrays=[np.asarray(p,dtype=float) for p in parts]
+    stacked=np.stack(arrays,axis=0)
+    stacked=np.clip(stacked,1e-12,1.0)
+    stacked/=stacked.sum(axis=2,keepdims=True)
+    mean_p=stacked.mean(axis=0)
+    entropy=-np.sum(mean_p*np.log(np.clip(mean_p,1e-12,1.0)),axis=1)/np.log(3.0)
+    js_terms=[]
+    for i in range(len(arrays)):
+        for j in range(i+1,len(arrays)):
+            pi=stacked[i]
+            pj=stacked[j]
+            m=0.5*(pi+pj)
+            js=0.5*np.sum(pi*np.log(pi/m),axis=1)+0.5*np.sum(pj*np.log(pj/m),axis=1)
+            js_terms.append(js/np.log(2.0))
+    disagreement=float(np.mean(np.stack(js_terms,axis=0))) if js_terms else 0.0
+    ambiguity=float(np.mean(entropy))
+    factor=1.0-0.50*ambiguity-0.50*disagreement
+    return float(np.clip(factor,0.35,1.0))
+
+
 def _context_blend_weight(sample_count, weights, max_blend=0.30):
     """Scale specialist influence by pre-test support and ensemble stability.
 
@@ -338,17 +362,27 @@ def dynamic_route_predictions(train_rows, test_rows, factories):
             continue
         # Specialists are blended with a conservative 70/30 global/context mix.
         Xs=np.asarray([r["x"] for r in subset],dtype=float); ys=np.asarray([r["y"] for r in subset])
+        component_parts=[]
         mix=np.zeros((len(idx),3),dtype=float)
         for name,w in weights.items():
             try:
                 m=factories[name](); m.fit(Xs,ys)
-                mix += w*aligned_for_router(m,[test_rows[i] for i in idx])
+                p=aligned_for_router(m,[test_rows[i] for i in idx])
+                component_parts.append(p)
+                mix += w*p
             except Exception:
                 pass
-        if np.any(mix):
-            blend = _context_blend_weight(len(subset), weights)
+        if component_parts:
+            mix/=mix.sum(axis=1,keepdims=True)
+            base_blend = _context_blend_weight(len(subset), weights)
+            confidence = _context_confidence_factor(component_parts)
+            blend = float(base_blend * confidence)
             routed[idx]=(1.0-blend)*global_mix[idx]+blend*mix
-            context_weights[context]={"specialist":True,"n":len(idx),"weights":weights,"blend":blend}
+            context_weights[context]={
+                "specialist":True,"n":len(idx),"weights":weights,
+                "blend":blend,"base_blend":base_blend,
+                "confidence_factor":confidence,
+            }
     routed/=routed.sum(axis=1,keepdims=True)
     return {
         **base,
