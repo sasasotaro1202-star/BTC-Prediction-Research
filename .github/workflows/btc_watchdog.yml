@@ -16,6 +16,10 @@ permissions:
   actions: write
   contents: read
 
+concurrency:
+  group: btc-workflow-watchdog
+  cancel-in-progress: true
+
 jobs:
   watchdog:
     runs-on: ubuntu-latest
