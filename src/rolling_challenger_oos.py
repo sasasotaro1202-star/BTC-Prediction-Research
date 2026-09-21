@@ -17,10 +17,18 @@ try:
     from db import DB, init_db
     from ensemble_model import SoftVotingEnsemble
     from model_compare import (
-    HORIZONS, CLASSES, MIN_TRAIN, MIN_OOS, TEST_BLOCK,
-    metrics, normalize, aligned, _temperature, apply_temperature,
-    hac_test, _adjusted_alpha,
-)
+        HORIZONS, CLASSES, MIN_TRAIN, MIN_OOS, TEST_BLOCK,
+        metrics, normalize, aligned, _temperature, apply_temperature,
+        hac_test, _adjusted_alpha,
+    )
+except ModuleNotFoundError:
+    from src.db import DB, init_db
+    from src.ensemble_model import SoftVotingEnsemble
+    from src.model_compare import (
+        HORIZONS, CLASSES, MIN_TRAIN, MIN_OOS, TEST_BLOCK,
+        metrics, normalize, aligned, _temperature, apply_temperature,
+        hac_test, _adjusted_alpha,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "rolling_challenger_oos.json"
