@@ -37,9 +37,10 @@ def _regime_thresholds(train):
 
 def regime_key(row,thresholds):
     x=np.asarray(row["x"],dtype=float); trend=float(x[2]); vol=float(x[6])
-    cut=max(abs(float(thresholds["trend_q"])),1e-8)
-    direction="RANGE" if abs(trend)<=cut else ("TREND_UP" if trend>0 else "TREND_DOWN")
-    return f"{direction}|{'HIGH_VOL' if vol>=max(float(thresholds['vol_q']),1e-10) else 'LOW_VOL'}"
+    trend_cut=max(abs(float(thresholds["trend_q"])),1e-8)
+    direction="RANGE" if abs(trend)<=trend_cut else ("TREND_UP" if trend>0 else "TREND_DOWN")
+    vol_cut=max(float(thresholds["vol_q"]),1e-10)
+    return f"{direction}|{'HIGH_VOL' if vol>vol_cut else 'LOW_VOL'}"
 
 def _aligned(model,rows):
     raw=np.asarray(model.predict_proba(np.asarray([r["x"] for r in rows],dtype=float)),dtype=float)

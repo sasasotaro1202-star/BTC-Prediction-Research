@@ -15,7 +15,7 @@ class PromotionGateTests(unittest.TestCase):
         }
 
     def _pit(self):
-        return {"ok": True, "checked_predictions": 100, "violation_count": 0}
+        return {"ok": True, "pit_verified": True, "checked_predictions": 100, "violation_count": 0}
 
     def _cal(self):
         return {

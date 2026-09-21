@@ -159,6 +159,8 @@ def audit() -> dict:
             violations.append(f"{prediction_id}:invalid_pit_provenance")
 
         provenance = scenario.get("provenance")
+        if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
+            violations.append(f"{prediction_id}:degraded_policy_mismatch")
         if provenance is None:
             # Old prediction rows predate the provenance contract. They cannot be
             # promoted to PIT-verified merely by inference, but they are not the
@@ -180,8 +182,6 @@ def audit() -> dict:
                     violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
         if provenance is not None and not any(v.startswith(f"{prediction_id}:") for v in violations):
             verified_count += 1
-        if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
-            violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
     result = {
         "ok": not violations,
