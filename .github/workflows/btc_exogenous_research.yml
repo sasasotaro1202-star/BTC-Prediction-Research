@@ -99,6 +99,7 @@ jobs:
           print('GDELT exogenous research manifest: OK')
           PY
       - name: Save cumulative exogenous research cache
+        if: always()
         uses: actions/cache/save@v5
         with:
           path: data/exogenous
