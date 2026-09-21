@@ -28,7 +28,7 @@ class PromotionGateTests(unittest.TestCase):
             {"status": "PASS"},
             self._robust(),
             {"5m": {"status": "rejected"}, "10m": {"status": "insufficient_history"}},
-            self._pit(), self._cal(),
+            self._pit(), self._cal(), {"ok": True},
         )
         self.assertFalse(result["promotion_allowed"])
         self.assertEqual(result["production_safety_gate"], "PASS")
@@ -40,7 +40,7 @@ class PromotionGateTests(unittest.TestCase):
             {"status": "PASS"},
             {"research_only": True, "horizons": {}},
             {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
-            self._pit(), self._cal(),
+            self._pit(), self._cal(), {"ok": True},
         )
         self.assertFalse(result["promotion_allowed"])
         self.assertEqual(result["production_safety_gate"], "HOLD")
