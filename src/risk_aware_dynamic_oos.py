@@ -63,7 +63,7 @@ def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weigh
     return tuple(float(x) for x in w)
 
 
-def _predict_with_weights(train, test, weights):
+def _fit_parts(train, test):
     factory = SoftVotingEnsemble(learn_weights=False)
     X = np.asarray([r["x"] for r in train], dtype=float)
     y = np.asarray([r["y"] for r in train])
@@ -72,8 +72,11 @@ def _predict_with_weights(train, test, weights):
         model = sub_factory()
         model.fit(X, y)
         models.append(model)
-    parts = [_aligned(model, test) for model in models]
-    mix = np.zeros((len(test), 3), dtype=float)
+    return [_aligned(model, test) for model in models]
+
+
+def _mix_parts(parts, weights):
+    mix = np.zeros((len(parts[0]), 3), dtype=float)
     for w, p in zip(weights, parts):
         mix += float(w) * p
     mix = np.clip(mix, 1e-7, 1.0)
@@ -120,24 +123,13 @@ def evaluate(horizon: str):
 
         equal_w = (1.0 / 3.0,) * 3
         risk_w = _weights_from_losses(ema_losses) if ema_losses is not None else equal_w
-        eq = _predict_with_weights(train, test, equal_w)
-        risk = _predict_with_weights(train, test, risk_w)
+        parts = _fit_parts(train, test)
+        eq = _mix_parts(parts, equal_w)
+        risk = _mix_parts(parts, risk_w)
         y = [r["y"] for r in test]
         em = metrics(y, eq)
         rm = metrics(y, risk)
-        current_losses = [
-            _block_logloss(y, eq[:, i:i+1].repeat(3, axis=1) * 0 + eq)
-            for i in range(3)
-        ]
-        # Model-specific loss is measured on each component after fitting.
-        factory = SoftVotingEnsemble(learn_weights=False)
-        X = np.asarray([r["x"] for r in train], dtype=float)
-        yt = np.asarray([r["y"] for r in train])
-        parts = []
-        for sub_factory in factory._factories():
-            model = sub_factory()
-            model.fit(X, yt)
-            parts.append(_aligned(model, test))
+        # Model-specific loss is measured from the same fitted models.
         component_losses = [_block_logloss(y, p) for p in parts]
         ema_losses = (
             np.asarray(component_losses, dtype=float)
@@ -176,9 +168,10 @@ def evaluate(horizon: str):
     }
 
     # One descriptive holdout pass; all adaptive state was updated before the holdout.
-    equal_hold = _predict_with_weights(development, holdout, (1.0 / 3.0,) * 3)
+    hold_parts = _fit_parts(development, holdout)
+    equal_hold = _mix_parts(hold_parts, (1.0 / 3.0,) * 3)
     risk_hold_w = _weights_from_losses(ema_losses) if ema_losses is not None else (1.0 / 3.0,) * 3
-    risk_hold = _predict_with_weights(development, holdout, risk_hold_w)
+    risk_hold = _mix_parts(hold_parts, risk_hold_w)
     yh = [r["y"] for r in holdout]
 
     return {
