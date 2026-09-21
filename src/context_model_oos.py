@@ -235,9 +235,31 @@ def dynamic_ensemble_weights(train_rows, factories, min_weight=0.10, temperature
     # Shrink toward uniform weights so a short/noisy regime cannot monopolize the ensemble.
     uniform=1.0/len(raw)
     weights={name:(1.0-0.25)*(value/total)+0.25*uniform for name,value in raw.items()}
-    weights={name:max(float(min_weight),value) for name,value in weights.items()}
-    z=sum(weights.values())
-    return {name:value/z for name,value in weights.items()}
+    # Project onto the bounded simplex so every weight keeps its floor after
+    # normalization as well (simple iterative water-filling for a small model pool).
+    names = list(weights)
+    values = np.asarray([float(weights[name]) for name in names], dtype=float)
+    floor = float(min_weight)
+    values = np.maximum(values, floor)
+    for _ in range(16):
+        delta = 1.0 - float(values.sum())
+        if abs(delta) <= 1e-12:
+            break
+        if delta > 0:
+            room = np.maximum(1.0 - values, 0.0)
+            active = room > 1e-12
+            if not np.any(active):
+                break
+            values[active] += delta * room[active] / room[active].sum()
+        else:
+            room = np.maximum(values - floor, 0.0)
+            active = room > 1e-12
+            if not np.any(active):
+                break
+            values[active] += delta * room[active] / room[active].sum()
+    values = np.maximum(values, floor)
+    values /= values.sum()
+    return {name: float(value) for name, value in zip(names, values)}
 
 
 def aligned_for_router(model, rows):
