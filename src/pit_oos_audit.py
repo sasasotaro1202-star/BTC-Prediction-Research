@@ -15,6 +15,48 @@ def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
+    """Validate available-at provenance without inventing unknown source timestamps."""
+    violations: list[str] = []
+    if not isinstance(record, dict):
+        return [f"{prefix}:provenance_not_object"]
+    required = ("available_at", "retrieved_at", "prediction_cutoff")
+    parsed = {}
+    for key in required:
+        if key not in record or record.get(key) in (None, ""):
+            violations.append(f"{prefix}:missing_{key}")
+            continue
+        try:
+            parsed[key] = parse_utc(str(record[key]))
+        except Exception:
+            violations.append(f"{prefix}:invalid_{key}")
+    if violations:
+        return violations
+    available = parsed["available_at"]
+    retrieved = parsed["retrieved_at"]
+    cutoff = parsed["prediction_cutoff"]
+    if available > retrieved:
+        violations.append(f"{prefix}:available_at_after_retrieved_at")
+    if retrieved > cutoff:
+        violations.append(f"{prefix}:retrieved_at_after_prediction_cutoff")
+    if available > cutoff:
+        violations.append(f"{prefix}:available_at_after_prediction_cutoff")
+    for key in ("event_time", "publication_time", "revision_time"):
+        value = record.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            parsed[key] = parse_utc(str(value))
+        except Exception:
+            violations.append(f"{prefix}:invalid_{key}")
+    if "event_time" in parsed and parsed["event_time"] > available:
+        violations.append(f"{prefix}:event_time_after_available_at")
+    if "publication_time" in parsed and parsed["publication_time"] > available:
+        violations.append(f"{prefix}:publication_time_after_available_at")
+    if "revision_time" in parsed and "publication_time" in parsed and parsed["revision_time"] < parsed["publication_time"]:
+        violations.append(f"{prefix}:revision_time_before_publication_time")
+    return violations
+
 def audit() -> dict:
     # Fail closed: an empty/missing state must never be reported as a clean audit.
     db_path = Path(DB)
@@ -78,6 +120,18 @@ def audit() -> dict:
                         violations.append(f"{prediction_id}:market_cutoff_after_decision")
             except Exception:
                 violations.append(f"{prediction_id}:invalid_pit_metadata")
+
+        provenance = scenario.get("provenance")
+        if provenance is None:
+            violations.append(f"{prediction_id}:missing_top_level_provenance")
+        else:
+            violations.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
+            sources = provenance.get("sources") if isinstance(provenance, dict) else None
+            if not isinstance(sources, dict) or not sources:
+                violations.append(f"{prediction_id}:missing_source_provenance")
+            else:
+                for source_name, source_record in sources.items():
+                    violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
         if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
             violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
