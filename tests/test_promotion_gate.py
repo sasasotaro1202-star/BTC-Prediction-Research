@@ -51,7 +51,7 @@ class PromotionGateTests(unittest.TestCase):
             {"status": "PASS"},
             self._robust(),
             {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
-            self._pit(), self._cal(),
+            self._pit(), self._cal(), {"ok": True},
         )
         self.assertTrue(result["promotion_allowed"])
         self.assertEqual(result["promotion_status"], "ELIGIBLE_PENDING_EXPLICIT_PROMOTION")
