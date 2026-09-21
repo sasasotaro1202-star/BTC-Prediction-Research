@@ -17,8 +17,9 @@ on:
       - '.github/workflows/**'
   workflow_dispatch:
 
+
 concurrency:
-  group: btc-unit-tests-${{ github.ref }}
+  group: btc-unit-tests
   cancel-in-progress: true
 
 permissions:
