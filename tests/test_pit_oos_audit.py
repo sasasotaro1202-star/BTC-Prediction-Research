@@ -46,6 +46,32 @@ class TestPITOOSAudit(unittest.TestCase):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
 
+
+    def test_accepts_provenance_cutoff_as_decision_time(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime.now(timezone.utc).replace(microsecond=0)
+            decision = created + timedelta(seconds=20)
+            scenario = {
+                "provenance": {
+                    "event_time": created.isoformat(),
+                    "available_at": decision.isoformat(),
+                    "retrieved_at": decision.isoformat(),
+                    "prediction_cutoff": decision.isoformat(),
+                    "sources": {
+                        "binance_futures": {
+                            "event_time": created.isoformat(),
+                            "available_at": decision.isoformat(),
+                            "retrieved_at": decision.isoformat(),
+                            "prediction_cutoff": decision.isoformat(),
+                        }
+                    },
+                }
+            }
+            db = self.make_db(td, [(1, created.isoformat(), (decision + timedelta(minutes=5)).isoformat(), (decision + timedelta(minutes=10)).isoformat(), "v1", json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+
     def test_rejects_target_before_decision(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)

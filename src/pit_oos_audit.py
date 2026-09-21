@@ -100,8 +100,6 @@ def audit() -> dict:
             skew = (created - now).total_seconds()
             if skew > MAX_FUTURE_SKEW_SECONDS:
                 violations.append(f"{prediction_id}:prediction_time_in_future")
-        if target5 <= created:
-            violations.append(f"{prediction_id}:5m_target_not_after_decision")
         if target10 <= target5:
             violations.append(f"{prediction_id}:10m_target_not_after_5m_target")
         try:
@@ -110,12 +108,19 @@ def audit() -> dict:
             violations.append(f"{prediction_id}:invalid_scenario_json")
             continue
         decision_raw = scenario.get("decision_time_utc")
+        provisional_provenance = scenario.get("provenance")
+        if not decision_raw and isinstance(provisional_provenance, dict):
+            decision_raw = provisional_provenance.get("prediction_cutoff")
         decision = created
         if decision_raw:
             try:
                 decision = parse_utc(str(decision_raw))
                 if abs((decision - created).total_seconds()) > MAX_FUTURE_SKEW_SECONDS:
                     violations.append(f"{prediction_id}:decision_time_mismatch")
+                if target5 <= decision:
+                    violations.append(f"{prediction_id}:5m_target_not_after_decision")
+                if target10 <= decision:
+                    violations.append(f"{prediction_id}:10m_target_not_after_decision")
                 cutoff_raw = scenario.get("market_data_cutoff_utc")
                 if cutoff_raw:
                     cutoff = parse_utc(str(cutoff_raw))

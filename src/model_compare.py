@@ -64,7 +64,9 @@ def _strict_pit_provenance_ok(scenario, created_at_utc):
     provenance = scenario.get("provenance")
     if created is None or not isinstance(provenance, dict):
         return False
-    decision = _valid_timestamp(scenario.get("decision_time_utc", created_at_utc))
+    provenance = scenario.get("provenance")
+    fallback_cutoff = provenance.get("prediction_cutoff") if isinstance(provenance, dict) else None
+    decision = _valid_timestamp(scenario.get("decision_time_utc") or fallback_cutoff or created_at_utc)
     if decision is None or abs((decision - created).total_seconds()) > 60:
         return False
 
