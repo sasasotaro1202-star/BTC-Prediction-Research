@@ -203,6 +203,7 @@ jobs:
           path: data/historical_research/9h_evidence
           merge-multiple: false
       - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
       - name: Validate parallel OOS evidence manifests
         shell: bash
         run: |
@@ -229,7 +230,6 @@ jobs:
                   raise SystemExit(f"{path}: research_only must be true")
               print(f"verified evidence manifest: {path}")
           PY
-        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
       - name: Compile all research code
         run: python -m compileall -q src scripts tests
       - name: Historical research with bounded retries
