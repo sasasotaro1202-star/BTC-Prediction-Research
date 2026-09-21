@@ -31,8 +31,8 @@ MODEL_DIR = ROOT / "models"
 DATA_DIR = ROOT / "data" / "historical_research"
 CACHE = DATA_DIR / "btc_bootstrap_1m.json"
 STATUS = DATA_DIR / "bootstrap_status.json"
-CLASSES = ["DOWN", "FLAT", "UP"]
-THRESHOLD = 0.00020
+from label_policy import CLASSES, NEUTRAL_RETURN
+THRESHOLD = NEUTRAL_RETURN
 MIN_BOOTSTRAP_ROWS = 10_000
 TARGET_ROWS = 30_000
 MIN_TRAIN = 1_000
