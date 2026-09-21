@@ -48,24 +48,6 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
-      - name: Validate parallel OOS evidence manifests
-        shell: bash
-        run: |
-          set -euo pipefail
-          for f in             data/historical_research/9h_evidence/btc-9h-adaptive-ensemble/adaptive_ensemble_oos.json             data/historical_research/9h_evidence/btc-9h-context-router/context_router_oos.json             data/historical_research/9h_evidence/btc-9h-interaction/interaction_oos_report.json             data/historical_research/9h_evidence/btc-9h-robustness/robustness_oos_report.json; do
-            test -s "$f"
-            python - <<PY
-import json
-from pathlib import Path
-p=Path("$f")
-obj=json.loads(p.read_text(encoding="utf-8"))
-if not isinstance(obj, dict):
-    raise SystemExit(f"{p}: evidence root must be an object")
-if obj.get("research_only") is not True:
-    raise SystemExit(f"{p}: research_only must be true")
-print(f"verified evidence manifest: {p}")
-PY
-          done
       - name: Compile and run router OOS
         run: |
           set -euo pipefail
@@ -221,6 +203,32 @@ PY
           path: data/historical_research/9h_evidence
           merge-multiple: false
       - name: Install dependencies
+      - name: Validate parallel OOS evidence manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("data/historical_research/9h_evidence")
+          expected = {
+              "btc-9h-adaptive-ensemble": "adaptive_ensemble_oos.json",
+              "btc-9h-context-router": "context_router_oos.json",
+              "btc-9h-interaction": "interaction_oos_report.json",
+              "btc-9h-robustness": "robustness_oos_report.json",
+          }
+          for directory, filename in expected.items():
+              path = root / directory / filename
+              if not path.is_file() or path.stat().st_size <= 0:
+                  raise SystemExit(f"missing evidence: {path}")
+              obj = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(obj, dict):
+                  raise SystemExit(f"{path}: evidence root must be an object")
+              if obj.get("research_only") is not True:
+                  raise SystemExit(f"{path}: research_only must be true")
+              print(f"verified evidence manifest: {path}")
+          PY
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
       - name: Compile all research code
         run: python -m compileall -q src scripts tests
