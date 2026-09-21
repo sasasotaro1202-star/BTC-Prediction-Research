@@ -118,7 +118,22 @@ def evaluate(horizon):
         for i,key in enumerate(keys):
             one=[metrics([y[i]],p[i:i+1]) for p in parts]
             history.append({"regime":key,"logloss":[s["logloss"] for s in one],"brier":[s["brier"] for s in one],"ece":[s["calibration_error"] for s in one]})
-        blocks.append({"n":len(test),"regime_counts":{k:keys.count(k) for k in sorted(set(keys))},"equal":em,"routed":rm,"delta":{"accuracy":rm["accuracy"]-em["accuracy"],"logloss":rm["logloss"]-em["logloss"],"brier":rm["brier"]-em["brier"]},"global_weights_before":global_w.tolist(),"regime_weights_before":{k:regime_w[k].tolist() for k in sorted(regime_w)}})
+        blocks.append({
+            "n": len(test),
+            "regime_counts": {k: keys.count(k) for k in sorted(set(keys))},
+            "equal": em,
+            "routed": rm,
+            "delta": {
+                "accuracy": rm["accuracy"] - em["accuracy"],
+                "logloss": rm["logloss"] - em["logloss"],
+                "brier": rm["brier"] - em["brier"],
+            },
+            "global_weights_before": global_w.tolist(),
+            "regime_weights_before": {
+                k: regime_w[k].tolist()
+                for k in sorted(regime_w)
+            },
+        })
     if len(blocks)<8:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_valid_oos_blocks"}
     ll=np.asarray([b["delta"]["logloss"] for b in blocks]); br=np.asarray([b["delta"]["brier"] for b in blocks]); ac=np.asarray([b["delta"]["accuracy"] for b in blocks])
     summary={"blocks":len(blocks),"samples":int(sum(b["n"] for b in blocks)),"mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005))}
