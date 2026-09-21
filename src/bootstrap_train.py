@@ -154,6 +154,15 @@ def fit_temperature(probs, y):
     z = logits[split:] / best_t; z -= z.max(axis=1, keepdims=True); q = np.exp(z); q /= q.sum(axis=1, keepdims=True)
     return best_t if log_loss(yi[split:], q, labels=[0, 1, 2]) < log_loss(yi[split:], normalize(p[split:]), labels=[0, 1, 2]) - 0.001 else 1.0
 
+def development_gate_passes(gate_score, baseline_gate):
+    """Return promotion eligibility using only the pre-holdout development gate."""
+    return bool(
+        gate_score["logloss"] < baseline_gate["logloss"] - 0.01
+        and gate_score["brier"] < baseline_gate["brier"] - 0.005
+        and gate_score["accuracy"] >= baseline_gate["accuracy"] - 0.005
+    )
+
+
 def _fit_model(model, X, y):
     model.fit(np.asarray(X, dtype=float), np.asarray(y))
     return model
@@ -249,11 +258,7 @@ def train_one(X, y, purge_gap=0):
     gate_score = metrics(ygate, normalize(selected_for_gate.predict_proba(Xgate)))
 
     # Publication gate is based only on the independent development gate slice.
-    safe_gain = (
-        gate_score["logloss"] < baseline_gate["logloss"] - 0.01
-        and gate_score["brier"] < baseline_gate["brier"] - 0.005
-        and gate_score["accuracy"] >= baseline_gate["accuracy"] - 0.005
-    )
+    safe_gain = development_gate_passes(gate_score, baseline_gate)
 
     # Only after the development gate passes is the final model refit on all
     # non-holdout observations. The holdout remains untouched until scoring.
