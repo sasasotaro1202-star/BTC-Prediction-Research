@@ -77,9 +77,56 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
     }
 
 
+def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
+    """Construct a fail-closed production safety verdict from artifacts produced in this run.
+    
+    Older runners may not materialize production_integrity.json. In that case,
+    derive the verdict only from independently validated artifact and PIT reports.
+    Never infer PASS from file existence alone.
+    """
+    explicit = evidence / "production_integrity.json"
+    if explicit.exists():
+        obj = json.loads(explicit.read_text(encoding="utf-8"))
+        if not isinstance(obj, dict):
+            raise SystemExit("production_integrity.json must contain an object")
+        return obj
+
+    artifact_path = evidence / "production_artifact_audit.json"
+    pit_path = evidence / "pit_oos_audit.json"
+    if not artifact_path.exists() or not pit_path.exists():
+        raise SystemExit("production safety evidence missing: artifact audit and PIT/OOS audit are required")
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    pit = json.loads(pit_path.read_text(encoding="utf-8"))
+    artifacts = artifact.get("artifacts")
+    artifact_ok = (
+        isinstance(artifacts, list)
+        and len(artifacts) == len(HORIZONS)
+        and all(
+            item.get("horizon") in HORIZONS
+            and item.get("runtime_model_reload_ok") is True
+            and len(str(item.get("model_sha256", ""))) == 64
+            and len(str(item.get("metadata_sha256", ""))) == 64
+            and item.get("runtime_classes") == ["DOWN", "FLAT", "UP"]
+            and int(item.get("runtime_feature_count", -1)) > 0
+            for item in artifacts
+        )
+    )
+    pit_ok = pit.get("ok") is True and int(pit.get("violation_count", 1)) == 0
+    return {
+        "schema_version": 1,
+        "status": "PASS" if artifact_ok and pit_ok else "HOLD",
+        "derived": True,
+        "artifact_audit_ok": artifact_ok,
+        "pit_oos_ok": pit_ok,
+        "artifact_audit_source": str(artifact_path.name),
+        "pit_oos_source": str(pit_path.name),
+    }
+
+
 def run(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
-    prod = json.loads((evidence / "production_integrity.json").read_text(encoding="utf-8"))
+    prod = _production_integrity_from_evidence(evidence)
     robust = json.loads((evidence / "robustness_oos_report.json").read_text(encoding="utf-8"))
     pit_path = evidence / "pit_oos_audit.json"
     pit = json.loads(pit_path.read_text(encoding="utf-8")) if pit_path.exists() else None
