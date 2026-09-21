@@ -9,18 +9,17 @@ from pathlib import Path
 import numpy as np
 
 SRC_DIR = Path(__file__).resolve().parent
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+ROOT_DIR = SRC_DIR.parent
+for _path in (ROOT_DIR, SRC_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 try:
-    from model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
-    from ensemble_model import SoftVotingEnsemble
-except ModuleNotFoundError:
-    # Support both execution modes used by CI and the test suite:
-    #   python src/adaptive_ensemble_oos.py
-    #   from src import adaptive_ensemble_oos
     from src.model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
     from src.ensemble_model import SoftVotingEnsemble
+except ModuleNotFoundError:
+    from model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
+    from ensemble_model import SoftVotingEnsemble
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "adaptive_ensemble_oos.json"
