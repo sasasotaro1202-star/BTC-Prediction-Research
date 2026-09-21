@@ -13,7 +13,7 @@ SRC_DIR=Path(__file__).resolve().parent
 ROOT_DIR=SRC_DIR.parent
 for _path in (ROOT_DIR,SRC_DIR):
     if str(_path) not in sys.path: sys.path.insert(0,str(_path))
-from model_compare import HORIZONS, load_rows, metrics, _temperature, apply_temperature
+from model_compare import HORIZONS, load_strict_rows, metrics, _temperature, apply_temperature
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -94,7 +94,7 @@ def _mix(parts,weights):
     out=np.clip(out,1e-7,1.0); return out/out.sum(axis=1,keepdims=True)
 
 def evaluate(horizon):
-    rows=load_rows(horizon)
+    rows=load_strict_rows(horizon)
     if len(rows)>MAX_ROWS: rows=rows[-MAX_ROWS:]
     if len(rows)<MIN_TRAIN+TEST_BLOCK+200:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_rows"}
     split=int(len(rows)*0.80); development=rows[:split]; holdout=rows[split:]

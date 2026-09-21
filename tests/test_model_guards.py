@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, metrics, normalize, prediction_precedes_target  # noqa: E402
+from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provenance_ok, metrics, normalize, prediction_precedes_target  # noqa: E402
 
 
 class TestModelGuards(unittest.TestCase):
@@ -36,6 +36,47 @@ class TestModelGuards(unittest.TestCase):
         self.assertEqual(PURGE_BARS['10m'], 10)
         self.assertGreaterEqual(EMBARGO_BARS['5m'], 60)
         self.assertGreaterEqual(EMBARGO_BARS['10m'], 60)
+
+    def test_strict_pit_requires_complete_used_source_provenance(self):
+        scenario = {
+            "decision_time_utc": "2026-09-21T19:00:00+00:00",
+            "production_mode": "binance_primary",
+            "provenance": {
+                "available_at": "2026-09-21T18:59:59+00:00",
+                "retrieved_at": "2026-09-21T19:00:00+00:00",
+                "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                "sources": {
+                    "binance_futures": {
+                        "status": "ok",
+                        "available_at": "2026-09-21T18:59:59+00:00",
+                        "retrieved_at": "2026-09-21T19:00:00+00:00",
+                        "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                    },
+                    "binance_depth": {
+                        "status": "ok",
+                        "available_at": "2026-09-21T18:59:59+00:00",
+                        "retrieved_at": "2026-09-21T19:00:00+00:00",
+                        "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                    },
+                    "binance_taker": {
+                        "status": "ok",
+                        "available_at": "2026-09-21T18:59:59+00:00",
+                        "retrieved_at": "2026-09-21T19:00:00+00:00",
+                        "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                    },
+                    "binance_premium": {
+                        "status": "ok",
+                        "available_at": "2026-09-21T18:59:59+00:00",
+                        "retrieved_at": "2026-09-21T19:00:00+00:00",
+                        "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                    },
+                },
+            },
+        }
+        self.assertTrue(_strict_pit_provenance_ok(scenario, "2026-09-21T19:00:00+00:00"))
+        scenario["provenance"]["sources"]["binance_taker"]["available_at"] = None
+        self.assertFalse(_strict_pit_provenance_ok(scenario, "2026-09-21T19:00:00+00:00"))
+        self.assertFalse(_strict_pit_provenance_ok({}, "2026-09-21T19:00:00+00:00"))
 
     def test_prediction_must_precede_target_strictly(self):
         self.assertTrue(prediction_precedes_target(

@@ -6,6 +6,10 @@ import hashlib
 import json
 import sqlite3
 from collections import Counter
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from model_compare import _strict_pit_provenance_ok
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,7 +37,7 @@ def audit_horizon(con, horizon: str) -> dict:
     target_col = TARGETS[horizon]
     actual_col = HORIZONS[horizon]
     rows = con.execute(
-        f"""SELECT prediction_id, created_at_utc, {target_col}, feature_json, {actual_col}
+        f"""SELECT prediction_id, created_at_utc, {target_col}, feature_json, {actual_col}, scenario_json
             FROM predictions
             WHERE {actual_col} IS NOT NULL
             ORDER BY created_at_utc, prediction_id"""
@@ -44,8 +48,9 @@ def audit_horizon(con, horizon: str) -> dict:
     duplicate_groups = Counter()
     class_counts = Counter()
     valid_rows = 0
+    strict_pit_rows = 0
 
-    for prediction_id, created_at, target_at, feature_json, actual in rows:
+    for prediction_id, created_at, target_at, feature_json, actual, scenario_json in rows:
         created_dt = _dt(created_at)
         target_dt = _dt(target_at)
         if created_dt is None or target_dt is None:
@@ -67,6 +72,12 @@ def audit_horizon(con, horizon: str) -> dict:
             class_counts[str(actual)] += 1
         if created_dt is not None and target_dt is not None and created_dt < target_dt:
             valid_rows += 1
+            try:
+                scenario = json.loads(scenario_json or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                scenario = {}
+            if _strict_pit_provenance_ok(scenario, created_at):
+                strict_pit_rows += 1
 
     duplicate_excess = int(sum(max(0, n - 1) for n in duplicate_groups.values()))
     total = len(rows)
@@ -75,6 +86,8 @@ def audit_horizon(con, horizon: str) -> dict:
     return {
         "settled_rows": total,
         "valid_rows": valid_rows,
+        "strict_pit_rows": strict_pit_rows,
+        "strict_pit_excluded_rows": total - strict_pit_rows,
         "excluded_rows": total - valid_rows,
         "invalid_timestamp_rows": invalid_ts,
         "chronology_violation_count": len(chronology_violations),

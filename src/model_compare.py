@@ -49,21 +49,96 @@ def prediction_precedes_target(created_at_utc, target_at_utc):
     return bool(created is not None and target is not None and created < target)
 
 
-def load_rows(h):
+def _valid_timestamp(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _strict_pit_provenance_ok(scenario, created_at_utc):
+    """Validate provenance needed for strict candidate OOS/promotion."""
+    if not isinstance(scenario, dict):
+        return False
+    created = _valid_timestamp(created_at_utc)
+    provenance = scenario.get("provenance")
+    if created is None or not isinstance(provenance, dict):
+        return False
+    decision = _valid_timestamp(scenario.get("decision_time_utc", created_at_utc))
+    if decision is None or abs((decision - created).total_seconds()) > 60:
+        return False
+
+    required_top = ("available_at", "retrieved_at", "prediction_cutoff")
+    parsed_top = {}
+    for key in required_top:
+        value = _valid_timestamp(provenance.get(key))
+        if value is None:
+            return False
+        parsed_top[key] = value
+    if not (parsed_top["available_at"] <= parsed_top["retrieved_at"] <= parsed_top["prediction_cutoff"] <= decision):
+        return False
+
+    sources = provenance.get("sources")
+    if not isinstance(sources, dict) or not sources:
+        return False
+
+    def source_ok(name):
+        info = sources.get(name)
+        if not isinstance(info, dict):
+            return False
+        status = str(info.get("status", ""))
+        if status not in {"ok", "ok_current_only"}:
+            return False
+        available = _valid_timestamp(info.get("available_at"))
+        retrieved = _valid_timestamp(info.get("retrieved_at"))
+        cutoff = _valid_timestamp(info.get("prediction_cutoff"))
+        if available is None or retrieved is None or cutoff is None:
+            return False
+        if not (available <= retrieved <= cutoff <= decision):
+            return False
+        event_time = _valid_timestamp(info.get("event_time"))
+        publication_time = _valid_timestamp(info.get("publication_time"))
+        revision_time = _valid_timestamp(info.get("revision_time"))
+        if event_time is not None and event_time > available:
+            return False
+        if publication_time is not None and publication_time > available:
+            return False
+        if revision_time is not None and publication_time is not None and revision_time < publication_time:
+            return False
+        return True
+
+    mode = str(scenario.get("production_mode", ""))
+    if mode == "binance_primary":
+        required = ("binance_futures", "binance_depth", "binance_taker", "binance_premium")
+    elif mode == "bybit_fallback":
+        required = ("bybit_futures",)
+    elif mode == "coinbase_fallback":
+        required = ("coinbase_futures",)
+    else:
+        # Unknown mode is fail-closed for strict candidate OOS.
+        return False
+
+    return all(source_ok(name) for name in required)
+
+
+def load_rows(h, strict_pit=False):
     ac,*_=HORIZONS[h]
     target_col = "target_5m" if h == "5m" else "target_10m"
     with sqlite3.connect(DB) as con:
         rows=con.execute(
             f"""SELECT prediction_id,created_at_utc,{target_col},feature_json,
-                       {ac},p_up_{h},p_down_{h},p_flat_{h},model_version
+                       {ac},p_up_{h},p_down_{h},p_flat_{h},model_version,scenario_json
                 FROM predictions
                 WHERE {ac} IS NOT NULL
                 ORDER BY created_at_utc,prediction_id"""
         ).fetchall()
     out=[]
     for r in rows:
-        # Strict chronology gate: backfilled/mis-timestamped rows cannot enter OOS.
+        # A prediction recorded at/after its target is never valid OOS data.
         if not prediction_precedes_target(r[1], r[2]):
+            continue
+        scenario = safe_json(r[9])
+        if strict_pit and not _strict_pit_provenance_ok(scenario, r[1]):
             continue
         f=safe_json(r[3])
         if not all(k in f for k in FEATURES) or r[4] not in CLASSES: continue
@@ -74,6 +149,10 @@ def load_rows(h):
             if all(math.isfinite(v) and v>=0 for v in production) and sum(production)>0:
                 out.append({'id':r[0],'created':r[1],'target':r[2],'x':x,'y':r[4],'production':production,'model_version':r[8]})
     return out
+
+
+def load_strict_rows(h):
+    return load_rows(h, strict_pit=True)
 
 def normalize(probs):
     p=np.clip(np.asarray(probs,float),1e-6,1-1e-6); return p/p.sum(axis=1,keepdims=True)
@@ -256,7 +335,7 @@ def set_prod(h,v):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
 
 def compare_h(h):
-    rows=load_rows(h); n=len(rows); milestone=next_due_milestone(n,h)
+    rows=load_strict_rows(h); n=len(rows); milestone=next_due_milestone(n,h)
     if milestone is None:
         future=next((m for m in MILESTONES if not checkpoint_done(h,m)),None); return {'status':'collecting','n':n,'next_milestone':future}
     rows=rows[:milestone]
