@@ -49,7 +49,7 @@ def _aligned(model, rows):
     return out / out.sum(axis=1, keepdims=True)
 
 
-def _weights_from_losses(losses, temperature=TEMPERATURE, floor=0.08, max_weight=0.50):
+def _weights_from_losses(losses, temperature=TEMPERATURE, floor=FLOOR, max_weight=MAX_WEIGHT):
     if not losses:
         return ()
     vals = np.asarray([float(x) for x in losses], dtype=float)
