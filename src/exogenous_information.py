@@ -99,3 +99,25 @@ def source_metadata(event: InformationEvent) -> Mapping[str, str]:
         "available_at": event.available_at.astimezone(timezone.utc).isoformat(),
         "event_type": event.event_type,
     }
+
+
+def events_from_records(records: Iterable[Mapping[str, object]]) -> list[InformationEvent]:
+    """Parse persisted research records without relaxing the PIT contract."""
+    events: list[InformationEvent] = []
+    for record in records:
+        try:
+            event = InformationEvent(
+                source=str(record["source"]),
+                event_id=str(record["event_id"]),
+                published_at=datetime.fromisoformat(str(record["published_at"])),
+                available_at=datetime.fromisoformat(str(record["available_at"])),
+                event_type=str(record["event_type"]),
+                importance=float(record.get("importance", 0.0)),
+                sentiment=None if record.get("sentiment") is None else float(record["sentiment"]),
+                surprise=None if record.get("surprise") is None else float(record["surprise"]),
+            )
+            event.validate()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("malformed persisted information event") from exc
+        events.append(event)
+    return events
