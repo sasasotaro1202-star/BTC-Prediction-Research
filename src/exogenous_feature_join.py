@@ -6,7 +6,7 @@ within an explicit lookback window. Invalid provenance fails closed.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Mapping
 
 from exogenous_information import InformationEvent, aggregate_event_features, events_from_records
@@ -19,6 +19,7 @@ def events_for_prediction(
 ) -> list[InformationEvent]:
     if prediction_time.tzinfo is None or prediction_time.utcoffset() is None:
         raise ValueError("prediction_time must be timezone-aware")
+    prediction_time = prediction_time.astimezone(timezone.utc)
     if lookback.total_seconds() < 0:
         raise ValueError("lookback must be non-negative")
     parsed = list(events)
@@ -28,7 +29,7 @@ def events_for_prediction(
     lower = prediction_time - lookback
     return [
         event for event in parsed
-        if lower <= event.available_at <= prediction_time
+        if lower <= event.available_at.astimezone(timezone.utc) <= prediction_time
     ]
 
 
