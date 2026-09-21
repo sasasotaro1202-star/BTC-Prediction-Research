@@ -108,6 +108,7 @@ def audit() -> dict:
             violations.append(f"{prediction_id}:invalid_scenario_json")
             continue
         decision_raw = scenario.get("decision_time_utc")
+        decision = created
         if decision_raw:
             try:
                 decision = parse_utc(str(decision_raw))
@@ -120,6 +121,40 @@ def audit() -> dict:
                         violations.append(f"{prediction_id}:market_cutoff_after_decision")
             except Exception:
                 violations.append(f"{prediction_id}:invalid_pit_metadata")
+                decision = created
+
+        # Enforce the stronger PIT contract when provenance is present:
+        # every explicitly available input must have become available no later
+        # than the prediction/decision timestamp. Missing source-native
+        # publication timestamps remain acceptable only when the source adapter
+        # explicitly records a conservative acquisition-time available_at.
+        try:
+            provenance = scenario.get("provenance", {})
+            if provenance and not isinstance(provenance, dict):
+                raise ValueError("provenance_not_object")
+            top_available = provenance.get("available_at") if isinstance(provenance, dict) else None
+            if top_available:
+                available = parse_utc(str(top_available))
+                if available > decision:
+                    violations.append(f"{prediction_id}:available_at_after_decision")
+            sources = provenance.get("sources", {}) if isinstance(provenance, dict) else {}
+            if sources and not isinstance(sources, dict):
+                raise ValueError("sources_not_object")
+            for source_name, source_info in sources.items():
+                if not isinstance(source_info, dict):
+                    violations.append(f"{prediction_id}:invalid_source_provenance:{source_name}")
+                    continue
+                source_status = str(source_info.get("status", ""))
+                source_available = source_info.get("available_at")
+                if source_status in {"ok", "ok_current_only"} and not source_available:
+                    violations.append(f"{prediction_id}:missing_available_at:{source_name}")
+                    continue
+                if source_available:
+                    source_dt = parse_utc(str(source_available))
+                    if source_dt > decision:
+                        violations.append(f"{prediction_id}:source_available_at_after_decision:{source_name}")
+        except Exception:
+            violations.append(f"{prediction_id}:invalid_pit_provenance")
 
         provenance = scenario.get("provenance")
         if provenance is None:
