@@ -68,6 +68,17 @@ def _day_urls(dt: datetime):
     return [f"https://data.binance.vision/{path}", f"https://s3-ap-northeast-1.amazonaws.com/data.binance.vision/{path}"]
 
 
+def _contiguous_suffix(rows, interval_ms: int = 60_000):
+    """Return only the newest strictly contiguous candle suffix."""
+    ordered = sorted({int(r[0]): r for r in rows}.values(), key=lambda r: int(r[0]))
+    if not ordered:
+        return []
+    start = len(ordered) - 1
+    while start > 0 and int(ordered[start][0]) - int(ordered[start - 1][0]) == int(interval_ms):
+        start -= 1
+    return ordered[start:]
+
+
 def _cached_day(day: datetime):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return CACHE_DIR / f"BTCUSDT-1m-{day:%Y-%m-%d}.json"
@@ -127,7 +138,11 @@ def binance_archive_rows(target: int = 30_000):
             if len(rows) >= target:
                 break
             day -= timedelta(days=1)
-    rows = sorted(_closed(rows), key=lambda r: int(r[0]))
-    if len(rows) < target:
-        raise RuntimeError(f"archive returned only {len(rows)} closed rows; need {target}; errors={errors[-10:]}")
-    return rows[-target:]
+    rows = _closed(rows)
+    contiguous = _contiguous_suffix(rows)
+    if len(contiguous) < target:
+        raise RuntimeError(
+            f"archive returned only {len(contiguous)} contiguous closed rows; "
+            f"need {target}; errors={errors[-10:]}"
+        )
+    return contiguous[-target:]
