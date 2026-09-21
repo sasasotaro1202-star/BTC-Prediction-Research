@@ -37,3 +37,20 @@ class RiskAwareWeightTests(unittest.TestCase):
     def test_invalid_redundancy_fails_closed_to_uniform(self):
         w = _weights_from_losses([0.4, 0.5, 0.6, 0.7], redundancy=[0.1])
         self.assertTrue(all(abs(x - 0.25) < 1e-9 for x in w))
+
+
+    def test_multi_metric_penalty_shifts_weight_away_from_bad_calibration(self):
+        balanced = _weights_from_losses(
+            [0.5, 0.5, 0.5, 0.5],
+            briers=[0.2, 0.2, 0.2, 0.2],
+            eces=[0.02, 0.02, 0.02, 0.02],
+            redundancy=[0.1, 0.1, 0.1, 0.1],
+        )
+        penalized = _weights_from_losses(
+            [0.5, 0.5, 0.5, 0.5],
+            briers=[0.2, 0.2, 0.2, 0.2],
+            eces=[0.02, 0.50, 0.02, 0.02],
+            redundancy=[0.1, 0.1, 0.1, 0.1],
+        )
+        self.assertLess(penalized[1], balanced[1])
+        self.assertAlmostEqual(sum(penalized), 1.0, places=10)
