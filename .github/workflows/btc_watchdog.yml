@@ -70,8 +70,16 @@ jobs:
             age=$((now - latest_epoch))
             echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s"
             if [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
-              echo "${workflow} appears stale; dispatching recovery run."
-              if gh workflow run "$workflow" --ref main >/dev/null 2>&1; then echo "${workflow} recovery dispatch succeeded."; else echo "WARN: ${workflow} recovery dispatch failed; leaving state unchanged."; fi
+              echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
+              if gh workflow enable "$workflow" >/dev/null 2>&1; then
+                echo "${workflow} enable check completed."
+              else
+                echo "WARN: could not enable ${workflow}; attempting dispatch anyway."
+              fi
+              if gh workflow run "$workflow" --ref main >/dev/null 2>&1; then
+                echo "${workflow} recovery dispatch succeeded."
+              else
+                echo "WARN: ${workflow} recovery dispatch failed; leaving state unchanged."
             fi
           }
 
