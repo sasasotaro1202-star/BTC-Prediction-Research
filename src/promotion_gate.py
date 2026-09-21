@@ -27,6 +27,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
     pit_ok = (
         isinstance(pit, dict)
         and pit.get("ok") is True
+        and pit.get("pit_verified") is True
         and int(pit.get("violation_count", 1)) == 0
         and int(pit.get("checked_predictions", 0)) > 0
     )
@@ -58,7 +59,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         if not candidate_ready:
             reasons.append("candidate_not_accepted_for_both_horizons")
         if not pit_ok:
-            reasons.append("pit_oos_audit_not_verified")
+            reasons.append("pit_oos_audit_not_fully_verified")
         if not calibration_ok:
             reasons.append("calibration_evidence_invalid_or_missing")
         if not research_input_ok:
