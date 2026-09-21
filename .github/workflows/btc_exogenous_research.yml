@@ -87,6 +87,7 @@ jobs:
           c=json.loads(cpath.read_text())
           if c.get('schema_version') != 1: raise SystemExit('coverage schema mismatch')
           if c.get('source') != 'GDELT_GKG': raise SystemExit('coverage source mismatch')
+          if not isinstance(c.get('successful_slices'), list): raise SystemExit('coverage slice list missing')
           m=json.loads(p.read_text())
           if m.get('schema_version') != 1: raise SystemExit('manifest schema mismatch')
           if m.get('source') != 'GDELT_GKG': raise SystemExit('manifest source mismatch')
