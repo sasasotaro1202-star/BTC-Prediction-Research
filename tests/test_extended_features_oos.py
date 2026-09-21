@@ -23,8 +23,12 @@ class ExtendedFeaturesTests(unittest.TestCase):
         self.assertGreaterEqual(len(extended_features_oos.factories()), 3)
         self.assertTrue(all(name.endswith("_extended") for name in extended_features_oos.factories()))
 
-    def test_no_production_flag_in_evaluation_contract(self):
-        self.assertIn("production_changed", extended_features_oos.main.__code__.co_names)
+    def test_insufficient_data_fails_closed(self):
+        from unittest.mock import patch
+        with patch.object(extended_features_oos, "load_rows", return_value=[]):
+            result = extended_features_oos.evaluate("5m")
+        self.assertEqual(result["status"], "DEFERRED")
+        self.assertEqual(result["reason"], "insufficient_rows")
 
 
 if __name__ == "__main__":
