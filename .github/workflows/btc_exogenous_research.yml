@@ -3,6 +3,13 @@ name: BTC Exogenous Research
 # Research-only news ingestion. It must never write production prediction
 # state or production model artifacts.
 on:
+  push:
+    paths:
+      - 'src/exogenous_information.py'
+      - 'tests/test_exogenous_information.py'
+      - 'scripts/gdelt_exogenous_research.py'
+      - 'tests/test_gdelt_exogenous_research.py'
+      - '.github/workflows/btc_exogenous_research.yml'
   schedule:
     - cron: '7 * * * *'
   workflow_dispatch:
