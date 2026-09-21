@@ -17,6 +17,7 @@ import json
 import re
 import urllib.request
 import zipfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -45,11 +46,19 @@ def _parse_gdelt_dt(value: str) -> datetime | None:
     except ValueError:
         return None
 
-def _download_slice(stamp: datetime) -> bytes:
+def _download_slice(stamp: datetime, attempts: int = 3) -> bytes:
     url = f"{BASE}/{_stamp(stamp)}.gkg.csv.zip"
     req = urllib.request.Request(url, headers={"User-Agent": "BTC-Prediction-Research/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    last = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read()
+        except Exception as exc:
+            last = exc
+            if attempt + 1 < attempts:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"download failed after {attempts} attempts: {last}")
 
 def _title(extras: str) -> str:
     m = re.search(r"<PAGE_TITLE>(.*?)</PAGE_TITLE>", extras or "", flags=re.S)
@@ -110,6 +119,40 @@ def parse_slice(raw: bytes, available_at: datetime) -> list[dict]:
                 })
     return out
 
+def _coverage_path(output: Path) -> Path:
+    return output.with_name("gdelt_coverage.json")
+
+
+def _load_coverage(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {str(x) for x in data.get("successful_slices", [])}
+    except Exception as exc:
+        raise RuntimeError(f"existing GDELT coverage manifest is malformed: {exc}") from exc
+
+
+def _slice_stamps_for_window(prediction_time: datetime, lookback: timedelta = timedelta(hours=1)) -> list[str]:
+    if prediction_time.tzinfo is None or prediction_time.utcoffset() is None:
+        raise ValueError("prediction_time must be timezone-aware")
+    if lookback.total_seconds() < 0:
+        raise ValueError("lookback must be non-negative")
+    end = prediction_time.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    end = end.replace(minute=(end.minute // 15) * 15)
+    start = (end - lookback).replace(minute=((end - lookback).minute // 15) * 15)
+    cur = start
+    out = []
+    while cur <= end:
+        out.append(_stamp(cur))
+        cur += timedelta(minutes=15)
+    return out
+
+
+def coverage_complete(coverage: set[str], prediction_time: datetime, lookback: timedelta = timedelta(hours=1)) -> bool:
+    return set(_slice_stamps_for_window(prediction_time, lookback)).issubset(coverage)
+
+
 def collect(start: datetime, end: datetime, output: Path) -> dict:
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start/end must be timezone-aware")
@@ -122,6 +165,8 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     seen: set[str] = set()
     records: list[dict] = []
+    coverage_path = _coverage_path(output)
+    coverage = _load_coverage(coverage_path)
     # Reuse the restored research cache so hourly runs accumulate a bounded
     # historical event archive instead of discarding prior slices.
     if output.exists():
@@ -144,6 +189,7 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
         attempted += 1
         try:
             batch = parse_slice(_download_slice(cur), cur)
+            coverage.add(_stamp(cur))
         except Exception as exc:
             # A missing slice is not a data point; record it for audit and continue.
             missing += 1
@@ -157,6 +203,10 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
         cur += timedelta(minutes=15)
     retention_cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     records = [item for item in records if datetime.fromisoformat(item["available_at"].replace("Z", "+00:00")) >= retention_cutoff]
+    coverage = {
+        stamp for stamp in coverage
+        if _parse_gdelt_dt(stamp) is not None and _parse_gdelt_dt(stamp) >= retention_cutoff
+    }
     records.sort(key=lambda x: (x["available_at"], x["event_id"]))
     with output.open("w", encoding="utf-8") as fh:
         for item in records:
@@ -176,6 +226,18 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
     }
     if missing == attempted:
         raise RuntimeError("all requested GDELT slices were unavailable; refusing empty research input")
+    coverage_path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "source": "GDELT_GKG",
+            "retention_days": 45,
+            "successful_slices": sorted(coverage),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest["coverage_slices"] = len(coverage)
+    manifest["coverage_min_utc"] = min(coverage) if coverage else None
+    manifest["coverage_max_utc"] = max(coverage) if coverage else None
     output.with_suffix(".manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
