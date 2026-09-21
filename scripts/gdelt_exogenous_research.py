@@ -155,6 +155,8 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
                 seen.add(item["event_id"])
                 records.append(item)
         cur += timedelta(minutes=15)
+    retention_cutoff = datetime.now(timezone.utc) - timedelta(days=45)
+    records = [item for item in records if datetime.fromisoformat(item["available_at"].replace("Z", "+00:00")) >= retention_cutoff]
     records.sort(key=lambda x: (x["available_at"], x["event_id"]))
     with output.open("w", encoding="utf-8") as fh:
         for item in records:
