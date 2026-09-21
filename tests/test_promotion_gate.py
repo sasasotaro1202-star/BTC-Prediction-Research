@@ -14,11 +14,21 @@ class PromotionGateTests(unittest.TestCase):
             },
         }
 
+    def _pit(self):
+        return {"ok": True, "checked_predictions": 100, "violation_count": 0}
+
+    def _cal(self):
+        return {
+            "5m": {"horizon": "5m", "temperature": 1.0, "model_version": "v5"},
+            "10m": {"horizon": "10m", "temperature": 1.0, "model_version": "v5"},
+        }
+
     def test_candidate_rejection_is_safe_hold(self):
         result = evaluate_promotion(
             {"status": "PASS"},
             self._robust(),
             {"5m": {"status": "rejected"}, "10m": {"status": "insufficient_history"}},
+            self._pit(), self._cal(),
         )
         self.assertFalse(result["promotion_allowed"])
         self.assertEqual(result["production_safety_gate"], "PASS")
@@ -30,6 +40,7 @@ class PromotionGateTests(unittest.TestCase):
             {"status": "PASS"},
             {"research_only": True, "horizons": {}},
             {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
+            self._pit(), self._cal(),
         )
         self.assertFalse(result["promotion_allowed"])
         self.assertEqual(result["production_safety_gate"], "HOLD")
