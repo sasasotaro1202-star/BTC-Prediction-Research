@@ -5,20 +5,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from db import DB, init_db
 from settlement_source import preferred_source_from_scenario, target_close_preferred
-from label_policy import direction_from_prices, NEUTRAL_BPS
+from label_policy import direction_from_prices, direction_from_return, NEUTRAL_BPS
 
 MAX_TARGET_WORKERS = 4
 
 
-def direction(base: float, actual: float, threshold: float = THRESHOLD) -> str:
-    if base <= 0:
-        raise ValueError('base price must be positive for normal settlement')
-    r = actual / base - 1.0
-    if r > threshold:
-        return 'UP'
-    if r < -threshold:
-        return 'DOWN'
-    return 'FLAT'
+def direction(base: float, actual: float) -> str:
+    return direction_from_prices(base, actual)
 
 
 def scenario_source(raw: str) -> str:
