@@ -88,6 +88,21 @@ class ContextRouterTests(unittest.TestCase):
         self.assertEqual(result["routing_mode"], "soft_dynamic_ensemble")
         self.assertTrue(result["research_only"])
 
+def test_multi_model_weight_floor_survives_normalization():
+    train = make_rows(420)
+    test = make_rows(40, offset=900)
+    factories = {
+        "a": lambda: LogisticRegression(C=0.01, max_iter=1000, random_state=42),
+        "b": lambda: LogisticRegression(C=100.0, max_iter=1000, random_state=42),
+        "c": lambda: LogisticRegression(C=1.0, max_iter=1000, random_state=42),
+    }
+    result = dynamic_route_predictions(train, test, factories)
+    assert result is not None
+    weights = result["global_weights"]
+    assert abs(sum(weights.values()) - 1.0) < 1e-6
+    assert all(w >= 0.10 for w in weights.values())
+
+
 if __name__ == "__main__":
     unittest.main()
 
