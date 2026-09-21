@@ -26,6 +26,8 @@ CLASSES=("DOWN","FLAT","UP"); MIN_TRAIN=2000; TEST_BLOCK=300; MAX_ROWS=30000; MA
 TREND_INDEX=2
 VOL_INDEX=6
 MIN_HISTORY_PER_REGIME=180; FLOOR=0.10; MAX_WEIGHT=0.55; SHRINKAGE=0.30
+META_MIN_ROWS=900; META_MAX_ROWS=6000
+META_REGIMES=("TREND_UP|LOW_VOL","TREND_UP|HIGH_VOL","TREND_DOWN|LOW_VOL","TREND_DOWN|HIGH_VOL","RANGE|LOW_VOL","RANGE|HIGH_VOL")
 
 def factories():
     return {
@@ -97,6 +99,59 @@ def _mix(parts,weights):
     for p,w in zip(parts,weights): out+=float(w)*p
     out=np.clip(out,1e-7,1.0); return out/out.sum(axis=1,keepdims=True)
 
+def _meta_features(parts, keys):
+    """Represent only prior-OOS component predictions + current regime."""
+    probs=np.hstack([np.asarray(p,dtype=float) for p in parts])
+    entropy=np.asarray([
+        -sum(float(v)*np.log(max(float(v),1e-7)) for v in p)
+        for p in probs.reshape(len(keys),-1,3)
+    ])
+    regime=np.zeros((len(keys),len(META_REGIMES)),dtype=float)
+    for i,key in enumerate(keys):
+        if key in META_REGIMES:
+            regime[i,META_REGIMES.index(key)]=1.0
+    return np.hstack([probs,entropy,regime])
+
+
+def _fit_meta_router(meta_history):
+    """Fit the meta-router only from completed prior OOS observations."""
+    if len(meta_history)<META_MIN_ROWS:
+        return None
+    data=meta_history[-META_MAX_ROWS:]
+    X=np.asarray([r["x"] for r in data],dtype=float)
+    y=np.asarray([r["y"] for r in data])
+    if len(set(y.tolist()))<3:
+        return None
+    split=max(int(len(y)*0.75),len(y)-600)
+    if split<500 or len(y)-split<150:
+        return None
+    probe=Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=0.20,max_iter=3000))])
+    probe.fit(X[:split],y[:split])
+    temp=_temperature(_aligned(probe,[{"x":z} for z in X[split:]]),y[split:].tolist())
+    model=Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=0.20,max_iter=3000))])
+    model.fit(X,y)
+    raw=model.predict_proba(X[:1]) if len(X) else None
+    classes=getattr(model,"classes_",[])
+    if len(classes)!=3:
+        return None
+    def predict(Xnew):
+        pp=np.asarray(model.predict_proba(Xnew),dtype=float)
+        out=np.full((len(Xnew),3),1e-7,dtype=float)
+        for j,cls in enumerate(model.classes_):
+            if str(cls) in CLASSES:
+                out[:,CLASSES.index(str(cls))]=pp[:,j]
+        return apply_temperature(out,temp)
+    return predict
+
+
+def _meta_predict(meta_history, parts, keys):
+    if not meta_history:
+        return None
+    fn=_fit_meta_router(meta_history)
+    if fn is None:
+        return None
+    return fn(_meta_features(parts,keys))
+
 def _historical_rows(horizon):
     """Build runtime-compatible causal rows from closed 1-minute BTC history."""
     raw = binance_archive_rows(MAX_ROWS)
@@ -120,7 +175,7 @@ def evaluate(horizon):
     if len(rows)<MIN_TRAIN+TEST_BLOCK+200:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_rows"}
     split=int(len(rows)*0.80); development=rows[:split]; holdout=rows[split:]
     if len(development)<MIN_TRAIN+TEST_BLOCK or len(holdout)<100:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_split"}
-    mf=factories(); names=list(mf); history=[]; blocks=[]
+    mf=factories(); names=list(mf); history=[]; meta_history=[]; blocks=[]
     all_endpoints=list(range(MIN_TRAIN,len(development),TEST_BLOCK))
     if len(all_endpoints)>MAX_OOS_BLOCKS:
         endpoints=sorted(set(int(v) for v in np.linspace(all_endpoints[0],all_endpoints[-1],MAX_OOS_BLOCKS)))
@@ -138,10 +193,19 @@ def evaluate(horizon):
         if len(parts)!=len(names):continue
         global_w,regime_w=_history_weights(history,sorted(set(keys)),names)
         routed=np.asarray([_mix([p[i:i+1] for p in parts],regime_w.get(keys[i],global_w))[0] for i in range(len(test))])
-        equal=_mix(parts,np.full(len(parts),1.0/len(parts))); y=[r["y"] for r in test]
-        em=metrics(y,equal); rm=metrics(y,routed); comp=[metrics(y,p) for p in parts]
+        equal=_mix(parts,np.full(len(parts),1.0/len(parts)))
+        meta_pred=_meta_predict(meta_history,parts,keys)
+        y=[r["y"] for r in test]
+        em=metrics(y,equal); rm=metrics(y,routed); mm=metrics(y,meta_pred) if meta_pred is not None else None; comp=[metrics(y,p) for p in parts]
         # Store one causal observation per row for local-regime learning. This is
         # intentionally prior-block data only for every future block.
+        meta_x=_meta_features(parts,keys)
+        if mm is not None:
+            meta_history.extend({"x":meta_x[i].tolist(),"y":y[i]} for i in range(len(y)))
+        else:
+            # Even before the meta-router is eligible, store causal OOS rows so
+            # later blocks can learn without ever seeing the current block twice.
+            meta_history.extend({"x":meta_x[i].tolist(),"y":y[i]} for i in range(len(y)))
         for i,key in enumerate(keys):
             one=[metrics([y[i]],p[i:i+1]) for p in parts]
             history.append({"regime":key,"logloss":[s["logloss"] for s in one],"brier":[s["brier"] for s in one],"ece":[s["calibration_error"] for s in one]})
@@ -150,6 +214,7 @@ def evaluate(horizon):
             "regime_counts": {k: keys.count(k) for k in sorted(set(keys))},
             "equal": em,
             "routed": rm,
+            "meta": mm if mm is not None else {"status":"not_yet_eligible"},
             "delta": {
                 "accuracy": rm["accuracy"] - em["accuracy"],
                 "logloss": rm["logloss"] - em["logloss"],
@@ -163,15 +228,21 @@ def evaluate(horizon):
         })
     if len(blocks)<8:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_valid_oos_blocks"}
     ll=np.asarray([b["delta"]["logloss"] for b in blocks]); br=np.asarray([b["delta"]["brier"] for b in blocks]); ac=np.asarray([b["delta"]["accuracy"] for b in blocks])
-    summary={"blocks":len(blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005))}
+    meta_blocks=[b for b in blocks if isinstance(b.get("meta"),dict) and "delta" in b["meta"]]
+    mll=np.asarray([b["meta"]["delta"]["logloss"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    mbr=np.asarray([b["meta"]["delta"]["brier"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    mac=np.asarray([b["meta"]["delta"]["accuracy"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    summary={"blocks":len(blocks),"meta_blocks":len(meta_blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),"meta_mean_accuracy_delta":float(mac.mean()) if len(mac) else None,"meta_mean_logloss_delta":float(mll.mean()) if len(mll) else None,"meta_mean_brier_delta":float(mbr.mean()) if len(mbr) else None,"meta_improved_logloss_ratio":float(np.mean(mll<0)) if len(mll) else None,"meta_improved_brier_ratio":float(np.mean(mbr<0)) if len(mbr) else None,"meta_non_worse_accuracy_ratio":float(np.mean(mac>=-0.005)) if len(mac) else None}
     thresholds=_regime_thresholds(development); hold_keys=[regime_key(r,thresholds) for r in holdout]
     hold_parts=[_fit_calibrated(development,holdout,mf[name]) for name in names]
     if any(p is None for p in hold_parts):return {"status":"DEFERRED","n":len(rows),"reason":"holdout_prediction_failed"}
     global_w,regime_w=_history_weights(history,sorted(set(hold_keys)),names)
     equal_hold=_mix(hold_parts,np.full(len(hold_parts),1.0/len(hold_parts)))
     routed_hold=np.asarray([_mix([p[i:i+1] for p in hold_parts],regime_w.get(hold_keys[i],global_w))[0] for i in range(len(holdout))])
+    meta_hold=_meta_predict(meta_history,hold_parts,hold_keys)
     y_hold=[r["y"] for r in holdout]
-    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"runtime_15_feature_causal_prior_oos_regime_loss_weighting_with_global_fallback_soft_routing","final_holdout_protected":True,"final_holdout_used_for_selection":False,"feature_schema":"bootstrap_train.FEATURES_compatible_runtime_15", "model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":metrics(y_hold,equal_hold),"routed":metrics(y_hold,routed_hold),"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
+    final_meta={"status":"DEFERRED","reason":"insufficient_prior_oos_meta_rows"} if meta_hold is None else metrics(y_hold,meta_hold)
+    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"runtime_15_feature_causal_prior_oos_regime_loss_weighting_plus_causal_meta_router","final_holdout_protected":True,"final_holdout_used_for_selection":False,"feature_schema":"bootstrap_train.FEATURES_compatible_runtime_15","model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":metrics(y_hold,equal_hold),"routed":metrics(y_hold,routed_hold),"meta_router":final_meta,"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
 
 def main():
     payload={"schema_version":1,"research_only":True,"production_changed":False,"horizons":{h:evaluate(h) for h in HORIZONS}}
