@@ -1,3 +1,12 @@
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+for path in (ROOT / "src", ROOT / "scripts"):
+    value = str(path)
+    if value not in sys.path:
+        sys.path.insert(0, value)
+
 from datetime import datetime, timezone
 from io import BytesIO
 import csv
