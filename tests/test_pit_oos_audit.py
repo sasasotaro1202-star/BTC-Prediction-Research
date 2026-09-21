@@ -37,6 +37,34 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertFalse(result["ok"])
                 self.assertIn("5m_target_not_after_decision", result["violations"][0])
 
+    def test_rejects_prediction_time_far_in_future(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            created = now + timedelta(seconds=61)
+            db = self.make_db(td, [(1, created.isoformat(), (created + timedelta(minutes=5)).isoformat(), (created + timedelta(minutes=10)).isoformat(), "v1", "{}")])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("prediction_time_in_future" in v for v in result["violations"]))
+
+    def test_rejects_invalid_pit_metadata(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", json.dumps({"decision_time_utc": "not-a-timestamp"}))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("invalid_pit_metadata" in v for v in result["violations"]))
+
+    def test_rejects_degraded_policy_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "DEGRADED_NO_FRESH_DATA", json.dumps({"policy": "wrong"}))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("degraded_policy_mismatch" in v for v in result["violations"]))
+
     def test_rejects_market_cutoff_after_decision(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)
