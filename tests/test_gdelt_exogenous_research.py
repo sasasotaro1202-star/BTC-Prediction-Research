@@ -53,3 +53,23 @@ def test_policy_and_macro_are_classified_separately_for_research_diagnostics():
     ]
     events = parse_slice(_zip(rows), available)
     assert {x["event_type"] for x in events} == {"policy", "macro"}
+
+
+def test_coverage_requires_every_15_minute_slice_in_lookback():
+    from datetime import timedelta
+    from gdelt_exogenous_research import coverage_complete, _slice_stamps_for_window
+    t = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    required = set(_slice_stamps_for_window(t, timedelta(hours=1)))
+    assert len(required) == 5
+    assert coverage_complete(required, t, timedelta(hours=1))
+    assert coverage_complete(required - {min(required)}, t, timedelta(hours=1)) is False
+
+
+def test_coverage_normalizes_prediction_timezone():
+    from datetime import timedelta
+    from gdelt_exogenous_research import coverage_complete, _slice_stamps_for_window
+    t = datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc)
+    equivalent = datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)
+    required = set(_slice_stamps_for_window(t, timedelta(hours=1)))
+    assert coverage_complete(required, t, timedelta(hours=1))
+    assert coverage_complete(required, equivalent, timedelta(hours=1)) is False
