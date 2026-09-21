@@ -263,7 +263,7 @@ def evaluate(horizon: str):
             "n": len(rows),
             "reason": "no_valid_development_blocks",
         }
-    summary, blocks, eligible = dev_result
+    summary, blocks, eligible, stable_eligible, stable_blocks = dev_result
 
     # Final 20% is protected. No threshold, weight, or eligibility decision
     # is made from it; it is evaluated once using the frozen development
