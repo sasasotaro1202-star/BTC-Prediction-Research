@@ -43,11 +43,19 @@ def _predict_block(factory, train, test):
     split = int(len(train) * 0.75)
     if split < 120 or len(train) - split < 30:
         return None
+    prefix_y = [r["y"] for r in train[:split]]
+    if len(set(prefix_y)) < 3:
+        return None
     cal_model = factory()
-    cal_model.fit(
-        np.asarray([r["x"] for r in train[:split]], dtype=float),
-        np.asarray([r["y"] for r in train[:split]]),
-    )
+    try:
+        cal_model.fit(
+            np.asarray([r["x"] for r in train[:split]], dtype=float),
+            np.asarray(prefix_y),
+        )
+    except ValueError as exc:
+        if "three_classes" in str(exc):
+            return None
+        raise
     cal_probs = _aligned(cal_model, train[split:])
     temp = _temperature(cal_probs, [r["y"] for r in train[split:]])
 
