@@ -143,7 +143,7 @@ try:
             # Compact the target first, then merge local events using the exact same
             # identity contract as the research duplicate audit.
             index = compact_predictions(con)
-            local_rows = con.execute(f'SELECT rowid, {names} FROM local.{table}').fetchall()
+            local_rows = con.execute(f'SELECT {names} FROM local.{table}').fetchall()
             inserted = updated = skipped = 0
             for row in local_rows:
                 row_map = dict(zip(common, row))
