@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
+from collections import Counter
 from pathlib import Path
 from db import DB, init_db
 
@@ -96,6 +97,7 @@ def audit() -> dict:
     verified_count = 0
     verified_primary_count = 0
     verified_fallback_count = 0
+    strict_exclusion_reasons = Counter()
 
     with sqlite3.connect(DB) as con:
         rows = con.execute(
@@ -168,6 +170,7 @@ def audit() -> dict:
 
         primary_source_valid = False
         fallback_source_valid = False
+        strict_primary_eligible = False
         if provenance_present:
             scoped.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
             sources = provenance.get("sources")
@@ -175,9 +178,11 @@ def audit() -> dict:
                 scoped.append(f"{prediction_id}:missing_source_provenance")
             else:
                 valid_sources = set()
+                source_invalid_reasons = []
                 for source_name, source_record in sources.items():
                     if not isinstance(source_record, dict):
                         scoped.append(f"{prediction_id}:source:{source_name}:provenance_not_object")
+                        source_invalid_reasons.append(f"source:{source_name}:provenance_not_object")
                         continue
                     source_status = str(source_record.get("status", ""))
                     if source_status in AVAILABLE_STATUSES:
@@ -188,13 +193,30 @@ def audit() -> dict:
                         scoped.extend(source_errors)
                         if not source_errors:
                             valid_sources.add(source_name)
+                        else:
+                            source_invalid_reasons.extend(v.split(":", 2)[-1] for v in source_errors[:3])
+                    elif source_status:
+                        source_invalid_reasons.append(f"source:{source_name}:status:{source_status}")
+                mode = str(scenario.get("production_mode", ""))
+                required_primary = {"binance_futures", "binance_depth", "binance_taker", "binance_premium"}
                 primary_source_valid = "binance_futures" in valid_sources
+                strict_primary_eligible = (
+                    mode == "binance_primary"
+                    and required_primary.issubset(valid_sources)
+                )
                 fallback_source_valid = (
-                    not primary_source_valid
+                    not strict_primary_eligible
                     and bool(valid_sources.intersection({"bybit_futures", "coinbase_futures", "kraken_futures"}))
                 )
+                if mode == "binance_primary" and not strict_primary_eligible:
+                    missing = sorted(required_primary - valid_sources)
+                    for item in missing:
+                        strict_exclusion_reasons[f"missing_or_invalid_required_primary_source:{item}"] += 1
+                if mode != "binance_primary":
+                    strict_exclusion_reasons[f"non_primary_mode:{mode or 'missing'}"] += 1
         elif not is_legacy:
             scoped.append(f"{prediction_id}:missing_top_level_provenance")
+            strict_exclusion_reasons["missing_top_level_provenance"] += 1
 
         if model_version == "DEGRADED_NO_FRESH_DATA":
             if scenario.get("policy") != "safe_degraded_no_directional_claim":
@@ -204,10 +226,12 @@ def audit() -> dict:
             legacy_unverified_count += 1
         elif not any(v.startswith(row_prefix) for v in violations):
             verified_count += 1
-            if primary_source_valid:
+            if strict_primary_eligible:
                 verified_primary_count += 1
             elif fallback_source_valid:
                 verified_fallback_count += 1
+            elif mode == "binance_primary":
+                strict_exclusion_reasons["binance_primary_provenance_not_strict"] += 1
 
     # Promotion evidence is tied to the production benchmark venue. Fallback
     # observations remain useful research data but cannot satisfy the primary
@@ -239,7 +263,15 @@ def audit() -> dict:
         "legacy_violations": legacy_violations[:50],
         "violations": violations[:100],
         "violation_count": len(violations),
-        "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
+        "strict_exclusion_reasons": dict(strict_exclusion_reasons.most_common(20)),
+        "strict_primary_contract": [
+            "production_mode == binance_primary",
+            "binance_futures source provenance valid",
+            "binance_depth source provenance valid",
+            "binance_taker source provenance valid",
+            "binance_premium source provenance valid",
+        ],
+        "policy": "strict_pit_scope_with_legacy_unverified_quarantine_and_loader_aligned_primary_contract",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
