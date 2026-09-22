@@ -87,6 +87,23 @@ class TestMergePredictionState(unittest.TestCase):
             con.close()
             self.assertEqual(row, (102.0, '2026-09-15T10:05:02+00:00'))
 
+    def test_compact_cli_repairs_duplicate_target_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{"ret_1m":0.1}', '{}')
+            unsettled = immutable + (None, None, None, None, None, None, None, None)
+            settled = immutable + (101.0, 'UP', 1, '2026-09-15T10:05:01+00:00', None, None, None, None)
+            make_db(target, [unsettled, settled])
+            subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
+            con = sqlite3.connect(target)
+            count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+            row = con.execute('SELECT actual_price_5m, actual_direction_5m, correct_5m FROM predictions').fetchone()
+            con.close()
+            self.assertEqual(count, 1)
+            self.assertEqual(row, (101.0, 'UP', 1))
+
     def test_same_prediction_event_with_changed_scenario_is_collapsed(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
