@@ -19,7 +19,7 @@ on:
 
 
 concurrency:
-  group: btc-unit-tests
+  group: btc-unit-tests-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
