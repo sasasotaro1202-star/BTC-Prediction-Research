@@ -31,7 +31,6 @@ from model_compare import (
     EMBARGO_BARS,
     load_primary_production_strict_rows,
     load_archive_research_rows,
-    _research_archive_rows_from_raw,
     metrics,
     walk_forward,
     aligned,
@@ -169,6 +168,47 @@ def _score_frozen_champion(horizon, rows):
     return out, str(meta.get("model_version", ""))
 
 
+def _rows_from_raw(raw, horizon, source_name, max_rows=ARCHIVE_MAX_ROWS):
+    """Build causal archive rows without requiring an optional model_compare helper."""
+    from bootstrap_train import make_features
+    from label_policy import direction_from_return
+
+    steps = int(str(horizon).rstrip("m"))
+    ordered = sorted({int(r[0]): r for r in raw}.values(), key=lambda r: int(r[0]))
+    if not ordered:
+        return []
+    contiguous = [ordered[-1]]
+    for row in reversed(ordered[:-1]):
+        if int(contiguous[-1][0]) - int(row[0]) != 60_000:
+            break
+        contiguous.append(row)
+    contiguous.reverse()
+
+    out = []
+    for i in range(30, len(contiguous) - steps):
+        current = contiguous[i]
+        target = contiguous[i + steps]
+        if int(target[0]) - int(current[0]) != steps * 60_000:
+            continue
+        try:
+            x = np.asarray(make_features(contiguous[: i + 1]), dtype=float)
+            if not np.isfinite(x).all():
+                continue
+            future_return = float(target[4]) / float(current[4]) - 1.0
+            out.append({
+                "id": f"archive:{source_name}:{int(current[0])}:{horizon}",
+                "created": datetime.fromtimestamp(int(current[0]) / 1000.0, timezone.utc).isoformat(),
+                "target": datetime.fromtimestamp(int(target[0]) / 1000.0, timezone.utc).isoformat(),
+                "x": x.tolist(),
+                "y": direction_from_return(future_return),
+                "production_mode": f"{source_name}_archive",
+                "data_source": source_name,
+            })
+        except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
+            continue
+    return out[-int(max_rows):]
+
+
 def _fresh_post_training_fallback(horizon):
     """Build research rows from fresh non-Binance venues after Champion training.
     
@@ -213,9 +253,7 @@ def _fresh_post_training_fallback(horizon):
     for source_name, loader in loaders:
         try:
             raw = loader(target)
-            rows = _research_archive_rows_from_raw(
-                raw, horizon, ARCHIVE_MAX_ROWS, source_name
-            )
+            rows = _rows_from_raw(raw, horizon, source_name, ARCHIVE_MAX_ROWS)
             fresh = []
             for row in rows:
                 created = datetime.fromisoformat(
