@@ -1,6 +1,8 @@
 name: BTC Integrity Gate
 
 on:
+  schedule:
+    - cron: '23 * * * *'
   workflow_run:
     workflows: ["BTC Live Cycle"]
     types: [completed]
