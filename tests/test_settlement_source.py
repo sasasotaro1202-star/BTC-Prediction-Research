@@ -36,7 +36,7 @@ class TestSettlementSource(unittest.TestCase):
         with patch.object(ss, 'load_binance_ws_cache', return_value=rows), \
              patch.object(ss, '_target_binance', side_effect=AssertionError("REST should not be called")):
             price, source = ss.target_close_preferred(
-                '2024-09-15T10:05:30+00:00', 'binance_futures'
+                '2024-09-15T10:06:00+00:00', 'binance_futures'
             )
         self.assertEqual(price, 102.5)
         self.assertEqual(source, 'binance_websocket_cache')
