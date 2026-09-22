@@ -22,7 +22,7 @@ class AdaptiveEnsembleHoldoutTests(unittest.TestCase):
              patch.object(adaptive, "load_archive_research_rows", return_value=[]):
             result = adaptive.evaluate("5m")
         self.assertEqual(result["status"], "DEFERRED")
-        self.assertEqual(result["reason"], "insufficient_rows_for_protected_holdout")
+        self.assertEqual(result["reason"], "insufficient_research_rows_for_protected_holdout")
 
 
 if __name__ == "__main__":
