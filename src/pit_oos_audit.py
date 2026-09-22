@@ -94,6 +94,8 @@ def audit() -> dict:
     legacy_violations: list[str] = []
     legacy_unverified_count = 0
     verified_count = 0
+    verified_primary_count = 0
+    verified_fallback_count = 0
 
     with sqlite3.connect(DB) as con:
         rows = con.execute(
@@ -164,24 +166,33 @@ def audit() -> dict:
         if target10 <= decision:
             violations.append(f"{prediction_id}:10m_target_not_after_decision")
 
+        primary_source_valid = False
+        fallback_source_valid = False
         if provenance_present:
             scoped.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
             sources = provenance.get("sources")
             if not isinstance(sources, dict) or not sources:
                 scoped.append(f"{prediction_id}:missing_source_provenance")
             else:
+                valid_sources = set()
                 for source_name, source_record in sources.items():
                     if not isinstance(source_record, dict):
                         scoped.append(f"{prediction_id}:source:{source_name}:provenance_not_object")
                         continue
                     source_status = str(source_record.get("status", ""))
                     if source_status in AVAILABLE_STATUSES:
-                        scoped.extend(
-                            validate_provenance_envelope(
-                                source_record,
-                                f"{prediction_id}:source:{source_name}",
-                            )
+                        source_errors = validate_provenance_envelope(
+                            source_record,
+                            f"{prediction_id}:source:{source_name}",
                         )
+                        scoped.extend(source_errors)
+                        if not source_errors:
+                            valid_sources.add(source_name)
+                primary_source_valid = "binance_futures" in valid_sources
+                fallback_source_valid = (
+                    not primary_source_valid
+                    and bool(valid_sources.intersection({"bybit_futures", "coinbase_futures", "kraken_futures"}))
+                )
         elif not is_legacy:
             scoped.append(f"{prediction_id}:missing_top_level_provenance")
 
@@ -193,6 +204,10 @@ def audit() -> dict:
             legacy_unverified_count += 1
         elif not any(v.startswith(row_prefix) for v in violations):
             verified_count += 1
+            if primary_source_valid:
+                verified_primary_count += 1
+            elif fallback_source_valid:
+                verified_fallback_count += 1
 
     # Promotion evidence is tied to the production benchmark venue. Fallback
     # observations remain useful research data but cannot satisfy the primary
