@@ -10,7 +10,8 @@ class ModelZooMetaRouterContractTests(unittest.TestCase):
             "logloss": candidate["logloss"] - routed["logloss"],
             "brier": candidate["brier"] - routed["brier"],
         }
-        self.assertEqual(delta, {"accuracy": 0.01, "logloss": -0.01, "brier": -0.01})
+        for key, expected in {"accuracy": 0.01, "logloss": -0.01, "brier": -0.01}.items():
+            self.assertAlmostEqual(delta[key], expected, places=12)
 
 
 if __name__ == "__main__":
