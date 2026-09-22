@@ -45,6 +45,7 @@ IX_FEATURES = [
 TEST_BLOCK = 250
 FINAL_HOLDOUT_FRAC = 0.20
 PURGE = {"5m": 5, "10m": 10}
+EMBARGO = {"5m": 60, "10m": 60}
 
 
 def build_dataset_dicts(rows, horizon):
@@ -103,7 +104,7 @@ def factories():
 def walk_forward(X, y, horizon, start, stop):
     base_preds, ix_preds, ys, block_deltas = [], [], [], []
     for end in range(start, stop, TEST_BLOCK):
-        train_end = max(0, end - PURGE[horizon])
+        train_end = max(0, end - PURGE[horizon] - EMBARGO[horizon])
         test_end = min(end + TEST_BLOCK, stop)
         if test_end <= end or train_end < MIN_TRAIN:
             continue
@@ -194,6 +195,7 @@ def main():
         "interaction_features": IX_FEATURES,
         "test_block": TEST_BLOCK,
         "purge_bars": PURGE,
+        "embargo_bars": EMBARGO,
         "final_holdout_fraction": FINAL_HOLDOUT_FRAC,
         "horizons": {},
         "finished_utc": datetime.now(timezone.utc).isoformat(),
