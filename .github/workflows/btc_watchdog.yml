@@ -63,7 +63,7 @@ jobs:
           now=$(date -u +%s)
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=1000" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
               echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
               exit 1
