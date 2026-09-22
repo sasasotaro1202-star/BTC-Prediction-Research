@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+import csv
+import io
+import math
+import zipfile
+from datetime import datetime, timezone
+from functools import lru_cache
+from urllib.request import Request, urlopen
+
 from market_data import _binance, BINANCE_WS_CACHE
 from binance_ws import load_cache as load_binance_ws_cache
 
@@ -45,6 +52,10 @@ def target_close_preferred(target_iso: str, preferred_source: str) -> tuple[floa
     except Exception:
         pass
 
+    archive_price = _target_binance_daily_archive(start)
+    if archive_price is not None:
+        return archive_price, 'binance_daily_archive'
+
     try:
         price = _target_binance(start, ts)
     except Exception:
@@ -74,3 +85,43 @@ def _target_binance(start: int, end: int) -> float | None:
         'symbol': 'BTCUSDT', 'interval': '1m', 'startTime': start, 'endTime': end, 'limit': 2,
     })
     return _target_from_rows(rows, start)
+
+
+@lru_cache(maxsize=8)
+def _daily_archive_rows(date_text: str) -> dict[int, float]:
+    """Load one Binance USD-M Futures 1m daily archive into an in-memory index."""
+    name = f"BTCUSDT-1m-{date_text}.zip"
+    url = f"https://data.binance.vision/data/futures/um/daily/klines/BTCUSDT/1m/{name}"
+    req = Request(url, headers={"User-Agent": "BTC-Prediction-Research/9.0"})
+    rows: dict[int, float] = {}
+    with urlopen(req, timeout=30) as response:
+        raw = response.read()
+    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+        if not csv_names:
+            raise RuntimeError(f"daily archive contains no csv: {name}")
+        with zf.open(csv_names[0]) as fh:
+            for row in csv.reader(io.TextIOWrapper(fh, encoding="utf-8")):
+                if not row or not str(row[0]).isdigit() or len(row) < 6:
+                    continue
+                try:
+                    open_ms = int(row[0])
+                    close = float(row[4])
+                except (TypeError, ValueError):
+                    continue
+                if close > 0 and math.isfinite(close):
+                    rows[open_ms] = close
+    return rows
+
+
+def _target_binance_daily_archive(start: int) -> float | None:
+    dt = datetime.fromtimestamp(int(start) / 1000, timezone.utc)
+    day = dt.date().isoformat()
+    # Current-day archives may still be partial/non-public; keep REST as the
+    # final same-day resolver. Prior days are immutable enough for exact replay.
+    if dt.date() >= datetime.now(timezone.utc).date():
+        return None
+    try:
+        return _daily_archive_rows(day).get(int(start))
+    except Exception:
+        return None
