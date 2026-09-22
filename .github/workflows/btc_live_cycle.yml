@@ -30,20 +30,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin binance-ws-cache
           mkdir -p data
-          git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json
-          python - <<'PY'
+          rm -f data/binance_ws_1m.json
+          cache_loaded=false
+          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json; then
+              if python - <<'PY'
           import json
           from pathlib import Path
           obj=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))
           if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
               raise SystemExit('invalid Binance WebSocket cache provenance')
           rows=obj.get('rows')
-          if not isinstance(rows,list):
-              raise SystemExit('Binance WebSocket cache rows malformed')
+          if not isinstance(rows,list) or not rows:
+              raise SystemExit('Binance WebSocket cache rows malformed_or_empty')
+          required={'open_time_ms','open','high','low','close','volume','taker_buy_base','event_time_ms','retrieved_at_ms'}
+          for row in rows:
+              if not isinstance(row,dict) or not required.issubset(row):
+                  raise SystemExit('Binance WebSocket cache row schema invalid')
           print(f'Loaded Binance WebSocket cache rows={len(rows)}')
           PY
+              then
+                cache_loaded=true
+              else
+                echo 'WARN: Binance WebSocket cache failed validation; ignoring optional cache.'
+                rm -f data/binance_ws_1m.json
+              fi
+            else
+              echo 'WARN: Binance WebSocket cache file unavailable; continuing without optional cache.'
+            fi
+          else
+            echo 'WARN: Binance WebSocket cache branch unavailable; continuing without optional cache.'
+          fi
+          if [ "$cache_loaded" = false ]; then
+            echo 'Binance WebSocket cache: unavailable/invalid; primary REST/inline WebSocket path remains authoritative.'
+          fi
 
       - uses: actions/setup-python@v7
         with:
