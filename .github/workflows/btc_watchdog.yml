@@ -168,7 +168,8 @@ jobs:
           recover_if_stale btc_hierarchical_research.yml 21600 32400 900
           # The 9H marathon is intentionally long-running; recover it only when
           # there is no active run and no completed run for 10 hours.
-          recover_if_stale btc_9h_research_marathon.yml 36000 39600 900
+          # A 9H run has a hard workflow timeout; allow it to finish before treating an old-head run as stale.
+          recover_if_stale btc_9h_research_marathon.yml 36000 39600 39600
           # Research-only model/feature and maintenance lanes are recoverable
           # independently. They never mutate production probabilities directly.
           recover_if_stale btc_rolling_challenger.yml 28800 43200 900
