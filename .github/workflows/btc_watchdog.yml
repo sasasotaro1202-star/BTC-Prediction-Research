@@ -92,6 +92,7 @@ jobs:
 
           code_or_protocol_changed_since() {
             active_head="$1"
+            workflow="$2"
             if [ -z "$main_sha" ] || [ -z "$active_head" ] || [ "$active_head" = "$main_sha" ]; then
               return 1
             fi
@@ -106,7 +107,7 @@ jobs:
             fi
             if printf '%s' "$compare" | jq -e '
               any(.files[]?.filename?;
-                test("^(src/|scripts/|tests/|requirements\.txt$|\.github/workflows/btc_[^/]+\.yml$)")
+                test("^(src/|scripts/|tests/|requirements\.txt$|\.github/workflows/" + $workflow + "$)")
               )' >/dev/null 2>&1; then
               return 0
             fi
@@ -137,7 +138,7 @@ jobs:
                 active_age=$((now - active_epoch))
                 stale_by_source=false
                 stale_by_age=false
-                if [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head"; then
+                if [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head" "$workflow"; then
                   stale_by_source=true
                 fi
                 if [ "$active_age" -ge "$active_grace" ]; then
