@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot].noreply.github.com
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -- data/binance_ws_1m.json
           if git diff --cached --quiet; then
             echo 'No Binance WS cache update.'
