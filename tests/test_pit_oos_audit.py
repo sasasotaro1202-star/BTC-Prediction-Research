@@ -72,7 +72,9 @@ class TestPITOOSAudit(unittest.TestCase):
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
-                self.assertTrue(result["pit_verified"])
+                self.assertFalse(result["pit_verified"])
+                self.assertEqual(result["verified_predictions"], 1)
+                self.assertIn("insufficient_strict_pit_rows", result["pit_verified_reason"])
 
     def test_legacy_rows_do_not_count_as_active_pit_violations(self):
         with tempfile.TemporaryDirectory() as td:

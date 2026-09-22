@@ -154,12 +154,15 @@ def audit() -> dict:
                 scoped.append(f"{prediction_id}:invalid_pit_metadata")
                 decision = created
 
+        # Target ordering/chronology is a hard structural invariant even for
+        # legacy rows. Legacy provenance may be unverified, but an invalid future
+        # target makes the prediction itself unusable and must remain a failure.
         if target10 <= target5:
-            scoped.append(f"{prediction_id}:10m_target_not_after_5m_target")
+            violations.append(f"{prediction_id}:10m_target_not_after_5m_target")
         if target5 <= decision:
-            scoped.append(f"{prediction_id}:5m_target_not_after_decision")
+            violations.append(f"{prediction_id}:5m_target_not_after_decision")
         if target10 <= decision:
-            scoped.append(f"{prediction_id}:10m_target_not_after_decision")
+            violations.append(f"{prediction_id}:10m_target_not_after_decision")
 
         if provenance_present:
             scoped.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
@@ -184,7 +187,7 @@ def audit() -> dict:
 
         if model_version == "DEGRADED_NO_FRESH_DATA":
             if scenario.get("policy") != "safe_degraded_no_directional_claim":
-                scoped.append(f"{prediction_id}:degraded_policy_mismatch")
+                violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
         if is_legacy:
             legacy_unverified_count += 1
