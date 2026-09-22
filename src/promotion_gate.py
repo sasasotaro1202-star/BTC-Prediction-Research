@@ -117,7 +117,7 @@ def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
             for item in artifacts
         )
     )
-    pit_ok = pit.get("ok") is True and int(pit.get("violation_count", 1)) == 0
+    pit_ok = pit.get("ok") is True and pit.get("pit_verified") is True and int(pit.get("violation_count", 1)) == 0
     return {
         "schema_version": 1,
         "status": "PASS" if artifact_ok and pit_ok else "HOLD",

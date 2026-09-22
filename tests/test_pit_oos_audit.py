@@ -74,6 +74,20 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertTrue(result["ok"], result)
                 self.assertTrue(result["pit_verified"])
 
+    def test_legacy_rows_do_not_count_as_active_pit_violations(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            legacy = [(i, (now - timedelta(minutes=i + 1)).isoformat(),
+                       (now + timedelta(minutes=5)).isoformat(),
+                       (now + timedelta(minutes=10)).isoformat(),
+                       "v1", "{}") for i in range(1, 5)]
+            db = self.make_db(td, legacy)
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertFalse(result["pit_verified"])
+                self.assertEqual(result["legacy_unverified_count"], 4)
+
     def test_accepts_provenance_cutoff_as_decision_time(self):
         with tempfile.TemporaryDirectory() as td:
             created = datetime.now(timezone.utc).replace(microsecond=0)

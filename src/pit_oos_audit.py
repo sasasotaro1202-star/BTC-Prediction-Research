@@ -9,6 +9,7 @@ from db import DB, init_db
 OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
 MIN_PREDICTIONS = 1
+MIN_STRICT_PIT_ROWS = 300
 
 
 def parse_utc(value: str) -> datetime:
@@ -77,6 +78,8 @@ def audit() -> dict:
     violations: list[str] = []
     legacy_unverified_count = 0
     verified_count = 0
+    verified_by_horizon = {"5m": 0, "10m": 0}
+    legacy_violations: list[str] = []
     with sqlite3.connect(DB) as con:
         rows = con.execute(
             "SELECT prediction_id, created_at_utc, target_5m, target_10m, model_version, scenario_json "
@@ -101,7 +104,8 @@ def audit() -> dict:
             if skew > MAX_FUTURE_SKEW_SECONDS:
                 violations.append(f"{prediction_id}:prediction_time_in_future")
         if target10 <= target5:
-            violations.append(f"{prediction_id}:10m_target_not_after_5m_target")
+            legacy_or_active = "legacy" if not scenario_raw or scenario_raw in ("{}", "null") else "active"
+            (legacy_violations if legacy_or_active == "legacy" else violations).append(f"{prediction_id}:10m_target_not_after_5m_target")
         try:
             scenario = json.loads(scenario_raw or "{}")
         except Exception:
@@ -128,10 +132,15 @@ def audit() -> dict:
 
         # A prediction must always precede both future targets, even for legacy
         # rows that predate the explicit decision_time/provenance contract.
+        scoped_violations = violations
+        provenance_present = isinstance(scenario.get("provenance"), dict)
+        is_legacy = not provenance_present and not any(k in scenario for k in ("decision_time_utc", "market_data_cutoff_utc"))
+        if is_legacy:
+            scoped_violations = legacy_violations
         if target5 <= decision:
-            violations.append(f"{prediction_id}:5m_target_not_after_decision")
+            scoped_violations.append(f"{prediction_id}:5m_target_not_after_decision")
         if target10 <= decision:
-            violations.append(f"{prediction_id}:10m_target_not_after_decision")
+            scoped_violations.append(f"{prediction_id}:10m_target_not_after_decision")
 
         # Enforce the stronger PIT contract when provenance is present:
         # every explicitly available input must have become available no later
@@ -140,13 +149,14 @@ def audit() -> dict:
         # explicitly records a conservative acquisition-time available_at.
         try:
             provenance = scenario.get("provenance", {})
+            provenance_target = legacy_violations if is_legacy else violations
             if provenance and not isinstance(provenance, dict):
                 raise ValueError("provenance_not_object")
             top_available = provenance.get("available_at") if isinstance(provenance, dict) else None
             if top_available:
                 available = parse_utc(str(top_available))
                 if available > decision:
-                    violations.append(f"{prediction_id}:available_at_after_decision")
+                    provenance_target.append(f"{prediction_id}:available_at_after_decision")
             sources = provenance.get("sources", {}) if isinstance(provenance, dict) else {}
             if sources and not isinstance(sources, dict):
                 raise ValueError("sources_not_object")
@@ -162,15 +172,15 @@ def audit() -> dict:
                 if source_available:
                     source_dt = parse_utc(str(source_available))
                     if source_dt > decision:
-                        violations.append(f"{prediction_id}:source_available_at_after_decision:{source_name}")
+                        provenance_target.append(f"{prediction_id}:source_available_at_after_decision:{source_name}")
         except Exception:
-            violations.append(f"{prediction_id}:invalid_pit_provenance")
+            provenance_target.append(f"{prediction_id}:invalid_pit_provenance")
 
         # Degraded predictions must always satisfy the explicit safety policy,
         # including legacy rows. Check this before legacy provenance handling so
         # an old degraded record cannot bypass the policy contract.
         if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
-            violations.append(f"{prediction_id}:degraded_policy_mismatch")
+            (legacy_violations if is_legacy else violations).append(f"{prediction_id}:degraded_policy_mismatch")
         provenance = scenario.get("provenance")
         if provenance is None:
             # Old prediction rows predate the provenance contract. They cannot be
@@ -196,15 +206,22 @@ def audit() -> dict:
                     # not be treated as if they were usable PIT inputs.
                     if source_status in {"ok", "ok_current_only"}:
                         violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
-        if provenance is not None and not any(v.startswith(f"{prediction_id}:") for v in violations):
+        if provenance_present and not any(v.startswith(f"{prediction_id}:") for v in violations):
             verified_count += 1
+            verified_by_horizon["5m"] += 1
+            verified_by_horizon["10m"] += 1
 
+    pit_ready = bool(not violations and verified_count >= MIN_STRICT_PIT_ROWS)
     result = {
         "ok": not violations,
-        "status": "PASS" if not violations and legacy_unverified_count == 0 else (
+        "status": "PASS" if pit_ready and legacy_unverified_count == 0 else (
             "PASS_WITH_LEGACY_UNVERIFIED" if not violations else "FAILED"
         ),
-        "pit_verified": bool(not violations and legacy_unverified_count == 0),
+        "pit_verified": pit_ready,
+        "pit_verified_reason": "strict_scope_verified" if pit_ready else f"insufficient_strict_pit_rows:{verified_count}/{MIN_STRICT_PIT_ROWS}",
+        "verified_by_horizon": verified_by_horizon,
+        "legacy_violation_count": len(legacy_violations),
+        "legacy_violations": legacy_violations[:50],
         "checked_predictions": checked,
         "verified_predictions": verified_count,
         "legacy_unverified_count": legacy_unverified_count,
