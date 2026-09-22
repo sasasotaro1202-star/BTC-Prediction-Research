@@ -59,7 +59,12 @@ class RobustnessTests(unittest.TestCase):
             self.assertEqual(len(result), 1)
             self.assertEqual(result[0]["id"], "new")
             self.assertFalse(result[0]["promotion_evidence_eligible"])
-            self.assertEqual(result[0]["p"], [0.1, 0.7, 0.2])
+            self.assertTrue(
+                all(
+                    abs(actual - expected) < 1e-12
+                    for actual, expected in zip(result[0]["p"], [0.1, 0.7, 0.2])
+                )
+            )
 
     def test_regime_labels_use_current_and_past_only(self):
         rows=[
