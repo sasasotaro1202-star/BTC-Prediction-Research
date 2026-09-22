@@ -10,6 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import pit_oos_audit  # noqa: E402
+from model_compare import strict_pit_provenance_reason  # noqa: E402
 
 
 class TestPITOOSAudit(unittest.TestCase):
@@ -19,6 +20,52 @@ class TestPITOOSAudit(unittest.TestCase):
             con.execute("CREATE TABLE predictions (prediction_id INTEGER PRIMARY KEY, created_at_utc TEXT, target_5m TEXT, target_10m TEXT, model_version TEXT, scenario_json TEXT)")
             con.executemany("INSERT INTO predictions VALUES (?,?,?,?,?,?)", rows)
         return db
+
+    def test_strict_pit_reason_identifies_missing_source_cutoff(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        scenario = {
+            "decision_time_utc": now.isoformat(),
+            "provenance": {
+                "available_at": now.isoformat(),
+                "retrieved_at": now.isoformat(),
+                "prediction_cutoff": now.isoformat(),
+                "sources": {
+                    "bybit_futures": {
+                        "event_time": None,
+                        "available_at": now.isoformat(),
+                        "retrieved_at": now.isoformat(),
+                        "status": "ok",
+                    }
+                },
+            },
+            "production_mode": "bybit_fallback",
+        }
+        self.assertEqual(
+            strict_pit_provenance_reason(scenario, now.isoformat()),
+            "source_bybit_futures_prediction_cutoff_invalid",
+        )
+
+    def test_strict_pit_reason_returns_none_for_valid_bybit(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        scenario = {
+            "decision_time_utc": now.isoformat(),
+            "provenance": {
+                "available_at": now.isoformat(),
+                "retrieved_at": now.isoformat(),
+                "prediction_cutoff": now.isoformat(),
+                "sources": {
+                    "bybit_futures": {
+                        "event_time": None,
+                        "available_at": now.isoformat(),
+                        "retrieved_at": now.isoformat(),
+                        "prediction_cutoff": now.isoformat(),
+                        "status": "ok",
+                    }
+                },
+            },
+            "production_mode": "bybit_fallback",
+        }
+        self.assertIsNone(strict_pit_provenance_reason(scenario, now.isoformat()))
 
     def test_accepts_ordered_future_targets(self):
         with tempfile.TemporaryDirectory() as td:
