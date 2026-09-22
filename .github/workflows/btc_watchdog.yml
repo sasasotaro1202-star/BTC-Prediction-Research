@@ -111,7 +111,7 @@ jobs:
             fi
             if jq -e --arg workflow ".github/workflows/$workflow" '
               any(.files[]?.filename?;
-                test("^(src/|scripts/|tests/|requirements\.txt$|" + $workflow + "$)")
+                test("^(src/|scripts/|tests/|requirements\.txt$|\.github/workflows/|" + $workflow + "$)")
               )' >/dev/null 2>&1; then
               return 0
             fi
