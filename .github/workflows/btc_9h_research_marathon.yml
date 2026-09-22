@@ -12,7 +12,14 @@ on:
     - cron: '37 0,9,18 * * *'
   workflow_dispatch:
   push:
+    # A source/protocol change invalidates research running on the previous
+    # codebase. Start a fresh current-main marathon instead of mixing evidence
+    # across revisions. Data-only state commits do not trigger this.
     paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'requirements.txt'
       - '.github/workflows/btc_9h_research_marathon.yml'
 
 concurrency:
