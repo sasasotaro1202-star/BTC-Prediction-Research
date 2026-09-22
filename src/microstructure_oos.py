@@ -195,6 +195,20 @@ def _market_flow_from_scenario(scenario):
         if value is None:
             return None
         values[key] = value
+    # Windowed taker features are accepted only with explicit source timing
+    # from the fresh Binance closed-kline cache. No timestamp inference.
+    dq = scenario.get("data_quality")
+    if not isinstance(dq, dict) or dq.get("binance_taker_window_transport") != "websocket_closed_klines":
+        return None
+    if _finite_datetime(dq.get("binance_taker_window_retrieved_at_ms")) is not None:
+        # This field is milliseconds since epoch in runtime state; only its
+        # presence/type is needed here because freshness was checked before write.
+        pass
+    else:
+        try:
+            int(dq.get("binance_taker_window_retrieved_at_ms"))
+        except (TypeError, ValueError):
+            return None
     return values
 
 
