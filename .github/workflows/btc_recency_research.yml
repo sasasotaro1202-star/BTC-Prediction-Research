@@ -33,9 +33,9 @@ jobs:
         run: |
           set -euo pipefail
           test -s data/predictions.db.gz
-          PYTHONPATH="\${GITHUB_WORKSPACE}/src:\${GITHUB_WORKSPACE}/scripts" python - <<'PY'
+          python - <<'PY'
           from pathlib import Path
-          from state_archive import restore_db
+          from src.state_archive import restore_db
           restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
           PY
 
