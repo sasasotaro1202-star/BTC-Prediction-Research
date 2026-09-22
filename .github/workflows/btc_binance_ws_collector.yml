@@ -101,6 +101,10 @@ jobs:
           set -euo pipefail
           cp /tmp/binance_ws_1m.json /tmp/publish_ws_cache.json
           git fetch --no-tags origin binance-ws-cache
+          # The capture step leaves a fresh untracked cache in the main worktree.
+          # Remove it before switching to the dedicated cache branch so checkout
+          # cannot fail with an untracked-file overwrite error.
+          rm -f data/binance_ws_1m.json
           git checkout -B binance-ws-cache origin/binance-ws-cache
           mkdir -p data
           cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
