@@ -417,6 +417,7 @@ jobs:
             if timeout 90s git push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
+            if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
             if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
@@ -444,6 +445,10 @@ jobs:
           Path('data/predictions.db').unlink()
           PY
             if [ -d /tmp/btc_local_models ]; then rm -rf models && cp -R /tmp/btc_local_models models; fi
+            # live_cycle_status belongs to this writer and records the exact
+            # run/prediction that just completed. Restore it after rebasing so
+            # a conflict cannot silently roll the status back to an older run.
+            if [ -f /tmp/btc_local_live_cycle_status.json ]; then cp /tmp/btc_local_live_cycle_status.json data/live_cycle_status.json; fi
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
