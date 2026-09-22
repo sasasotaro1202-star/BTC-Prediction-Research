@@ -25,11 +25,6 @@ try:
     from lightgbm import LGBMClassifier
 except ImportError:
     LGBMClassifier=None
-try:
-    from xgboost import XGBClassifier
-except ImportError:
-    XGBClassifier=None
-
 from bootstrap_train import make_features
 from binance_history import binance_archive_rows
 from label_policy import direction_from_return
@@ -77,8 +72,6 @@ def factories():
     }
     if LGBMClassifier is not None:
         d["lightgbm"]=lambda:LGBMClassifier(objective="multiclass",num_class=3,n_estimators=240,num_leaves=15,learning_rate=.035,min_child_samples=24,reg_lambda=2.0,subsample=.9,colsample_bytree=.9,random_state=42,n_jobs=-1,verbosity=-1)
-    if XGBClassifier is not None:
-        d["xgboost"]=lambda:XGBClassifier(objective="multi:softprob",num_class=3,n_estimators=180,max_depth=4,learning_rate=.035,min_child_weight=10,subsample=.9,colsample_bytree=.9,reg_lambda=2.0,reg_alpha=.05,eval_metric="mlogloss",random_state=42,n_jobs=-1,verbosity=0)
     return d
 
 def decay_weights(n, half_life):
