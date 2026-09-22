@@ -1,5 +1,5 @@
 {
-  "checked_at_utc": "2026-09-22T09:10:20.508637+00:00",
+  "checked_at_utc": "2026-09-22T11:16:03.663476+00:00",
   "failure_reasons": [],
   "horizons": {
     "10m": {
@@ -14,13 +14,24 @@
       "excluded_rows": 0,
       "invalid_timestamp_rows": 0,
       "majority_accuracy": 0.3728813559322034,
-      "settled_rows": 59,
-      "strict_pit_excluded_rows": 59,
-      "strict_pit_failure_reasons": {
-        "provenance_missing_or_not_object": 59
+      "malformed_identity_rows": 0,
+      "quarantine_reasons": {
+        "legacy_coinbase_v1_incomplete_feature_snapshot": 27
       },
-      "strict_pit_rows": 0,
-      "valid_rows": 59
+      "quarantined_identity_rows": 27,
+      "settled_duplicate_exact_key_row_excess": 0,
+      "settled_rows": 59,
+      "strict_pit_excluded_rows": 169,
+      "strict_pit_failure_reasons": {
+        "legacy_coinbase_v1_quarantined": 27,
+        "provenance_missing_or_not_object": 105,
+        "source_coinbase_futures_prediction_cutoff_invalid": 37
+      },
+      "strict_pit_rows": 10,
+      "strict_pit_settled_excluded_rows": 59,
+      "strict_pit_settled_rows": 0,
+      "total_rows": 179,
+      "valid_rows": 179
     },
     "5m": {
       "chronology_violation_count": 0,
@@ -34,19 +45,30 @@
       "excluded_rows": 0,
       "invalid_timestamp_rows": 0,
       "majority_accuracy": 0.47368421052631576,
-      "settled_rows": 57,
-      "strict_pit_excluded_rows": 57,
-      "strict_pit_failure_reasons": {
-        "provenance_missing_or_not_object": 57
+      "malformed_identity_rows": 0,
+      "quarantine_reasons": {
+        "legacy_coinbase_v1_incomplete_feature_snapshot": 27
       },
-      "strict_pit_rows": 0,
-      "valid_rows": 57
+      "quarantined_identity_rows": 27,
+      "settled_duplicate_exact_key_row_excess": 0,
+      "settled_rows": 57,
+      "strict_pit_excluded_rows": 169,
+      "strict_pit_failure_reasons": {
+        "legacy_coinbase_v1_quarantined": 27,
+        "provenance_missing_or_not_object": 105,
+        "source_coinbase_futures_prediction_cutoff_invalid": 37
+      },
+      "strict_pit_rows": 10,
+      "strict_pit_settled_excluded_rows": 57,
+      "strict_pit_settled_rows": 0,
+      "total_rows": 179,
+      "valid_rows": 179
     }
   },
   "ok": true,
-  "policy": "strict_prediction_before_target_filter_plus_immutable_event_duplicate_audit",
+  "policy": "all_prediction_event_chronology_identity_and_strict_pit_audit",
   "production_changed": false,
   "research_only": true,
-  "schema_version": 1,
+  "schema_version": 2,
   "status": "PASS"
 }
