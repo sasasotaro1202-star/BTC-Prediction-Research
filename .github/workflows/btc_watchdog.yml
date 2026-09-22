@@ -120,7 +120,6 @@ jobs:
                 startswith("scripts/") or
                 startswith("tests/") or
                 . == "requirements.txt" or
-                startswith(".github/workflows/") or
                 . == $workflow
               )
             ' <<<"$compare" >/dev/null 2>&1; then
