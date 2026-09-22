@@ -12,6 +12,7 @@ on:
     - cron: '37 0,9,18 * * *'
   workflow_dispatch:
   push:
+    branches: [main]
     # A source/protocol change invalidates research running on the previous
     # codebase. Start a fresh current-main marathon instead of mixing evidence
     # across revisions. Data-only state commits do not trigger this.
@@ -23,7 +24,7 @@ on:
       - '.github/workflows/btc_9h_research_marathon.yml'
 
 concurrency:
-  group: btc-9h-research-marathon
+  group: btc-9h-research-marathon-main
   # Never cancel an active 9H marathon. Source changes queue a fresh run on the
   # same concurrency group; the newest pending push replaces older pending work.
   # This preserves completed evidence and avoids repeated cancellation churn.
