@@ -114,6 +114,11 @@ def load_market(start,end):
 def ret(a,n):return a[-1]/a[-1-n]-1.0 if len(a)>n and a[-1-n] else 0.0
 def exists(m,w):return len(m)>=len(w) and all(x in m for x in w)
 
+def _window_is_contiguous(timestamps, step_ms=60_000):
+    values=[int(v) for v in timestamps]
+    return len(values)>=2 and all(b-a==int(step_ms) for a,b in zip(values,values[1:]))
+
+
 def build_panel():
     # Binance daily public archives are published with a delay. Keep a
     # conservative three-day completed-data boundary so CI never asks for
@@ -137,6 +142,8 @@ def build_panel():
     for i,t in enumerate(common):
         if i<50:continue
         w=common[i-50:i+1]
+        if not _window_is_contiguous(w):
+            continue
         def c(k):return np.array([float(maps[k][x][4]) for x in w])
         b,s,ec,sc=c("btc_fut"),c("btc_spot"),c("eth_fut"),c("sol_fut")
         bo=np.array([float(maps["btc_fut"][x][1]) for x in w]); bh=np.array([float(maps["btc_fut"][x][2]) for x in w]); bl=np.array([float(maps["btc_fut"][x][3]) for x in w]); bv=np.array([float(maps["btc_fut"][x][5]) for x in w]); bt=np.array([float(maps["btc_fut"][x][8]) for x in w]); tb=np.array([float(maps["btc_fut"][x][9]) for x in w])
