@@ -142,7 +142,10 @@ jobs:
               echo "ERROR: unable to parse ${workflow} active-run state; stale-run cancellation cannot be trusted." >&2
               return 1
             }
+            active_count=0
+            cancellation_requested_count=0
             while IFS= read -r active; do
+                active_count=$((active_count + 1))
                 [ -n "$active" ] || continue
                 active_id=$(jq -r '.id // 0' <<<"$active")
                 active_head=$(jq -r '.head_sha // ""' <<<"$active")
@@ -161,17 +164,28 @@ jobs:
                   echo "${workflow}: cancelling stale active run ${active_id} head=${active_head:-unknown} age=${active_age}s"
                   if gh api --method POST "/repos/${REPO}/actions/runs/${active_id}/cancel" >/dev/null 2>&1; then
                     echo "${workflow}: stale active run ${active_id} cancellation requested."
+                    cancellation_requested_count=$((cancellation_requested_count + 1))
                   else
                     echo "WARN: unable to cancel stale active run ${active_id}; leaving state unchanged."
                   fi
                 fi
             done <<<"$active_runs_json"
 
+            force_dispatch=false
+            if [ "$active_count" -gt 0 ] && [ "$cancellation_requested_count" -eq "$active_count" ]; then
+              force_dispatch=true
+              echo "${workflow}: all ${active_count} active run(s) were marked for stale cancellation; recovery dispatch will be queued immediately."
+            fi
+
             latest_updated=$(jq -r '.updated_at // ""' <<<"$latest")
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
             age=$((now - latest_epoch))
             echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s"
-            if [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
+            should_dispatch=false
+            if [ "$force_dispatch" = true ] || { [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; }; then
+              should_dispatch=true
+            fi
+            if [ "$should_dispatch" = true ]; then
               echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
               if gh workflow enable "$workflow" >/dev/null 2>&1; then
                 echo "${workflow} enable check completed."
