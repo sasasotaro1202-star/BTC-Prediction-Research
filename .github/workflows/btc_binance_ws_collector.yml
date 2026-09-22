@@ -35,12 +35,12 @@ jobs:
       - name: Capture Binance USD-M closed 1m bars
         run: python -m src.binance_ws --capture-seconds 280 --output data/binance_ws_1m.json
 
-      - name: Validate captured cache
+      - name: Validate captured cache and capture state
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
+          import json, subprocess
           from pathlib import Path
           p=Path('data/binance_ws_1m.json')
           obj=json.loads(p.read_text(encoding='utf-8'))
@@ -49,10 +49,13 @@ jobs:
           rows=obj.get('rows')
           if not isinstance(rows,list): raise SystemExit('WS cache rows missing')
           print(json.dumps({
+              'collector_state': 'EXECUTED',
               'cache_rows': len(rows),
               'latest_open_time_ms': rows[-1]['open_time_ms'] if rows else None,
               'updated_at_utc': obj.get('updated_at_utc'),
           }, sort_keys=True))
+          if not rows:
+              raise SystemExit('Binance WebSocket collector produced no usable closed bars')
           PY
 
       - name: Check cache diff
