@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '47 */6 * * *'
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/btc_hierarchical_research.yml'
+
 
 concurrency:
   group: btc-hierarchical-research
@@ -28,11 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -s data/predictions.db.gz ]; then
-            python - <<'PY'
-            from pathlib import Path
-            from src.state_archive import restore_db
-            restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
-            PY
+            python -c "from pathlib import Path; from src.state_archive import restore_db; restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))"
           else
             echo 'No canonical prediction state; lane will remain DEFERRED.'
           fi
