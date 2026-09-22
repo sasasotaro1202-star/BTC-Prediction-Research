@@ -564,6 +564,10 @@ def main():
         "policy": "strict_primary_pit_microstructure_complete_case_no_imputation_purged_embargoed_chronological_oos",
         "feature_variants": {
             "binance_micro": list(BINANCE_MICRO),
+            "market_flow_v2": list(BINANCE_MICRO + MARKET_FLOW_V2),
+            "full_stack": list(
+                BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2
+            ),
             "cross_venue": list(BINANCE_MICRO + CROSS_VENUE),
         },
         "horizons": {},
