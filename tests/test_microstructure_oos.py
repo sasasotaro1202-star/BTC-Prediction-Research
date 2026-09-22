@@ -3,6 +3,8 @@ import unittest
 from src.microstructure_oos import (
     BINANCE_MICRO,
     CROSS_VENUE,
+    MARKET_FLOW_V2,
+    _market_flow_from_scenario,
     _micro_from_scenario,
     _strict_primary_sources_ok,
 )
@@ -23,6 +25,9 @@ class MicrostructureOOSTests(unittest.TestCase):
             "data_quality": {
                 "bybit_depth": "ok",
                 "bybit_futures": "ok_current_only",
+                "binance_taker_window_transport": "websocket_closed_klines",
+                "binance_taker_window_event_time_ms": 1_790_035_259_000,
+                "binance_taker_window_retrieved_at_ms": 1_790_035_259_500,
             },
             "provenance": {
                 "sources": {
@@ -38,6 +43,14 @@ class MicrostructureOOSTests(unittest.TestCase):
                         "binance_taker",
                         "binance_premium",
                     )
+                } | {
+                    "binance_taker_window": {
+                        "status": "ok",
+                        "available_at": "2026-09-22T00:00:59+00:00",
+                        "retrieved_at": "2026-09-22T00:00:59.500000+00:00",
+                        "prediction_cutoff": "2026-09-22T00:00:59.500000+00:00",
+                        "event_time": "2026-09-22T00:00:59+00:00",
+                    }
                 }
             },
         }
@@ -49,6 +62,46 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertAlmostEqual(values["taker_imbalance"], -0.05)
         self.assertAlmostEqual(values["funding_binance"], 0.0001)
         self.assertAlmostEqual(values["oi_log1p"], __import__("math").log1p(1000000.0))
+
+    def test_market_flow_v2_is_complete_case_without_imputation(self):
+        scenario = self._scenario()
+        scenario["microstructure"].update({
+            "vwap_distance_5m": 0.0001,
+            "vwap_distance_15m": 0.0002,
+            "vwap_distance_30m": 0.0003,
+            "volume_burst_5m": 1.2,
+            "volume_burst_15m": 1.1,
+            "range_compression_5m": 0.8,
+            "range_compression_15m": 0.9,
+            "taker_imbalance_5m": 0.1,
+            "taker_imbalance_15m": 0.05,
+            "taker_imbalance_delta_5m_15m": 0.05,
+        })
+        values = _market_flow_from_scenario(scenario, created_at="2026-09-22T00:01:00+00:00")
+        self.assertEqual(set(values), set(MARKET_FLOW_V2))
+        self.assertAlmostEqual(values["vwap_distance_15m"], 0.0002)
+
+    def test_market_flow_v2_fails_closed_when_any_feature_is_missing(self):
+        scenario = self._scenario()
+        scenario["microstructure"]["vwap_distance_15m"] = None
+        self.assertIsNone(_market_flow_from_scenario(scenario))
+
+    def test_market_flow_v2_rejects_missing_window_timing(self):
+        scenario = self._scenario()
+        scenario["microstructure"].update({
+            "vwap_distance_5m": 0.0001,
+            "vwap_distance_15m": 0.0002,
+            "vwap_distance_30m": 0.0003,
+            "volume_burst_5m": 1.2,
+            "volume_burst_15m": 1.1,
+            "range_compression_5m": 0.8,
+            "range_compression_15m": 0.9,
+            "taker_imbalance_5m": 0.1,
+            "taker_imbalance_15m": 0.05,
+            "taker_imbalance_delta_5m_15m": 0.05,
+        })
+        scenario["data_quality"].pop("binance_taker_window_transport", None)
+        self.assertIsNone(_market_flow_from_scenario(scenario, created_at="2026-09-22T00:01:00+00:00"))
 
     def test_cross_venue_requires_all_secondary_fields(self):
         values = _micro_from_scenario(self._scenario(), cross_venue=True)

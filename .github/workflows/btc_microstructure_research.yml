@@ -4,10 +4,19 @@ on:
   schedule:
     - cron: '23 */6 * * *'
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/btc_microstructure_research.yml'
+      - 'src/microstructure_features.py'
+      - 'src/microstructure_oos.py'
+      - 'tests/test_microstructure_features.py'
+      - 'tests/test_microstructure_oos.py'
 
 concurrency:
   group: btc-microstructure-research
-  cancel-in-progress: false
+  # Research is disposable: a newer protocol/code revision supersedes stale
+  # evidence rather than allowing overlapping long runs.
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -38,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q src tests scripts
-          python -m pytest -q tests/test_microstructure_oos.py
+          python -m pytest -q tests/test_microstructure_oos.py tests/test_microstructure_features.py
       - name: Run microstructure OOS
         run: |
           set -euo pipefail
@@ -59,7 +68,7 @@ jobs:
           if obj.get('final_holdout_protected') is not True:
               raise SystemExit('microstructure holdout protection missing')
           for h, result in obj.get('horizons', {}).items():
-              for variant in ('binance_micro', 'cross_venue'):
+              for variant in ('binance_micro', 'market_flow_v2', 'cross_venue'):
                   item=result.get(variant,{})
                   if item.get('status') not in {'OK','DEFERRED'}:
                       raise SystemExit(f'{h}/{variant}: invalid status')

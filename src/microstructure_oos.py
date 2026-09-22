@@ -6,6 +6,8 @@ artifacts or substitutes missing values.
 
 Feature variants:
 - binance_micro: depth/taker/funding/OI from required Binance-primary sources.
+- market_flow_v2: binance_micro plus deterministic closed-bar VWAP/volume/range features
+  and windowed taker-flow features when a fresh Binance WebSocket cache is present.
 - cross_venue: binance_micro plus spot/futures and Bybit snapshot divergence when
   their source-native availability is explicitly valid under the strict PIT policy.
 
@@ -18,6 +20,7 @@ import json
 import math
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -71,6 +74,19 @@ BINANCE_MICRO = (
     "funding_binance",
     "oi_log1p",
 )
+MARKET_FLOW_V2 = (
+    "vwap_distance_5m",
+    "vwap_distance_15m",
+    "vwap_distance_30m",
+    "volume_burst_5m",
+    "volume_burst_15m",
+    "range_compression_5m",
+    "range_compression_15m",
+    "taker_imbalance_5m",
+    "taker_imbalance_15m",
+    "taker_imbalance_delta_5m_15m",
+)
+
 CROSS_VENUE = (
     "cross_exchange_gap",
     "spot_futures_gap",
@@ -124,11 +140,16 @@ def _strict_primary_sources_ok(scenario):
 
 
 def _finite_datetime(value):
-    from datetime import datetime
-
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
+        return None
+
+
+def _millisecond_datetime(value):
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
 
 
@@ -168,6 +189,56 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
+def _market_flow_from_scenario(scenario, created_at=None):
+    if not isinstance(scenario, dict):
+        return None
+    m = scenario.get("microstructure")
+    if not isinstance(m, dict):
+        return None
+    values = {}
+    for key in MARKET_FLOW_V2:
+        value = _finite(m.get(key))
+        if value is None:
+            return None
+        values[key] = value
+
+    # Windowed taker features are accepted only with an explicit persisted
+    # provenance envelope. The audit rechecks timing instead of trusting a
+    # boolean freshness flag written by the producer.
+    dq = scenario.get("data_quality")
+    if not isinstance(dq, dict) or dq.get("binance_taker_window_transport") != "websocket_closed_klines":
+        return None
+    provenance = scenario.get("provenance")
+    sources = provenance.get("sources") if isinstance(provenance, dict) else None
+    source = sources.get("binance_taker_window") if isinstance(sources, dict) else None
+    if not isinstance(source, dict) or source.get("status") != "ok":
+        return None
+
+    created = _finite_datetime(created_at) if created_at is not None else None
+    source_available = _finite_datetime(source.get("available_at"))
+    source_retrieved = _finite_datetime(source.get("retrieved_at"))
+    source_cutoff = _finite_datetime(source.get("prediction_cutoff"))
+    source_event = _finite_datetime(source.get("event_time"))
+    if None in (created, source_available, source_retrieved, source_cutoff, source_event):
+        return None
+    if not (source_event <= source_available <= source_retrieved <= source_cutoff <= created):
+        return None
+    if (created - source_retrieved).total_seconds() > 180:
+        return None
+
+    # Keep the runtime millisecond marker as a redundant audit anchor.
+    try:
+        marker = int(dq.get("binance_taker_window_retrieved_at_ms"))
+    except (TypeError, ValueError):
+        return None
+    marker_dt = _millisecond_datetime(marker)
+    if marker_dt is None:
+        return None
+    if abs((marker_dt - source_retrieved).total_seconds()) > 2:
+        return None
+    return values
+
+
 def load_variants(horizon: str):
     """Return complete-case strict-primary cohorts without imputation."""
     base = load_primary_production_strict_rows(horizon)
@@ -185,7 +256,7 @@ def load_variants(horizon: str):
             ).fetchall()
             scenario_by_id = {int(r[0]): _safe_json(r[1]) for r in rows}
 
-    variants = {"base": [], "binance_micro": [], "cross_venue": []}
+    variants = {"base": [], "binance_micro": [], "market_flow_v2": [], "cross_venue": []}
     for row in base:
         scenario = scenario_by_id.get(int(row["id"]))
         if not _strict_primary_sources_ok(scenario):
@@ -204,6 +275,17 @@ def load_variants(horizon: str):
         if micro is not None:
             variants["binance_micro"].append(
                 {**common, "x": list(row["x"]) + [micro[k] for k in BINANCE_MICRO]}
+            )
+
+        flow = _market_flow_from_scenario(scenario, created_at=row["created"])
+        if micro is not None and flow is not None:
+            variants["market_flow_v2"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [micro[k] for k in BINANCE_MICRO]
+                    + [flow[k] for k in MARKET_FLOW_V2],
+                }
             )
 
         cross = _micro_from_scenario(scenario, cross_venue=True)
@@ -441,14 +523,18 @@ def main():
     }
     for h in HORIZONS:
         variants = load_variants(h)
-        family_count = max(1, len(factories()) * 2)
+        family_count = max(1, len(factories()) * 3)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
             "binance_micro_rows": len(variants["binance_micro"]),
+            "market_flow_v2_rows": len(variants["market_flow_v2"]),
             "cross_venue_rows": len(variants["cross_venue"]),
             "binance_micro": evaluate_variant(
                 h, variants["binance_micro"], corrected_alpha=corrected_alpha
+            ),
+            "market_flow_v2": evaluate_variant(
+                h, variants["market_flow_v2"], corrected_alpha=corrected_alpha
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha

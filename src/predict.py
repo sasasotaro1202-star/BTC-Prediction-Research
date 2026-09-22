@@ -9,6 +9,7 @@ from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
 from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, taker_imbalance as ws_taker_imbalance
+from microstructure_features import derive_market_flow_features
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
@@ -143,6 +144,32 @@ def main():
     if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient futures data')
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
+    # Research-only derived flow features use already-closed 1m observations.
+    # They never modify the 15-feature Production Champion input vector.
+    ws_candidate = load_binance_ws_cache(BINANCE_WS_CACHE, 120)
+    ws_fresh = False
+    if ws_candidate:
+        try:
+            freshest = max(int(r["retrieved_at_ms"]) for r in ws_candidate)
+            ws_fresh = (int(datetime.now(timezone.utc).timestamp() * 1000) - freshest) <= 180_000
+        except (KeyError, TypeError, ValueError):
+            ws_fresh = False
+    flow = derive_market_flow_features(
+        fut,
+        ws_rows=ws_candidate if ws_fresh else None,
+    )
+    for key, value in flow.items():
+        if value is not None:
+            m[key] = float(value)
+    status["market_flow_v2"] = "ok" if any(v is not None for v in flow.values()) else "missing"
+    if flow.get("taker_imbalance_15m") is not None and ws_fresh:
+        latest_ws = max(ws_candidate, key=lambda row: int(row["open_time_ms"]))
+        status["binance_taker_window_transport"] = "websocket_closed_klines"
+        status["binance_taker_window_rows"] = len(ws_candidate)
+        status["binance_taker_window_event_time_ms"] = int(latest_ws["event_time_ms"])
+        status["binance_taker_window_retrieved_at_ms"] = max(
+            int(r["retrieved_at_ms"]) for r in ws_candidate
+        )
     try:
         m['book_imbalance']=imbalance(binance_depth())
         status['binance_depth']='ok'
@@ -373,6 +400,19 @@ def main():
         'prediction_cutoff':retrieved,
         'status':status.get('binance_taker'),
     }
+    if status.get('binance_taker_window_transport') == 'websocket_closed_klines':
+        window_retrieved = _iso_ms(status.get('binance_taker_window_retrieved_at_ms'))
+        source_provenance['binance_taker_window']={
+            'information_origin':'Binance',
+            'transport':'websocket_closed_klines',
+            'event_time':_iso_ms(status.get('binance_taker_window_event_time_ms')),
+            'available_at':window_retrieved,
+            'publication_time':None,
+            'retrieved_at':window_retrieved,
+            'revision_time':None,
+            'prediction_cutoff':retrieved,
+            'status':'ok',
+        }
 
     premium_available=_iso_ms(status.get('binance_premium_retrieved_at_ms')) if status.get('binance_premium_transport') == 'websocket' else retrieved
     source_provenance['binance_premium']={
