@@ -5,6 +5,7 @@ features already stored with each prediction.
 """
 from __future__ import annotations
 import json, math, sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 import joblib
 import numpy as np
@@ -95,6 +96,58 @@ def load(h):
         except (TypeError,ValueError,KeyError,json.JSONDecodeError): continue
     return result
 
+def load_research_archive(h):
+    """Score post-Champion-training Binance Vision rows with the frozen Champion.
+
+    The archive cohort is research-only. Rows earlier than the Champion training
+    timestamp are excluded so this diagnostic cannot silently evaluate the model
+    on data it was trained on.
+    """
+    try:
+        archive = load_archive_research_rows(h, 5000)
+        if not archive:
+            return []
+        meta_path = ROOT / "models" / f"{h}.json"
+        model_path = ROOT / "models" / f"{h}.joblib"
+        if not meta_path.is_file() or not model_path.is_file():
+            return []
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        trained_raw = meta.get("trained_at_utc")
+        trained_at = None
+        if trained_raw:
+            trained_at = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+        model = joblib.load(model_path)
+        out = []
+        for row in archive:
+            created = row.get("created")
+            try:
+                created_dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                continue
+            if trained_at is not None and created_dt <= trained_at:
+                continue
+            x = np.asarray([row["x"]], dtype=float)
+            p = aligned(model, x)[0]
+            if p.shape != (3,) or not np.isfinite(p).all() or float(p.sum()) <= 0:
+                continue
+            # _metrics historically expects storage order UP,DOWN,FLAT.
+            storage_p = np.asarray([p[2], p[0], p[1]], dtype=float)
+            out.append({
+                "id": row.get("id"),
+                "created": created,
+                "ret": float(x[0, 3]),
+                "vol": float(x[0, 6]),
+                "y": row["y"],
+                "p": storage_p.tolist(),
+                "model_version": str(meta.get("model_version", "")),
+                "data_source": "binance_vision_archive",
+                "promotion_evidence_eligible": False,
+            })
+        return out
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, EOFError, json.JSONDecodeError):
+        return []
+
+
 def evaluate(h, rows):
     n=len(rows)
     if n<1000:
@@ -129,7 +182,20 @@ def main():
     if not DB.exists(): raise SystemExit("prediction database missing")
     payload={"schema_version":1,"research_only":True,"policy":"diagnostic_only_no_model_input_no_promotion_effect","horizons":{}}
     for h in HORIZONS:
-        payload["horizons"][h]=evaluate(h,load(h))
+        live = load(h)
+        source = "live_binance_primary"
+        data = live
+        if len(live) < 1000:
+            archive = load_research_archive(h)
+            if len(archive) > len(live):
+                data = archive
+                source = "binance_vision_archive"
+        result = evaluate(h, data)
+        result["data_source"] = source
+        result["promotion_evidence_eligible"] = bool(
+            source == "live_binance_primary" and data
+        )
+        payload["horizons"][h] = result
     OUT.parent.mkdir(parents=True,exist_ok=True)
     OUT.write_text(json.dumps(payload,indent=2,sort_keys=True),encoding="utf-8")
     print(json.dumps(payload,indent=2))
