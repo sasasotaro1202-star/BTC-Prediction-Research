@@ -343,6 +343,14 @@ def load_rows(horizon):
     return [], "binance_vision_archive_frozen_champion", False
 
 
+def _sort_oos_rows(rows):
+    """Sort live and archive research rows deterministically across mixed ID types."""
+    return sorted(
+        rows,
+        key=lambda r: (str(r.get("created", "")), str(r.get("id", ""))),
+    )
+
+
 def _candidate_holdout(factory, train, test, horizon):
     if len(train) < MIN_TRAIN or len(test) < 100:
         return None
@@ -381,7 +389,7 @@ def evaluate(horizon):
             "data_source": source,
             "promotion_evidence_eligible": evidence_eligible,
         }
-    rows = sorted(rows, key=lambda r: (str(r["created"]), int(r["id"])))
+    # Live SQLite rows use integer IDs while archive replay rows use string IDs.\n    # Keep deterministic chronology without assuming identifiers are numeric.\n    rows = _sort_oos_rows(rows)
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
     development, holdout = rows[:split], rows[split:]
     if len(development) < MIN_TRAIN + MIN_OOS or len(holdout) < 100:

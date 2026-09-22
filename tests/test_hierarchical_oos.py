@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 
-from src.hierarchical_oos import HierarchicalClassifier, _base_factories
+from src.hierarchical_oos import HierarchicalClassifier, _base_factories, _sort_oos_rows
 
 
 class HierarchicalOOSTests(unittest.TestCase):
@@ -30,6 +30,16 @@ class HierarchicalOOSTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             model.fit(X, y)
+
+
+    def test_mixed_numeric_and_archive_ids_sort_without_type_assumptions(self):
+        rows = [
+            {"id": "archive:binance_vision:1789314900000:5m", "created": "2026-09-22T00:02:00+00:00"},
+            {"id": 96481, "created": "2026-09-22T00:01:00+00:00"},
+        ]
+        ordered = _sort_oos_rows(rows)
+        self.assertEqual(ordered[0]["id"], 96481)
+        self.assertEqual(ordered[1]["id"], "archive:binance_vision:1789314900000:5m")
 
 
     def test_load_rows_uses_fresh_venue_fallback_when_archive_has_no_post_train_rows(self):
