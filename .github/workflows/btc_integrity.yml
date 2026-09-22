@@ -164,6 +164,37 @@ jobs:
                   raise SystemExit(f'{h}: final holdout is not protected')
           print('research-only context router OOS artifact: OK')
           PY
+      - name: Run strict PIT/OOS audit
+        if: success()
+        run: python src/pit_oos_audit.py
+
+      - name: Validate strict PIT/OOS artifact
+        if: success()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('data/historical_research/pit_oos_audit.json')
+          if not p.is_file():
+              raise SystemExit('strict PIT/OOS artifact missing')
+          obj = json.loads(p.read_text(encoding='utf-8'))
+          if not isinstance(obj, dict):
+              raise SystemExit('strict PIT/OOS artifact malformed')
+          if not isinstance(obj.get('pit_verified'), bool):
+              raise SystemExit('strict PIT/OOS artifact missing pit_verified')
+          if int(obj.get('violation_count', 1)) < 0:
+              raise SystemExit('strict PIT/OOS violation_count invalid')
+          if int(obj.get('verified_primary_predictions', 0)) < 0:
+              raise SystemExit('strict PIT/OOS verified_primary_predictions invalid')
+          print(json.dumps({
+              'status': obj.get('status'),
+              'pit_verified': obj.get('pit_verified'),
+              'verified_primary_predictions': obj.get('verified_primary_predictions'),
+              'legacy_unverified_count': obj.get('legacy_unverified_count'),
+              'violation_count': obj.get('violation_count'),
+          }, sort_keys=True))
+          PY
+
       - name: Evaluate final promotion safety gate
         if: success() && env.BTC_UPSTREAM_DEFERRED != '1'
         run: |
@@ -203,6 +234,7 @@ jobs:
             data/historical_research/production_integrity.json
             data/historical_research/robustness_oos_report.json
             data/historical_research/context_router_oos.json
+            data/historical_research/pit_oos_audit.json
             data/historical_research/promotion_gate.json
             data/historical_research/research_input_audit.json
           if-no-files-found: error
