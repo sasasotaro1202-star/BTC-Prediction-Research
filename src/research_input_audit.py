@@ -10,7 +10,8 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from model_compare import _strict_pit_provenance_ok, strict_pit_provenance_reason, prediction_event_key
+from model_compare import _strict_pit_provenance_ok, strict_pit_provenance_reason
+from prediction_identity import model_prediction_event_key
 from feature_schema import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,13 +80,13 @@ def audit_horizon(con, horizon: str) -> dict:
         try:
             x = [float(obj[k]) for k in FEATURES]
             production = [float(p_down), float(p_flat), float(p_up)]
-            duplicate_groups[prediction_event_key({
-                "created": created_at,
-                "target": target_at,
-                "model_version": model_version,
-                "x": x,
-                "production": production,
-            })] += 1
+            duplicate_groups[model_prediction_event_key(
+                created=created_at,
+                target=target_at,
+                model_version=model_version,
+                x=x,
+                production=production,
+            )] += 1
         except (KeyError, TypeError, ValueError):
             # Malformed rows remain visible through the timestamp/PIT audits but
             # are not treated as exact duplicates because their event identity
