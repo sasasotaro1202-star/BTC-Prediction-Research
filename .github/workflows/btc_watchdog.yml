@@ -50,6 +50,7 @@ jobs:
             btc_multiscale_frozen_replay.yml
             btc_archive_primary_bridge.yml
             btc_canonical_state_compaction.yml
+            btc_binance_ws_collector.yml
           )
           main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
           if [ -z "$main_sha" ]; then
@@ -146,4 +147,5 @@ jobs:
           recover_if_stale btc_calibration_frozen_replay.yml 28800
           recover_if_stale btc_adaptive_calibration_replay.yml 28800
           recover_if_stale btc_multiscale_frozen_replay.yml 21600
+          recover_if_stale btc_binance_ws_collector.yml 900
           echo 'BTC workflow watchdog completed without masking core workflow results.'
