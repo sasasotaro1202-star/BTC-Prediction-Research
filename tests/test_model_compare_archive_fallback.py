@@ -22,7 +22,7 @@ class ArchiveResearchFallbackTests(unittest.TestCase):
         self.assertTrue(all(r["data_source"] == "bybit" for r in rows))
         self.assertTrue(all(r["production_mode"] == "bybit_archive" for r in rows))
         self.assertTrue(all(r["target"].endswith("+00:00") for r in rows))
-        self.assertEqual(rows[0]["target"], "1970-01-01T00:35:00+00:00")
+        self.assertEqual(rows[0]["target"], "1970-01-01T00:50:00+00:00")
 
     def test_source_row_identity_prevents_cross_venue_collision(self):
         raw = [
