@@ -7,6 +7,7 @@ failures, so a transient public-data outage cannot break the research cycle.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sqlite3
@@ -26,6 +27,23 @@ EXPECTED_FEATURES = len(CANONICAL_FEATURES)
 
 def table_columns(con, table: str) -> set[str]:
     return {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def count_duplicate_prediction_events(con) -> int:
+    """Count excess rows using the same canonical event key as research audits."""
+    groups = {}
+    for created, target_5m, target_10m, feature_json in con.execute(
+        "SELECT created_at_utc,target_5m,target_10m,feature_json FROM predictions"
+    ):
+        try:
+            obj = json.loads(feature_json or "{}")
+            canonical = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            canonical = str(feature_json)
+        fp = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        key = (str(created), str(target_5m), str(target_10m), fp)
+        groups[key] = groups.get(key, 0) + 1
+    return int(sum(max(0, n - 1) for n in groups.values()))
 
 
 def finite_probability_row(row) -> bool:
@@ -55,8 +73,14 @@ def audit() -> dict:
                 WHERE p_up_5m IS NULL OR p_down_5m IS NULL OR p_flat_5m IS NULL
                    OR p_up_10m IS NULL OR p_down_10m IS NULL OR p_flat_10m IS NULL
             """).fetchone()[0]
-            result["checks"]["database"] = {"predictions": int(n), "null_probability_rows": int(bad), "ok": bad == 0 and n > 0}
-            if bad or n <= 0:
+            duplicate_excess = count_duplicate_prediction_events(con)
+            result["checks"]["database"] = {
+                "predictions": int(n),
+                "null_probability_rows": int(bad),
+                "duplicate_exact_key_row_excess": duplicate_excess,
+                "ok": bad == 0 and duplicate_excess == 0 and n > 0,
+            }
+            if bad or duplicate_excess or n <= 0:
                 result["ok"] = False
             for h in HORIZONS:
                 rows = con.execute(f"SELECT p_down_{h},p_flat_{h},p_up_{h} FROM predictions").fetchall()
