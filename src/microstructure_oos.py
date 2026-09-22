@@ -6,6 +6,8 @@ artifacts or substitutes missing values.
 
 Feature variants:
 - binance_micro: depth/taker/funding/OI from required Binance-primary sources.
+- market_flow_v2: binance_micro plus deterministic closed-bar VWAP/volume/range features
+  and windowed taker-flow features when a fresh Binance WebSocket cache is present.
 - cross_venue: binance_micro plus spot/futures and Bybit snapshot divergence when
   their source-native availability is explicitly valid under the strict PIT policy.
 
@@ -71,6 +73,19 @@ BINANCE_MICRO = (
     "funding_binance",
     "oi_log1p",
 )
+MARKET_FLOW_V2 = (
+    "vwap_distance_5m",
+    "vwap_distance_15m",
+    "vwap_distance_30m",
+    "volume_burst_5m",
+    "volume_burst_15m",
+    "range_compression_5m",
+    "range_compression_15m",
+    "taker_imbalance_5m",
+    "taker_imbalance_15m",
+    "taker_imbalance_delta_5m_15m",
+)
+
 CROSS_VENUE = (
     "cross_exchange_gap",
     "spot_futures_gap",
@@ -168,6 +183,21 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
+def _market_flow_from_scenario(scenario):
+    if not isinstance(scenario, dict):
+        return None
+    m = scenario.get("microstructure")
+    if not isinstance(m, dict):
+        return None
+    values = {}
+    for key in MARKET_FLOW_V2:
+        value = _finite(m.get(key))
+        if value is None:
+            return None
+        values[key] = value
+    return values
+
+
 def load_variants(horizon: str):
     """Return complete-case strict-primary cohorts without imputation."""
     base = load_primary_production_strict_rows(horizon)
@@ -185,7 +215,7 @@ def load_variants(horizon: str):
             ).fetchall()
             scenario_by_id = {int(r[0]): _safe_json(r[1]) for r in rows}
 
-    variants = {"base": [], "binance_micro": [], "cross_venue": []}
+    variants = {"base": [], "binance_micro": [], "market_flow_v2": [], "cross_venue": []}
     for row in base:
         scenario = scenario_by_id.get(int(row["id"]))
         if not _strict_primary_sources_ok(scenario):
@@ -204,6 +234,17 @@ def load_variants(horizon: str):
         if micro is not None:
             variants["binance_micro"].append(
                 {**common, "x": list(row["x"]) + [micro[k] for k in BINANCE_MICRO]}
+            )
+
+        flow = _market_flow_from_scenario(scenario)
+        if micro is not None and flow is not None:
+            variants["market_flow_v2"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [micro[k] for k in BINANCE_MICRO]
+                    + [flow[k] for k in MARKET_FLOW_V2],
+                }
             )
 
         cross = _micro_from_scenario(scenario, cross_venue=True)
@@ -441,14 +482,18 @@ def main():
     }
     for h in HORIZONS:
         variants = load_variants(h)
-        family_count = max(1, len(factories()) * 2)
+        family_count = max(1, len(factories()) * 3)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
             "binance_micro_rows": len(variants["binance_micro"]),
+            "market_flow_v2_rows": len(variants["market_flow_v2"]),
             "cross_venue_rows": len(variants["cross_venue"]),
             "binance_micro": evaluate_variant(
                 h, variants["binance_micro"], corrected_alpha=corrected_alpha
+            ),
+            "market_flow_v2": evaluate_variant(
+                h, variants["market_flow_v2"], corrected_alpha=corrected_alpha
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha
