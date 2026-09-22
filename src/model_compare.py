@@ -49,6 +49,39 @@ def prediction_precedes_target(created_at_utc, target_at_utc):
     return bool(created is not None and target is not None and created < target)
 
 
+def prediction_event_key(row):
+    """Stable immutable identity for one persisted prediction event.
+
+    Settlement fields and provenance metadata that can change during recovery
+    are intentionally excluded. Model version, target timing, features, and
+    emitted probabilities define the prediction event itself.
+    """
+    payload = {
+        "created": str(row.get("created", "")),
+        "target": str(row.get("target", "")),
+        "model_version": str(row.get("model_version", "")),
+        "x": [float(v) for v in row.get("x", [])],
+        "production": [float(v) for v in row.get("production", [])],
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def dedupe_exact_prediction_events(rows):
+    """Keep one row per immutable prediction event without mutating the DB."""
+    seen = set()
+    out = []
+    for row in rows:
+        try:
+            key = prediction_event_key(row)
+        except (TypeError, ValueError):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 def _valid_timestamp(value):
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -150,7 +183,7 @@ def load_rows(h, strict_pit=False):
             production=[float(r[6]),float(r[7]),float(r[5])]
             if all(math.isfinite(v) and v>=0 for v in production) and sum(production)>0:
                 out.append({'id':r[0],'created':r[1],'target':r[2],'x':x,'y':r[4],'production':production,'model_version':r[8],'production_mode':str(scenario.get('production_mode',''))})
-    return out
+    return dedupe_exact_prediction_events(out)
 
 
 def load_strict_rows(h):
