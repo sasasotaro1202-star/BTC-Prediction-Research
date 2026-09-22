@@ -1,10 +1,17 @@
 name: BTC PIT OOS Audit
 
-# The audit is periodic/manual. Do not rerun it on every 5-minute state
-# archive update; the hourly schedule provides the recurring integrity check.
+# The audit is periodic and runs immediately when its own PIT contract changes.
+# It does not rerun on routine 5-minute state archive updates.
 on:
   schedule:
     - cron: '17 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'src/pit_oos_audit.py'
+      - 'src/model_compare.py'
+      - 'tests/test_pit_oos_audit.py'
+      - '.github/workflows/btc_pit_oos_audit.yml'
   workflow_dispatch:
 
 concurrency:
