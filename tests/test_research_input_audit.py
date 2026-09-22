@@ -69,6 +69,25 @@ class ResearchInputAuditTests(unittest.TestCase):
         result = audit_horizon(con, "5m")
         self.assertEqual(result["duplicate_exact_key_row_excess"], 1)
 
+    def test_unsettled_duplicate_events_are_not_invisible_to_the_audit(self):
+        con = self._db()
+        row = list(self._row())
+        row[5] = None
+        row[6] = None
+        self._insert(con, [tuple(row), tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["total_rows"], 2)
+        self.assertEqual(result["settled_rows"], 0)
+        self.assertEqual(result["duplicate_exact_key_row_excess"], 1)
+
+    def test_malformed_event_identity_is_reported(self):
+        con = self._db()
+        row = list(self._row())
+        row[4] = '{"ret_1m": "not-a-number"}'
+        self._insert(con, [tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["malformed_identity_rows"], 1)
+
     def test_different_model_versions_are_distinct_events(self):
         con = self._db()
         self._insert(con, [self._row("model-v1"), self._row("model-v2")])
