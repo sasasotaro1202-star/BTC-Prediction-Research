@@ -4,6 +4,7 @@ from src.microstructure_oos import (
     BINANCE_MICRO,
     CROSS_VENUE,
     MARKET_FLOW_V2,
+    _extended_from_feature_json,
     _market_flow_from_scenario,
     _micro_from_scenario,
     _strict_primary_sources_ok,
@@ -62,6 +63,25 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertAlmostEqual(values["taker_imbalance"], -0.05)
         self.assertAlmostEqual(values["funding_binance"], 0.0001)
         self.assertAlmostEqual(values["oi_log1p"], __import__("math").log1p(1000000.0))
+
+    def test_extended_feature_parser_is_complete_case_without_imputation(self):
+        payload = {
+            "ret_15m": 0.001,
+            "ret_30m": -0.002,
+            "range_position_30m": 0.7,
+            "trend_alignment": 0.0005,
+        }
+        values = _extended_from_feature_json(__import__("json").dumps(payload))
+        self.assertEqual(set(values), {"ret_15m", "ret_30m", "range_position_30m", "trend_alignment"})
+        self.assertAlmostEqual(values["ret_15m"], 0.001)
+
+    def test_extended_feature_parser_rejects_missing_value(self):
+        payload = {
+            "ret_15m": 0.001,
+            "ret_30m": -0.002,
+            "range_position_30m": 0.7,
+        }
+        self.assertIsNone(_extended_from_feature_json(__import__("json").dumps(payload)))
 
     def test_market_flow_v2_is_complete_case_without_imputation(self):
         scenario = self._scenario()
