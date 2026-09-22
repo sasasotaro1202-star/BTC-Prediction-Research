@@ -100,8 +100,8 @@ def load_current_rows(horizon: str):
                 "data_source": "binance_vision_closed_archive",
             })
         return archive[-MAX_ROWS:], version, "binance_vision_archive"
-    except Exception:
-        return rows, version, "live_binance_primary"
+    except Exception as exc:
+        return rows, version, f"binance_vision_archive_error:{type(exc).__name__}:{exc}"
 
 
 def factories():
