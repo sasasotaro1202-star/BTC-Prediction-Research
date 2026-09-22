@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -38,6 +38,7 @@ from model_compare import (
     loss_arrays,
     hac_test,
     load_primary_production_strict_rows,
+    load_archive_research_rows,
 )
 
 OUT = ROOT / "data" / "historical_research" / "time_regime_oos.json"
@@ -74,6 +75,42 @@ def _augment(rows):
         except (TypeError, ValueError, OverflowError):
             continue
     return out
+
+def _freeze_archive_to_champion(horizon, rows):
+    """Attach frozen Champion probabilities to only post-training archive rows."""
+    import json
+    import joblib
+
+    model_path = ROOT / "models" / f"{horizon}.joblib"
+    meta_path = ROOT / "models" / f"{horizon}.json"
+    if not model_path.is_file() or not meta_path.is_file():
+        return []
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        trained_raw = meta.get("trained_at_utc")
+        trained_at = (
+            datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+            if trained_raw else None
+        )
+        if trained_at is None:
+            return []
+        model = joblib.load(model_path)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+    out = []
+    for row in rows:
+        try:
+            created = datetime.fromisoformat(str(row["created"]).replace("Z", "+00:00"))
+            if created <= trained_at:
+                continue
+            x = np.asarray([row["x"]], dtype=float)
+            p = aligned(model, x)[0].tolist()
+            out.append({**row, "production": p})
+        except (TypeError, ValueError, OverflowError, OSError):
+            continue
+    return out
+
 
 def factories():
     return {
@@ -125,13 +162,27 @@ def _candidate_holdout(factory, train, holdout):
 
 def evaluate(horizon: str):
     rows = load_primary_production_strict_rows(horizon)
+    source = "live_binance_primary"
+    evidence_eligible = True
+
+    if len(rows) < MIN_TRAIN + MIN_OOS:
+        archive = load_archive_research_rows(
+            horizon,
+            max(12000, MIN_TRAIN + MIN_OOS + 200),
+        )
+        archive = _freeze_archive_to_champion(horizon, archive)
+        if len(archive) > len(rows):
+            rows = archive
+            source = "binance_vision_archive_frozen_champion"
+            evidence_eligible = False
+
     if len(rows) < MIN_TRAIN + MIN_OOS:
         return {
             "status": "DEFERRED",
-            "reason": "insufficient_strict_primary_rows",
+            "reason": "insufficient_chronological_rows",
             "n": len(rows),
-            "data_source": "live_binance_primary",
-            "promotion_evidence_eligible": True,
+            "data_source": source,
+            "promotion_evidence_eligible": evidence_eligible,
         }
 
     rows = sorted(_augment(rows), key=lambda r: (str(r["created"]), int(r["id"])))
@@ -140,8 +191,8 @@ def evaluate(horizon: str):
             "status": "DEFERRED",
             "reason": "insufficient_valid_augmented_rows",
             "n": len(rows),
-            "data_source": "live_binance_primary",
-            "promotion_evidence_eligible": True,
+            "data_source": source,
+            "promotion_evidence_eligible": evidence_eligible,
         }
 
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
@@ -230,8 +281,8 @@ def evaluate(horizon: str):
         "production_changed": False,
         "final_holdout_protected": True,
         "final_holdout_used_for_selection": False,
-        "data_source": "live_binance_primary",
-        "promotion_evidence_eligible": True,
+        "data_source": source,
+        "promotion_evidence_eligible": evidence_eligible,
         "n": len(rows),
         "development_n": len(development),
         "final_holdout_n": len(holdout),
