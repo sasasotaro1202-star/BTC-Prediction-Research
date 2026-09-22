@@ -105,8 +105,35 @@ def _candidate_key(result):
     )
 
 
+def _parse_dt(value):
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def causal_history(rows, test_start):
+    """Keep only labels that were settled before the next test block began."""
+    start = _parse_dt(test_start)
+    if start is None:
+        return []
+    out = []
+    for row in rows:
+        target = _parse_dt(row.get("target"))
+        created = _parse_dt(row.get("created"))
+        if target is None or created is None:
+            continue
+        if created >= target:
+            continue
+        if target < start:
+            out.append(row)
+    return out
+
+
 def choose_policy(history):
-    """Choose a gate only from observations strictly before the next test block."""
+    """Choose a gate only from observations whose labels were already known."""
+
     if len(history) < MIN_SELECTION_HISTORY:
         return None
 
@@ -185,7 +212,7 @@ def _nested_development(rows):
     policies = []
     for end in _block_endpoints(len(rows)):
         test = rows[end:min(end + TEST_BLOCK, len(rows))]
-        history = rows[:end]
+        history = causal_history(rows[:end], test[0].get("created"))
         if len(test) < MIN_BLOCK_SELECTED:
             continue
         policy = choose_policy(history)
@@ -236,7 +263,8 @@ def _nested_development(rows):
 def _final_holdout(rows, dev_end):
     development = rows[:dev_end]
     holdout = rows[dev_end:]
-    policy = choose_policy(development)
+    holdout_start = holdout[0].get("created") if holdout else None
+    policy = choose_policy(causal_history(development, holdout_start))
     if policy is None:
         return {
             "status": "DEFERRED",
