@@ -1,0 +1,78 @@
+name: BTC Time-Regime OOS Research
+
+on:
+  schedule:
+    - cron: '31 */8 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/time_regime_oos.py'
+      - 'tests/test_time_regime_oos.py'
+      - '.github/workflows/btc_time_regime_research.yml'
+
+concurrency:
+  group: btc-time-regime-research-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  time-regime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python -c "from pathlib import Path; from src.state_archive import restore_db; restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))"
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m unittest -q tests/test_time_regime_oos.py
+      - name: Run time-regime OOS
+        run: |
+          set -euo pipefail
+          python src/time_regime_oos.py
+          test -s data/historical_research/time_regime_oos.json
+      - name: Validate research-only evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/time_regime_oos.json').read_text())
+          if obj.get('research_only') is not True:
+              raise SystemExit('time-regime lane must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('time-regime lane reports production mutation')
+          horizons = obj.get('horizons', {})
+          if not isinstance(horizons, dict) or set(horizons) != {'5m', '10m'}:
+              raise SystemExit('time-regime horizon evidence is incomplete')
+          for h, item in horizons.items():
+              if item.get('status') == 'OK':
+                  if item.get('final_holdout_protected') is not True:
+                      raise SystemExit(f'{h}: holdout protection missing for completed evaluation')
+              elif item.get('status') == 'DEFERRED':
+                  if not str(item.get('reason', '')):
+                      raise SystemExit(f'{h}: deferred evaluation missing reason')
+              else:
+                  raise SystemExit(f'{h}: unexpected evaluation status {item.get("status")}')
+          print('time-regime evidence state: VERIFIED')
+          PY
+      - name: Upload time-regime evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-time-regime-oos
+          path: data/historical_research/time_regime_oos.json
+          retention-days: 7
