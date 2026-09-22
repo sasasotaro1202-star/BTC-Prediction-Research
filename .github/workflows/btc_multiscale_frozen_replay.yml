@@ -92,7 +92,7 @@ jobs:
           PY
 
       - name: Upload multi-scale replay evidence
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v6
         with:
           name: btc-multiscale-frozen-replay
