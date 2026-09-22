@@ -1,0 +1,67 @@
+name: BTC Frozen Archive Replay Research
+
+on:
+  schedule:
+    - cron: '53 */6 * * *'
+  workflow_run:
+    workflows: ["BTC Archive Refresh Research"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: btc-frozen-archive-replay
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run frozen replay
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m pytest -q tests/test_frozen_archive_replay_oos.py
+          python src/frozen_archive_replay_oos.py
+          test -s data/historical_research/frozen_archive_replay_oos.json
+      - name: Validate research-only frozen replay evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('data/historical_research/frozen_archive_replay_oos.json')
+          obj = json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('frozen replay must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('frozen replay changed production state')
+          if obj.get('replay_holdout_protected') is not True:
+              raise SystemExit('replay holdout protection missing')
+          for h, item in obj.get('horizons', {}).items():
+              if item.get('status') == 'OK' and item.get('promotion_evidence_eligible') is not False:
+                  raise SystemExit(f'{h}: archive evidence must never be promotion eligible')
+          print('frozen archive replay evidence: VERIFIED')
+          PY
+      - name: Upload frozen replay evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-frozen-archive-replay
+          path: data/historical_research/frozen_archive_replay_oos.json
+          if-no-files-found: error
+          retention-days: 3
