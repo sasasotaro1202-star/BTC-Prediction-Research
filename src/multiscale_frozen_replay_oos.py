@@ -125,7 +125,7 @@ def _vector(raw, i):
     ret30 = price / closes[-31] - 1.0
     ret60 = price / closes[-61] - 1.0
     rv30 = float(np.std(np.diff(closes[-31:]) / closes[-31:-1]))
-    rv60 = float(np.std(np.diff(closes[-61:]) / closes[-61:]))
+    rv60 = float(np.std(np.diff(closes[-61:]) / closes[-61:-1]))
 
     hi30, lo30 = float(np.max(highs[-30:])), float(np.min(lows[-30:]))
     hi60, lo60 = float(np.max(highs[-60:])), float(np.min(lows[-60:]))
