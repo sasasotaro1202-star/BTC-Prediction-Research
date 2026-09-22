@@ -194,7 +194,13 @@ def audit() -> dict:
         elif not any(v.startswith(row_prefix) for v in violations):
             verified_count += 1
 
-    pit_ready = bool(not violations and verified_count >= MIN_STRICT_PIT_ROWS)
+    # Promotion evidence is tied to the production benchmark venue. Fallback
+    # observations remain useful research data but cannot satisfy the primary
+    # PIT requirement.
+    pit_ready = bool(
+        not violations
+        and verified_primary_count >= MIN_STRICT_PIT_ROWS
+    )
     result = {
         "ok": not violations,
         "status": (
@@ -204,12 +210,14 @@ def audit() -> dict:
         ),
         "pit_verified": pit_ready,
         "pit_verified_reason": (
-            "strict_scope_verified"
+            "strict_binance_primary_scope_verified"
             if pit_ready
-            else f"insufficient_strict_pit_rows:{verified_count}/{MIN_STRICT_PIT_ROWS}"
+            else f"insufficient_binance_primary_pit_rows:{verified_primary_count}/{MIN_STRICT_PIT_ROWS}"
         ),
         "checked_predictions": checked,
         "verified_predictions": verified_count,
+        "verified_primary_predictions": verified_primary_count,
+        "verified_fallback_predictions": verified_fallback_count,
         "min_strict_pit_rows": MIN_STRICT_PIT_ROWS,
         "legacy_unverified_count": legacy_unverified_count,
         "legacy_violation_count": len(legacy_violations),
