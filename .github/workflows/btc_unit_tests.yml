@@ -19,7 +19,9 @@ on:
 
 
 concurrency:
-  group: btc-unit-tests-${{ github.ref }}
+  # Use the source branch for both push and pull_request events, so one commit
+  # cannot consume two identical full-suite runners at once.
+  group: btc-unit-tests-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
