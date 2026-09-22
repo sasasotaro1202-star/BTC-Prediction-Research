@@ -90,6 +90,29 @@ jobs:
             done
           done
 
+          code_or_protocol_changed_since() {
+            active_head="$1"
+            if [ -z "$main_sha" ] || [ -z "$active_head" ] || [ "$active_head" = "$main_sha" ]; then
+              return 1
+            fi
+            compare=$(gh api "/repos/${REPO}/compare/${active_head}...${main_sha}" 2>/dev/null || true)
+            if [ -z "$compare" ]; then
+              echo "WARN: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is skipped."
+              return 1
+            fi
+            if printf '%s' "$compare" | jq -e '.too_large == true' >/dev/null 2>&1; then
+              echo "WARN: compare ${active_head}...${main_sha} is too large; stale-head cancellation is skipped and age timeout remains authoritative."
+              return 1
+            fi
+            if printf '%s' "$compare" | jq -e '
+              any(.files[]?.filename?;
+                test("^(src/|scripts/|tests/|requirements\.txt$|\.github/workflows/btc_[^/]+\.yml$)")
+              )' >/dev/null 2>&1; then
+              return 0
+            fi
+            return 1
+          }
+
           recover_if_stale() {
             workflow="$1"
             threshold="$2"
@@ -102,7 +125,7 @@ jobs:
 
             # A completed-run freshness check alone cannot recover a stuck active
             # run. Inspect active runs separately and cancel only when they are
-            # clearly stale or attached to an old commit. The next watchdog tick
+            # clearly stale or affected by a source/protocol change or exceeded its hard active-age limit. The next watchdog tick
             # performs the recovery dispatch after cancellation has settled.
             printf "%s" "$response" | jq -c '.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress") | {id,status,head_sha,updated_at}' |
               while IFS= read -r active; do
@@ -112,15 +135,15 @@ jobs:
                 active_updated=$(printf "%s" "$active" | jq -r '.updated_at // ""')
                 active_epoch=$(date -d "$active_updated" +%s 2>/dev/null || echo 0)
                 active_age=$((now - active_epoch))
-                stale_by_head=false
+                stale_by_source=false
                 stale_by_age=false
-                if [ -n "$main_sha" ] && [ -n "$active_head" ] && [ "$active_head" != "$main_sha" ] && [ "$active_age" -ge "$stale_head_grace" ]; then
-                  stale_by_head=true
+                if [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head"; then
+                  stale_by_source=true
                 fi
                 if [ "$active_age" -ge "$active_grace" ]; then
                   stale_by_age=true
                 fi
-                if [ "$active_id" -gt 0 ] && { [ "$stale_by_head" = true ] || [ "$stale_by_age" = true ]; }; then
+                if [ "$active_id" -gt 0 ] && { [ "$stale_by_source" = true ] || [ "$stale_by_age" = true ]; }; then
                   echo "${workflow}: cancelling stale active run ${active_id} head=${active_head:-unknown} age=${active_age}s"
                   if gh api --method POST "/repos/${REPO}/actions/runs/${active_id}/cancel" >/dev/null 2>&1; then
                     echo "${workflow}: stale active run ${active_id} cancellation requested."
