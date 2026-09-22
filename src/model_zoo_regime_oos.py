@@ -16,6 +16,7 @@ for _path in (ROOT_DIR,SRC_DIR):
 from model_compare import HORIZONS, metrics, _temperature, apply_temperature
 from binance_history import binance_archive_rows
 from bootstrap_train import make_features, THRESHOLD
+from research_time_policy import exact_elapsed_pairs
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 try:
     from xgboost import XGBClassifier
@@ -172,10 +173,14 @@ def _historical_rows(horizon):
     raw = binance_archive_rows(MAX_ROWS)
     source = "binance_vision_archive"
     steps=int(horizon[:-1])
+    future_by_ts = {int(row[0]): future for row, future in exact_elapsed_pairs(raw, steps)}
     out=[]
-    for i in range(30, len(raw)-steps):
+    for i in range(30, len(raw)):
+        future = future_by_ts.get(int(raw[i][0]))
+        if future is None:
+            continue
         x=make_features(raw[:i+1])
-        future_return=raw[i+steps][4]/raw[i][4]-1.0
+        future_return=future[4]/raw[i][4]-1.0
         y="UP" if future_return>THRESHOLD else "DOWN" if future_return<-THRESHOLD else "FLAT"
         if all(np.isfinite(v) for v in x):
             out.append({"id":str(int(raw[i][0])),"created":str(int(raw[i][0])),"x":np.asarray(x,dtype=float),"y":y,"source":source})
