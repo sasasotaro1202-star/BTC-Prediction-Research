@@ -24,6 +24,10 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertEqual(ids.tolist(), [60_000])
         self.assertEqual(y.tolist(), ["UP"])
 
+    def test_feature_window_must_be_contiguous(self):
+        self.assertTrue(hr._window_is_contiguous([0, 60_000, 120_000]))
+        self.assertFalse(hr._window_is_contiguous([0, 60_000, 180_000]))
+
     def test_invalid_base_price_is_skipped(self):
         rows = [
             (0, [1, 2], 0.0),
