@@ -185,7 +185,7 @@ def evaluate(horizon: str):
             "promotion_evidence_eligible": evidence_eligible,
         }
 
-    rows = sorted(_augment(rows), key=lambda r: (str(r["created"]), int(r["id"])))
+    rows = sorted(_augment(rows), key=lambda r: (str(r["created"]), str(r["id"])))
     if len(rows) < MIN_TRAIN + MIN_OOS:
         return {
             "status": "DEFERRED",
