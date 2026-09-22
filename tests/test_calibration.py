@@ -30,6 +30,28 @@ class _FakeConnection:
 
 class TestCalibration(unittest.TestCase):
 
+
+    def test_frozen_model_temperature_requires_generation_match(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            model_dir = Path(td)
+            (model_dir / "10m.json").write_text(json.dumps({
+                "model_version": "bootstrap.bootstrap_rf",
+                "temperature": 0.8,
+            }), encoding="utf-8")
+            with patch.object(calibration_module, "MODEL_DIR", model_dir):
+                self.assertEqual(
+                    calibration_module._frozen_model_temperature("10m", "bootstrap.bootstrap_rf"),
+                    0.8,
+                )
+                self.assertIsNone(
+                    calibration_module._frozen_model_temperature("10m", "other_generation"),
+                )
+
     def test_zero_settled_preserves_generation_matched_calibration(self):
         import json
         import sqlite3

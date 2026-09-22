@@ -139,6 +139,21 @@ def _calibration_state(path):
         return None
 
 
+def _frozen_model_temperature(horizon, model_version):
+    """Return a generation-matched temperature embedded in the published model metadata."""
+    path = MODEL_DIR / f"{horizon}.json"
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        if obj.get("model_version") != model_version:
+            return None
+        temperature = float(obj.get("temperature", 1.0))
+        if not (0.5 <= temperature <= 3.0) or not math.isfinite(temperature):
+            return None
+        return temperature
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def _can_reuse_cached_calibration(cached, horizon, model_version, n_settled):
     if not isinstance(cached, dict):
         return False
@@ -168,9 +183,13 @@ def calibration():
                 # Reuse only a generation-matched, finite calibration artifact;
                 # otherwise write the explicit safe uncalibrated fallback.
                 cached = _calibration_state(MODEL_DIR / f"{horizon_name}.calibration.json")
-                if _can_reuse_cached_calibration(
-                    cached, horizon_name, model_version,
-                    int(cached.get("n_settled", -1)) if isinstance(cached, dict) else -1,
+                if (
+                    isinstance(cached, dict)
+                    and int(cached.get("n_settled", 0)) > 0
+                    and _can_reuse_cached_calibration(
+                        cached, horizon_name, model_version,
+                        int(cached.get("n_settled", -1)),
+                    )
                 ):
                     print(
                         horizon_name,
@@ -182,21 +201,40 @@ def calibration():
                         model_version,
                     )
                 else:
-                    save_temperature(
-                        horizon_name,
-                        1.0,
-                        0,
-                        None,
-                        None,
-                        HOLDOUT_FRACTION,
-                        model_version,
-                    )
-                    print(
-                        horizon_name,
-                        ': no settled predictions for current model generation',
-                        model_version,
-                        '; wrote safe uncalibrated artifact',
-                    )
+                    frozen_temperature = _frozen_model_temperature(horizon_name, model_version)
+                    if frozen_temperature is not None:
+                        save_temperature(
+                            horizon_name,
+                            frozen_temperature,
+                            0,
+                            None,
+                            None,
+                            HOLDOUT_FRACTION,
+                            model_version,
+                        )
+                        print(
+                            horizon_name,
+                            ': no settled predictions; restored frozen model-artifact calibration',
+                            frozen_temperature,
+                            'model_version',
+                            model_version,
+                        )
+                    else:
+                        save_temperature(
+                            horizon_name,
+                            1.0,
+                            0,
+                            None,
+                            None,
+                            HOLDOUT_FRACTION,
+                            model_version,
+                        )
+                        print(
+                            horizon_name,
+                            ': no settled predictions for current model generation',
+                            model_version,
+                            '; wrote safe uncalibrated artifact',
+                        )
                 continue
             path=MODEL_DIR/f'{horizon_name}.calibration.json'
             cached=_calibration_state(path)
