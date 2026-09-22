@@ -145,21 +145,43 @@ class TestPITOOSAudit(unittest.TestCase):
                 at = (created + timedelta(milliseconds=i)).isoformat()
                 scenario = {
                     "decision_time_utc": at,
-                    "provenance": {
-                        "event_time": at,
-                        "available_at": at,
-                        "retrieved_at": at,
-                        "prediction_cutoff": at,
-                        "sources": {
-                            "binance_futures": {
-                                "status": "ok",
-                                "event_time": at,
-                                "available_at": at,
-                                "retrieved_at": at,
-                                "prediction_cutoff": at,
-                            }
-                        },
-                    },
+                    "production_mode": "binance_primary",
+                                        "provenance": {
+                                            "event_time": at,
+                                            "available_at": at,
+                                            "retrieved_at": at,
+                                            "prediction_cutoff": at,
+                                            "sources": {
+                                                "binance_futures": {
+                                                    "status": "ok",
+                                                    "event_time": at,
+                                                    "available_at": at,
+                                                    "retrieved_at": at,
+                                                    "prediction_cutoff": at,
+                                                },
+                                                "binance_depth": {
+                                                    "status": "ok",
+                                                    "event_time": at,
+                                                    "available_at": at,
+                                                    "retrieved_at": at,
+                                                    "prediction_cutoff": at,
+                                                },
+                                                "binance_taker": {
+                                                    "status": "ok",
+                                                    "event_time": at,
+                                                    "available_at": at,
+                                                    "retrieved_at": at,
+                                                    "prediction_cutoff": at,
+                                                },
+                                                "binance_premium": {
+                                                    "status": "ok",
+                                                    "event_time": at,
+                                                    "available_at": at,
+                                                    "retrieved_at": at,
+                                                    "prediction_cutoff": at,
+                                                }
+                                            },
+                                        },
                 }
                 rows.append((i + 1, at, (created + timedelta(minutes=5, milliseconds=i + 1)).isoformat(),
                              (created + timedelta(minutes=10, milliseconds=i + 1)).isoformat(),
