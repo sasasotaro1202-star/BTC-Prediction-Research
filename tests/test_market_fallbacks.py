@@ -107,6 +107,15 @@ class TestMarketFallbacks(unittest.TestCase):
             runner._ORIGINAL_REQ_JSON = original_request
             runner._archive_fallback = original_fallback
 
+    def test_parallel_result_calls_preserve_success_and_failure(self):
+        calls = {
+            "ok": lambda: {"value": 1},
+            "bad": lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        }
+        result = market_data._parallel_result_calls(calls)
+        self.assertEqual(result["ok"], {"value": 1})
+        self.assertIsInstance(result["bad"], RuntimeError)
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
