@@ -1,0 +1,84 @@
+name: BTC Calibration Frozen Replay Research
+
+on:
+  schedule:
+    - cron: '29 */8 * * *'
+  workflow_run:
+    workflows: ["BTC Archive Refresh Research"]
+    types: [completed]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/calibration_frozen_replay_oos.py'
+      - 'tests/test_calibration_frozen_replay_oos.py'
+      - '.github/workflows/btc_calibration_frozen_replay.yml'
+
+concurrency:
+  group: btc-calibration-frozen-replay
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  calibration:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m pytest -q tests/test_calibration_frozen_replay_oos.py
+      - name: Run frozen calibration replay
+        run: |
+          set -euo pipefail
+          python src/calibration_frozen_replay_oos.py
+          test -s data/historical_research/calibration_frozen_replay_oos.json
+      - name: Validate research-only calibration contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj = json.loads(Path(
+              'data/historical_research/calibration_frozen_replay_oos.json'
+          ).read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('calibration replay must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('calibration replay changed production state')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('archive calibration evidence cannot be promotion eligible')
+          horizons = obj.get('horizons')
+          if not isinstance(horizons, dict) or set(horizons) != {'5m', '10m'}:
+              raise SystemExit('calibration replay horizon evidence is incomplete')
+          for h, item in horizons.items():
+              if item.get('status') == 'OK':
+                  if item.get('replay_holdout_protected') is not True:
+                      raise SystemExit(f'{h}: holdout protection missing')
+                  if item.get('replay_holdout_used_for_selection') is not False:
+                      raise SystemExit(f'{h}: replay selection leakage')
+              elif item.get('status') != 'DEFERRED':
+                  raise SystemExit(f'{h}: unexpected status {item.get("status")}')
+          print('calibration frozen replay contract: VERIFIED')
+          PY
+      - name: Upload calibration evidence
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-calibration-frozen-replay
+          path: data/historical_research/calibration_frozen_replay_oos.json
+          if-no-files-found: error
+          retention-days: 3
