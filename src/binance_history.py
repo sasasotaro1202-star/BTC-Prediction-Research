@@ -136,8 +136,32 @@ def binance_archive_rows(target: int = 30_000):
         except Exception as exc:
             errors.append(f"monthly:{m:%Y-%m}:{type(exc).__name__}:{exc}")
         m = (m - timedelta(days=1)).replace(day=1)
+    # If the current-month monthly archive is unavailable, prioritize recent
+    # completed daily archives before filling the remainder with older months.
+    # Otherwise an older month can satisfy 'target' first and hide the freshest
+    # closed candles from the research cohort.
+    current_month_failed = False
+    # The monthly loop records failures above, so inspect whether the current
+    # month key was among the failed requests without relying on error wording.
+    current_key = (month.year, month.month)
+    current_month_failed = current_key in seen_months and not rows
+    if len(rows) < target and current_month_failed:
+        day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        for _ in range(45):
+            try:
+                day_rows, _ = _load_day(day)
+                rows.extend(day_rows)
+            except Exception as exc:
+                errors.append(f"daily:{day:%Y-%m-%d}:{type(exc).__name__}:{exc}")
+            rows = list({int(r[0]): r for r in rows}.values())
+            if len(rows) >= target:
+                break
+            day -= timedelta(days=1)
+
     if len(rows) < target:
         day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Daily archives are still useful as a final recovery path when
+        # completed monthly archives are insufficient.
         for _ in range(45):
             try:
                 day_rows, _ = _load_day(day)
