@@ -52,6 +52,8 @@ def audit_horizon(con, horizon: str) -> dict:
     settled_rows = 0
     valid_rows = 0
     malformed_identity_rows = 0
+    quarantined_identity_rows = 0
+    quarantine_reasons = Counter()
     strict_pit_rows = 0
     strict_pit_settled_rows = 0
     strict_pit_failure_reasons = Counter()
@@ -72,19 +74,29 @@ def audit_horizon(con, horizon: str) -> dict:
                 "target_at_utc": str(target_at),
             })
 
-        try:
-            obj = _safe_json(feature_json)
-            x = [float(obj[k]) for k in FEATURES]
-            production = [float(p_down), float(p_flat), float(p_up)]
-            event_key = model_prediction_event_key(
-                created=created_at, target=target_at,
-                model_version=model_version, x=x, production=production,
-            )
-            duplicate_groups[event_key] += 1
-            if actual is not None:
-                settled_duplicate_groups[event_key] += 1
-        except (KeyError, TypeError, ValueError, OverflowError):
-            malformed_identity_rows += 1
+        is_degraded = model_version == "DEGRADED_NO_FRESH_DATA"
+        if is_degraded:
+            # Degraded rows intentionally contain no directional feature snapshot.
+            # They are preserved in the canonical DB but are not valid candidate/OOS
+            # events and therefore cannot participate in immutable model-event
+            # identity. Keep them visible as explicit quarantine, not as a silent
+            # success and not as a malformed research observation.
+            quarantined_identity_rows += 1
+            quarantine_reasons["degraded_prediction_no_feature_snapshot"] += 1
+        else:
+            try:
+                obj = _safe_json(feature_json)
+                x = [float(obj[k]) for k in FEATURES]
+                production = [float(p_down), float(p_flat), float(p_up)]
+                event_key = model_prediction_event_key(
+                    created=created_at, target=target_at,
+                    model_version=model_version, x=x, production=production,
+                )
+                duplicate_groups[event_key] += 1
+                if actual is not None:
+                    settled_duplicate_groups[event_key] += 1
+            except (KeyError, TypeError, ValueError, OverflowError):
+                malformed_identity_rows += 1
 
         if actual is not None:
             settled_rows += 1
@@ -92,13 +104,16 @@ def audit_horizon(con, horizon: str) -> dict:
                 class_counts[str(actual)] += 1
 
         scenario = _safe_json(scenario_json)
-        pit_reason = strict_pit_provenance_reason(scenario, created_at)
-        if pit_reason is None and chronological:
-            strict_pit_rows += 1
-            if actual is not None:
-                strict_pit_settled_rows += 1
+        if is_degraded:
+            strict_pit_failure_reasons["degraded_prediction_quarantined"] += 1
         else:
-            strict_pit_failure_reasons[pit_reason or "prediction_time_not_before_target"] += 1
+            pit_reason = strict_pit_provenance_reason(scenario, created_at)
+            if pit_reason is None and chronological:
+                strict_pit_rows += 1
+                if actual is not None:
+                    strict_pit_settled_rows += 1
+            else:
+                strict_pit_failure_reasons[pit_reason or "prediction_time_not_before_target"] += 1
 
         if chronological:
             valid_rows += 1
@@ -119,6 +134,8 @@ def audit_horizon(con, horizon: str) -> dict:
         "strict_pit_settled_excluded_rows": settled_rows - strict_pit_settled_rows,
         "strict_pit_failure_reasons": dict(strict_pit_failure_reasons),
         "malformed_identity_rows": malformed_identity_rows,
+        "quarantined_identity_rows": quarantined_identity_rows,
+        "quarantine_reasons": dict(quarantine_reasons),
         "excluded_rows": total_rows - valid_rows,
         "invalid_timestamp_rows": invalid_ts,
         "chronology_violation_count": len(chronology_violations),
