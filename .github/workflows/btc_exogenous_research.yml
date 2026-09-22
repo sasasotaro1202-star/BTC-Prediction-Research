@@ -55,12 +55,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -s data/predictions.db.gz ]; then
-            python - <<'PY'
-from pathlib import Path
-from src.state_archive import restore_db
-restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
-print('Restored prediction DB from canonical compressed research state.')
-PY
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored prediction DB from canonical compressed research state.')
+          PY
           else
             echo 'Canonical compressed prediction state is unavailable; OOS may remain DEFERRED.'
           fi
