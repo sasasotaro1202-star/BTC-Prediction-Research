@@ -89,6 +89,36 @@ class TestBinanceHistory(unittest.TestCase):
         finally:
             bh._month_rows = old_month
 
+    def test_archive_rows_prefers_recent_daily_after_current_month_monthly_failure(self):
+        old_month = bh._month_rows
+        old_day = bh._load_day
+        try:
+            recent = [
+                [900_000, 1, 1, 1, 1, 1],
+                [960_000, 1, 1, 1, 1, 1],
+                [1_020_000, 1, 1, 1, 1, 1],
+                [1_080_000, 1, 1, 1, 1, 1],
+            ]
+            calls = {"n": 0}
+
+            def month_rows(month):
+                if calls["n"] == 0:
+                    raise RuntimeError("current month not published")
+                return [[i * 60_000, 1, 1, 1, 1, 1] for i in range(20)]
+
+            def load_day(day):
+                calls["n"] += 1
+                return (recent, "mock") if calls["n"] == 1 else ([], "mock")
+
+            bh._month_rows = month_rows
+            bh._load_day = load_day
+            out = bh.binance_archive_rows(target=3)
+
+            self.assertEqual([r[0] for r in out], [960_000, 1_020_000, 1_080_000])
+        finally:
+            bh._month_rows = old_month
+            bh._load_day = old_day
+
     def test_archive_rows_fails_closed_when_not_enough_history(self):
         old_month = bh._month_rows
         old_day = bh._load_day
