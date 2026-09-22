@@ -62,21 +62,37 @@ class TestSettlementSource(unittest.TestCase):
         self.assertEqual(source, 'binance_daily_archive')
 
     def test_daily_archive_cache_is_used_once_per_day(self):
-        rows = {1726394700000: 102.75, 1726394760000: 102.80}
-        with patch.object(ss, '_daily_archive_rows', return_value=rows) as loader:
-            self.assertEqual(ss._target_binance_daily_archive(1726394700000), 102.75)
-            self.assertEqual(ss._target_binance_daily_archive(1726394760000), 102.80)
-        loader.assert_called_once()
+        import io
+        import zipfile
+
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                'BTCUSDT-1m-2024-09-15.csv',
+                '1726394700000,100,103,99,102.75,12\n'
+                '1726394760000,102.75,104,102,102.80,10\n',
+            )
+        payload.seek(0)
+        ss._daily_archive_rows.cache_clear()
+        try:
+            with patch.object(ss, 'urlopen', return_value=payload) as opener:
+                self.assertEqual(ss._daily_archive_rows('2024-09-15')[1726394700000], 102.75)
+                self.assertEqual(ss._daily_archive_rows('2024-09-15')[1726394760000], 102.80)
+            opener.assert_called_once()
+        finally:
+            ss._daily_archive_rows.cache_clear()
 
     def test_binance_target_is_used(self):
-        with patch.object(ss, '_target_binance', return_value=102.0) as binance:
+        with patch.object(ss, '_target_binance_daily_archive', return_value=None), \
+             patch.object(ss, '_target_binance', return_value=102.0) as binance:
             price, source = ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'binance_futures')
         self.assertEqual(price, 102.0)
         self.assertEqual(source, 'binance')
         binance.assert_called_once()
 
     def test_binance_target_failure_is_unavailable(self):
-        with patch.object(ss, '_target_binance', side_effect=RuntimeError('temporary')):
+        with patch.object(ss, '_target_binance_daily_archive', return_value=None), \
+             patch.object(ss, '_target_binance', side_effect=RuntimeError('temporary')):
             price, source = ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'binance_futures')
         self.assertIsNone(price)
         self.assertEqual(source, 'unavailable')
