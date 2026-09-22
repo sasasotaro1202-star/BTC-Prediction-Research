@@ -209,6 +209,57 @@ def _rows_from_raw(raw, horizon, source_name, max_rows=ARCHIVE_MAX_ROWS):
     return out[-int(max_rows):]
 
 
+def _research_rows_from_raw(raw, horizon, max_rows, source_name):
+    """Convert a verified closed 1m candle series into causal research rows."""
+    steps = int(str(horizon).rstrip("m"))
+    from model_compare import prediction_precedes_target
+    from bootstrap_train import make_features
+    from label_policy import direction_from_return
+
+    ordered = sorted(
+        {int(r[0]): r for r in raw}.values(),
+        key=lambda r: int(r[0]),
+    )
+    contiguous = []
+    for row in reversed(ordered):
+        if contiguous and int(contiguous[-1][0]) - int(row[0]) != 60_000:
+            break
+        contiguous.append(row)
+    contiguous.reverse()
+
+    out = []
+    for i in range(30, len(contiguous) - steps):
+        try:
+            x = make_features(contiguous[: i + 1])
+            arr = np.asarray(x, dtype=float)
+            if not np.isfinite(arr).all():
+                continue
+            target_row = contiguous[i + steps]
+            if int(target_row[0]) - int(contiguous[i][0]) != steps * 60_000:
+                continue
+            future_return = float(target_row[4]) / float(contiguous[i][4]) - 1.0
+            created = datetime.fromtimestamp(
+                int(contiguous[i][0]) / 1000.0, timezone.utc
+            ).isoformat()
+            target = datetime.fromtimestamp(
+                int(target_row[0]) / 1000.0, timezone.utc
+            ).isoformat()
+            if not prediction_precedes_target(created, target):
+                continue
+            out.append({
+                "id": f"archive:{source_name}:{int(contiguous[i][0])}:{horizon}",
+                "created": created,
+                "target": target,
+                "x": [float(v) for v in arr],
+                "y": direction_from_return(future_return),
+                "production_mode": f"{source_name}_archive",
+                "data_source": source_name,
+            })
+        except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
+            continue
+    return out[-int(max_rows):]
+
+
 def _fresh_post_training_fallback(horizon):
     """Build research rows from fresh non-Binance venues after Champion training.
     
