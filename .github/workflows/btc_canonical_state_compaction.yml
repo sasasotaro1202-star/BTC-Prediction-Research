@@ -11,6 +11,11 @@ on:
     # research-input contract is re-verified immediately after merge.
     paths:
       - 'scripts/merge_prediction_state.py'
+      - 'src/research_input_audit.py'
+      - 'src/prediction_identity.py'
+      - 'src/prediction_state_guard.py'
+      - 'src/model_compare.py'
+      - 'tests/test_research_input_audit.py'
       - '.github/workflows/btc_canonical_state_compaction.yml'
   schedule:
     - cron: '41 */6 * * *'
