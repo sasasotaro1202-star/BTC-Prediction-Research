@@ -45,6 +45,8 @@ jobs:
             btc_exogenous_research.yml
             btc_interaction_research.yml
             btc_time_regime_research.yml
+            btc_calibration_frozen_replay.yml
+            btc_multiscale_frozen_replay.yml
             btc_archive_primary_bridge.yml
             btc_canonical_state_compaction.yml
           )
@@ -140,4 +142,6 @@ jobs:
           recover_if_stale btc_archive_primary_bridge.yml 21600
           recover_if_stale btc_canonical_state_compaction.yml 21600
           recover_if_stale btc_time_regime_research.yml 21600
+          recover_if_stale btc_calibration_frozen_replay.yml 28800
+          recover_if_stale btc_multiscale_frozen_replay.yml 21600
           echo 'BTC workflow watchdog completed without masking core workflow results.'
