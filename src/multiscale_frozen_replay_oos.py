@@ -278,15 +278,19 @@ def _fit_and_score(factory, train_rows, eval_rows, horizon, feature_idx, tempera
 
 def _slice_partition(rows, horizon):
     n = len(rows)
-    replay_start = int(n * 0.80)
-    gate_end = replay_start
-    gate_start = int(n * 0.70)
     selection_start = int(n * 0.60)
+    gate_start = int(n * 0.70)
+    replay_start = int(n * 0.80)
     purge = PURGE[horizon]
 
-    train_end = selection_start - purge
-    train = rows[:max(train_end, 0)]
-    selection = rows[selection_start:gate_start]
+    # Purge the tail of each development slice so a forward h-minute label
+    # cannot reach into the next evaluation regime.
+    train_end = max(0, selection_start - purge)
+    selection_end = max(selection_start, gate_start - purge)
+    gate_end = max(gate_start, replay_start - purge)
+
+    train = rows[:train_end]
+    selection = rows[selection_start:selection_end]
     gate = rows[gate_start:gate_end]
     replay = rows[replay_start:]
 
@@ -401,6 +405,13 @@ def evaluate_horizon(rows, horizon):
             "windows": [],
         }
 
+    # Freeze the chosen recipe once before any replay window is scored.
+    frozen_model = factory()
+    frozen_model.fit(
+        np.asarray([r["x"][:feature_idx] for r in train + selection], dtype=float),
+        np.asarray([r["y"][horizon] for r in train + selection]),
+    )
+
     window_size = len(replay) // FINAL_REPLAY_WINDOWS
     windows = []
     for j in range(FINAL_REPLAY_WINDOWS):
@@ -412,9 +423,7 @@ def evaluate_horizon(rows, horizon):
 
         y = [r["y"][horizon] for r in block]
         X = np.asarray([r["x"][:feature_idx] for r in block], dtype=float)
-        candidate_probs = apply_temperature(aligned(_fit_and_score(
-            factory, train + selection, block, horizon, feature_idx, temp
-        )[0], X), temp)
+        candidate_probs = apply_temperature(aligned(frozen_model, X), temp)
         champion_probs = aligned(champion, np.asarray(
             [r["x"][:len(BASE_FEATURES)] for r in block], dtype=float
         ))
