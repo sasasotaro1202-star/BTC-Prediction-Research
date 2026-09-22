@@ -118,7 +118,13 @@ def binance_archive_rows(target: int = 30_000):
     rows, errors = [], []
     now = datetime.now(timezone.utc)
     month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    for m in (month, month - timedelta(days=1)):
+    # Try several completed monthly archives before falling back to daily files.
+    # This keeps large research cohorts available even while the current
+    # calendar month's monthly archive is unpublished.
+    months = [month]
+    for _ in range(3):
+        months.append((months[-1] - timedelta(days=1)).replace(day=1))
+    for m in months:
         try:
             rows.extend(_month_rows(m))
             rows = list({int(r[0]): r for r in rows}.values())
