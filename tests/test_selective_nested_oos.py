@@ -46,6 +46,8 @@ class SelectiveNestedOOSTests(unittest.TestCase):
         self.assertEqual(history[0]["created"], "2026-09-22T00:00:00+00:00")
 
 
+    # Regression: _norm must support both a single class-probability vector and
+    # a batch matrix because runtime/archive loaders use both forms.
     def test_norm_accepts_vector_and_matrix_probability_inputs(self):
         vector = _norm([2.0, 1.0, 1.0])
         self.assertAlmostEqual(float(vector.sum()), 1.0)
