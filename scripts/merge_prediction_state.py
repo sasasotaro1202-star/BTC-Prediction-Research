@@ -42,6 +42,21 @@ def prediction_identity(row):
     return values
 
 
+
+def expected_compacted_event_count(con):
+    """Return the number of immutable prediction events before compaction."""
+    info = con.execute('PRAGMA table_info(predictions)').fetchall()
+    if not info:
+        return 0
+    cols = [r[1] for r in info]
+    names = ','.join('"' + c + '"' for c in cols)
+    rows = con.execute(f'SELECT rowid, {names} FROM predictions').fetchall()
+    identities = set()
+    for item in rows:
+        row = dict(zip(['rowid'] + cols, item))
+        identities.add(prediction_identity(row))
+    return len(identities)
+
 def settlement_score(row):
     present = sum(row.get(c) is not None for c in SETTLEMENT_COLUMNS)
     latest = max(
