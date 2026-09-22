@@ -6,6 +6,7 @@ from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, HistG
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
+from prediction_identity import model_prediction_event_key
 try:
     from db import DB, init_db
     from feature_schema import FEATURES
@@ -50,20 +51,14 @@ def prediction_precedes_target(created_at_utc, target_at_utc):
 
 
 def prediction_event_key(row):
-    """Stable immutable identity for one persisted prediction event.
-
-    Settlement fields and provenance metadata that can change during recovery
-    are intentionally excluded. Model version, target timing, features, and
-    emitted probabilities define the prediction event itself.
-    """
-    payload = {
-        "created": str(row.get("created", "")),
-        "target": str(row.get("target", "")),
-        "model_version": str(row.get("model_version", "")),
-        "x": [float(v) for v in row.get("x", [])],
-        "production": [float(v) for v in row.get("production", [])],
-    }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    """Canonical immutable identity for one horizon-scoped prediction event."""
+    return model_prediction_event_key(
+        created=row.get("created", ""),
+        target=row.get("target", ""),
+        model_version=row.get("model_version", ""),
+        x=row.get("x", []),
+        production=row.get("production", []),
+    )
 
 
 def dedupe_exact_prediction_events(rows):
