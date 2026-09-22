@@ -313,6 +313,93 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertFalse(result["pit_verified"])
                 self.assertTrue(any("source:coinbase_futures:missing_prediction_cutoff" in v for v in result["violations"]))
 
+
+    def test_precontract_coinbase_target_before_legacy_decision_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+            decision = datetime(2026, 9, 21, 12, 6, tzinfo=timezone.utc)
+            scenario = {
+                "decision_time_utc": decision.isoformat(),
+                "provenance": {
+                    "event_time": created.isoformat(),
+                    "available_at": decision.isoformat(),
+                    "retrieved_at": decision.isoformat(),
+                    "prediction_cutoff": decision.isoformat(),
+                    "sources": {
+                        "coinbase_futures": {
+                            "status": "ok",
+                            "event_time": created.isoformat(),
+                            "available_at": decision.isoformat(),
+                            "retrieved_at": decision.isoformat(),
+                            "prediction_cutoff": None,
+                        }
+                    },
+                },
+                "production_mode": "coinbase_fallback",
+            }
+            db = self.make_db(
+                td,
+                [(
+                    1,
+                    created.isoformat(),
+                    "2026-09-21T12:05:00+00:00",
+                    "2026-09-21T12:10:00+00:00",
+                    "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1",
+                    json.dumps(scenario),
+                )],
+            )
+            with patch.object(pit_oos_audit, "DB", db), patch.object(
+                pit_oos_audit, "OUT", Path(td) / "audit.json"
+            ):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertFalse(result["pit_verified"])
+                self.assertEqual(result["legacy_unverified_count"], 1)
+                self.assertIn("5m_target_not_after_decision", result["legacy_violations"])
+
+    def test_postcontract_coinbase_target_before_decision_remains_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime(2026, 9, 22, 6, 0, tzinfo=timezone.utc)
+            decision = datetime(2026, 9, 22, 6, 6, tzinfo=timezone.utc)
+            scenario = {
+                "decision_time_utc": decision.isoformat(),
+                "provenance": {
+                    "event_time": created.isoformat(),
+                    "available_at": decision.isoformat(),
+                    "retrieved_at": decision.isoformat(),
+                    "prediction_cutoff": decision.isoformat(),
+                    "sources": {
+                        "coinbase_futures": {
+                            "status": "ok",
+                            "event_time": created.isoformat(),
+                            "available_at": decision.isoformat(),
+                            "retrieved_at": decision.isoformat(),
+                            "prediction_cutoff": None,
+                        }
+                    },
+                },
+                "production_mode": "coinbase_fallback",
+            }
+            db = self.make_db(
+                td,
+                [(
+                    1,
+                    created.isoformat(),
+                    "2026-09-22T06:05:00+00:00",
+                    "2026-09-22T06:10:00+00:00",
+                    "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1",
+                    json.dumps(scenario),
+                )],
+            )
+            with patch.object(pit_oos_audit, "DB", db), patch.object(
+                pit_oos_audit, "OUT", Path(td) / "audit.json"
+            ):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertTrue(
+                    any("5m_target_not_after_decision" in v for v in result["violations"])
+                )
+
     def test_rejects_target_before_decision(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)
