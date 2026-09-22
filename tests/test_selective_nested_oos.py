@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from src.selective_nested_oos import _wilson_lower, choose_policy, evaluate_policy
+from src.selective_nested_oos import _wilson_lower, causal_history, choose_policy, evaluate_policy
 
 
 class SelectiveNestedOOSTests(unittest.TestCase):
@@ -33,6 +33,17 @@ class SelectiveNestedOOSTests(unittest.TestCase):
         self.assertEqual(r["n"], 1)
         self.assertAlmostEqual(r["accuracy"], 1.0)
         self.assertAlmostEqual(r["coverage"], 0.5)
+
+    def test_causal_history_excludes_unsettled_labels_crossing_test_boundary(self):
+        rows = [
+            {"created": "2026-09-22T00:00:00+00:00", "target": "2026-09-22T00:05:00+00:00",
+             "production": [0.9, 0.05, 0.05], "y": "DOWN"},
+            {"created": "2026-09-22T00:04:00+00:00", "target": "2026-09-22T00:09:00+00:00",
+             "production": [0.9, 0.05, 0.05], "y": "DOWN"},
+        ]
+        history = causal_history(rows, "2026-09-22T00:06:00+00:00")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["created"], "2026-09-22T00:00:00+00:00")
 
 
 if __name__ == "__main__":
