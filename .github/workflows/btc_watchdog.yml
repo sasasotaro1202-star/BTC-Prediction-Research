@@ -29,6 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          watchdog_degraded=0
           workflows=(
             btc_live_cycle.yml
             btc_integrity.yml
@@ -54,14 +55,15 @@ jobs:
           )
           main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
           if [ -z "$main_sha" ]; then
-            echo "WARN: unable to resolve current main SHA; failed-run retries will be skipped for safety."
+            echo "ERROR: unable to resolve current main SHA; watchdog recovery cannot be trusted." >&2
+            watchdog_degraded=1
           else
             echo "Current main SHA: ${main_sha}"
           fi
           now=$(date -u +%s)
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
               echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
               exit 1
@@ -84,7 +86,8 @@ jobs:
                     if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/rerun-failed-jobs" >/dev/null 2>&1; then
                       echo "Retry requested successfully for ${workflow} run ${run_id}"
                     else
-                      echo "WARN: retry request failed for ${workflow} run ${run_id}; continuing"
+                      echo "ERROR: retry request failed for ${workflow} run ${run_id}; watchdog recovery degraded." >&2
+                      watchdog_degraded=1
                     fi
                   elif [ "$run_id" -gt 0 ] && [ "$attempt" -lt 3 ] && [ "$age" -ge 300 ]; then
                     echo "Skip retry for ${workflow} run ${run_id}: head SHA ${head_sha:-unknown} is not current main."
@@ -102,11 +105,13 @@ jobs:
             fi
             compare=$(gh api "/repos/${REPO}/compare/${active_head}...${main_sha}" 2>/dev/null || true)
             if [ -z "$compare" ]; then
-              echo "WARN: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is skipped."
+              echo "ERROR: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is degraded." >&2
+              watchdog_degraded=1
               return 1
             fi
             if jq -e '.too_large == true' <<<"$compare" >/dev/null 2>&1; then
-              echo "WARN: compare ${active_head}...${main_sha} is too large; stale-head cancellation is skipped and age timeout remains authoritative."
+              echo "ERROR: compare ${active_head}...${main_sha} is too large; stale-head cancellation is degraded and age timeout remains authoritative." >&2
+              watchdog_degraded=1
               return 1
             fi
             if jq -e --arg workflow ".github/workflows/$workflow" '
@@ -166,7 +171,8 @@ jobs:
                     echo "${workflow}: stale active run ${active_id} cancellation requested."
                     cancellation_requested_count=$((cancellation_requested_count + 1))
                   else
-                    echo "WARN: unable to cancel stale active run ${active_id}; leaving state unchanged."
+                    echo "ERROR: unable to cancel stale active run ${active_id}; watchdog recovery degraded." >&2
+                    watchdog_degraded=1
                   fi
                 fi
             done <<<"$active_runs_json"
@@ -200,7 +206,8 @@ jobs:
               elif gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
                 echo "${workflow} recovery dispatch succeeded via workflow_dispatch API."
               else
-                echo "WARN: ${workflow} recovery dispatch failed through both supported paths; leaving state unchanged."
+                echo "ERROR: ${workflow} recovery dispatch failed through both supported paths; watchdog recovery degraded." >&2
+                watchdog_degraded=1
               fi
             fi
           }
@@ -232,4 +239,8 @@ jobs:
           recover_if_stale btc_multiscale_frozen_replay.yml 21600 32400 900
           # The WS collector is a long-lived rolling publisher (up to ~50m); do not cancel a healthy run merely because it exceeds the old 30m grace window.
           recover_if_stale btc_binance_ws_collector.yml 900 3900 900
+          if [ "$watchdog_degraded" -ne 0 ]; then
+            echo 'ERROR: BTC workflow watchdog completed in DEGRADED state; at least one recovery/inspection action failed.' >&2
+            exit 1
+          fi
           echo 'BTC workflow watchdog completed without masking core workflow results.'
