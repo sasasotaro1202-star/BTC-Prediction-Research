@@ -27,10 +27,10 @@ on:
 
 concurrency:
   group: btc-9h-research-marathon-main
-  # Never cancel an active 9H marathon. Source changes queue a fresh run on the
-  # same concurrency group; the newest pending push replaces older pending work.
-  # This preserves completed evidence and avoids repeated cancellation churn.
-  cancel-in-progress: false
+  # Scheduled/manual runs must be allowed to finish. A source/protocol push,
+  # however, invalidates evidence from the previous codebase and should
+  # preempt that stale run immediately; only that event type is cancelable.
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: read
