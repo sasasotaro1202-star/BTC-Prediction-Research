@@ -361,6 +361,35 @@ jobs:
           merge-multiple: false
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Record immutable research run context
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = {
+              "schema_version": 1,
+              "github_sha": os.environ.get("GITHUB_SHA", ""),
+              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+              "run_id": int(os.environ.get("GITHUB_RUN_ID", "0")),
+              "run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "0")),
+              "event": os.environ.get("GITHUB_EVENT_NAME", ""),
+              "ref": os.environ.get("GITHUB_REF", ""),
+              "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+          }
+          if not payload["github_sha"] or payload["run_id"] <= 0:
+              raise SystemExit("research run context is incomplete")
+          out = Path("data/historical_research/research_run_context.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+          print(json.dumps(payload, sort_keys=True))
+          PY
+          test -s data/historical_research/research_run_context.json
+
       - name: Validate parallel OOS evidence manifests
         shell: bash
         run: |
