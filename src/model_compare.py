@@ -6,7 +6,10 @@ from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, HistG
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
-from prediction_identity import model_prediction_event_key
+try:
+    from prediction_identity import model_prediction_event_key
+except ModuleNotFoundError:
+    from src.prediction_identity import model_prediction_event_key
 try:
     from db import DB, init_db
     from feature_schema import FEATURES
