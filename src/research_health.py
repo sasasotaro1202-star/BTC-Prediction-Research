@@ -145,7 +145,7 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
-    return 0
+    return 0 if result["ok"] else 1
 
 
 if __name__ == "__main__":
