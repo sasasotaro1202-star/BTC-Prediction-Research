@@ -44,6 +44,7 @@ from model_compare import (
     walk_forward,
     hac_test,
     _adjusted_alpha,
+    loss_arrays,
     load_primary_production_strict_rows,
 )
 
@@ -349,11 +350,22 @@ def evaluate_variant(horizon: str, rows, *, corrected_alpha):
         diff_ll = np.asarray([b["logloss_delta"] for b in blocks], dtype=float)
         diff_br = np.asarray([b["brier_delta"] for b in blocks], dtype=float)
         diff_ac = np.asarray([b["accuracy_delta"] for b in blocks], dtype=float)
+        row_diffs = loss_arrays(
+            wf["ys"],
+            aligned_prod,
+            wf["probs"],
+        )
         stats = {
-            "logloss": hac_test(diff_ll, PURGE_BARS[horizon], alpha=corrected_alpha)
-            if len(diff_ll) >= 30 else {"significant": False, "mean_diff": None},
-            "brier": hac_test(diff_br, PURGE_BARS[horizon], alpha=corrected_alpha)
-            if len(diff_br) >= 30 else {"significant": False, "mean_diff": None},
+            "logloss": hac_test(
+                row_diffs["logloss"],
+                PURGE_BARS[horizon],
+                alpha=corrected_alpha,
+            ),
+            "brier": hac_test(
+                row_diffs["brier"],
+                PURGE_BARS[horizon],
+                alpha=corrected_alpha,
+            ),
         }
         eligible = (
             len(blocks) >= 8
