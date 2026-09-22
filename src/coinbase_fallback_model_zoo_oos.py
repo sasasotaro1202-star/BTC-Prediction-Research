@@ -114,11 +114,12 @@ def evaluate_horizon(X, y, horizon):
     for name, rec in records.items():
         block_ll = np.asarray([x["logloss"] for x in rec["blocks"]])
         block_acc = np.asarray([x["accuracy"] for x in rec["blocks"]])
-        if (
-            len(block_ll) >= 4
-            and float(np.mean(block_ll < np.asarray([records["rf"]["blocks"][i]["logloss"] for i in range(len(block_ll))]))) >= 0.50
-            and float(np.mean(block_acc >= 0.0)) >= 0.50
-        ):
+        rf_blocks = records["rf"]["blocks"][:len(block_ll)] if "rf" in records else []
+        rf_ll = np.asarray([x["logloss"] for x in rf_blocks], dtype=float)
+        rf_acc = np.asarray([x["accuracy"] for x in rf_blocks], dtype=float)
+        ll_ratio = float(np.mean(block_ll < rf_ll)) if len(rf_ll) == len(block_ll) else 0.0
+        acc_ratio = float(np.mean(block_acc >= (rf_acc - 0.005))) if len(rf_acc) == len(block_acc) else 0.0
+        if len(block_ll) >= 4 and ll_ratio >= 0.50 and acc_ratio >= 0.50:
             eligible.append(name)
 
     return {
