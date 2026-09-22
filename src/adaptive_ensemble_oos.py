@@ -16,6 +16,7 @@ for _path in (ROOT_DIR, SRC_DIR):
 
 try:
     from src.model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
+    load_rows = load_primary_production_strict_rows
     from src.ensemble_model import SoftVotingEnsemble
 except ModuleNotFoundError:
     from model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
