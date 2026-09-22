@@ -71,7 +71,7 @@ def load(h):
     with sqlite3.connect(DB) as con:
         rows=con.execute(f"""
           SELECT prediction_id,created_at_utc,feature_json,{actual},
-                 p_up_{h},p_down_{h},p_flat_{h},model_version
+                 p_up_{h},p_down_{h},p_flat_{h},model_version,scenario_json
           FROM predictions
           WHERE {actual} IS NOT NULL
             AND model_version LIKE ?
@@ -84,6 +84,8 @@ def load(h):
             vals=[float(f[k]) for k in FEATURES]
             probs=[float(r[4]),float(r[5]),float(r[6])]
             if not all(math.isfinite(x) for x in vals+probs): continue
+            scenario=json.loads(r[8] or "{}")
+            if scenario.get("production_mode") != "binance_primary": continue
             if r[3] not in CLASSES or min(probs)<0 or sum(probs)<=0: continue
             result.append({"id":r[0],"created":r[1],"ret":vals[0],"vol":vals[1],"y":r[3],"p":probs,"model_version":r[7]})
         except (TypeError,ValueError,KeyError,json.JSONDecodeError): continue

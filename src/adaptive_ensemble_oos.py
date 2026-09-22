@@ -15,10 +15,10 @@ for _path in (ROOT_DIR, SRC_DIR):
         sys.path.insert(0, str(_path))
 
 try:
-    from src.model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
+    from src.model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
     from src.ensemble_model import SoftVotingEnsemble
 except ModuleNotFoundError:
-    from model_compare import HORIZONS, load_rows, metrics, apply_temperature, _temperature
+    from model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
     from ensemble_model import SoftVotingEnsemble
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -244,7 +244,7 @@ def _evaluate_development(rows, horizon: str):
 
 
 def evaluate(horizon: str):
-    rows = load_rows(horizon)
+    rows = load_primary_production_strict_rows(horizon)
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
 

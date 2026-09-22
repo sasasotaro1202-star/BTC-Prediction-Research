@@ -48,15 +48,21 @@ def load_rows(horizon: str):
     pu, pd, pf = f"p_up_{horizon}", f"p_down_{horizon}", f"p_flat_{horizon}"
     with sqlite3.connect(DB) as con:
         raw = con.execute(
-            f"""SELECT prediction_id,created_at_utc,feature_json,{actual},{pu},{pd},{pf}
+            f"""SELECT prediction_id,created_at_utc,feature_json,{actual},{pu},{pd},{pf},scenario_json
                 FROM predictions
                 WHERE {actual} IS NOT NULL
                 ORDER BY created_at_utc,prediction_id"""
         ).fetchall()
 
     out = []
-    for rid, created, feature_json, y, up, down, flat in raw:
+    for rid, created, feature_json, y, up, down, flat, scenario_json in raw:
         if y not in CLASSES:
+            continue
+        try:
+            scenario = json.loads(scenario_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if scenario.get("production_mode") != "binance_primary":
             continue
         try:
             f = json.loads(feature_json or "{}")

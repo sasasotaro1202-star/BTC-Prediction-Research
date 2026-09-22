@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from model_compare import HORIZONS, load_rows
+from model_compare import HORIZONS, load_primary_production_strict_rows
 from context_model_oos import dynamic_route_predictions, evaluate_routing
 
 
@@ -80,7 +80,7 @@ def _test_endpoints(n_rows):
 
 
 def evaluate_horizon(horizon):
-    rows = load_rows(horizon)
+    rows = load_primary_production_strict_rows(horizon)
     if len(rows) < MIN_TRAIN + TEST_BLOCK:
         return {
             "status": "DEFERRED",

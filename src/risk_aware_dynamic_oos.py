@@ -17,7 +17,7 @@ SRC_DIR = Path(__file__).resolve().parent
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from model_compare import HORIZONS, load_rows, metrics
+from model_compare import HORIZONS, load_primary_production_strict_rows, metrics
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -216,7 +216,7 @@ def _block_logloss(y, p):
 
 
 def evaluate(horizon: str):
-    rows = load_rows(horizon)
+    rows = load_primary_production_strict_rows(horizon)
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
     if len(rows) < MIN_TRAIN + TEST_BLOCK + 100:
