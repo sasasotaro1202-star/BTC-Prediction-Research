@@ -32,11 +32,15 @@ jobs:
           set -euo pipefail
           python -m pip install --retries 5 --timeout 60             "numpy>=2.0,<3"             "scikit-learn>=1.5,<2"             "joblib>=1.4,<2"
       - name: Compile and test
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}/scripts
         run: |
           set -euo pipefail
           python -m compileall -q src tests scripts
           python -m unittest -q tests/test_coinbase_fallback_model_zoo_oos.py
       - name: Run fresh Coinbase OOS model zoo
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}/scripts
         run: |
           set -euo pipefail
           python src/coinbase_fallback_model_zoo_oos.py
