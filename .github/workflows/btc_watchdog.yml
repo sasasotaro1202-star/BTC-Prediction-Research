@@ -116,4 +116,10 @@ jobs:
           # The 9H marathon is intentionally long-running; only recover it when
           # there is no active run and no completed run for 12 hours.
           recover_if_stale btc_9h_research_marathon.yml 43200
+          # Research-only model/feature lanes are recoverable independently.
+          # They never mutate production artifacts.
+          recover_if_stale btc_selective_research.yml 21600
+          recover_if_stale btc_hierarchical_research.yml 21600
+          recover_if_stale btc_microstructure_research.yml 21600
+          recover_if_stale btc_time_regime_research.yml 21600
           echo 'BTC workflow watchdog completed without masking core workflow results.'
