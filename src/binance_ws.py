@@ -217,33 +217,47 @@ def taker_imbalance(rows: list[dict[str, Any]], window: int = 5) -> tuple[float,
 
 
 async def _collect_url(url: str, timeout_seconds: float, parser) -> list[dict[str, Any]]:
+    """Collect with bounded reconnects so transient WS breaks do not end the window."""
     deadline = time.monotonic() + float(timeout_seconds)
     out: list[dict[str, Any]] = []
-    try:
-        async with websockets.connect(
-            url,
-            ping_interval=20,
-            ping_timeout=10,
-            open_timeout=10,
-            close_timeout=5,
-            max_size=2_000_000,
-        ) as ws:
-            while time.monotonic() < deadline:
-                remaining = max(0.25, deadline - time.monotonic())
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
-                except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
-                    break
-                received_ms = int(time.time() * 1000)
-                try:
-                    msg = json.loads(raw)
-                except (TypeError, ValueError):
-                    continue
-                parsed = parser(msg, received_ms)
-                if parsed is not None:
-                    out.append(parsed)
-    except Exception:
-        return out
+    reconnects = 0
+    while time.monotonic() < deadline and reconnects <= 8:
+        try:
+            async with websockets.connect(
+                url,
+                ping_interval=20,
+                ping_timeout=10,
+                open_timeout=10,
+                close_timeout=5,
+                max_size=2_000_000,
+            ) as ws:
+                while time.monotonic() < deadline:
+                    remaining = max(0.25, deadline - time.monotonic())
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        break
+                    except websockets.exceptions.ConnectionClosed:
+                        break
+                    received_ms = int(time.time() * 1000)
+                    try:
+                        msg = json.loads(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    parsed = parser(msg, received_ms)
+                    if parsed is not None:
+                        out.append(parsed)
+        except Exception:
+            reconnects += 1
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(min(1.5, max(0.1, deadline - time.monotonic())))
+            continue
+        # A normal close can still leave time in the capture window; reconnect
+        # rather than assuming the first session was continuous.
+        reconnects += 1
+        if time.monotonic() < deadline:
+            await asyncio.sleep(min(0.5, max(0.1, deadline - time.monotonic())))
     return out
 
 
