@@ -143,7 +143,7 @@ class TestPITOOSAudit(unittest.TestCase):
                         "retrieved_at": at,
                         "prediction_cutoff": at,
                         "sources": {
-                            "coinbase_futures": {
+                            "binance_futures": {
                                 "status": "ok",
                                 "event_time": at,
                                 "available_at": at,
@@ -155,13 +155,15 @@ class TestPITOOSAudit(unittest.TestCase):
                 }
                 rows.append((i + 1, at, (created + timedelta(minutes=5, milliseconds=i + 1)).isoformat(),
                              (created + timedelta(minutes=10, milliseconds=i + 1)).isoformat(),
-                             "coinbase_fallback.rf.v1", json.dumps(scenario)))
+                             "v1", json.dumps(scenario)))
             db = self.make_db(td, rows)
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
                 self.assertTrue(result["pit_verified"])
                 self.assertEqual(result["verified_predictions"], pit_oos_audit.MIN_STRICT_PIT_ROWS)
+                self.assertEqual(result["verified_primary_predictions"], pit_oos_audit.MIN_STRICT_PIT_ROWS)
+                self.assertEqual(result["verified_fallback_predictions"], 0)
 
     def test_accepts_provenance_cutoff_as_decision_time(self):
         with tempfile.TemporaryDirectory() as td:
