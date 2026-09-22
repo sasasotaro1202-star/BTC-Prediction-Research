@@ -103,7 +103,7 @@ class MicrostructureOOSTests(unittest.TestCase):
         scenario["data_quality"].pop("binance_taker_window_transport", None)
         self.assertIsNone(_market_flow_from_scenario(scenario, created_at="2026-09-22T00:01:00+00:00"))
 
-    def test_market_flow_v2_rejects_missing_window_timing(self):
+    def test_cross_venue_requires_all_secondary_fields(self):
         values = _micro_from_scenario(self._scenario(), cross_venue=True)
         self.assertEqual(set(values), set(BINANCE_MICRO + CROSS_VENUE))
         scenario = self._scenario()
