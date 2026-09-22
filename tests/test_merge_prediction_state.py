@@ -163,7 +163,7 @@ class TestMergePredictionState(unittest.TestCase):
             row_same = common + (None, None, None, None, None, None, None, None)
             row_model = ('2026-09-15T10:00:00+00:00', common[1], common[2], 100.0,
                          .5, .2, .3, .5, .2, .3, 'v2', '{"ret_1m":0.1}', '{}',
-                         None, None, None, None, None, None, None, None, None)
+                         None, None, None, None, None, None, None, None)
             make_db(target, [row_same, row_model])
             subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
             con = sqlite3.connect(target)
