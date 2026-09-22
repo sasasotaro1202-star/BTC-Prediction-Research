@@ -1,12 +1,116 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 
-if len(sys.argv) != 3:
-    raise SystemExit('usage: merge_prediction_state.py LOCAL_DB TARGET_DB')
+SETTLEMENT_COLUMNS = (
+    'actual_price_5m', 'actual_direction_5m', 'correct_5m', 'settled_5m_at_utc',
+    'actual_price_10m', 'actual_direction_10m', 'correct_10m', 'settled_10m_at_utc',
+)
 
-local_path, target_path = sys.argv[1:]
+
+def prediction_identity(row):
+    """Immutable identity for one prediction event.
+
+    Settlement fields are mutable and excluded. Distinct model versions or
+    probability emissions are distinct prediction events even when timestamps
+    and features match.
+    """
+    try:
+        features = json.dumps(
+            json.loads(row.get('feature_json') or '{}'),
+            sort_keys=True,
+            separators=(',', ':'),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        features = str(row.get('feature_json'))
+    values = (
+        str(row.get('created_at_utc')),
+        str(row.get('target_5m')),
+        str(row.get('target_10m')),
+        str(row.get('model_version')),
+        features,
+        row.get('p_up_5m'),
+        row.get('p_down_5m'),
+        row.get('p_flat_5m'),
+        row.get('p_up_10m'),
+        row.get('p_down_10m'),
+        row.get('p_flat_10m'),
+    )
+    return values
+
+
+def settlement_score(row):
+    present = sum(row.get(c) is not None for c in SETTLEMENT_COLUMNS)
+    latest = max(
+        str(row.get('settled_5m_at_utc') or ''),
+        str(row.get('settled_10m_at_utc') or ''),
+    )
+    return (present, latest, -int(row['rowid']))
+
+
+def compact_predictions(con):
+    """Collapse only exact immutable duplicate events and preserve settlement state."""
+    info = con.execute('PRAGMA table_info(predictions)').fetchall()
+    if not info:
+        return {'compacted_duplicates': 0, 'total_events': 0}
+    cols = [r[1] for r in info]
+    names = ','.join('"' + c + '"' for c in cols)
+    rows = con.execute(f'SELECT rowid, {names} FROM predictions').fetchall()
+    groups = {}
+    for item in rows:
+        row = dict(zip(['rowid'] + cols, item))
+        groups.setdefault(prediction_identity(row), []).append(row)
+
+    compacted = 0
+    for group in groups.values():
+        if len(group) <= 1:
+            continue
+        survivor = max(group, key=settlement_score)
+        duplicate_ids = []
+        for candidate in group:
+            if candidate['rowid'] == survivor['rowid']:
+                continue
+            duplicate_ids.append(candidate['rowid'])
+            for c in SETTLEMENT_COLUMNS:
+                if survivor.get(c) is None and candidate.get(c) is not None:
+                    survivor[c] = candidate[c]
+
+        updates = {c: survivor.get(c) for c in SETTLEMENT_COLUMNS if survivor.get(c) is not None}
+        if updates:
+            set_clause = ','.join(f'"{c}"=?' for c in updates)
+            con.execute(
+                f'UPDATE predictions SET {set_clause} WHERE rowid=?',
+                [updates[c] for c in updates] + [survivor['rowid']],
+            )
+        if duplicate_ids:
+            placeholders = ','.join('?' for _ in duplicate_ids)
+            con.execute(f'DELETE FROM predictions WHERE rowid IN ({placeholders})', duplicate_ids)
+            compacted += len(duplicate_ids)
+
+    result = {'compacted_duplicates': compacted, 'total_events': len(groups)}
+    print(json.dumps({'prediction-state compaction': result}, sort_keys=True))
+    return result
+
+
+def _merge_mode():
+    return len(sys.argv) == 3 and sys.argv[1] == '--compact'
+
+
+if _merge_mode():
+    target_path = sys.argv[2]
+    con = sqlite3.connect(target_path)
+    try:
+        result = compact_predictions(con)
+        con.commit()
+    finally:
+        con.close()
+    if result['compacted_duplicates'] >= 0:
+        print('prediction-state compaction: OK')
+    raise SystemExit(0)
+
 
 # Conflict recovery can run this merge repeatedly. Auto-increment IDs are not
 # logical identity. Prediction settlement fields are mutable, so they must not
