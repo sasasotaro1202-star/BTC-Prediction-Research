@@ -15,7 +15,7 @@ class PromotionGateTests(unittest.TestCase):
         }
 
     def _pit(self):
-        return {"ok": True, "pit_verified": True, "checked_predictions": 100, "verified_predictions": 300, "min_strict_pit_rows": 300, "violation_count": 0}
+        return {"ok": True, "pit_verified": True, "checked_predictions": 100, "verified_predictions": 300, "verified_primary_predictions": 300, "verified_fallback_predictions": 0, "min_strict_pit_rows": 300, "violation_count": 0}
 
     def _cal(self):
         return {
@@ -39,6 +39,7 @@ class PromotionGateTests(unittest.TestCase):
     def test_pit_verified_below_strict_minimum_blocks_promotion(self):
         pit = self._pit().copy()
         pit["verified_predictions"] = 299
+        pit["verified_primary_predictions"] = 299
         result = evaluate_promotion(
             {"status": "PASS"},
             self._robust(),
