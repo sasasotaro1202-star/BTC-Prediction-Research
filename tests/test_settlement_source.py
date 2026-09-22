@@ -50,6 +50,24 @@ class TestSettlementSource(unittest.TestCase):
             self.assertIsNone(ss._target_from_ws_cache(rows, 1000))
             self.assertIsNone(ss._target_from_ws_cache(rows, 2000))
 
+    def test_daily_archive_target_is_used_before_rest_for_prior_day(self):
+        start_ms = 1726394700000
+        rows = {start_ms: 102.75}
+        with patch.object(ss, '_daily_archive_rows', return_value=rows), \
+             patch.object(ss, '_target_binance', side_effect=AssertionError("REST should not be called")):
+            price, source = ss.target_close_preferred(
+                '2024-09-15T10:06:00+00:00', 'binance_futures'
+            )
+        self.assertEqual(price, 102.75)
+        self.assertEqual(source, 'binance_daily_archive')
+
+    def test_daily_archive_cache_is_used_once_per_day(self):
+        rows = {1726394700000: 102.75, 1726394760000: 102.80}
+        with patch.object(ss, '_daily_archive_rows', return_value=rows) as loader:
+            self.assertEqual(ss._target_binance_daily_archive(1726394700000), 102.75)
+            self.assertEqual(ss._target_binance_daily_archive(1726394760000), 102.80)
+        loader.assert_called_once()
+
     def test_binance_target_is_used(self):
         with patch.object(ss, '_target_binance', return_value=102.0) as binance:
             price, source = ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'binance_futures')
