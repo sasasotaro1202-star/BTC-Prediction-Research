@@ -26,6 +26,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Load latest Binance WebSocket cache from dedicated state branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin binance-ws-cache
+          mkdir -p data
+          git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))
+          if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('invalid Binance WebSocket cache provenance')
+          rows=obj.get('rows')
+          if not isinstance(rows,list):
+              raise SystemExit('Binance WebSocket cache rows malformed')
+          print(f'Loaded Binance WebSocket cache rows={len(rows)}')
+          PY
+
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'

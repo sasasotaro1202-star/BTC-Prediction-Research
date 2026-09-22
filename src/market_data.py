@@ -1,16 +1,19 @@
 """BTC-only resilient public market-data adapters for GitHub Actions."""
 from __future__ import annotations
-import csv, io, json, time, zipfile, math
+import asyncio, csv, io, json, time, zipfile, math
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone, timedelta
+from binance_ws import capture_closed_klines, contiguous_suffix as ws_contiguous_suffix, load_cache as load_binance_ws_cache
 
 UA = "BTC-Prediction-Research/8.0"
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "historical_research" / "btc_bootstrap_1m.json"
 CACHE_MAX_AGE_MS = 15 * 60 * 1000
+BINANCE_WS_CACHE = ROOT / "data" / "binance_ws_1m.json"
+BINANCE_WS_MAX_AGE_MS = 180 * 1000
 
 
 def http_json(url: str, timeout: int = 12):
@@ -164,6 +167,47 @@ def cache_rows(limit=120):
         return [], "", None, False
 
 
+def _ws_series_rows(rows):
+    return [
+        [
+            int(r["open_time_ms"]),
+            float(r["open"]),
+            float(r["high"]),
+            float(r["low"]),
+            float(r["close"]),
+            float(r["volume"]),
+            float(r["taker_buy_base"]),
+            int(r["event_time_ms"]),
+            int(r["retrieved_at_ms"]),
+        ]
+        for r in rows
+    ]
+
+
+def _fresh_ws_suffix(rows, minimum: int = 40):
+    suffix = ws_contiguous_suffix(rows, minimum=minimum)
+    if not suffix:
+        return []
+    now_ms = int(time.time() * 1000)
+    latest = suffix[-1]
+    retrieved = int(latest.get("retrieved_at_ms", latest["open_time_ms"]))
+    return suffix if now_ms - retrieved <= BINANCE_WS_MAX_AGE_MS else []
+
+
+def _capture_ws_suffix(existing, timeout_seconds: float = 62.0):
+    incoming = []
+    try:
+        incoming = asyncio.run(capture_closed_klines(timeout_seconds))
+    except Exception:
+        incoming = []
+    if not incoming:
+        return _fresh_ws_suffix(existing, 40)
+    by_open = {int(row["open_time_ms"]): row for row in existing}
+    by_open.update({int(row["open_time_ms"]): row for row in incoming})
+    merged = [by_open[key] for key in sorted(by_open)]
+    return _fresh_ws_suffix(merged, 40)
+
+
 def resilient_1m_series(limit: int = 120):
     status = {}
     try:
@@ -219,7 +263,27 @@ def resilient_1m_series(limit: int = 120):
         spot = []
         status["binance_spot"] = f"error:{_error_label(e)}"
 
-    if len(fut) < 40 and len(by) >= 40:
+    # When Binance REST is unavailable, recover the SAME Binance Futures
+    # product through its public WebSocket market stream. This is not a venue
+    # substitution: the source remains Binance and every cached bar keeps its
+    # exchange event time plus local receipt time for PIT auditing.
+    if len(fut) < 40:
+        ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
+        ws_suffix = _fresh_ws_suffix(ws_cache, 40)
+        if not ws_suffix:
+            ws_suffix = _capture_ws_suffix(ws_cache, 62.0)
+        if len(ws_suffix) >= 40:
+            fut = _ws_series_rows(ws_suffix[-limit:])
+            status["binance_futures"] = "ok"
+            status["binance_futures_transport"] = "websocket"
+            status["binance_futures_ws_event_time_ms"] = int(ws_suffix[-1]["event_time_ms"])
+            status["binance_futures_ws_retrieved_at_ms"] = int(ws_suffix[-1]["retrieved_at_ms"])
+        else:
+            status["binance_futures_ws_contiguous_rows"] = len(ws_suffix)
+
+    if len(fut) >= 40 and status.get("binance_futures_transport") == "websocket":
+        status["price_feature_fallback"] = "none"
+    elif len(fut) < 40 and len(by) >= 40:
         fut = by
         status["price_feature_fallback"] = "bybit"
     elif len(fut) < 40:

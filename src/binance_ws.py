@@ -1,0 +1,305 @@
+"""Free Binance USD-M Futures WebSocket helpers with strict closed-bar handling.
+
+This module is deliberately transport-only. It never invents missing observations:
+- kline rows are accepted only when Binance marks them closed;
+- every row keeps the exchange event time and local receipt time;
+- depth is a bounded partial-book snapshot (20 levels);
+- mark price keeps Binance's event time and reported funding rate;
+- persisted cache contains only Binance WebSocket observations.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import math
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import websockets
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CACHE = ROOT / "data" / "binance_ws_1m.json"
+KLINE_URL = "wss://fstream.binance.com/market/ws/btcusdt@kline_1m"
+DEPTH_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms"
+MARK_URL = "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s"
+SCHEMA_VERSION = 1
+MAX_CACHE_ROWS = 720
+
+
+def utc_iso_from_ms(value: int) -> str:
+    return datetime.fromtimestamp(int(value) / 1000, timezone.utc).isoformat()
+
+
+def _unwrap(message: Any) -> dict[str, Any]:
+    if not isinstance(message, dict):
+        return {}
+    data = message.get("data")
+    return data if isinstance(data, dict) else message
+
+
+def parse_kline_message(message: Any, received_at_ms: int | None = None) -> dict[str, Any] | None:
+    data = _unwrap(message)
+    if data.get("e") != "kline":
+        return None
+    k = data.get("k")
+    if not isinstance(k, dict) or k.get("i") != "1m" or k.get("x") is not True:
+        return None
+    try:
+        row = {
+            "open_time_ms": int(k["t"]),
+            "open": float(k["o"]),
+            "high": float(k["h"]),
+            "low": float(k["l"]),
+            "close": float(k["c"]),
+            "volume": float(k["v"]),
+            "taker_buy_base": float(k["V"]),
+            "event_time_ms": int(data["E"]),
+            "retrieved_at_ms": int(received_at_ms if received_at_ms is not None else time.time() * 1000),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    vals = [row["open"], row["high"], row["low"], row["close"], row["volume"], row["taker_buy_base"]]
+    if not all(math.isfinite(float(v)) for v in vals):
+        return None
+    if min(row["open"], row["high"], row["low"], row["close"]) <= 0 or row["volume"] < 0:
+        return None
+    if not (row["low"] <= min(row["open"], row["close"]) <= max(row["open"], row["close"]) <= row["high"]):
+        return None
+    if row["taker_buy_base"] < 0 or row["taker_buy_base"] > row["volume"] + 1e-9:
+        return None
+    if row["event_time_ms"] < row["open_time_ms"]:
+        return None
+    return row
+
+
+def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict[str, Any] | None:
+    data = _unwrap(message)
+    bids = data.get("bids")
+    asks = data.get("asks")
+    if not isinstance(bids, list) or not isinstance(asks, list) or not bids or not asks:
+        return None
+    clean_bids: list[list[float]] = []
+    clean_asks: list[list[float]] = []
+    try:
+        for side, out in ((bids, clean_bids), (asks, clean_asks)):
+            for level in side[:20]:
+                price, qty = float(level[0]), float(level[1])
+                if not (math.isfinite(price) and math.isfinite(qty) and price > 0 and qty >= 0):
+                    return None
+                out.append([price, qty])
+    except (TypeError, ValueError, IndexError):
+        return None
+    if not clean_bids or not clean_asks:
+        return None
+    if clean_bids[0][0] > clean_asks[0][0]:
+        return None
+    return {
+        "bids": clean_bids,
+        "asks": clean_asks,
+        "last_update_id": int(data.get("lastUpdateId", 0)),
+        "retrieved_at_ms": int(received_at_ms if received_at_ms is not None else time.time() * 1000),
+    }
+
+
+def parse_mark_price_message(message: Any, received_at_ms: int | None = None) -> dict[str, Any] | None:
+    data = _unwrap(message)
+    if data.get("e") != "markPriceUpdate":
+        return None
+    try:
+        event_time_ms = int(data["E"])
+        mark_price = float(data["p"])
+        funding_rate = float(data["r"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in (mark_price, funding_rate)) or mark_price <= 0:
+        return None
+    return {
+        "mark_price": mark_price,
+        "funding_rate": funding_rate,
+        "event_time_ms": event_time_ms,
+        "retrieved_at_ms": int(received_at_ms if received_at_ms is not None else time.time() * 1000),
+    }
+
+
+def row_to_market_data(row: dict[str, Any]) -> list[float | int]:
+    return [
+        int(row["open_time_ms"]),
+        float(row["open"]),
+        float(row["high"]),
+        float(row["low"]),
+        float(row["close"]),
+        float(row["volume"]),
+    ]
+
+
+def load_cache(path: Path = DEFAULT_CACHE, limit: int = MAX_CACHE_ROWS) -> list[dict[str, Any]]:
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        return []
+    rows = obj.get("rows") if isinstance(obj, dict) else None
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            normalized = {
+                "open_time_ms": int(row["open_time_ms"]),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+                "taker_buy_base": float(row["taker_buy_base"]),
+                "event_time_ms": int(row["event_time_ms"]),
+                "retrieved_at_ms": int(row["retrieved_at_ms"]),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        if parse_kline_message({"e": "kline", "E": normalized["event_time_ms"], "k": {
+            "t": normalized["open_time_ms"], "o": normalized["open"], "h": normalized["high"],
+            "l": normalized["low"], "c": normalized["close"], "v": normalized["volume"],
+            "V": normalized["taker_buy_base"], "i": "1m", "x": True,
+        }}, normalized["retrieved_at_ms"]) is not None:
+            out.append(normalized)
+    out.sort(key=lambda r: r["open_time_ms"])
+    dedup = {r["open_time_ms"]: r for r in out}
+    return list(sorted(dedup.values(), key=lambda r: r["open_time_ms"]))[-int(limit):]
+
+
+def merge_cache(
+    existing: list[dict[str, Any]],
+    incoming: list[dict[str, Any]],
+    max_rows: int = MAX_CACHE_ROWS,
+) -> list[dict[str, Any]]:
+    merged = {int(r["open_time_ms"]): r for r in existing if isinstance(r, dict)}
+    for row in incoming:
+        if isinstance(row, dict):
+            merged[int(row["open_time_ms"])] = row
+    return [merged[k] for k in sorted(merged)[-int(max_rows):]]
+
+
+def contiguous_suffix(rows: list[dict[str, Any]], minimum: int = 40) -> list[dict[str, Any]]:
+    ordered = sorted(rows, key=lambda r: int(r["open_time_ms"]))
+    if not ordered:
+        return []
+    start = len(ordered) - 1
+    while start > 0 and int(ordered[start]["open_time_ms"]) - int(ordered[start - 1]["open_time_ms"]) == 60_000:
+        start -= 1
+    suffix = ordered[start:]
+    return suffix if len(suffix) >= int(minimum) else []
+
+
+def taker_imbalance(rows: list[dict[str, Any]], window: int = 5) -> tuple[float, int] | None:
+    suffix = contiguous_suffix(rows, minimum=window)
+    if len(suffix) < window:
+        return None
+    suffix = suffix[-window:]
+    total = 0.0
+    buy = 0.0
+    latest_event = 0
+    for row in suffix:
+        volume = float(row["volume"])
+        taker_buy = float(row["taker_buy_base"])
+        if volume <= 0 or taker_buy < 0 or taker_buy > volume + 1e-9:
+            return None
+        total += volume
+        buy += taker_buy
+        latest_event = max(latest_event, int(row["event_time_ms"]))
+    if total <= 0:
+        return None
+    return (2.0 * buy / total - 1.0, latest_event)
+
+
+async def _collect_url(url: str, timeout_seconds: float, parser) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + float(timeout_seconds)
+    out: list[dict[str, Any]] = []
+    try:
+        async with websockets.connect(
+            url,
+            ping_interval=20,
+            ping_timeout=10,
+            open_timeout=10,
+            close_timeout=5,
+            max_size=2_000_000,
+        ) as ws:
+            while time.monotonic() < deadline:
+                remaining = max(0.25, deadline - time.monotonic())
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+                    break
+                received_ms = int(time.time() * 1000)
+                try:
+                    msg = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                parsed = parser(msg, received_ms)
+                if parsed is not None:
+                    out.append(parsed)
+    except Exception:
+        return out
+    return out
+
+
+async def capture_closed_klines(timeout_seconds: float = 62.0) -> list[dict[str, Any]]:
+    return await _collect_url(KLINE_URL, timeout_seconds, parse_kline_message)
+
+
+async def capture_depth_snapshot(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
+    rows = await _collect_url(DEPTH_URL, timeout_seconds, parse_depth_message)
+    return rows[-1] if rows else None
+
+
+async def capture_mark_price(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
+    rows = await _collect_url(MARK_URL, timeout_seconds, parse_mark_price_message)
+    return rows[-1] if rows else None
+
+
+def write_cache(rows: list[dict[str, Any]], path: Path = DEFAULT_CACHE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "source": "Binance USD-M Futures WebSocket",
+        "stream": "btcusdt@kline_1m",
+        "rows": rows[-MAX_CACHE_ROWS:],
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+
+
+async def collect_forever_window(timeout_seconds: float, path: Path) -> dict[str, Any]:
+    existing = load_cache(path)
+    incoming = await capture_closed_klines(timeout_seconds)
+    merged = merge_cache(existing, incoming)
+    write_cache(merged, path)
+    suffix = contiguous_suffix(merged, minimum=40)
+    latest = merged[-1] if merged else None
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "captured_rows": len(incoming),
+        "cache_rows": len(merged),
+        "contiguous_rows": len(suffix),
+        "latest_open_time_ms": latest["open_time_ms"] if latest else None,
+        "latest_event_time_ms": latest["event_time_ms"] if latest else None,
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--capture-seconds", type=float, default=280.0)
+    parser.add_argument("--output", type=Path, default=DEFAULT_CACHE)
+    args = parser.parse_args()
+    result = asyncio.run(collect_forever_window(args.capture_seconds, args.output))
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
