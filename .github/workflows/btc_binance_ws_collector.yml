@@ -21,9 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
+      # Execute the collector from the code-bearing main tree. The dedicated
+      # cache branch intentionally stores only the rolling cache artifact.
       - uses: actions/checkout@v7
         with:
-          ref: binance-ws-cache
+          ref: main
 
       - uses: actions/setup-python@v7
         with:
@@ -32,39 +34,77 @@ jobs:
       - name: Install free WebSocket dependency
         run: python -m pip install --disable-pip-version-check 'websockets>=15,<16'
 
+      - name: Load existing dedicated cache branch when available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s src/binance_ws.py
+          rm -f data/binance_ws_1m.json
+          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null; then
+              echo 'Loaded prior Binance WS cache from dedicated state branch.'
+            else
+              echo 'Dedicated cache branch exists but contains no valid cache file yet.'
+              rm -f data/binance_ws_1m.json
+            fi
+          else
+            echo 'Dedicated cache branch unavailable; starting a fresh cache.'
+          fi
+
       - name: Capture Binance USD-M closed 1m bars
-        run: python -m src.binance_ws --capture-seconds 280 --output data/binance_ws_1m.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m src.binance_ws --capture-seconds 280 --output data/binance_ws_1m.json
+          cp data/binance_ws_1m.json /tmp/binance_ws_1m.json
 
       - name: Validate captured cache and capture state
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, subprocess
+          import json
           from pathlib import Path
-          p=Path('data/binance_ws_1m.json')
+          p=Path('/tmp/binance_ws_1m.json')
           obj=json.loads(p.read_text(encoding='utf-8'))
-          if obj.get('schema_version') != 1: raise SystemExit('invalid WS cache schema')
-          if obj.get('source') != 'Binance USD-M Futures WebSocket': raise SystemExit('invalid WS cache source')
+          if obj.get('schema_version') != 1:
+              raise SystemExit('invalid WS cache schema')
+          if obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('invalid WS cache source')
+          if obj.get('stream') != 'btcusdt@kline_1m':
+              raise SystemExit('invalid WS cache stream')
           rows=obj.get('rows')
-          if not isinstance(rows,list): raise SystemExit('WS cache rows missing')
+          if not isinstance(rows,list):
+              raise SystemExit('WS cache rows missing')
+          if not rows:
+              raise SystemExit('Binance WebSocket collector produced no usable closed bars')
+          for row in rows:
+              if not isinstance(row,dict):
+                  raise SystemExit('WS cache row is not an object')
+              for key in ('open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base'):
+                  if key not in row:
+                      raise SystemExit(f'WS cache row missing {key}')
           print(json.dumps({
               'collector_state': 'EXECUTED',
               'cache_rows': len(rows),
-              'latest_open_time_ms': rows[-1]['open_time_ms'] if rows else None,
+              'latest_open_time_ms': rows[-1]['open_time_ms'],
               'updated_at_utc': obj.get('updated_at_utc'),
           }, sort_keys=True))
-          if not rows:
-              raise SystemExit('Binance WebSocket collector produced no usable closed bars')
           PY
 
-      - name: Check cache diff
+      - name: Check captured cache diff
         run: git diff --check
 
-      - name: Commit and push WS cache
+      - name: Publish rolling cache to dedicated state branch
         shell: bash
         run: |
           set -euo pipefail
+          cp /tmp/binance_ws_1m.json /tmp/publish_ws_cache.json
+          git fetch --no-tags origin binance-ws-cache
+          git checkout -B binance-ws-cache origin/binance-ws-cache
+          mkdir -p data
+          cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
+          git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -- data/binance_ws_1m.json
@@ -74,14 +114,21 @@ jobs:
           fi
           git commit -m 'Update Binance Futures WS cache'
           for attempt in 1 2 3 4; do
-            if timeout 60s git push origin HEAD:binance-ws-cache; then exit 0; fi
+            if timeout 60s git push origin HEAD:binance-ws-cache; then
+              exit 0
+            fi
+            echo "git push attempt ${attempt} failed; preserving freshly captured cache and rebuilding on origin/binance-ws-cache"
             git fetch --prune origin binance-ws-cache
             git reset --hard origin/binance-ws-cache
             git clean -fd
-            git show HEAD:data/binance_ws_1m.json > /tmp/ws_cache.json || true
-            if [ -s /tmp/ws_cache.json ]; then cp /tmp/ws_cache.json data/binance_ws_1m.json; fi
+            cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
             git add -- data/binance_ws_1m.json
-            git diff --cached --quiet || git commit -m 'Merge Binance Futures WS cache safely'
+            if git diff --cached --quiet; then
+              echo 'Cache became identical to origin/binance-ws-cache after refresh.'
+              exit 0
+            fi
+            git commit -m 'Merge Binance Futures WS cache safely'
             sleep $((3 * attempt))
           done
+          echo 'Binance WS cache push failed after all retries'
           exit 1
