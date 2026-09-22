@@ -94,6 +94,7 @@ jobs:
             workflow="$1"
             threshold="$2"
             active_grace="$3"
+            stale_head_grace="$4"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
             latest=$(printf "%s" "$response" | jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty')
@@ -113,7 +114,7 @@ jobs:
                 active_age=$((now - active_epoch))
                 stale_by_head=false
                 stale_by_age=false
-                if [ -n "$main_sha" ] && [ -n "$active_head" ] && [ "$active_head" != "$main_sha" ] && [ "$active_age" -ge "$threshold" ]; then
+                if [ -n "$main_sha" ] && [ -n "$active_head" ] && [ "$active_head" != "$main_sha" ] && [ "$active_age" -ge "$stale_head_grace" ]; then
                   stale_by_head=true
                 fi
                 if [ "$active_age" -ge "$active_grace" ]; then
@@ -132,7 +133,7 @@ jobs:
             latest_updated=$(printf "%s" "$latest" | jq -r '.updated_at // ""')
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
             age=$((now - latest_epoch))
-            echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s active_grace=${active_grace}s"
+            echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s"
             if [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
               echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
               if gh workflow enable "$workflow" >/dev/null 2>&1; then
@@ -152,30 +153,30 @@ jobs:
               fi
             fi
           }
-          recover_if_stale btc_live_cycle.yml 600 1800
-          recover_if_stale btc_pit_oos_audit.yml 7200 10800
+          recover_if_stale btc_live_cycle.yml 600 1800 600
+          recover_if_stale btc_pit_oos_audit.yml 7200 10800 7200
           # Keep the daily research lanes alive without dispatching duplicates
           # while an existing run is queued or in progress.
-          recover_if_stale btc_research.yml 21600 32400
-          recover_if_stale btc_interaction_research.yml 43200 64800
-          recover_if_stale btc_historical_research.yml 43200 64800
-          recover_if_stale btc_exogenous_research.yml 7200 10800
-          recover_if_stale btc_recency_research.yml 21600 32400
-          recover_if_stale btc_archive_refresh.yml 21600 32400
-          recover_if_stale btc_selective_research.yml 28800 43200
-          recover_if_stale btc_microstructure_research.yml 21600 32400
-          recover_if_stale btc_hierarchical_research.yml 21600 32400
+          recover_if_stale btc_research.yml 21600 32400 900
+          recover_if_stale btc_interaction_research.yml 43200 64800 900
+          recover_if_stale btc_historical_research.yml 43200 64800 900
+          recover_if_stale btc_exogenous_research.yml 7200 10800 900
+          recover_if_stale btc_recency_research.yml 21600 32400 900
+          recover_if_stale btc_archive_refresh.yml 21600 32400 900
+          recover_if_stale btc_selective_research.yml 28800 43200 900
+          recover_if_stale btc_microstructure_research.yml 21600 32400 900
+          recover_if_stale btc_hierarchical_research.yml 21600 32400 900
           # The 9H marathon is intentionally long-running; recover it only when
           # there is no active run and no completed run for 10 hours.
-          recover_if_stale btc_9h_research_marathon.yml 36000 39600
+          recover_if_stale btc_9h_research_marathon.yml 36000 39600 900
           # Research-only model/feature and maintenance lanes are recoverable
           # independently. They never mutate production probabilities directly.
-          recover_if_stale btc_rolling_challenger.yml 28800 43200
-          recover_if_stale btc_archive_primary_bridge.yml 21600 32400
-          recover_if_stale btc_canonical_state_compaction.yml 21600 32400
-          recover_if_stale btc_time_regime_research.yml 21600 32400
-          recover_if_stale btc_calibration_frozen_replay.yml 28800 43200
-          recover_if_stale btc_adaptive_calibration_replay.yml 28800 43200
-          recover_if_stale btc_multiscale_frozen_replay.yml 21600 32400
-          recover_if_stale btc_binance_ws_collector.yml 900 1800
+          recover_if_stale btc_rolling_challenger.yml 28800 43200 900
+          recover_if_stale btc_archive_primary_bridge.yml 21600 32400 900
+          recover_if_stale btc_canonical_state_compaction.yml 21600 32400 900
+          recover_if_stale btc_time_regime_research.yml 21600 32400 900
+          recover_if_stale btc_calibration_frozen_replay.yml 28800 43200 900
+          recover_if_stale btc_adaptive_calibration_replay.yml 28800 43200 900
+          recover_if_stale btc_multiscale_frozen_replay.yml 21600 32400 900
+          recover_if_stale btc_binance_ws_collector.yml 900 1800 900
           echo 'BTC workflow watchdog completed without masking core workflow results.'
