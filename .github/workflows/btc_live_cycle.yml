@@ -78,6 +78,7 @@ jobs:
             tests/test_settlement_source.py
             tests/test_state_archive.py
             tests/test_merge_prediction_state.py
+            tests/test_prediction_state_guard.py
           )
           for test_file in "${tests[@]}"; do
             test -s "${test_file}" || { echo "Missing production guard test: ${test_file}" >&2; exit 1; }
@@ -143,6 +144,33 @@ jobs:
           exit 1
       - name: Fail closed on incomplete live prediction inputs
         run: python src/live_data_fail_closed.py
+      - name: Snapshot exact immutable event count before compaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          from scripts.merge_prediction_state import expected_compacted_event_count
+          db = Path('data/predictions.db')
+          if not db.exists():
+              Path('/tmp/btc_live_compaction_before.json').write_text(
+                  json.dumps({'count': 0, 'expected_exact_unique_events': 0}, sort_keys=True),
+                  encoding='utf-8'
+              )
+              raise SystemExit(0)
+          with sqlite3.connect(db) as con:
+              expected = expected_compacted_event_count(con)
+              total = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+          Path('/tmp/btc_live_compaction_before.json').write_text(
+              json.dumps(
+                  {'count': int(total), 'expected_exact_unique_events': int(expected)},
+                  sort_keys=True
+              ),
+              encoding='utf-8'
+          )
+          print(Path('/tmp/btc_live_compaction_before.json').read_text())
+          PY
       - name: Compact exact immutable BTC prediction events before audits
         shell: bash
         run: |
@@ -152,6 +180,28 @@ jobs:
           else
             echo 'No prediction DB to compact on this cycle.'
           fi
+      - name: Verify exact compaction cardinality
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          before = json.loads(Path('/tmp/btc_live_compaction_before.json').read_text(encoding='utf-8'))
+          db = Path('data/predictions.db')
+          with sqlite3.connect(db) as con:
+              after = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+          expected = int(before['expected_exact_unique_events'])
+          if int(after) != expected:
+              raise SystemExit(
+                  f'live compaction cardinality mismatch: before={before["count"]} '
+                  f'expected={expected} after={after}'
+              )
+          print(
+              f'live compaction cardinality verified: before={before["count"]} '
+              f'exact_unique={expected} after={after}'
+          )
+          PY
       - name: Run non-fatal BTC research health audit
         run: python src/research_health.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
