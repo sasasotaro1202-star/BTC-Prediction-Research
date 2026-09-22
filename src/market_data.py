@@ -1,6 +1,7 @@
 """BTC-only resilient public market-data adapters for GitHub Actions."""
 from __future__ import annotations
 import asyncio, csv, io, json, time, zipfile, math
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -208,16 +209,45 @@ def _capture_ws_suffix(existing, timeout_seconds: float = 62.0):
     return _fresh_ws_suffix(merged, 40)
 
 
+def _parallel_result_calls(calls):
+    """Run independent public market-data calls concurrently.
+
+    Each callable keeps its own bounded retry/timeout behavior. A failed source
+    returns an exception object so the caller can apply the existing fail-closed
+    fallback policy without conflating source failures.
+    """
+    if not calls:
+        return {}
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(3, len(calls))) as pool:
+        future_map = {pool.submit(fn): key for key, fn in calls.items()}
+        for future, key in ((f, future_map[f]) for f in future_map):
+            try:
+                results[key] = future.result()
+            except Exception as exc:
+                results[key] = exc
+    return results
+
+
 def resilient_1m_series(limit: int = 120):
     status = {}
+
+    parallel = _parallel_result_calls({
+        "bybit": lambda: closed_bybit(bybit_klines(limit)),
+        "binance_futures": lambda: closed_binance(binance_klines(False, limit)),
+        "binance_spot": lambda: closed_binance(binance_klines(True, limit)),
+    })
+
+    by = []
+    by_current = None
     try:
-        by_raw = closed_bybit(bybit_klines(limit))
+        payload = parallel["bybit"]
+        if isinstance(payload, Exception):
+            raise payload
+        by_raw = payload
         by = _latest_contiguous_suffix(by_raw, 40)
         by_current = _latest_row(by_raw)
-        # The production predictor uses Bybit only for the current cross-exchange
-        # price when contiguous history is unavailable. If kline data is empty or
-        # fragmented, obtain the current linear ticker once here and carry it forward
-        # so predict.py never needs a second network call.
+        # If kline data is empty/fragmented, obtain the current linear ticker once.
         if not by_current:
             try:
                 ticker = bybit_mark_price()
@@ -233,10 +263,6 @@ def resilient_1m_series(limit: int = 120):
         if not by and by_current:
             by = [by_current]
     except Exception as e:
-        # If Bybit's kline endpoint is temporarily unavailable, obtain the
-        # current linear-market price once and carry it forward to the caller.
-        # This keeps the production path single-fetch and avoids a second
-        # network dependency inside predict.py.
         by = []
         by_current = None
         try:
@@ -250,23 +276,25 @@ def resilient_1m_series(limit: int = 120):
         except Exception:
             by_current = None
         status["bybit_futures"] = "ok_current_only" if by_current else f"error:{_error_label(e)}"
-    try:
-        fut = _latest_contiguous_suffix(closed_binance(binance_klines(False, limit)), 40)
-        status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
-    except Exception as e:
-        fut = []
-        status["binance_futures"] = f"error:{_error_label(e)}"
-    try:
-        spot = _latest_contiguous_suffix(closed_binance(binance_klines(True, limit)), 40)
-        status["binance_spot"] = "ok" if spot else "non_contiguous_or_insufficient"
-    except Exception as e:
-        spot = []
-        status["binance_spot"] = f"error:{_error_label(e)}"
 
-    # When Binance REST is unavailable, recover the SAME Binance Futures
-    # product through its public WebSocket market stream. This is not a venue
-    # substitution: the source remains Binance and every cached bar keeps its
-    # exchange event time plus local receipt time for PIT auditing.
+    fut = []
+    fut_error = parallel.get("binance_futures")
+    if isinstance(fut_error, Exception):
+        status["binance_futures"] = f"error:{_error_label(fut_error)}"
+    else:
+        fut = _latest_contiguous_suffix(fut_error, 40)
+        status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
+
+    spot = []
+    spot_error = parallel.get("binance_spot")
+    if isinstance(spot_error, Exception):
+        status["binance_spot"] = f"error:{_error_label(spot_error)}"
+    else:
+        spot = _latest_contiguous_suffix(spot_error, 40)
+        status["binance_spot"] = "ok" if spot else "non_contiguous_or_insufficient"
+
+    # When Binance REST is unavailable, recover the same Binance Futures product
+    # through its public WebSocket market stream.
     if len(fut) < 40:
         ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
         ws_suffix = _fresh_ws_suffix(ws_cache, 40)
