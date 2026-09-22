@@ -64,16 +64,16 @@ jobs:
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
               echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
-              return 1
+              exit 1
             }
             while IFS= read -r run; do
               [ -n "$run" ] || continue
-              status=$(printf '%s' "$run" | jq -r '.status // ""')
-              conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
-              run_id=$(printf '%s' "$run" | jq -r '.id // 0')
-              attempt=$(printf '%s' "$run" | jq -r '.run_attempt // 1')
-              head_sha=$(printf '%s' "$run" | jq -r '.head_sha // ""')
-              updated=$(printf '%s' "$run" | jq -r '.updated_at // ""')
+              status=$(jq -r '.status // ""' <<<"$run")
+              conclusion=$(jq -r '.conclusion // ""' <<<"$run")
+              run_id=$(jq -r '.id // 0' <<<"$run")
+              attempt=$(jq -r '.run_attempt // 1' <<<"$run")
+              head_sha=$(jq -r '.head_sha // ""' <<<"$run")
+              updated=$(jq -r '.updated_at // ""' <<<"$run")
               updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
               age=$((now - updated_epoch))
               echo "run=${run_id} status=${status} conclusion=${conclusion} attempt=${attempt} head_sha=${head_sha:-unknown} age=${age}s"
@@ -105,13 +105,13 @@ jobs:
               echo "WARN: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is skipped."
               return 1
             fi
-            if printf '%s' "$compare" | jq -e '.too_large == true' >/dev/null 2>&1; then
+            if jq -e '.too_large == true' <<<"$compare" >/dev/null 2>&1; then
               echo "WARN: compare ${active_head}...${main_sha} is too large; stale-head cancellation is skipped and age timeout remains authoritative."
               return 1
             fi
-            if printf '%s' "$compare" | jq -e --arg workflow ".github/workflows/$workflow" '
+            if jq -e --arg workflow ".github/workflows/$workflow" '
               any(.files[]?.filename?;
-                test("^(src/|scripts/|tests/|requirements\.txt$|" + $workflow + "$)")
+                test("^(src/|scripts/|tests/|requirements\.txt$|\.github/workflows/|" + $workflow + "$)")
               )' >/dev/null 2>&1; then
               return 0
             fi
@@ -125,8 +125,8 @@ jobs:
             stale_head_grace="$4"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
-            latest=$(printf "%s" "$response" | jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty')
-            running=$(printf "%s" "$response" | jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length')
+            latest=$(jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty' <<<"$response")
+            running=$(jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length' <<<"$response")
 
             # A completed-run freshness check alone cannot recover a stuck active
             # run. Inspect active runs separately and cancel only when they are
@@ -138,9 +138,9 @@ jobs:
             }
             while IFS= read -r active; do
                 [ -n "$active" ] || continue
-                active_id=$(printf "%s" "$active" | jq -r '.id // 0')
-                active_head=$(printf "%s" "$active" | jq -r '.head_sha // ""')
-                active_updated=$(printf "%s" "$active" | jq -r '.updated_at // ""')
+                active_id=$(jq -r '.id // 0' <<<"$active")
+                active_head=$(jq -r '.head_sha // ""' <<<"$active")
+                active_updated=$(jq -r '.updated_at // ""' <<<"$active")
                 active_epoch=$(date -d "$active_updated" +%s 2>/dev/null || echo 0)
                 active_age=$((now - active_epoch))
                 stale_by_source=false
@@ -161,7 +161,7 @@ jobs:
                 fi
             done <<<"$active_runs_json"
 
-            latest_updated=$(printf "%s" "$latest" | jq -r '.updated_at // ""')
+            latest_updated=$(jq -r '.updated_at // ""' <<<"$latest")
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
             age=$((now - latest_epoch))
             echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s"
