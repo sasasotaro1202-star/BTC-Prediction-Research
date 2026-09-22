@@ -245,7 +245,9 @@ def _evaluate_development(rows, horizon: str):
 
 
 def evaluate(horizon: str):
-    rows = load_primary_production_strict_rows(horizon)
+    # Compatibility seam for deterministic tests; load_rows is the strict
+    # primary-PIT loader used by production research evaluation.
+    rows = load_rows(horizon)
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
 
