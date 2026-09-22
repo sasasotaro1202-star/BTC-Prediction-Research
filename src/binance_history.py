@@ -118,7 +118,16 @@ def binance_archive_rows(target: int = 30_000):
     rows, errors = [], []
     now = datetime.now(timezone.utc)
     month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    for m in (month, month - timedelta(days=1)):
+    # Walk backward across several monthly archives. Current-month archives
+    # can be unpublished or delayed; one failed month must never terminate the
+    # historical search when older verified archives are available.
+    seen_months = set()
+    m = month
+    for _ in range(6):
+        key = (m.year, m.month)
+        if key in seen_months:
+            break
+        seen_months.add(key)
         try:
             rows.extend(_month_rows(m))
             rows = list({int(r[0]): r for r in rows}.values())
@@ -126,6 +135,7 @@ def binance_archive_rows(target: int = 30_000):
                 break
         except Exception as exc:
             errors.append(f"monthly:{m:%Y-%m}:{type(exc).__name__}:{exc}")
+        m = (m - timedelta(days=1)).replace(day=1)
     if len(rows) < target:
         day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         for _ in range(45):

@@ -18,7 +18,8 @@ class AdaptiveEnsembleHoldoutTests(unittest.TestCase):
         self.assertTrue(result["eligible_pending_frozen_holdout_confirmation"])
 
     def test_insufficient_rows_fails_closed(self):
-        with patch.object(adaptive, "load_rows", return_value=[]):
+        with patch.object(adaptive, "load_rows", return_value=[]), \
+             patch.object(adaptive, "load_archive_research_rows", return_value=[]):
             result = adaptive.evaluate("5m")
         self.assertEqual(result["status"], "DEFERRED")
         self.assertEqual(result["reason"], "insufficient_rows_for_protected_holdout")

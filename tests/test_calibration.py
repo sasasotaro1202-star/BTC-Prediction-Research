@@ -1,5 +1,7 @@
 import sys
 import unittest
+
+from src import calibration as calibration_module
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]

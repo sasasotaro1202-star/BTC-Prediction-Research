@@ -54,6 +54,26 @@ class TestBinanceHistory(unittest.TestCase):
             bh.CACHE_DIR = old_cache
             bh.time.time = old_time
 
+
+    def test_archive_rows_walks_back_across_multiple_months(self):
+        old_month = bh._month_rows
+        old_day = bh._load_day
+        try:
+            def month_rows(month):
+                if month.month == 9:
+                    raise RuntimeError("current month not published")
+                if month.month == 8:
+                    return [[i * 60_000, 1, 1, 1, 1, 1] for i in range(5)]
+                return []
+            bh._month_rows = month_rows
+            bh._load_day = lambda day: ([], "mock")
+            out = bh.binance_archive_rows(target=3)
+            self.assertEqual(len(out), 3)
+            self.assertEqual([r[0] for r in out], [120_000, 180_000, 240_000])
+        finally:
+            bh._month_rows = old_month
+            bh._load_day = old_day
+
     def test_archive_rows_deduplicates_sorts_and_returns_recent_target(self):
         old_month = bh._month_rows
         try:
