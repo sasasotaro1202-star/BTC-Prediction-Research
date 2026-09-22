@@ -31,6 +31,7 @@ from model_compare import (
     EMBARGO_BARS,
     load_primary_production_strict_rows,
     load_archive_research_rows,
+    _research_archive_rows_from_raw,
     metrics,
     walk_forward,
     aligned,
@@ -168,13 +169,89 @@ def _score_frozen_champion(horizon, rows):
     return out, str(meta.get("model_version", ""))
 
 
+def _fresh_post_training_fallback(horizon):
+    """Build research rows from fresh non-Binance venues after Champion training.
+    
+    This is a research-only recovery path. It preserves causal ordering by
+    requiring every evaluation timestamp to be strictly after the frozen
+    Champion's recorded training time, and it never becomes promotion evidence.
+    """
+    meta_path = MODEL_DIR / f"{horizon}.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        trained_raw = meta.get("trained_at_utc")
+        trained_at = (
+            datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+            if trained_raw else None
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return [], None
+    if trained_at is None:
+        return [], None
+
+    loaders = []
+    try:
+        try:
+            from src.bootstrap_train import fetch_bybit
+        except ModuleNotFoundError:
+            from bootstrap_train import fetch_bybit
+        loaders.append(("bybit", fetch_bybit))
+    except Exception:
+        pass
+    try:
+        try:
+            from src.coinbase_fallback_train import fetch_coinbase
+        except ModuleNotFoundError:
+            from coinbase_fallback_train import fetch_coinbase
+        loaders.append(("coinbase", fetch_coinbase))
+    except Exception:
+        pass
+
+    target = max(ARCHIVE_MAX_ROWS + 40, 12000)
+    best = []
+    best_source = None
+    for source_name, loader in loaders:
+        try:
+            raw = loader(target)
+            rows = _research_archive_rows_from_raw(
+                raw, horizon, ARCHIVE_MAX_ROWS, source_name
+            )
+            fresh = []
+            for row in rows:
+                created = datetime.fromisoformat(
+                    str(row["created"]).replace("Z", "+00:00")
+                )
+                if created > trained_at:
+                    fresh.append(row)
+            scored, _ = _score_frozen_champion(horizon, fresh)
+            if len(scored) > len(best):
+                best, best_source = scored, source_name
+            if len(scored) >= MIN_ROWS:
+                return (
+                    scored[-ARCHIVE_MAX_ROWS:],
+                    f"{source_name}_fresh_archive_frozen_champion",
+                )
+        except Exception:
+            continue
+    return (
+        best[-ARCHIVE_MAX_ROWS:],
+        f"{best_source}_fresh_archive_frozen_champion" if best_source else None,
+    )
+
+
 def load_rows(horizon):
     live = load_primary_production_strict_rows(horizon)
     if len(live) >= MIN_ROWS:
         return live, "live_binance_primary", True
     archive = load_archive_research_rows(horizon, ARCHIVE_MAX_ROWS)
     scored, _ = _score_frozen_champion(horizon, archive)
-    return scored[-ARCHIVE_MAX_ROWS:], "binance_vision_archive_frozen_champion", False
+    if len(scored) >= MIN_ROWS:
+        return scored[-ARCHIVE_MAX_ROWS:], "binance_vision_archive_frozen_champion", False
+
+    fresh, fresh_source = _fresh_post_training_fallback(horizon)
+    if fresh:
+        return fresh, fresh_source or "fresh_venue_archive_frozen_champion", False
+    return [], "binance_vision_archive_frozen_champion", False
 
 
 def _candidate_holdout(factory, train, test, horizon):
