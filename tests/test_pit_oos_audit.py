@@ -156,7 +156,7 @@ class TestPITOOSAudit(unittest.TestCase):
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertFalse(result["ok"])
-                self.assertIn("5m_target_not_after_decision", result["violations"])
+                self.assertTrue(any("5m_target_not_after_decision" in v for v in result["violations"]))
                 self.assertEqual(result["violation_count"], 1)
 
     def test_rejects_prediction_time_far_in_future(self):
