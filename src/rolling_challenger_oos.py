@@ -31,6 +31,8 @@ except ModuleNotFoundError:
         hac_test, _adjusted_alpha,
     )
 
+from research_time_policy import exact_elapsed_pairs
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "rolling_challenger_oos.json"
 MAX_ROWS = 12000
@@ -78,20 +80,24 @@ def load_current_rows(horizon: str):
         trained_raw = meta.get("trained_at_utc")
         trained_at = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00")) if trained_raw else None
         steps = int(str(horizon).rstrip("m"))
+        future_by_ts = {int(row[0]): future for row, future in exact_elapsed_pairs(raw, steps)}
         archive = []
-        for i in range(30, len(raw) - steps):
+        for i in range(30, len(raw)):
+            future = future_by_ts.get(int(raw[i][0]))
+            if future is None:
+                continue
             created = datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc)
             if trained_at is not None and created <= trained_at:
                 continue
             x = np.asarray(make_features(raw[: i + 1]), dtype=float)
             if not np.isfinite(x).all():
                 continue
-            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
+            future_return = float(future[4]) / float(raw[i][4]) - 1.0
             p = aligned(champion, np.asarray([x], dtype=float))[0].tolist()
             archive.append({
                 "id": f"archive:{int(raw[i][0])}:{horizon}",
                 "created": created.isoformat(),
-                "target": datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc).isoformat(),
+                "target": datetime.fromtimestamp(int(future[0]) / 1000.0, timezone.utc).isoformat(),
                 "x": x.tolist(),
                 "y": direction_from_return(future_return),
                 "production": p,
