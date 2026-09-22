@@ -87,6 +87,37 @@ class TestMergePredictionState(unittest.TestCase):
             con.close()
             self.assertEqual(row, (102.0, '2026-09-15T10:05:02+00:00'))
 
+    def test_same_prediction_event_with_changed_scenario_is_collapsed(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            target_row = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                          '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                          'v1', '{\"ret_1m\":0.1}', '{\"retry\":false}', None, None, None, None, None, None, None, None)
+            local_row = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 101.0, .2, .5, .3, .2, .5, .3,
+                         'v2', '{\"ret_1m\":0.1}', '{\"retry\":true}', None, None, None, None, None, None, None, None)
+            make_db(target, [target_row]); make_db(local, [local_row])
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+            con.close()
+            self.assertEqual(count, 1)
+
+    def test_existing_duplicate_events_are_compacted_and_settlement_preserved(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
+            immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{\"ret_1m\":0.1}', '{}')
+            unsettled = immutable + (None, None, None, None, None, None, None, None)
+            settled = immutable + (101.0, 'UP', 1, '2026-09-15T10:05:01+00:00', None, None, None, None)
+            make_db(target, [unsettled, settled]); make_db(local, [])
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+            con = sqlite3.connect(target)
+            rows = con.execute('SELECT actual_price_5m, actual_direction_5m, correct_5m FROM predictions').fetchall()
+            con.close()
+            self.assertEqual(rows, [(101.0, 'UP', 1)])
+
     def test_distinct_prediction_events_are_not_collapsed(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
