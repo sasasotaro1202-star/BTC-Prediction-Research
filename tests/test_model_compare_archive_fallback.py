@@ -10,9 +10,12 @@ class ArchiveResearchFallbackTests(unittest.TestCase):
             [i * 60_000, 100.0, 101.0, 99.0, 100.0 + i * 0.01, 10.0]
             for i in range(100)
         ]
-        with patch("src.binance_history.binance_archive_rows", side_effect=RuntimeError("archive unavailable")):
-            with patch("src.bootstrap_train.fetch_bybit", return_value=raw):
-                with patch("src.coinbase_fallback_train.fetch_coinbase", side_effect=RuntimeError("coinbase unavailable")):
+        with patch("src.binance_history.binance_archive_rows", side_effect=RuntimeError("archive unavailable")), \
+             patch("binance_history.binance_archive_rows", side_effect=RuntimeError("archive unavailable")):
+            with patch("src.bootstrap_train.fetch_bybit", return_value=raw), \
+                 patch("bootstrap_train.fetch_bybit", return_value=raw):
+                with patch("src.coinbase_fallback_train.fetch_coinbase", side_effect=RuntimeError("coinbase unavailable")), \
+                     patch("coinbase_fallback_train.fetch_coinbase", side_effect=RuntimeError("coinbase unavailable")):
                     rows = model_compare.load_archive_research_rows("5m", max_rows=50)
         self.assertTrue(rows)
         self.assertEqual(len(rows), 50)
