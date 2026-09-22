@@ -1,7 +1,13 @@
+import json
 import sqlite3
 import unittest
 
+from src.feature_schema import FEATURES
 from src.research_input_audit import audit_horizon
+
+
+def feature_json():
+    return json.dumps({name: float(i + 1) for i, name in enumerate(FEATURES)}, sort_keys=True)
 
 
 SCHEMA = """
@@ -14,6 +20,12 @@ CREATE TABLE predictions (
   feature_json TEXT NOT NULL,
   actual_direction_5m TEXT,
   actual_direction_10m TEXT,
+  p_up_5m REAL NOT NULL,
+  p_down_5m REAL NOT NULL,
+  p_flat_5m REAL NOT NULL,
+  p_up_10m REAL NOT NULL,
+  p_down_10m REAL NOT NULL,
+  p_flat_10m REAL NOT NULL,
   scenario_json TEXT NOT NULL
 )
 """
@@ -25,50 +37,47 @@ class ResearchInputAuditTests(unittest.TestCase):
         con.executescript(SCHEMA)
         return con
 
-    def test_same_event_and_model_version_is_duplicate(self):
-        con = self._db()
-        row = (
+    def _row(self, model="model-v1", p=(0.2, 0.7, 0.1)):
+        return (
             "2026-09-22T00:00:00+00:00",
             "2026-09-22T00:05:00+00:00",
             "2026-09-22T00:10:00+00:00",
-            "model-v1",
-            '{"x": 1}',
+            model,
+            feature_json(),
             "UP",
             "UP",
+            *p,
+            *p,
             "{}",
         )
+
+    def _insert(self, con, rows):
         con.executemany(
             """INSERT INTO predictions(
-                created_at_utc,target_5m,target_10m,model_version,
-                feature_json,actual_direction_5m,actual_direction_10m,scenario_json
-            ) VALUES(?,?,?,?,?,?,?,?)""",
-            [row, row],
+                created_at_utc,target_5m,target_10m,model_version,feature_json,
+                actual_direction_5m,actual_direction_10m,
+                p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,
+                scenario_json
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            rows,
         )
+
+    def test_same_event_and_model_probabilities_are_duplicate(self):
+        con = self._db()
+        row = self._row()
+        self._insert(con, [row, row])
         result = audit_horizon(con, "5m")
         self.assertEqual(result["duplicate_exact_key_row_excess"], 1)
 
     def test_different_model_versions_are_distinct_events(self):
         con = self._db()
-        base = (
-            "2026-09-22T00:00:00+00:00",
-            "2026-09-22T00:05:00+00:00",
-            "2026-09-22T00:10:00+00:00",
-            '{"x": 1}',
-            "UP",
-            "UP",
-            "{}",
-        )
-        rows = [
-            base[:3] + ("model-v1",) + base[3:],
-            base[:3] + ("model-v2",) + base[3:],
-        ]
-        con.executemany(
-            """INSERT INTO predictions(
-                created_at_utc,target_5m,target_10m,model_version,
-                feature_json,actual_direction_5m,actual_direction_10m,scenario_json
-            ) VALUES(?,?,?,?,?,?,?,?)""",
-            rows,
-        )
+        self._insert(con, [self._row("model-v1"), self._row("model-v2")])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["duplicate_exact_key_row_excess"], 0)
+
+    def test_different_probabilities_are_distinct_events(self):
+        con = self._db()
+        self._insert(con, [self._row(p=(0.2, 0.7, 0.1)), self._row(p=(0.3, 0.6, 0.1))])
         result = audit_horizon(con, "5m")
         self.assertEqual(result["duplicate_exact_key_row_excess"], 0)
 
