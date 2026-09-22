@@ -53,19 +53,31 @@ def regime_key(row,thresholds):
     vol_cut=max(float(thresholds["vol_q"]),1e-10)
     return f"{direction}|{'HIGH_VOL' if vol>vol_cut else 'LOW_VOL'}"
 
+def _fit_model(model, X, y):
+    yy=np.asarray([CLASSES.index(str(v)) for v in y], dtype=int)
+    if model.__class__.__module__.startswith("xgboost"):
+        model.fit(np.asarray(X, dtype=float), yy)
+    else:
+        model.fit(np.asarray(X, dtype=float), np.asarray(y))
+    return model
+
 def _aligned(model,rows):
     raw=np.asarray(model.predict_proba(np.asarray([r["x"] for r in rows],dtype=float)),dtype=float)
     out=np.full((len(rows),3),1e-7,dtype=float); idx={c:i for i,c in enumerate(CLASSES)}
     for j,cls in enumerate(model.classes_):
-        if str(cls) in idx: out[:,idx[str(cls)]]=raw[:,j]
+        key=str(cls)
+        if key in idx:
+            out[:,idx[key]]=raw[:,j]
+        elif isinstance(cls,(int,np.integer)) and 0 <= int(cls) < 3:
+            out[:,int(cls)]=raw[:,j]
     out=np.clip(out,1e-7,1.0); return out/out.sum(axis=1,keepdims=True)
 
 def _fit_calibrated(train,test,factory):
     split=int(len(train)*0.75)
     if split<300 or len(train)-split<100:return None
-    cal=factory(); cal.fit(np.asarray([r["x"] for r in train[:split]],dtype=float),np.asarray([r["y"] for r in train[:split]]))
+    cal=factory(); _fit_model(cal,[r["x"] for r in train[:split]],[r["y"] for r in train[:split]])
     temp=_temperature(_aligned(cal,train[split:]),[r["y"] for r in train[split:]])
-    model=factory(); model.fit(np.asarray([r["x"] for r in train],dtype=float),np.asarray([r["y"] for r in train]))
+    model=factory(); _fit_model(model,[r["x"] for r in train],[r["y"] for r in train])
     return apply_temperature(_aligned(model,test),temp)
 
 def _bounded_weights(losses,briers,eces):
