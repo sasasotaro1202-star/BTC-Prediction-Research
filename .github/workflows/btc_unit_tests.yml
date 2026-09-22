@@ -1,7 +1,9 @@
 name: BTC Unit Tests
 
 on:
+  # Direct pushes are validated only on main; PR branches use pull_request.
   push:
+    branches: [main]
     paths:
       - 'src/**'
       - 'tests/**'
