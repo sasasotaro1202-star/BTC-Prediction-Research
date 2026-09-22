@@ -29,6 +29,37 @@ class _FakeConnection:
 
 
 class TestCalibration(unittest.TestCase):
+
+    def test_zero_settled_preserves_generation_matched_calibration(self):
+        import json
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model_dir = root / "models"
+            model_dir.mkdir()
+            cached = {
+                "horizon": "10m",
+                "temperature": 0.8,
+                "n_settled": 2153,
+                "model_version": "bootstrap.bootstrap_rf",
+            }
+            (model_dir / "10m.calibration.json").write_text(json.dumps(cached), encoding="utf-8")
+            db = root / "predictions.db"
+            with sqlite3.connect(db) as con:
+                con.execute("CREATE TABLE model_registry (horizon TEXT PRIMARY KEY, production_version TEXT, updated_at_utc TEXT)")
+                con.execute("CREATE TABLE predictions (actual_direction_5m TEXT, actual_direction_10m TEXT, model_version TEXT, p_up_5m REAL, p_down_5m REAL, p_flat_5m REAL, p_up_10m REAL, p_down_10m REAL, p_flat_10m REAL, scenario_json TEXT)")
+                con.execute("INSERT INTO model_registry VALUES ('5m','bootstrap.bootstrap_rf','2026-09-22T00:00:00+00:00')")
+                con.execute("INSERT INTO model_registry VALUES ('10m','bootstrap.bootstrap_rf','2026-09-22T00:00:00+00:00')")
+            with patch.object(calibration_module, "DB", db), patch.object(calibration_module, "MODEL_DIR", model_dir):
+                # Helper uses the same artifact shape as production and must return
+                # true without requiring fresh rows.
+                obj = calibration_module._calibration_state(model_dir / "10m.calibration.json")
+                self.assertTrue(calibration_module._can_reuse_cached_calibration(obj, "10m", "bootstrap.bootstrap_rf", 2153))
+
     def test_settled_rows_uses_existing_horizon_suffix(self):
         con = _FakeConnection()
         calibration._settled_rows(

@@ -162,26 +162,41 @@ def calibration():
             model_version=_current_registry_version(con,horizon_name)
             rows=_settled_rows(con,horizon_name,actual_col,model_version)
             if not rows:
-                # Always materialize a fail-safe calibration artifact for the
-                # current production generation. A generation with no settled
-                # examples must remain uncalibrated (temperature=1.0), but the
-                # artifact itself is required so integrity validation cannot
-                # confuse "not enough evidence" with a broken deployment.
-                save_temperature(
-                    horizon_name,
-                    1.0,
-                    0,
-                    None,
-                    None,
-                    HOLDOUT_FRACTION,
-                    model_version,
-                )
-                print(
-                    horizon_name,
-                    ': no settled predictions for current model generation',
-                    model_version,
-                    '; wrote safe uncalibrated artifact',
-                )
+                # Never destroy a previously verified calibration just because
+                # the current calibration window has temporarily produced zero
+                # eligible settled rows (e.g. venue outage or a fresh generation).
+                # Reuse only a generation-matched, finite calibration artifact;
+                # otherwise write the explicit safe uncalibrated fallback.
+                cached = _calibration_state(MODEL_DIR / f"{horizon_name}.calibration.json")
+                if _can_reuse_cached_calibration(
+                    cached, horizon_name, model_version,
+                    int(cached.get("n_settled", -1)) if isinstance(cached, dict) else -1,
+                ):
+                    print(
+                        horizon_name,
+                        ': no settled predictions; preserved cached calibration',
+                        cached.get('temperature'),
+                        'n_settled',
+                        cached.get('n_settled'),
+                        'model_version',
+                        model_version,
+                    )
+                else:
+                    save_temperature(
+                        horizon_name,
+                        1.0,
+                        0,
+                        None,
+                        None,
+                        HOLDOUT_FRACTION,
+                        model_version,
+                    )
+                    print(
+                        horizon_name,
+                        ': no settled predictions for current model generation',
+                        model_version,
+                        '; wrote safe uncalibrated artifact',
+                    )
                 continue
             path=MODEL_DIR/f'{horizon_name}.calibration.json'
             cached=_calibration_state(path)
