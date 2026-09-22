@@ -163,8 +163,10 @@ def main():
             m[key] = float(value)
     status["market_flow_v2"] = "ok" if any(v is not None for v in flow.values()) else "missing"
     if flow.get("taker_imbalance_15m") is not None and ws_fresh:
+        latest_ws = max(ws_candidate, key=lambda row: int(row["open_time_ms"]))
         status["binance_taker_window_transport"] = "websocket_closed_klines"
         status["binance_taker_window_rows"] = len(ws_candidate)
+        status["binance_taker_window_event_time_ms"] = int(latest_ws["event_time_ms"])
         status["binance_taker_window_retrieved_at_ms"] = max(
             int(r["retrieved_at_ms"]) for r in ws_candidate
         )
@@ -398,6 +400,19 @@ def main():
         'prediction_cutoff':retrieved,
         'status':status.get('binance_taker'),
     }
+    if status.get('binance_taker_window_transport') == 'websocket_closed_klines':
+        window_retrieved = _iso_ms(status.get('binance_taker_window_retrieved_at_ms'))
+        source_provenance['binance_taker_window']={
+            'information_origin':'Binance',
+            'transport':'websocket_closed_klines',
+            'event_time':_iso_ms(status.get('binance_taker_window_event_time_ms')),
+            'available_at':window_retrieved,
+            'publication_time':None,
+            'retrieved_at':window_retrieved,
+            'revision_time':None,
+            'prediction_cutoff':retrieved,
+            'status':'ok',
+        }
 
     premium_available=_iso_ms(status.get('binance_premium_retrieved_at_ms')) if status.get('binance_premium_transport') == 'websocket' else retrieved
     source_provenance['binance_premium']={
