@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
+
+import joblib
 
 import numpy as np
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
@@ -22,7 +25,9 @@ try:
 except ImportError:
     LGBMClassifier = None
 
+from binance_history import binance_archive_rows
 from feature_schema import FEATURES
+from label_policy import direction_from_return
 from model_compare import _strict_pit_provenance_ok, CLASSES, TEST_BLOCK, MIN_TRAIN, MIN_OOS, PURGE_BARS, EMBARGO_BARS, metrics, aligned, apply_temperature, _temperature
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +92,144 @@ def load_rows(horizon: str):
             "production": _norm([production])[0].tolist(),
         })
     return out
+
+
+def _ema(values, span):
+    a = 2.0 / (float(span) + 1.0)
+    e = float(values[0])
+    for value in values[1:]:
+        e = a * float(value) + (1.0 - a) * e
+    return e
+
+
+def _ret(closes, n):
+    if len(closes) <= n:
+        raise ValueError(f"insufficient_history_for_return:{n}")
+    return float(closes[-1]) / float(closes[-1 - n]) - 1.0
+
+
+def _feature_snapshot(rows):
+    """Mirror the live predictor's causal feature equations exactly."""
+    if len(rows) < 31:
+        raise ValueError(f"insufficient_history_for_features:{len(rows)}")
+    c = np.asarray([float(x[4]) for x in rows], dtype=float)
+    o = np.asarray([float(x[1]) for x in rows], dtype=float)
+    h = np.asarray([float(x[2]) for x in rows], dtype=float)
+    l = np.asarray([float(x[3]) for x in rows], dtype=float)
+    v = np.asarray([float(x[5]) for x in rows], dtype=float)
+    if not all(np.all(np.isfinite(a)) for a in (c, o, h, l, v)):
+        raise ValueError("archive_feature_input_nonfinite")
+    if np.any(c <= 0) or np.any(o <= 0) or np.any(h <= 0) or np.any(l <= 0) or np.any(v < 0):
+        raise ValueError("archive_feature_input_domain")
+    if np.any(h < np.maximum(o, c)) or np.any(l > np.minimum(o, c)):
+        raise ValueError("archive_feature_input_ohlc_invalid")
+    p = float(c[-1])
+    r1, r3, r5, r10, r15, r30 = [_ret(c, n) for n in (1, 3, 5, 10, 15, 30)]
+    acceleration = r1 - r3 / 3.0
+    rv5 = float(np.std(np.diff(c[-6:]) / c[-6:-1]))
+    rv10 = float(np.std(np.diff(c[-11:]) / c[-11:-1]))
+    hi10, lo10 = float(np.max(h[-10:])), float(np.min(l[-10:]))
+    range_position_10m = (p - lo10) / (hi10 - lo10) if hi10 > lo10 else 0.5
+    hi30, lo30 = float(np.max(h[-30:])), float(np.min(l[-30:]))
+    range_position_30m = (p - lo30) / (hi30 - lo30) if hi30 > lo30 else 0.5
+    body = (p - float(o[-1])) / p
+    upper = (float(h[-1]) - max(float(o[-1]), p)) / p
+    lower = (min(float(o[-1]), p) - float(l[-1])) / p
+    recent_vol = float(np.mean(v[-5:]))
+    prior_vol = float(np.mean(v[-15:-5]))
+    volume_ratio = recent_vol / prior_vol if prior_vol else 1.0
+    volume_trend = recent_vol / max(1e-12, float(np.mean(v[-10:]))) if np.mean(v[-10:]) else 1.0
+    return {
+        "ret_1m": r1, "ret_3m": r3, "ret_5m": r5, "ret_10m": r10,
+        "ret_15m": r15, "ret_30m": r30, "acceleration": acceleration,
+        "volatility_5m": rv5, "volatility_10m": rv10,
+        "range_position_10m": range_position_10m,
+        "range_position_30m": range_position_30m,
+        "body_1m": body, "upper_wick_1m": upper, "lower_wick_1m": lower,
+        "volume_ratio": volume_ratio, "volume_trend": volume_trend,
+        "ema_gap_5m": p / _ema(c[-20:], 5) - 1.0,
+        "ema_gap_10m": p / _ema(c[-30:], 10) - 1.0,
+        "trend_alignment": 0.50 * r5 + 0.30 * r15 + 0.20 * r30,
+    }
+
+
+def _frozen_champion_probs(model, base):
+    raw = np.asarray(model.predict_proba(np.asarray([base], dtype=float))[0], dtype=float)
+    out = np.full(3, 1e-7, dtype=float)
+    for cls, prob in zip(getattr(model, "classes_", []), raw):
+        name = str(cls)
+        if name in CLASSES:
+            out[CLASSES.index(name)] = float(prob)
+    if not np.isfinite(out).all() or np.any(out < 0) or float(out.sum()) <= 0:
+        raise ValueError("archive_champion_probability_invalid")
+    out /= out.sum()
+    return out.tolist()
+
+
+def load_archive_rows(horizon: str, max_rows: int = 12000):
+    """Reconstruct causal rows from free closed Binance Vision candles.
+
+    This cohort is descriptive research only: it is explicitly ineligible for
+    production promotion because archive snapshots do not provide source-native
+    publication/availability timestamps equivalent to live PIT records.
+    """
+    horizon_steps = int(horizon[:-1])
+    target_rows = int(max_rows)
+    model_path = ROOT / "models" / f"{horizon}.joblib"
+    meta_path = ROOT / "models" / f"{horizon}.json"
+    if not model_path.is_file() or not meta_path.is_file():
+        return []
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    trained_raw = meta.get("trained_at_utc")
+    if not trained_raw:
+        return []
+    try:
+        trained_at = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return []
+    raw = binance_archive_rows(target_rows + horizon_steps + 40)
+    if len(raw) < MIN_TRAIN + MIN_OOS + horizon_steps + 40:
+        return []
+    champion = joblib.load(model_path)
+    out = []
+    for i in range(30, len(raw) - horizon_steps):
+        created = datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc)
+        target = datetime.fromtimestamp(int(raw[i + horizon_steps][0]) / 1000.0, timezone.utc)
+        # Never replay the frozen Champion on observations at or before the
+        # model-generation training timestamp.
+        if created <= trained_at:
+            continue
+        snapshot = _feature_snapshot(raw[: i + 1])
+        base = [float(snapshot[k]) for k in FEATURES]
+        extra = [float(snapshot[k]) for k in EXTRA_FEATURES]
+        if not all(math.isfinite(v) for v in base + extra):
+            continue
+        future_return = float(raw[i + horizon_steps][4]) / float(raw[i][4]) - 1.0
+        out.append({
+            "id": f"archive:binance_vision:{int(raw[i][0])}:{horizon}",
+            "created": created.isoformat(),
+            "target": target.isoformat(),
+            "base": base,
+            "extended": base + extra,
+            "y": direction_from_return(future_return),
+            "production": _frozen_champion_probs(champion, base),
+        })
+    return out[-target_rows:]
+
+
+def load_research_rows(horizon: str):
+    live = load_rows(horizon)
+    required = MIN_TRAIN + MIN_OOS
+    if len(live) >= required:
+        return live, "live_binance_primary", True, "strict_live_primary"
+    try:
+        archive = load_archive_rows(horizon)
+    except Exception as exc:
+        archive = []
+        print(f"archive fallback unavailable for {horizon}: {type(exc).__name__}: {exc}")
+    if len(archive) > len(live):
+        return archive, "binance_vision_archive", False, "frozen_champion_archive_replay"
+    return live, "live_binance_primary", True, "strict_live_primary_insufficient"
 
 
 def factories():
@@ -154,12 +297,15 @@ def candidate_block(factory, train, test):
 
 
 def evaluate(horizon: str):
-    rows = load_rows(horizon)
+    rows, data_source, promotion_evidence_eligible, baseline_source = load_research_rows(horizon)
     if len(rows) < MIN_TRAIN + MIN_OOS:
         return {
             "status": "DEFERRED",
             "reason": "insufficient_rows",
             "n": len(rows),
+            "data_source": data_source,
+            "promotion_evidence_eligible": promotion_evidence_eligible,
+            "baseline_source": baseline_source,
         }
 
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
@@ -169,6 +315,9 @@ def evaluate(horizon: str):
             "status": "DEFERRED",
             "reason": "insufficient_development_rows",
             "n": len(rows),
+            "data_source": data_source,
+            "promotion_evidence_eligible": promotion_evidence_eligible,
+            "baseline_source": baseline_source,
         }
 
     prod_by_id = {r["id"]: r["production"] for r in rows}
@@ -262,6 +411,9 @@ def evaluate(horizon: str):
         "final_holdout_n": len(holdout),
         "base_features": list(FEATURES),
         "extra_features": list(EXTRA_FEATURES),
+        "data_source": data_source,
+        "promotion_evidence_eligible": promotion_evidence_eligible,
+        "baseline_source": baseline_source,
         "candidate_results": results,
         "final_holdout": holdout_result,
     }
@@ -275,6 +427,7 @@ def main():
         "research_only": True,
         "production_changed": False,
         "feature_set_policy": "existing_cutoff_persisted_features_only_no_future_inputs",
+        "archive_policy": "free_closed_binance_vision_frozen_champion_replay_research_only",
         "horizons": {h: evaluate(h) for h in ("5m", "10m")},
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
