@@ -2,7 +2,6 @@
 """Strict research-input chronology and duplicate audit for BTC OOS evidence."""
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections import Counter
@@ -11,7 +10,8 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from model_compare import _strict_pit_provenance_ok
+from model_compare import _strict_pit_provenance_ok, prediction_event_key
+from feature_schema import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "data" / "predictions.db"
@@ -37,7 +37,8 @@ def audit_horizon(con, horizon: str) -> dict:
     target_col = TARGETS[horizon]
     actual_col = HORIZONS[horizon]
     rows = con.execute(
-        f"""SELECT prediction_id, created_at_utc, {target_col}, model_version, feature_json, {actual_col}, scenario_json
+        f"""SELECT prediction_id, created_at_utc, {target_col}, model_version, feature_json, {actual_col},
+                   p_up_{horizon}, p_down_{horizon}, p_flat_{horizon}, scenario_json
             FROM predictions
             WHERE {actual_col} IS NOT NULL
             ORDER BY created_at_utc, prediction_id"""
@@ -50,7 +51,8 @@ def audit_horizon(con, horizon: str) -> dict:
     valid_rows = 0
     strict_pit_rows = 0
 
-    for prediction_id, created_at, target_at, model_version, feature_json, actual, scenario_json in rows:
+    for prediction_id, created_at, target_at, model_version, feature_json, actual,
+        p_up, p_down, p_flat, scenario_json in rows:
         created_dt = _dt(created_at)
         target_dt = _dt(target_at)
         if created_dt is None or target_dt is None:
@@ -63,13 +65,21 @@ def audit_horizon(con, horizon: str) -> dict:
             })
 
         obj = _safe_json(feature_json)
-        fp = hashlib.sha256(
-            json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        # model_version is part of the immutable prediction-event identity used by
-        # conflict-safe state merging. A different model version represents a
-        # distinct model evaluation, not an exact duplicate.
-        duplicate_groups[(str(created_at), str(target_at), str(model_version), fp)] += 1
+        try:
+            x = [float(obj[k]) for k in FEATURES]
+            production = [float(p_down), float(p_flat), float(p_up)]
+            duplicate_groups[prediction_event_key({
+                "created": created_at,
+                "target": target_at,
+                "model_version": model_version,
+                "x": x,
+                "production": production,
+            })] += 1
+        except (KeyError, TypeError, ValueError):
+            # Malformed rows remain visible through the timestamp/PIT audits but
+            # are not treated as exact duplicates because their event identity
+            # cannot be reconstructed safely.
+            pass
 
         if actual in CLASSES:
             class_counts[str(actual)] += 1
@@ -123,7 +133,7 @@ def main() -> int:
         "production_changed": False,
         "ok": not failures,
         "status": "PASS" if not failures else "HOLD",
-        "policy": "strict_prediction_before_target_filter_plus_model_versioned_exact_duplicate_audit",
+        "policy": "strict_prediction_before_target_filter_plus_immutable_event_duplicate_audit",
         "failure_reasons": failures,
         "horizons": horizons,
     }
