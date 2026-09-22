@@ -104,6 +104,31 @@ class ResearchInputAuditTests(unittest.TestCase):
         )
         self.assertEqual(result["strict_pit_rows"], 0)
 
+    def test_legacy_coinbase_v1_incomplete_snapshot_is_explicitly_quarantined(self):
+        con = self._db()
+        row = list(self._row("5m:v1.0|10m:v1.0"))
+        row[4] = json.dumps({"ret_1m": 0.1})
+        row[13] = json.dumps({"price_source": "coinbase_btc_usd"})
+        self._insert(con, [tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["malformed_identity_rows"], 0)
+        self.assertEqual(result["quarantined_identity_rows"], 1)
+        self.assertEqual(
+            result["quarantine_reasons"],
+            {"legacy_coinbase_v1_incomplete_feature_snapshot": 1},
+        )
+        self.assertEqual(result["duplicate_exact_key_row_excess"], 0)
+
+    def test_nonlegacy_incomplete_snapshot_stays_malformed(self):
+        con = self._db()
+        row = list(self._row("model-v2"))
+        row[4] = json.dumps({"ret_1m": 0.1})
+        row[13] = json.dumps({"price_source": "coinbase_btc_usd"})
+        self._insert(con, [tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["malformed_identity_rows"], 1)
+        self.assertEqual(result["quarantined_identity_rows"], 0)
+
     def test_different_model_versions_are_distinct_events(self):
         con = self._db()
         self._insert(con, [self._row("model-v1"), self._row("model-v2")])
