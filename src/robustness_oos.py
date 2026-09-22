@@ -6,9 +6,11 @@ features already stored with each prediction.
 from __future__ import annotations
 import json, math, sqlite3
 from pathlib import Path
+import joblib
 import numpy as np
 from sklearn.metrics import log_loss
-from model_compare import _strict_pit_provenance_ok
+from model_compare import _strict_pit_provenance_ok, load_archive_research_rows, aligned
+from label_policy import direction_from_return
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=ROOT/"data"/"predictions.db"
@@ -96,7 +98,7 @@ def load(h):
 def evaluate(h, rows):
     n=len(rows)
     if n<1000:
-        return {"status":"insufficient_data","n":n,"minimum":1000}
+        return {"status":"insufficient_data","n":n,"minimum":1000,"data_source":rows[0].get("data_source","unknown") if rows else "none","promotion_evidence_eligible":False}
     split=int(n*0.8)
     development=rows[:split]
     holdout=rows[split:]
@@ -104,7 +106,9 @@ def evaluate(h, rows):
     # Regime thresholds are derived chronologically over the complete feature
     # stream, but each threshold only uses observations through that row.
     result={"status":"ok","n":n,"development_n":len(development),"final_holdout_n":len(holdout),
-            "final_holdout_protected":True}
+            "final_holdout_protected":True,
+            "data_source":rows[0].get("data_source","live_binance_primary"),
+            "promotion_evidence_eligible":rows[0].get("promotion_evidence_eligible",True)}
     result["development"]=_metrics([r["y"] for r in development],[r["p"] for r in development])
     result["final_holdout"]=_metrics([r["y"] for r in holdout],[r["p"] for r in holdout])
     result["regimes"]={}
