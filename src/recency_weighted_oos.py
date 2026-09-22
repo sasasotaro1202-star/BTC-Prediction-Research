@@ -7,7 +7,9 @@ The final holdout is never used for selection.
 from __future__ import annotations
 import json, sys
 from pathlib import Path
+from datetime import datetime, timezone
 import numpy as np
+import joblib
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -28,6 +30,10 @@ try:
 except ImportError:
     XGBClassifier=None
 
+from bootstrap_train import make_features
+from binance_history import binance_archive_rows
+from label_policy import direction_from_return
+
 OUT=ROOT/"data/historical_research/recency_weighted_oos.json"
 MIN_TRAIN=2000
 TEST_BLOCK=150
@@ -36,6 +42,32 @@ MAX_BLOCKS=12
 HALF_LIVES=(150,300,600,1200)
 PURGE={"5m":5,"10m":10}
 EMBARGO={"5m":60,"10m":60}
+
+def load_research_archive_rows(horizon: str, max_rows: int = MAX_ROWS):
+    """Build a research-only recent-history cohort from contiguous Binance Vision candles."""
+    steps = int(str(horizon).rstrip("m"))
+    try:
+        raw = binance_archive_rows(max(max_rows + 40, 12000))
+    except Exception:
+        return []
+    out = []
+    for i in range(30, len(raw) - steps):
+        try:
+            x = make_features(raw[: i + 1])
+            if not np.isfinite(np.asarray(x, dtype=float)).all():
+                continue
+            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
+            created = datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc)
+            out.append({
+                "id": f"archive:{raw[i][0]}:{horizon}",
+                "created": created.isoformat(),
+                "target": datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc).isoformat(),
+                "x": [float(v) for v in x],
+                "y": direction_from_return(future_return),
+            })
+        except (IndexError, ValueError, FloatingPointError):
+            continue
+    return out[-max_rows:]
 
 def factories():
     d={
@@ -97,8 +129,14 @@ def _endpoints(n):
 
 def evaluate(horizon):
     rows=load_primary_production_strict_rows(horizon)
+    data_source="live_binance_primary"
+    if len(rows)<MIN_TRAIN+TEST_BLOCK+100:
+        archive_rows=load_research_archive_rows(horizon)
+        if len(archive_rows)>len(rows):
+            rows=archive_rows
+            data_source="binance_vision_archive"
     if len(rows)>MAX_ROWS: rows=rows[-MAX_ROWS:]
-    if len(rows)<MIN_TRAIN+TEST_BLOCK+100:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_strict_primary_rows"}
+    if len(rows)<MIN_TRAIN+TEST_BLOCK+100:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_research_rows","data_source":data_source}
     split=int(len(rows)*.80); development=rows[:split]; holdout=rows[split:]
     names=list(factories())
     blocks=[]
@@ -150,6 +188,8 @@ def evaluate(horizon):
         "non_worse_accuracy_ratio":float(np.mean(ac>=-.005))
       },
       "final_holdout_n":len(holdout),
+      "data_source":data_source,
+      "promotion_evidence_eligible": data_source == "live_binance_primary",
       "final_holdout":{
         "baseline":metrics(y_hold,bh),"recency":metrics(y_hold,dh),
         "delta":{
