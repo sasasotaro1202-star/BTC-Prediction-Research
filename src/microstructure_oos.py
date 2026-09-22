@@ -20,6 +20,7 @@ import json
 import math
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -139,11 +140,16 @@ def _strict_primary_sources_ok(scenario):
 
 
 def _finite_datetime(value):
-    from datetime import datetime
-
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
+        return None
+
+
+def _millisecond_datetime(value):
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
 
 
@@ -225,7 +231,9 @@ def _market_flow_from_scenario(scenario, created_at=None):
         marker = int(dq.get("binance_taker_window_retrieved_at_ms"))
     except (TypeError, ValueError):
         return None
-    marker_dt = __import__("datetime").datetime.fromtimestamp(marker / 1000, __import__("datetime").timezone.utc)
+    marker_dt = _millisecond_datetime(marker)
+    if marker_dt is None:
+        return None
     if abs((marker_dt - source_retrieved).total_seconds()) > 2:
         return None
     return values
