@@ -85,7 +85,9 @@ def audit_horizon(con, horizon: str) -> dict:
             # state, but exclude them from identity/OOS evidence explicitly.
             quarantined_identity_rows += 1
             quarantine_reasons["legacy_coinbase_v1_incomplete_feature_snapshot"] += 1
-        if is_degraded:
+        if legacy_coinbase_v1:
+            pass
+        elif is_degraded:
             # Degraded rows intentionally contain no directional feature snapshot.
             # They are preserved in the canonical DB but are not valid candidate/OOS
             # events and therefore cannot participate in immutable model-event
