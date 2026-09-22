@@ -5,31 +5,12 @@ name: BTC 9H Research Marathon
 # up to 6h of incremental historical research + final integrity checks.
 # Total wall-clock envelope: up to 9h. Scheduled daily outside the hourly load peak.
 on:
+  # This is a long-lived research marathon. Keep it independent of frequent
+  # production-state/code pushes so a 9h run can finish and publish a complete
+  # evidence set. Use workflow_dispatch after a major protocol change.
   schedule:
     - cron: '37 13 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'src/model_compare.py'
-      - 'src/label_policy.py'
-      - 'src/ensemble_model.py'
-      - 'src/context_model_oos.py'
-      - 'src/context_router_oos.py'
-      - 'src/adaptive_ensemble_oos.py'
-      - 'src/risk_aware_dynamic_oos.py'
-      - 'src/interaction_oos.py'
-      - 'src/robustness_oos.py'
-      - 'src/rolling_challenger_oos.py'
-      - 'src/extended_features_oos.py'
-      - 'src/model_zoo_regime_oos.py'
-      - 'src/label_policy.py'
-      - 'src/historical_research.py'
-      - 'src/bootstrap_train.py'
-      - 'src/binance_history.py'
-      - 'src/settle.py'
-      - 'src/settlement_source.py'
-      - '.github/workflows/btc_9h_research_marathon.yml'
 
 concurrency:
   group: btc-9h-research-marathon
