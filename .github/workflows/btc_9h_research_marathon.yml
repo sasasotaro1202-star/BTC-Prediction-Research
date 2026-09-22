@@ -66,6 +66,28 @@ jobs:
           from src.state_archive import restore_db
           restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
           PY
+      - name: Compact restored prediction state before audits
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/merge_prediction_state.py --compact data/predictions.db
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          p = Path('data/predictions.db')
+          with sqlite3.connect(p) as con:
+              dup = con.execute('''
+                  SELECT COUNT(*) FROM (
+                    SELECT created_at_utc, target_5m, target_10m, feature_json
+                    FROM predictions
+                    GROUP BY created_at_utc, target_5m, target_10m, feature_json
+                    HAVING COUNT(*) > 1
+                  )
+              ''').fetchone()[0]
+          if dup:
+              raise SystemExit(f'prediction duplicate groups remain after compaction: {dup}')
+          print('prediction-state compaction: VERIFIED')
+          PY
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
