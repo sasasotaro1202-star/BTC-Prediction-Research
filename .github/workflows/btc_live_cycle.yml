@@ -143,6 +143,15 @@ jobs:
           exit 1
       - name: Fail closed on incomplete live prediction inputs
         run: python src/live_data_fail_closed.py
+      - name: Compact exact immutable BTC prediction events before audits
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s data/predictions.db ]; then
+            python scripts/merge_prediction_state.py --compact data/predictions.db
+          else
+            echo 'No prediction DB to compact on this cycle.'
+          fi
       - name: Run non-fatal BTC research health audit
         run: python src/research_health.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
