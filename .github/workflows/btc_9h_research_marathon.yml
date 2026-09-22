@@ -428,6 +428,15 @@ jobs:
               if obj.get("research_only") is not True:
                   raise SystemExit(f"{path}: research_only must be true")
               print(f"verified evidence manifest: {path}")
+          # The final promotion gate consumes the canonical root robustness report.
+          # Bridge only the validated, run-scoped parallel artifact into that location;
+          # never synthesize or reuse an unvalidated/stale robustness result.
+          validated_robustness = root / "btc-9h-robustness" / "robustness_oos_report.json"
+          canonical_robustness = Path("data/historical_research/robustness_oos_report.json")
+          if not validated_robustness.is_file() or validated_robustness.stat().st_size <= 0:
+              raise SystemExit(f"validated robustness evidence missing: {validated_robustness}")
+          canonical_robustness.write_bytes(validated_robustness.read_bytes())
+          print(f"bridged validated robustness evidence to {canonical_robustness}")
           PY
       - name: Compile all research code
         run: python -m compileall -q src scripts tests
