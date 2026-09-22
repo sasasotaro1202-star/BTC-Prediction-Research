@@ -266,7 +266,10 @@ def main():
             if result is None:
                 raise RuntimeError('websocket_taker_history_missing')
             m['taker_imbalance'], event_ms=result
-            latest_rows=binance_ws_rows=[r for r in ws_rows if int(r['open_time_ms']) >= int(ws_rows[-1]['open_time_ms'])-4*60_000]
+            latest_rows=[r for r in ws_rows if int(r['open_time_ms']) >= int(ws_rows[-1]['open_time_ms'])-4*60_000]
+            freshest_retrieved=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else 0
+            if int(datetime.now(timezone.utc).timestamp()*1000) - freshest_retrieved > 180_000:
+                raise RuntimeError('websocket_taker_cache_stale')
             status['binance_taker']='ok'
             status['binance_taker_transport']='websocket_derived_from_closed_klines'
             status['binance_taker_event_time_ms']=int(event_ms)
