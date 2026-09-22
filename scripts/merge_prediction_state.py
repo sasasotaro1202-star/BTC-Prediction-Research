@@ -24,13 +24,63 @@ def prediction_identity(row):
     )
 
 
+def compact_predictions(con):
+    """Collapse duplicate prediction events and preserve settlement state."""
+    info = con.execute('PRAGMA table_info(predictions)').fetchall()
+    if not info:
+        return {}
+    cols = [r[1] for r in info]
+    names = ','.join('"' + c + '"' for c in cols)
+    target_rows = con.execute(f'SELECT rowid, {names} FROM predictions').fetchall()
+    groups = {}
+    for item in target_rows:
+        item_map = dict(zip(['rowid'] + cols, item))
+        groups.setdefault(prediction_identity(item_map), []).append(item_map)
+
+    index = {}
+    compacted = 0
+    for key, group in groups.items():
+        survivor = max(group, key=settlement_score)
+        duplicate_ids = []
+        for candidate in group:
+            if candidate['rowid'] == survivor['rowid']:
+                continue
+            duplicate_ids.append(candidate['rowid'])
+            for c in SETTLEMENT_COLUMNS:
+                if survivor.get(c) is None and candidate.get(c) is not None:
+                    survivor[c] = candidate[c]
+        settlement_updates = {c: survivor[c] for c in SETTLEMENT_COLUMNS if survivor.get(c) is not None}
+        if settlement_updates:
+            set_clause = ','.join(f'"{c}"=?' for c in settlement_updates)
+            values = list(settlement_updates.values()) + [survivor['rowid']]
+            con.execute(f'UPDATE predictions SET {set_clause} WHERE rowid=?', values)
+        if duplicate_ids:
+            placeholders = ','.join('?' for _ in duplicate_ids)
+            con.execute(f'DELETE FROM predictions WHERE rowid IN ({placeholders})', duplicate_ids)
+            compacted += len(duplicate_ids)
+        index[key] = survivor
+    print(f'predictions: compacted_duplicates={compacted} total_events={len(index)}')
+    return index
+
+
 def settlement_score(row):
     present = sum(row.get(c) is not None for c in SETTLEMENT_COLUMNS)
     latest = max(str(row.get(c) or '') for c in ('settled_5m_at_utc', 'settled_10m_at_utc'))
     return (present, latest, -int(row['rowid']))
 
+if len(sys.argv) == 3 and sys.argv[1] == '--compact':
+    target_path = sys.argv[2]
+    con = sqlite3.connect(target_path)
+    try:
+        compact_predictions(con)
+        con.commit()
+    finally:
+        con.close()
+    print('prediction-state compaction: OK')
+    raise SystemExit(0)
+
 if len(sys.argv) != 3:
-    raise SystemExit('usage: merge_prediction_state.py LOCAL_DB TARGET_DB')
+    raise SystemExit('usage: merge_prediction_state.py LOCAL_DB TARGET_DB | --compact TARGET_DB')
 
 local_path, target_path = sys.argv[1:]
 
@@ -90,47 +140,9 @@ try:
             continue
 
         if table == 'predictions':
-            # A prediction event is identified by decision time, both target times,
-            # and the PIT feature vector. Retry-specific model/provenance changes do
-            # not create a second logical prediction event.
-            identity_cols = None
-        else:
-            # model_metrics is append-only: every non-ID field belongs to the
-            # metric event identity.
-            identity_cols = [c for c in common if c not in {'prediction_id', 'id', 'metric_id'}]
-
-        if table == 'predictions':
-            # Compact duplicates already present in the target so repeated conflict
-            # recovery converges to one row per logical prediction event.
-            target_rows = con.execute(f'SELECT rowid, {names} FROM {table}').fetchall()
-            groups = {}
-            for item in target_rows:
-                item_map = dict(zip(['rowid'] + common, item))
-                groups.setdefault(prediction_identity(item_map), []).append(item_map)
-
-            index = {}
-            compacted = 0
-            for key, group in groups.items():
-                survivor = max(group, key=settlement_score)
-                duplicate_ids = []
-                for candidate in group:
-                    if candidate['rowid'] == survivor['rowid']:
-                        continue
-                    duplicate_ids.append(candidate['rowid'])
-                    for c in SETTLEMENT_COLUMNS:
-                        if survivor.get(c) is None and candidate.get(c) is not None:
-                            survivor[c] = candidate[c]
-                settlement_updates = {c: survivor[c] for c in SETTLEMENT_COLUMNS if survivor.get(c) is not None}
-                if settlement_updates:
-                    set_clause = ','.join(f'\"{c}\"=?' for c in settlement_updates)
-                    values = list(settlement_updates.values()) + [survivor['rowid']]
-                    con.execute(f'UPDATE {table} SET {set_clause} WHERE rowid=?', values)
-                if duplicate_ids:
-                    placeholders = ','.join('?' for _ in duplicate_ids)
-                    con.execute(f'DELETE FROM {table} WHERE rowid IN ({placeholders})', duplicate_ids)
-                    compacted += len(duplicate_ids)
-                index[key] = survivor
-
+            # Compact the target first, then merge local events using the exact same
+            # identity contract as the research duplicate audit.
+            index = compact_predictions(con)
             local_rows = con.execute(f'SELECT rowid, {names} FROM local.{table}').fetchall()
             inserted = updated = skipped = 0
             for row in local_rows:
@@ -171,7 +183,7 @@ try:
                     else:
                         raise
 
-            print(f'{table}: compacted_duplicates={compacted} inserted={inserted} updated={updated} skipped_existing={skipped}')
+            print(f'{table}: inserted={inserted} updated={updated} skipped_existing={skipped}')
             continue
 
         if not identity_cols:
