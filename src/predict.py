@@ -1,13 +1,14 @@
 """BTC-only live predictor with resilient multi-venue data and conservative probability fusion."""
 from __future__ import annotations
-import json, math, sqlite3
+import asyncio, json, math, sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import joblib, numpy as np
 from db import DB, init_db
 from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
-from market_data import resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
+from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
+from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, taker_imbalance as ws_taker_imbalance
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
@@ -142,8 +143,22 @@ def main():
     if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient futures data')
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
-    try:m['book_imbalance']=imbalance(binance_depth()); status['binance_depth']='ok'
-    except Exception as exc:status['binance_depth']=f'error:{type(exc).__name__}'
+    try:
+        m['book_imbalance']=imbalance(binance_depth())
+        status['binance_depth']='ok'
+        status['binance_depth_transport']='rest'
+    except Exception as exc:
+        try:
+            ws_book=asyncio.run(capture_depth_snapshot(6.0))
+            if ws_book is None:
+                raise RuntimeError('websocket_depth_snapshot_missing')
+            m['book_imbalance']=imbalance(ws_book)
+            status['binance_depth']='ok'
+            status['binance_depth_transport']='websocket'
+            status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
+            status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
+        except Exception:
+            status['binance_depth']=f'error:{type(exc).__name__}'
     bybit_book=None
     try:
         bybit_book=bybit_depth(); m['bybit_book_imbalance']=imbalance(bybit_book); status['bybit_depth']='ok'
@@ -216,13 +231,48 @@ def main():
         # Explicitly record missing secondary data; do not fabricate a gap.
         m['cross_exchange_gap']=None
         status['bybit_futures']=status.get('bybit_futures','error:missing_current_price')
-    try:m['funding_binance']=float(binance_premium().get('lastFundingRate')); status['binance_premium']='ok'
-    except Exception as exc:status['binance_premium']=f'error:{type(exc).__name__}'
+    try:
+        premium_payload=binance_premium()
+        m['funding_binance']=float(premium_payload.get('lastFundingRate'))
+        status['binance_premium']='ok'
+        status['binance_premium_transport']='rest'
+        if premium_payload.get('time') is not None:
+            status['binance_premium_event_time_ms']=int(premium_payload['time'])
+    except Exception as exc:
+        try:
+            mark=asyncio.run(capture_mark_price(6.0))
+            if mark is None:
+                raise RuntimeError('websocket_mark_price_missing')
+            m['funding_binance']=float(mark['funding_rate'])
+            status['binance_premium']='ok'
+            status['binance_premium_transport']='websocket'
+            status['binance_premium_event_time_ms']=int(mark['event_time_ms'])
+            status['binance_premium_retrieved_at_ms']=int(mark['retrieved_at_ms'])
+        except Exception:
+            status['binance_premium']=f'error:{type(exc).__name__}'
     try:m['oi']=float(binance_oi().get('openInterest')); status['binance_oi']='ok'
     except Exception as exc:status['binance_oi']=f'error:{type(exc).__name__}'
     try:
-        t=binance_taker(); t=t[-1] if isinstance(t,list) and t else t; tb=float(t['takerBuyVol']); ts=float(t['takerSellVol']); m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts); status['binance_taker']='ok'
-    except Exception as exc:status['binance_taker']=f'error:{type(exc).__name__}'
+        t=binance_taker()
+        t=t[-1] if isinstance(t,list) and t else t
+        tb=float(t['takerBuyVol']); ts=float(t['takerSellVol'])
+        m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts)
+        status['binance_taker']='ok'
+        status['binance_taker_transport']='rest'
+    except Exception as exc:
+        try:
+            ws_rows=load_binance_ws_cache(BINANCE_WS_CACHE, 120)
+            result=ws_taker_imbalance(ws_rows, 5)
+            if result is None:
+                raise RuntimeError('websocket_taker_history_missing')
+            m['taker_imbalance'], event_ms=result
+            latest_rows=binance_ws_rows=[r for r in ws_rows if int(r['open_time_ms']) >= int(ws_rows[-1]['open_time_ms'])-4*60_000]
+            status['binance_taker']='ok'
+            status['binance_taker_transport']='websocket_derived_from_closed_klines'
+            status['binance_taker_event_time_ms']=int(event_ms)
+            status['binance_taker_retrieved_at_ms']=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else int(event_ms)
+        except Exception:
+            status['binance_taker']=f'error:{type(exc).__name__}'
     try:m['funding_bybit']=float(bybit_funding().get('result',{}).get('list',[{}])[0]['fundingRate']); status['bybit_funding']='ok'
     except Exception as exc:status['bybit_funding']=f'error:{type(exc).__name__}'
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
@@ -276,17 +326,63 @@ def main():
     # publication/revision timestamps are unknown unless the adapter exposes
     # them, so they remain explicit nulls rather than invented values.
     source_provenance={}
-    for source_key in ('binance_futures','binance_depth','binance_taker','binance_premium'):
-        source_provenance[source_key]={
-            'information_origin':'Binance',
-            'event_time':latest_event.isoformat(),
-            'available_at':retrieved,
-            'publication_time':None,
-            'retrieved_at':retrieved,
-            'revision_time':None,
-            'prediction_cutoff':retrieved,
-            'status':status.get(source_key),
-        }
+    def _iso_ms(value):
+        return None if value in (None, '') else datetime.fromtimestamp(int(value)/1000, timezone.utc).isoformat()
+
+    binance_futures_event = _iso_ms(status.get('binance_futures_ws_event_time_ms')) if status.get('binance_futures_transport') == 'websocket' else latest_event.isoformat()
+    binance_futures_available = _iso_ms(status.get('binance_futures_ws_retrieved_at_ms')) if status.get('binance_futures_transport') == 'websocket' else retrieved
+    source_provenance['binance_futures']={
+        'information_origin':'Binance',
+        'transport':status.get('binance_futures_transport','rest'),
+        'event_time':binance_futures_event,
+        'available_at':binance_futures_available,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'revision_time':None,
+        'prediction_cutoff':retrieved,
+        'status':status.get('binance_futures'),
+    }
+
+    depth_event=_iso_ms(status.get('binance_depth_event_time_ms')) if status.get('binance_depth_event_time_ms') else None
+    depth_available=_iso_ms(status.get('binance_depth_ws_retrieved_at_ms')) if status.get('binance_depth_transport') == 'websocket' else retrieved
+    source_provenance['binance_depth']={
+        'information_origin':'Binance',
+        'transport':status.get('binance_depth_transport','rest'),
+        'event_time':depth_event,
+        'available_at':depth_available,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'revision_time':None,
+        'prediction_cutoff':retrieved,
+        'status':status.get('binance_depth'),
+        'levels':status.get('binance_depth_ws_levels'),
+    }
+
+    taker_available=_iso_ms(status.get('binance_taker_retrieved_at_ms')) if status.get('binance_taker_transport','').startswith('websocket') else retrieved
+    source_provenance['binance_taker']={
+        'information_origin':'Binance',
+        'transport':status.get('binance_taker_transport','rest'),
+        'event_time':_iso_ms(status.get('binance_taker_event_time_ms')),
+        'available_at':taker_available,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'revision_time':None,
+        'prediction_cutoff':retrieved,
+        'status':status.get('binance_taker'),
+    }
+
+    premium_available=_iso_ms(status.get('binance_premium_retrieved_at_ms')) if status.get('binance_premium_transport') == 'websocket' else retrieved
+    source_provenance['binance_premium']={
+        'information_origin':'Binance',
+        'transport':status.get('binance_premium_transport','rest'),
+        'event_time':_iso_ms(status.get('binance_premium_event_time_ms')),
+        'available_at':premium_available,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'revision_time':None,
+        'prediction_cutoff':retrieved,
+        'status':status.get('binance_premium'),
+    }
     # Bybit adapters used here expose current market snapshots but do not expose
     # a trustworthy source-native event/publication timestamp. Never borrow the
     # Binance candle timestamp for another venue: that would falsely imply PIT
