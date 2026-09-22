@@ -45,7 +45,7 @@ def target_close_preferred(target_iso: str, preferred_source: str) -> tuple[floa
     # when Binance REST is geo-blocked/rate-limited on hosted runners.
     # This remains the identical production benchmark venue/product.
     try:
-        cached = load_binance_ws_cache(BINANCE_WS_CACHE, 240)
+        cached = _cached_binance_ws_rows()
         price = _target_from_ws_cache(cached, start)
         if price is not None:
             return price, 'binance_websocket_cache'
@@ -61,6 +61,11 @@ def target_close_preferred(target_iso: str, preferred_source: str) -> tuple[floa
     except Exception:
         return None, 'unavailable'
     return (price, 'binance') if price is not None else (None, 'unavailable')
+
+@lru_cache(maxsize=1)
+def _cached_binance_ws_rows():
+    """Load and validate the current dedicated Binance WS cache once per settle run."""
+    return tuple(load_binance_ws_cache(BINANCE_WS_CACHE, 240))
 
 def _target_from_ws_cache(rows, start_ms: int) -> float | None:
     """Read the exact closed Binance Futures candle from the local WS cache."""
