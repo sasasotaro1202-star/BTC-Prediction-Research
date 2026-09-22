@@ -88,6 +88,40 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertFalse(result["pit_verified"])
                 self.assertEqual(result["legacy_unverified_count"], 4)
 
+    def test_pit_verified_requires_strict_row_minimum(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime.now(timezone.utc).replace(microsecond=0)
+            rows = []
+            for i in range(pit_oos_audit.MIN_STRICT_PIT_ROWS):
+                at = (created + timedelta(milliseconds=i)).isoformat()
+                scenario = {
+                    "decision_time_utc": at,
+                    "provenance": {
+                        "event_time": at,
+                        "available_at": at,
+                        "retrieved_at": at,
+                        "prediction_cutoff": at,
+                        "sources": {
+                            "coinbase_futures": {
+                                "status": "ok",
+                                "event_time": at,
+                                "available_at": at,
+                                "retrieved_at": at,
+                                "prediction_cutoff": at,
+                            }
+                        },
+                    },
+                }
+                rows.append((i + 1, at, (created + timedelta(minutes=5, milliseconds=i + 1)).isoformat(),
+                             (created + timedelta(minutes=10, milliseconds=i + 1)).isoformat(),
+                             "coinbase_fallback.rf.v1", json.dumps(scenario)))
+            db = self.make_db(td, rows)
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertTrue(result["pit_verified"])
+                self.assertEqual(result["verified_predictions"], pit_oos_audit.MIN_STRICT_PIT_ROWS)
+
     def test_accepts_provenance_cutoff_as_decision_time(self):
         with tempfile.TemporaryDirectory() as td:
             created = datetime.now(timezone.utc).replace(microsecond=0)

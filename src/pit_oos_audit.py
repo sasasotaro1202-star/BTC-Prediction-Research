@@ -1,4 +1,9 @@
-"""Audit prediction records for point-in-time and out-of-sample integrity."""
+"""Audit prediction records for point-in-time and out-of-sample integrity.
+
+Legacy prediction rows that predate the provenance contract remain visible and
+unverified, but they do not permanently block future promotion. Only rows with
+the explicit PIT contract participate in the strict promotion evidence scope.
+"""
 from __future__ import annotations
 import json
 import sqlite3
@@ -10,6 +15,7 @@ OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
 MIN_PREDICTIONS = 1
 MIN_STRICT_PIT_ROWS = 300
+AVAILABLE_STATUSES = {"ok", "ok_current_only"}
 
 
 def parse_utc(value: str) -> datetime:
@@ -21,6 +27,7 @@ def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
     violations: list[str] = []
     if not isinstance(record, dict):
         return [f"{prefix}:provenance_not_object"]
+
     required = ("available_at", "retrieved_at", "prediction_cutoff")
     parsed = {}
     for key in required:
@@ -31,8 +38,10 @@ def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
             parsed[key] = parse_utc(str(record[key]))
         except Exception:
             violations.append(f"{prefix}:invalid_{key}")
+
     if violations:
         return violations
+
     available = parsed["available_at"]
     retrieved = parsed["retrieved_at"]
     cutoff = parsed["prediction_cutoff"]
@@ -42,6 +51,7 @@ def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
         violations.append(f"{prefix}:retrieved_at_after_prediction_cutoff")
     if available > cutoff:
         violations.append(f"{prefix}:available_at_after_prediction_cutoff")
+
     for key in ("event_time", "publication_time", "revision_time"):
         value = record.get(key)
         if value in (None, ""):
@@ -50,6 +60,7 @@ def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
             parsed[key] = parse_utc(str(value))
         except Exception:
             violations.append(f"{prefix}:invalid_{key}")
+
     if "event_time" in parsed and parsed["event_time"] > available:
         violations.append(f"{prefix}:event_time_after_available_at")
     if "publication_time" in parsed and parsed["publication_time"] > available:
@@ -58,16 +69,20 @@ def validate_provenance_envelope(record: dict, prefix: str) -> list[str]:
         violations.append(f"{prefix}:revision_time_before_publication_time")
     return violations
 
+
 def audit() -> dict:
-    # Fail closed: an empty/missing state must never be reported as a clean audit.
     db_path = Path(DB)
     if not db_path.exists() or db_path.stat().st_size == 0:
         result = {
             "ok": False,
+            "status": "FAILED",
+            "pit_verified": False,
             "checked_predictions": 0,
+            "verified_predictions": 0,
+            "legacy_unverified_count": 0,
             "violations": ["prediction_database_missing_or_empty"],
             "violation_count": 1,
-            "policy": "decision_time_before_targets; market_inputs_not_after_decision_time; degraded_mode_cannot_claim_direction",
+            "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
         }
         OUT.parent.mkdir(parents=True, exist_ok=True)
         OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -76,10 +91,10 @@ def audit() -> dict:
     init_db()
     checked = 0
     violations: list[str] = []
+    legacy_violations: list[str] = []
     legacy_unverified_count = 0
     verified_count = 0
-    verified_by_horizon = {"5m": 0, "10m": 0}
-    legacy_violations: list[str] = []
+
     with sqlite3.connect(DB) as con:
         rows = con.execute(
             "SELECT prediction_id, created_at_utc, target_5m, target_10m, model_version, scenario_json "
@@ -90,8 +105,10 @@ def audit() -> dict:
         violations.append("prediction_database_has_no_predictions")
 
     now = datetime.now(timezone.utc)
+
     for prediction_id, created_raw, target5_raw, target10_raw, model_version, scenario_raw in rows:
         checked += 1
+        row_prefix = f"{prediction_id}:"
         try:
             created = parse_utc(created_raw)
             target5 = parse_utc(target5_raw)
@@ -99,135 +116,104 @@ def audit() -> dict:
         except Exception:
             violations.append(f"{prediction_id}:invalid_timestamp")
             continue
-        if created > now:
-            skew = (created - now).total_seconds()
-            if skew > MAX_FUTURE_SKEW_SECONDS:
-                violations.append(f"{prediction_id}:prediction_time_in_future")
-        if target10 <= target5:
-            legacy_or_active = "legacy" if not scenario_raw or scenario_raw in ("{}", "null") else "active"
-            (legacy_violations if legacy_or_active == "legacy" else violations).append(f"{prediction_id}:10m_target_not_after_5m_target")
+
+        if created > now and (created - now).total_seconds() > MAX_FUTURE_SKEW_SECONDS:
+            violations.append(f"{prediction_id}:prediction_time_in_future")
+
         try:
             scenario = json.loads(scenario_raw or "{}")
         except Exception:
             violations.append(f"{prediction_id}:invalid_scenario_json")
             continue
+
+        provenance = scenario.get("provenance")
+        provenance_present = isinstance(provenance, dict)
+        is_legacy = (
+            not provenance_present
+            and "decision_time_utc" not in scenario
+            and "market_data_cutoff_utc" not in scenario
+        )
+        scoped = legacy_violations if is_legacy else violations
+
         decision_raw = scenario.get("decision_time_utc")
-        provisional_provenance = scenario.get("provenance")
-        if not decision_raw and isinstance(provisional_provenance, dict):
-            decision_raw = provisional_provenance.get("prediction_cutoff")
+        if not decision_raw and provenance_present:
+            decision_raw = provenance.get("prediction_cutoff")
+
         decision = created
         if decision_raw:
             try:
                 decision = parse_utc(str(decision_raw))
                 if abs((decision - created).total_seconds()) > MAX_FUTURE_SKEW_SECONDS:
-                    violations.append(f"{prediction_id}:decision_time_mismatch")
+                    scoped.append(f"{prediction_id}:decision_time_mismatch")
                 cutoff_raw = scenario.get("market_data_cutoff_utc")
                 if cutoff_raw:
                     cutoff = parse_utc(str(cutoff_raw))
                     if cutoff > decision:
-                        violations.append(f"{prediction_id}:market_cutoff_after_decision")
+                        scoped.append(f"{prediction_id}:market_cutoff_after_decision")
             except Exception:
-                violations.append(f"{prediction_id}:invalid_pit_metadata")
+                scoped.append(f"{prediction_id}:invalid_pit_metadata")
                 decision = created
 
-        # A prediction must always precede both future targets, even for legacy
-        # rows that predate the explicit decision_time/provenance contract.
-        scoped_violations = violations
-        provenance_present = isinstance(scenario.get("provenance"), dict)
-        is_legacy = not provenance_present and not any(k in scenario for k in ("decision_time_utc", "market_data_cutoff_utc"))
-        if is_legacy:
-            scoped_violations = legacy_violations
+        if target10 <= target5:
+            scoped.append(f"{prediction_id}:10m_target_not_after_5m_target")
         if target5 <= decision:
-            scoped_violations.append(f"{prediction_id}:5m_target_not_after_decision")
+            scoped.append(f"{prediction_id}:5m_target_not_after_decision")
         if target10 <= decision:
-            scoped_violations.append(f"{prediction_id}:10m_target_not_after_decision")
+            scoped.append(f"{prediction_id}:10m_target_not_after_decision")
 
-        # Enforce the stronger PIT contract when provenance is present:
-        # every explicitly available input must have become available no later
-        # than the prediction/decision timestamp. Missing source-native
-        # publication timestamps remain acceptable only when the source adapter
-        # explicitly records a conservative acquisition-time available_at.
-        try:
-            provenance = scenario.get("provenance", {})
-            provenance_target = legacy_violations if is_legacy else violations
-            if provenance and not isinstance(provenance, dict):
-                raise ValueError("provenance_not_object")
-            top_available = provenance.get("available_at") if isinstance(provenance, dict) else None
-            if top_available:
-                available = parse_utc(str(top_available))
-                if available > decision:
-                    provenance_target.append(f"{prediction_id}:available_at_after_decision")
-            sources = provenance.get("sources", {}) if isinstance(provenance, dict) else {}
-            if sources and not isinstance(sources, dict):
-                raise ValueError("sources_not_object")
-            for source_name, source_info in sources.items():
-                if not isinstance(source_info, dict):
-                    violations.append(f"{prediction_id}:invalid_source_provenance:{source_name}")
-                    continue
-                source_status = str(source_info.get("status", ""))
-                source_available = source_info.get("available_at")
-                if source_status in {"ok", "ok_current_only"} and not source_available:
-                    violations.append(f"{prediction_id}:missing_available_at:{source_name}")
-                    continue
-                if source_available:
-                    source_dt = parse_utc(str(source_available))
-                    if source_dt > decision:
-                        provenance_target.append(f"{prediction_id}:source_available_at_after_decision:{source_name}")
-        except Exception:
-            provenance_target.append(f"{prediction_id}:invalid_pit_provenance")
-
-        # Degraded predictions must always satisfy the explicit safety policy,
-        # including legacy rows. Check this before legacy provenance handling so
-        # an old degraded record cannot bypass the policy contract.
-        if model_version == "DEGRADED_NO_FRESH_DATA" and scenario.get("policy") != "safe_degraded_no_directional_claim":
-            (legacy_violations if is_legacy else violations).append(f"{prediction_id}:degraded_policy_mismatch")
-        provenance = scenario.get("provenance")
-        if provenance is None:
-            # Old prediction rows predate the provenance contract. They cannot be
-            # promoted to PIT-verified merely by inference, but they are not the
-            # same thing as a current structural PIT violation. Keep them visible
-            # as UNVERIFIED_LEGACY and require a separate zero-legacy condition
-            # before promotion.
-            if any(k in scenario for k in ("decision_time_utc", "market_data_cutoff_utc")):
-                violations.append(f"{prediction_id}:missing_top_level_provenance")
-            else:
-                legacy_unverified_count += 1
-                continue
-        else:
-            violations.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
-            sources = provenance.get("sources") if isinstance(provenance, dict) else None
+        if provenance_present:
+            scoped.extend(validate_provenance_envelope(provenance, f"{prediction_id}:provenance"))
+            sources = provenance.get("sources")
             if not isinstance(sources, dict) or not sources:
-                violations.append(f"{prediction_id}:missing_source_provenance")
+                scoped.append(f"{prediction_id}:missing_source_provenance")
             else:
                 for source_name, source_record in sources.items():
-                    source_status = str(source_record.get("status", "")) if isinstance(source_record, dict) else ""
-                    # Only sources declared available participate in the strict
-                    # provenance envelope. Explicitly failed/unused sources must
-                    # not be treated as if they were usable PIT inputs.
-                    if source_status in {"ok", "ok_current_only"}:
-                        violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
-        if provenance_present and not any(v.startswith(f"{prediction_id}:") for v in violations):
+                    if not isinstance(source_record, dict):
+                        scoped.append(f"{prediction_id}:source:{source_name}:provenance_not_object")
+                        continue
+                    source_status = str(source_record.get("status", ""))
+                    if source_status in AVAILABLE_STATUSES:
+                        scoped.extend(
+                            validate_provenance_envelope(
+                                source_record,
+                                f"{prediction_id}:source:{source_name}",
+                            )
+                        )
+        elif not is_legacy:
+            scoped.append(f"{prediction_id}:missing_top_level_provenance")
+
+        if model_version == "DEGRADED_NO_FRESH_DATA":
+            if scenario.get("policy") != "safe_degraded_no_directional_claim":
+                scoped.append(f"{prediction_id}:degraded_policy_mismatch")
+
+        if is_legacy:
+            legacy_unverified_count += 1
+        elif not any(v.startswith(row_prefix) for v in violations):
             verified_count += 1
-            verified_by_horizon["5m"] += 1
-            verified_by_horizon["10m"] += 1
 
     pit_ready = bool(not violations and verified_count >= MIN_STRICT_PIT_ROWS)
     result = {
         "ok": not violations,
-        "status": "PASS" if pit_ready and legacy_unverified_count == 0 else (
-            "PASS_WITH_LEGACY_UNVERIFIED" if not violations else "FAILED"
+        "status": (
+            "PASS"
+            if pit_ready
+            else ("PASS_WITH_LEGACY_UNVERIFIED" if not violations else "FAILED")
         ),
         "pit_verified": pit_ready,
-        "pit_verified_reason": "strict_scope_verified" if pit_ready else f"insufficient_strict_pit_rows:{verified_count}/{MIN_STRICT_PIT_ROWS}",
-        "verified_by_horizon": verified_by_horizon,
-        "legacy_violation_count": len(legacy_violations),
-        "legacy_violations": legacy_violations[:50],
+        "pit_verified_reason": (
+            "strict_scope_verified"
+            if pit_ready
+            else f"insufficient_strict_pit_rows:{verified_count}/{MIN_STRICT_PIT_ROWS}"
+        ),
         "checked_predictions": checked,
         "verified_predictions": verified_count,
+        "min_strict_pit_rows": MIN_STRICT_PIT_ROWS,
         "legacy_unverified_count": legacy_unverified_count,
+        "legacy_violation_count": len(legacy_violations),
+        "legacy_violations": legacy_violations[:50],
         "violations": violations[:100],
         "violation_count": len(violations),
-        "policy": "decision_time_before_targets; market_inputs_not_after_decision_time; legacy_rows_without_provenance_remain_unverified_and_cannot_enable_promotion",
+        "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
