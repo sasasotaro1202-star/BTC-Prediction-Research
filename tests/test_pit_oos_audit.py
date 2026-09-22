@@ -245,6 +245,74 @@ class TestPITOOSAudit(unittest.TestCase):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
 
+
+    def test_precontract_coinbase_missing_cutoff_is_explicitly_quarantined(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+            scenario = {
+                "decision_time_utc": created.isoformat(),
+                "provenance": {
+                    "event_time": created.isoformat(),
+                    "available_at": created.isoformat(),
+                    "retrieved_at": created.isoformat(),
+                    "prediction_cutoff": created.isoformat(),
+                    "sources": {
+                        "coinbase_futures": {
+                            "status": "ok",
+                            "event_time": created.isoformat(),
+                            "available_at": created.isoformat(),
+                            "retrieved_at": created.isoformat(),
+                            "prediction_cutoff": None,
+                        }
+                    },
+                },
+                "production_mode": "coinbase_fallback",
+            }
+            db = self.make_db(td, [(1, created.isoformat(),
+                                    (created + timedelta(minutes=5)).isoformat(),
+                                    (created + timedelta(minutes=10)).isoformat(),
+                                    "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1",
+                                    json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertFalse(result["pit_verified"])
+                self.assertEqual(result["verified_fallback_predictions"], 0)
+                self.assertEqual(result["legacy_unverified_count"], 1)
+
+    def test_postcontract_coinbase_missing_cutoff_is_not_quarantined(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime(2026, 9, 22, 6, 0, tzinfo=timezone.utc)
+            scenario = {
+                "decision_time_utc": created.isoformat(),
+                "provenance": {
+                    "event_time": created.isoformat(),
+                    "available_at": created.isoformat(),
+                    "retrieved_at": created.isoformat(),
+                    "prediction_cutoff": created.isoformat(),
+                    "sources": {
+                        "coinbase_futures": {
+                            "status": "ok",
+                            "event_time": created.isoformat(),
+                            "available_at": created.isoformat(),
+                            "retrieved_at": created.isoformat(),
+                            "prediction_cutoff": None,
+                        }
+                    },
+                },
+                "production_mode": "coinbase_fallback",
+            }
+            db = self.make_db(td, [(1, created.isoformat(),
+                                    (created + timedelta(minutes=5)).isoformat(),
+                                    (created + timedelta(minutes=10)).isoformat(),
+                                    "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1",
+                                    json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertFalse(result["ok"])
+                self.assertFalse(result["pit_verified"])
+                self.assertTrue(any("source:coinbase_futures:missing_prediction_cutoff" in v for v in result["violations"]))
+
     def test_rejects_target_before_decision(self):
         with tempfile.TemporaryDirectory() as td:
             now = datetime.now(timezone.utc).replace(microsecond=0)
