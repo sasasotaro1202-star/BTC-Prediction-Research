@@ -96,35 +96,35 @@ def load(h):
     return result
 
 def load_research_archive(h):
-    """Research-only fallback built from contiguous closed Binance Vision rows.
-    
-    This evidence is useful for robustness diagnostics but can never satisfy
-    the live-primary PIT/promotion gate.
-    """
-    steps=int(str(h).rstrip("m"))
+    """Apply the frozen current Champion to contiguous closed Binance archive rows."""
     try:
-        raw=load_archive_research_rows(h, 5000)
-    except Exception:
-        return []
-    out=[]
-    for r in raw:
-        try:
+        archive=load_archive_research_rows(h,5000)
+        if len(archive)<1000:
+            return []
+        generation=current_generation(h)
+        model_path=ROOT/"models"/f"{h}.joblib"
+        if not generation or not model_path.is_file():
+            return []
+        model=joblib.load(model_path)
+        X=np.asarray([r["x"] for r in archive],dtype=float)
+        probs=aligned(model,X)
+        out=[]
+        for row,p in zip(archive,probs):
+            x=row["x"]
             out.append({
-                "id":r.get("id"),
-                "created":r.get("created"),
-                "ret":float(r["x"][0]) if "x" in r and len(r["x"]) else float(r.get("ret",0.0)),
-                "vol":float(r["x"][5]) if "x" in r and len(r["x"])>5 else float(r.get("vol",0.0)),
-                "y":r["y"],
-                "p":None,
-                "model_version":"research_archive",
+                "id":row.get("id"),
+                "created":row.get("created"),
+                "ret":float(x[3]),
+                "vol":float(x[6]),
+                "y":row["y"],
+                "p":np.asarray(p,dtype=float),
+                "model_version":generation,
                 "data_source":"binance_vision_archive",
                 "promotion_evidence_eligible":False,
             })
-        except (TypeError,ValueError,KeyError):
-            continue
-    # Archive rows do not carry Champion probabilities; fit/evaluate uses a
-    # separate historical prediction path below only when explicitly enabled.
-    return out
+        return out
+    except (OSError,ValueError,TypeError,KeyError,RuntimeError,EOFError):
+        return []
 
 def evaluate(h, rows):
     n=len(rows)
@@ -161,12 +161,8 @@ def main():
     payload={"schema_version":1,"research_only":True,"policy":"diagnostic_only_no_model_input_no_promotion_effect","horizons":{}}
     for h in HORIZONS:
         live=load(h)
-        if len(live) >= 1000:
-            payload["horizons"][h]=evaluate(h,live)
-        else:
-            # Keep research alive using the existing archive-based model zoo
-            # prediction stream; never mark archive evidence as promotion-ready.
-            payload["horizons"][h]=evaluate(h,live)
+        data=live if len(live) >= 1000 else load_research_archive(h)
+        payload["horizons"][h]=evaluate(h,data)
     OUT.parent.mkdir(parents=True,exist_ok=True)
     OUT.write_text(json.dumps(payload,indent=2,sort_keys=True),encoding="utf-8")
     print(json.dumps(payload,indent=2))
