@@ -133,7 +133,7 @@ jobs:
           exit 1
       - name: Fail closed on incomplete live prediction inputs
         run: python src/live_data_fail_closed.py
-      - name: Run non-fatal BTC research health audit
+      - name: Run BTC research health audit
         run: python src/research_health.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
         run: python src/venue_drift.py
@@ -198,7 +198,9 @@ jobs:
               if item.get('horizon') not in {'5m','10m'} or len(str(item.get('model_sha256',''))) != 64 or len(str(item.get('metadata_sha256',''))) != 64: raise SystemExit('production artifact fingerprint invalid')
           health=Path('data/historical_research/research_health.json')
           if not health.exists(): raise SystemExit('research health audit output missing')
-          if not isinstance(json.loads(health.read_text()).get('ok'),bool): raise SystemExit('research health audit malformed')
+          payload=json.loads(health.read_text())
+          if not isinstance(payload.get('ok'),bool): raise SystemExit('research health audit malformed')
+          if payload.get('ok') is not True: raise SystemExit('research health audit failed closed')
           drift=Path('data/historical_research/venue_drift.json')
           if not drift.exists(): raise SystemExit('venue drift audit output missing')
           drift_obj=json.loads(drift.read_text())
