@@ -23,7 +23,28 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         and all(robust["horizons"][h].get("final_holdout_protected") is True for h in HORIZONS)
     )
     production_ok = prod.get("status") == "PASS"
-    candidate_ready = all(blends.get(h, {}).get("status") == "accepted" for h in HORIZONS)
+    def _candidate_holdout_ok(h: str) -> bool:
+        item = blends.get(h, {}) if isinstance(blends, dict) else {}
+        if item.get("status") != "accepted":
+            return False
+        if item.get("holdout_protected") is not True or item.get("holdout_used_for_selection") is not False:
+            return False
+        try:
+            holdout_n = int(item.get("holdout_n", 0))
+            baseline_ll = float(item["baseline_logloss"])
+            candidate_ll = float(item["candidate_logloss"])
+            baseline_br = float(item["baseline_brier"])
+            candidate_br = float(item["candidate_brier"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        return (
+            holdout_n > 0
+            and all(map(lambda v: v == v and abs(v) != float("inf"), [baseline_ll, candidate_ll, baseline_br, candidate_br]))
+            and candidate_ll <= baseline_ll
+            and candidate_br <= baseline_br
+        )
+
+    candidate_ready = all(_candidate_holdout_ok(h) for h in HORIZONS)
     pit_ok = (
         isinstance(pit, dict)
         and pit.get("ok") is True
@@ -57,7 +78,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         if not robust_ok:
             reasons.append("robustness_evidence_invalid_or_incomplete")
         if not candidate_ready:
-            reasons.append("candidate_not_accepted_for_both_horizons")
+            reasons.append("candidate_or_frozen_holdout_non_regression_not_verified")
         if not pit_ok:
             reasons.append("pit_oos_audit_not_fully_verified")
         if not calibration_ok:
