@@ -29,10 +29,10 @@ jobs:
           set -euo pipefail
           if [ -s data/predictions.db.gz ]; then
             python - <<'PY'
-            from pathlib import Path
-            from src.state_archive import restore_db
-            restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
-            PY
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
           else
             echo 'No canonical prediction state; lane will remain DEFERRED.'
           fi
