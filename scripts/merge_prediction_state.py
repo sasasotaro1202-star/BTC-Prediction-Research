@@ -116,6 +116,9 @@ if _merge_mode():
 # logical identity. Prediction settlement fields are mutable, so they must not
 # participate in duplicate detection; otherwise a prediction that was settled
 # on one side and unsettled on the other can be inserted twice.
+if len(sys.argv) != 3:
+    raise SystemExit('usage: merge_prediction_state.py LOCAL_DB TARGET_DB | --compact TARGET_DB')
+local_path, target_path = sys.argv[1:]
 con = sqlite3.connect(target_path)
 con.execute('PRAGMA foreign_keys=ON')
 con.execute('ATTACH DATABASE ? AS local', (local_path,))
