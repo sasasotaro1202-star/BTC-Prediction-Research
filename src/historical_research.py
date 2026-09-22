@@ -137,6 +137,9 @@ def build_panel():
     for i,t in enumerate(common):
         if i<50:continue
         w=common[i-50:i+1]
+        # Every feature window must represent consecutive 1-minute bars.
+        if any(int(w[j][0]) - int(w[j-1][0]) != 60_000 for j in range(1, len(w))):
+            continue
         def c(k):return np.array([float(maps[k][x][4]) for x in w])
         b,s,ec,sc=c("btc_fut"),c("btc_spot"),c("eth_fut"),c("sol_fut")
         bo=np.array([float(maps["btc_fut"][x][1]) for x in w]); bh=np.array([float(maps["btc_fut"][x][2]) for x in w]); bl=np.array([float(maps["btc_fut"][x][3]) for x in w]); bv=np.array([float(maps["btc_fut"][x][5]) for x in w]); bt=np.array([float(maps["btc_fut"][x][8]) for x in w]); tb=np.array([float(maps["btc_fut"][x][9]) for x in w])
@@ -155,7 +158,30 @@ def build_panel():
     return rows
 
 def labels(rows,h):
-    n=len(rows)-h; X=np.asarray([rows[i][1] for i in range(n)],float); base=np.asarray([rows[i][2] for i in range(n)],float); fut=np.asarray([rows[i+h][2] for i in range(n)],float); r=(fut/base-1)*10000; y=np.where(r>NEUTRAL_BPS,"UP",np.where(r<-NEUTRAL_BPS,"DOWN","FLAT")); return X,y,np.asarray([rows[i][0] for i in range(n)]),base
+    # Target by elapsed wall-clock time, never by row offset. Missing candles
+    # therefore reduce sample count instead of silently stretching a 5m/10m
+    # target into a longer interval.
+    steps=int(h)
+    index={int(r[0]):r for r in rows}
+    selected=[]; ys=[]; bases=[]
+    for row in rows:
+        t=int(row[0]); fut=index.get(t+steps*60_000)
+        if fut is None:
+            continue
+        base=float(row[2]); future=float(fut[2])
+        if not (math.isfinite(base) and base>0 and math.isfinite(future)):
+            continue
+        ret=(future/base-1.0)*10000.0
+        selected.append(row); bases.append(base)
+        ys.append("UP" if ret>NEUTRAL_BPS else "DOWN" if ret<-NEUTRAL_BPS else "FLAT")
+    if not selected:
+        return np.empty((0, len(FEATURES))), np.asarray([], dtype=object), np.asarray([], dtype=np.int64), np.asarray([], dtype=float)
+    return (
+        np.asarray([r[1] for r in selected],float),
+        np.asarray(ys),
+        np.asarray([r[0] for r in selected],dtype=np.int64),
+        np.asarray(bases,float),
+    )
 
 def norm(p):p=np.clip(np.asarray(p,float),1e-7,1);return p/p.sum(axis=1,keepdims=True)
 def metrics(y,p):
