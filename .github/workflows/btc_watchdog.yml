@@ -111,8 +111,14 @@ jobs:
             fi
             if jq -e --arg workflow ".github/workflows/$workflow" '
               any(.files[]?.filename?;
-                test("^(src/|scripts/|tests/|requirements\\.txt$|\\.github/workflows/|" + $workflow + "$")
-              )' >/dev/null 2>&1; then
+                startswith("src/") or
+                startswith("scripts/") or
+                startswith("tests/") or
+                . == "requirements.txt" or
+                startswith(".github/workflows/") or
+                . == $workflow
+              )
+            ' <<<"$compare" >/dev/null 2>&1; then
               return 0
             fi
             return 1
