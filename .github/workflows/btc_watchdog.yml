@@ -28,7 +28,7 @@ jobs:
           REPO: ${{ github.repository }}
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           workflows=(
             btc_live_cycle.yml
             btc_integrity.yml
@@ -62,7 +62,11 @@ jobs:
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
-            printf '%s' "$response" | jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' | while IFS= read -r run; do
+            recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
+              echo "WARN: unable to parse ${workflow} run history; skipping retry inspection."
+              continue
+            }
+            while IFS= read -r run; do
               [ -n "$run" ] || continue
               status=$(printf '%s' "$run" | jq -r '.status // ""')
               conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
@@ -87,7 +91,7 @@ jobs:
                   fi
                   ;;
               esac
-            done
+            done <<<"$recent_runs_json"
           done
 
           code_or_protocol_changed_since() {
@@ -128,8 +132,11 @@ jobs:
             # run. Inspect active runs separately and cancel only when they are
             # clearly stale or affected by a source/protocol change or exceeded its hard active-age limit. The next watchdog tick
             # performs the recovery dispatch after cancellation has settled.
-            printf "%s" "$response" | jq -c '.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress") | {id,status,head_sha,updated_at}' |
-              while IFS= read -r active; do
+            active_runs_json=$(jq -c '.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress") | {id,status,head_sha,updated_at}' <<<"$response") || {
+              echo "WARN: unable to parse ${workflow} active-run state; skipping stale cancellation."
+              continue
+            }
+            while IFS= read -r active; do
                 [ -n "$active" ] || continue
                 active_id=$(printf "%s" "$active" | jq -r '.id // 0')
                 active_head=$(printf "%s" "$active" | jq -r '.head_sha // ""')
@@ -152,7 +159,7 @@ jobs:
                     echo "WARN: unable to cancel stale active run ${active_id}; leaving state unchanged."
                   fi
                 fi
-              done
+            done <<<"$active_runs_json"
 
             latest_updated=$(printf "%s" "$latest" | jq -r '.updated_at // ""')
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
