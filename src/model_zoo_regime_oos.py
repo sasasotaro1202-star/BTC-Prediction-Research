@@ -102,10 +102,8 @@ def _mix(parts,weights):
 def _meta_features(parts, keys):
     """Represent only prior-OOS component predictions + current regime."""
     probs=np.hstack([np.asarray(p,dtype=float) for p in parts])
-    entropy=np.asarray([
-        -sum(float(v)*np.log(max(float(v),1e-7)) for v in p)
-        for p in probs.reshape(len(keys),-1,3)
-    ])
+    grouped=probs.reshape(len(keys),-1,3)
+    entropy=-np.sum(grouped*np.log(np.clip(grouped,1e-7,1.0)),axis=2)
     regime=np.zeros((len(keys),len(META_REGIMES)),dtype=float)
     for i,key in enumerate(keys):
         if key in META_REGIMES:
