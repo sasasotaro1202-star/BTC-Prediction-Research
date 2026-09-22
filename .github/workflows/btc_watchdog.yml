@@ -63,8 +63,8 @@ jobs:
             echo "Checking ${workflow}"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=5" 2>/dev/null) || { echo "WARN: unable to inspect ${workflow}; continuing"; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
-              echo "WARN: unable to parse ${workflow} run history; skipping retry inspection."
-              continue
+              echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
+              return 1
             }
             while IFS= read -r run; do
               [ -n "$run" ] || continue
@@ -133,8 +133,8 @@ jobs:
             # clearly stale or affected by a source/protocol change or exceeded its hard active-age limit. The next watchdog tick
             # performs the recovery dispatch after cancellation has settled.
             active_runs_json=$(jq -c '.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress") | {id,status,head_sha,updated_at}' <<<"$response") || {
-              echo "WARN: unable to parse ${workflow} active-run state; skipping stale cancellation."
-              continue
+              echo "ERROR: unable to parse ${workflow} active-run state; stale-run cancellation cannot be trusted." >&2
+              return 1
             }
             while IFS= read -r active; do
                 [ -n "$active" ] || continue
