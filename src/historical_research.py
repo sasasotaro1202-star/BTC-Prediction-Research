@@ -28,6 +28,7 @@ OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
+from research_time_policy import consecutive_minute_window, exact_elapsed_pairs
 DAYS=45; MIN_TRAIN=12000; TEST_BLOCK=5000; EMBARGO=10
 TARGETS={"5m":5,"10m":10}; SYMS={"btc":"BTCUSDT","eth":"ETHUSDT","sol":"SOLUSDT"}
 FEATURES=["ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30","rangepos10","rangepos30","body","upper","lower","volratio","voltrend","tradesratio","takerimb","basis","basis_delta","mark_gap","premium","eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","hour_sin","hour_cos","dow_sin","dow_cos","funding","funding_delta","oi_change","oi_z"]
@@ -138,7 +139,7 @@ def build_panel():
         if i<50:continue
         w=common[i-50:i+1]
         # Every feature window must represent consecutive 1-minute bars.
-        if any(int(w[j][0]) - int(w[j-1][0]) != 60_000 for j in range(1, len(w))):
+        if not consecutive_minute_window(w):
             continue
         def c(k):return np.array([float(maps[k][x][4]) for x in w])
         b,s,ec,sc=c("btc_fut"),c("btc_spot"),c("eth_fut"),c("sol_fut")
@@ -161,10 +162,10 @@ def labels(rows,h):
     # Target by elapsed wall-clock time, never by row offset. Missing candles
     # reduce sample count instead of silently stretching a 5m/10m target.
     steps=int(h)
-    index={int(r[0]):r for r in rows}
     selected=[]; ys=[]; bases=[]
+    pairs = {int(row[0]): future for row, future in exact_elapsed_pairs(rows, steps)}
     for row in rows:
-        t=int(row[0]); fut=index.get(t+steps*60_000)
+        fut=pairs.get(int(row[0]))
         if fut is None:
             continue
         base=float(row[2]); future=float(fut[2])
