@@ -27,7 +27,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import log_loss
 
-from model_compare import CLASSES, HORIZONS, load_rows, walk_forward, metrics
+from model_compare import (
+    CLASSES,
+    HORIZONS,
+    load_primary_production_strict_rows,
+    walk_forward,
+    metrics,
+)
 from exogenous_information import aggregate_event_features, events_from_records
 from gdelt_exogenous_research import coverage_complete, _load_coverage
 
@@ -150,8 +156,13 @@ def _block_comparison(base_wf, aug_wf, block_size=25):
     }
 
 
+def _load_prediction_rows(horizon):
+    """Use only strict-PIT Binance-primary observations for exogenous OOS."""
+    return load_primary_production_strict_rows(horizon)
+
+
 def _evaluate(horizon, records, coverage):
-    rows = sorted(load_rows(horizon), key=lambda r: str(r["created"]))
+    rows = sorted(_load_prediction_rows(horizon), key=lambda r: str(r["created"]))
     buckets = _event_features_by_bucket(records)
     joined = []
     event_positive = 0
@@ -247,6 +258,7 @@ def main():
         "event_records": len(records),
         "coverage_slices": len(coverage),
         "database_ready": db_ready,
+        "prediction_input_policy": "strict_primary_binance_pit_only",
         "horizons": ({h: _evaluate(h, records, coverage) for h in HORIZONS} if db_ready else {h: {"status": "DEFERRED", "reason": "production_prediction_database_unavailable"} for h in HORIZONS}),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
