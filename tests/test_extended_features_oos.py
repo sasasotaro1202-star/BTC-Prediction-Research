@@ -25,10 +25,22 @@ class ExtendedFeaturesTests(unittest.TestCase):
 
     def test_insufficient_data_fails_closed(self):
         from unittest.mock import patch
-        with patch.object(extended_features_oos, "load_rows", return_value=[]):
+        with patch.object(extended_features_oos, "load_rows", return_value=[]), \
+             patch.object(extended_features_oos, "load_archive_rows", return_value=[]):
             result = extended_features_oos.evaluate("5m")
         self.assertEqual(result["status"], "DEFERRED")
         self.assertEqual(result["reason"], "insufficient_rows")
+
+    def test_archive_fallback_is_research_only(self):
+        rows = [{"id": i} for i in range(extended_features_oos.MIN_TRAIN + extended_features_oos.MIN_OOS)]
+        from unittest.mock import patch
+        with patch.object(extended_features_oos, "load_rows", return_value=[]), \
+             patch.object(extended_features_oos, "load_archive_rows", return_value=rows):
+            selected, source, eligible, baseline = extended_features_oos.load_research_rows("5m")
+        self.assertEqual(len(selected), len(rows))
+        self.assertEqual(source, "binance_vision_archive")
+        self.assertFalse(eligible)
+        self.assertEqual(baseline, "frozen_champion_archive_replay")
 
 
 if __name__ == "__main__":
