@@ -2,9 +2,7 @@ import unittest
 
 import numpy as np
 
-import numpy as np
-
-from src.selective_nested_oos import _wilson_lower, causal_history, choose_policy, evaluate_policy
+from src.selective_nested_oos import _norm, _wilson_lower, causal_history, choose_policy, evaluate_policy
 
 
 class SelectiveNestedOOSTests(unittest.TestCase):
