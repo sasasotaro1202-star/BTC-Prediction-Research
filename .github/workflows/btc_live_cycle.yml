@@ -60,18 +60,29 @@ jobs:
           exit 1
       - name: Compile research code
         run: python -m compileall -q src tests scripts
-      - name: Run deterministic BTC guard tests
+      - name: Run production-critical BTC guard suite
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import unittest
-          suite=unittest.defaultTestLoader.discover('tests',pattern='test_*.py')
-          count=suite.countTestCases()
-          print(f'Discovered BTC guard tests: {count}')
-          if count == 0: raise SystemExit('No BTC guard tests were discovered; refusing to continue.')
-          PY
-          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m unittest discover -s tests -p 'test_*.py' -v
+          tests=(
+            tests/test_live_data_fail_closed.py
+            tests/test_live_data_policy.py
+            tests/test_market_fallbacks.py
+            tests/test_model_guards.py
+            tests/test_runtime_model_guards.py
+            tests/test_predict_generation_binding.py
+            tests/test_pit_schema.py
+            tests/test_promotion_gate.py
+            tests/test_model_compare_promotion_boundary.py
+            tests/test_settle.py
+            tests/test_settlement_source.py
+            tests/test_state_archive.py
+            tests/test_merge_prediction_state.py
+          )
+          for test_file in "${tests[@]}"; do
+            test -s "${test_file}" || { echo "Missing production guard test: ${test_file}" >&2; exit 1; }
+          done
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m pytest -q "${tests[@]}"
       - name: Ensure BTC production models exist without retraining every 5 minutes
         shell: bash
         run: |
