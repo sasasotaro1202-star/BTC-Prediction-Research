@@ -6,6 +6,7 @@ name: BTC Canonical State Compaction
 # committed through the same state serialization path used by Live Cycle.
 on:
   push:
+    branches: [main]
     paths:
       - 'scripts/merge_prediction_state.py'
       - '.github/workflows/btc_canonical_state_compaction.yml'
