@@ -75,6 +75,23 @@ class MicrostructureOOSTests(unittest.TestCase):
         scenario["microstructure"]["vwap_distance_15m"] = None
         self.assertIsNone(_market_flow_from_scenario(scenario))
 
+    def test_market_flow_v2_rejects_missing_window_timing(self):
+        scenario = self._scenario()
+        scenario["microstructure"].update({
+            "vwap_distance_5m": 0.0001,
+            "vwap_distance_15m": 0.0002,
+            "vwap_distance_30m": 0.0003,
+            "volume_burst_5m": 1.2,
+            "volume_burst_15m": 1.1,
+            "range_compression_5m": 0.8,
+            "range_compression_15m": 0.9,
+            "taker_imbalance_5m": 0.1,
+            "taker_imbalance_15m": 0.05,
+            "taker_imbalance_delta_5m_15m": 0.05,
+        })
+        scenario["data_quality"].pop("binance_taker_window_transport", None)
+        self.assertIsNone(_market_flow_from_scenario(scenario))
+
     def test_cross_venue_requires_all_secondary_fields(self):
         values = _micro_from_scenario(self._scenario(), cross_venue=True)
         self.assertEqual(set(values), set(BINANCE_MICRO + CROSS_VENUE))
