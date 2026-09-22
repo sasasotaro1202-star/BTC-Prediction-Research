@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: '37 13 * * *'
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/btc_9h_research_marathon.yml'
 
 concurrency:
   group: btc-9h-research-marathon
