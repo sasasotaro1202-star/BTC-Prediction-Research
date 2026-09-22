@@ -21,6 +21,8 @@ OUT = ROOT / "data" / "historical_research" / "context_router_oos.json"
 MIN_TRAIN = 1000
 TEST_BLOCK = 25
 MAX_BLOCKS = 24
+PURGE_BARS = {"5m": 5, "10m": 10}
+EMBARGO_BARS = {"5m": 60, "10m": 60}
 
 
 def factories():
@@ -79,6 +81,38 @@ def _test_endpoints(n_rows):
     )))
 
 
+def _causal_purged_train_rows(rows, test_start, horizon):
+    """Keep only labels known before the purged/embargoed test boundary.
+
+    A row created before the test block can still leak target information when
+    its label is settled during the future test interval. Filter by exact target
+    timestamp as the primary protection, then apply the explicit embargo.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        start = datetime.fromisoformat(str(test_start).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return []
+
+    embargo_cutoff = start - timedelta(minutes=int(EMBARGO_BARS[horizon]))
+    out = []
+    for row in rows:
+        created = row.get("created")
+        target = row.get("target")
+        try:
+            created_dt = datetime.fromisoformat(str(created).replace("Z", "+00:00")).astimezone(timezone.utc)
+            target_dt = datetime.fromisoformat(str(target).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if created_dt >= target_dt:
+            continue
+        if target_dt >= embargo_cutoff:
+            continue
+        out.append(row)
+    return out
+
+
 def evaluate_horizon(horizon):
     rows = load_primary_production_strict_rows(horizon)
     data_source = "live_binance_primary"
@@ -98,9 +132,12 @@ def evaluate_horizon(horizon):
 
     blocks = []
     for end in _test_endpoints(len(rows)):
-        train = rows[:end]
         test = rows[end:min(end + TEST_BLOCK, len(rows))]
         if len(test) < max(10, TEST_BLOCK // 2):
+            continue
+        test_start = test[0].get("created")
+        train = _causal_purged_train_rows(rows[:end], test_start, horizon)
+        if len(train) < MIN_TRAIN:
             continue
         routed = dynamic_route_predictions(train, test, factories())
         if routed is None:
