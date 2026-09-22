@@ -122,6 +122,7 @@ def binance_archive_rows(target: int = 30_000):
     # can be unpublished or delayed; one failed month must never terminate the
     # historical search when older verified archives are available.
     seen_months = set()
+    current_month_ok = False
     m = month
     for _ in range(6):
         key = (m.year, m.month)
@@ -131,6 +132,8 @@ def binance_archive_rows(target: int = 30_000):
         try:
             rows.extend(_month_rows(m))
             rows = list({int(r[0]): r for r in rows}.values())
+            if m.year == month.year and m.month == month.month:
+                current_month_ok = True
             if len(rows) >= target:
                 break
         except Exception as exc:
@@ -140,11 +143,7 @@ def binance_archive_rows(target: int = 30_000):
     # completed daily archives before filling the remainder with older months.
     # Otherwise an older month can satisfy 'target' first and hide the freshest
     # closed candles from the research cohort.
-    current_month_failed = False
-    # The monthly loop records failures above, so inspect whether the current
-    # month key was among the failed requests without relying on error wording.
-    current_key = (month.year, month.month)
-    current_month_failed = current_key in seen_months and not rows
+    current_month_failed = not current_month_ok
     if len(rows) < target and current_month_failed:
         day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         for _ in range(45):
