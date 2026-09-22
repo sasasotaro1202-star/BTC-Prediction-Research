@@ -195,42 +195,94 @@ def load_strict_rows(h):
     """
     return load_rows(h, strict_pit=True)
 
-def load_archive_research_rows(h, max_rows=12000):
-    """Build contiguous, historical-only BTC research rows from Binance Vision.
-    
-    This fallback is research-only. It never creates live-primary PIT evidence
-    and therefore cannot satisfy Promotion Gate requirements.
-    """
+def _research_archive_rows_from_raw(raw, h, max_rows, source_name):
+    """Convert a verified closed 1m candle series into causal research rows."""
     steps = int(str(h).rstrip("m"))
-    try:
-        from binance_history import binance_archive_rows
-        from bootstrap_train import make_features
-        from label_policy import direction_from_return
-        raw = binance_archive_rows(max(int(max_rows) + 40, 12000))
-    except Exception:
-        return []
+    from bootstrap_train import make_features
+    from label_policy import direction_from_return
+    ordered = sorted({int(r[0]): r for r in raw}.values(), key=lambda r: int(r[0]))
+    # Keep only the newest strictly contiguous suffix. A missing minute breaks
+    # the causal feature/target geometry and must not be bridged.
+    contiguous = []
+    for row in reversed(ordered):
+        if contiguous and int(contiguous[-1][0]) - int(row[0]) != 60_000:
+            break
+        contiguous.append(row)
+    contiguous.reverse()
     out = []
-    for i in range(30, len(raw) - steps):
+    for i in range(30, len(contiguous) - steps):
         try:
-            x = make_features(raw[: i + 1])
+            x = make_features(contiguous[: i + 1])
             arr = np.asarray(x, dtype=float)
             if not np.isfinite(arr).all():
                 continue
-            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
-            created = _parse_utc(datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc).isoformat())
-            target = datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc)
+            target_row = contiguous[i + steps]
+            # Explicit elapsed-time target: reject malformed archives where a
+            # row-offset does not represent exactly h minutes.
+            if int(target_row[0]) - int(contiguous[i][0]) != steps * 60_000:
+                continue
+            future_return = float(target_row[4]) / float(contiguous[i][4]) - 1.0
+            created = _parse_utc(
+                datetime.fromtimestamp(int(contiguous[i][0]) / 1000.0, timezone.utc).isoformat()
+            )
+            target = datetime.fromtimestamp(int(target_row[0]) / 1000.0, timezone.utc)
             out.append({
-                "id": f"archive:{int(raw[i][0])}:{h}",
+                "id": f"archive:{source_name}:{int(contiguous[i][0])}:{h}",
                 "created": created.isoformat() if created else "",
                 "target": target.isoformat(),
                 "x": [float(v) for v in arr],
                 "y": direction_from_return(future_return),
-                "production_mode": "binance_vision_archive",
-                "data_source": "binance_vision_closed_archive",
+                "production_mode": f"{source_name}_archive",
+                "data_source": source_name,
             })
         except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
             continue
     return out[-int(max_rows):]
+
+
+def load_archive_research_rows(h, max_rows=12000):
+    """Build research rows from free verified closed-candle sources.
+
+    Source order is Binance Vision -> Bybit -> Coinbase. A fallback venue is
+    explicitly research-only and is never treated as live-primary PIT evidence.
+    This keeps candidate/OOS research progressing when Binance Vision is
+    temporarily unavailable from a hosted runner, while preserving the
+    promotion gate's primary-PIT requirement.
+    """
+    target = max(int(max_rows) + 40, 12000)
+    loaders = []
+    try:
+        from binance_history import binance_archive_rows
+        loaders.append(("binance_vision", lambda: binance_archive_rows(target)))
+    except Exception:
+        pass
+    try:
+        from bootstrap_train import fetch_bybit
+        loaders.append(("bybit", lambda: fetch_bybit(target)))
+    except Exception:
+        pass
+    try:
+        from coinbase_fallback_train import fetch_coinbase
+        loaders.append(("coinbase", lambda: fetch_coinbase(target)))
+    except Exception:
+        pass
+
+    errors = []
+    best = []
+    for source_name, loader in loaders:
+        try:
+            raw = loader()
+            rows = _research_archive_rows_from_raw(raw, h, max_rows, source_name)
+            if len(rows) > len(best):
+                best = rows
+            if len(rows) >= int(max_rows):
+                return rows[-int(max_rows):]
+            errors.append(f"{source_name}:only_{len(rows)}_research_rows")
+        except Exception as exc:
+            errors.append(f"{source_name}:{type(exc).__name__}:{exc}")
+    if best:
+        return best[-int(max_rows):]
+    return []
 
 def load_primary_production_strict_rows(h):
     """Load only Binance-primary strict-PIT observations for Champion comparison."""
