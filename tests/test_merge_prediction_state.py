@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from scripts.merge_prediction_state import expected_compacted_event_count
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'merge_prediction_state.py'
 
@@ -170,6 +172,23 @@ class TestMergePredictionState(unittest.TestCase):
             count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
             con.close()
             self.assertEqual(count, 2)
+
+
+    def test_expected_compacted_count_matches_exact_identity_groups(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .4,
+                         'v1', '{"ret_1m":0.1}', '{}')
+            same_a = immutable + (None, None, None, None, None, None, None, None)
+            same_b = immutable + (None, None, None, None, None, None, None, None)
+            distinct_model = ('2026-09-15T10:00:00+00:00', immutable[1], immutable[2], 100.0,
+                              .5, .2, .3, .4, .3, .3, 'v2', immutable[11], '{}',
+                              None, None, None, None, None, None, None, None)
+            make_db(target, [same_a, same_b, distinct_model])
+            con = sqlite3.connect(target)
+            self.assertEqual(expected_compacted_event_count(con), 2)
+            con.close()
 
     def test_model_registry_prefers_newer_state_and_does_not_roll_back(self):
         with tempfile.TemporaryDirectory() as td:
