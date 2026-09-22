@@ -1,8 +1,10 @@
 name: BTC Workflow Watchdog
 
 on:
+  # Run off-hour every 5 minutes so dropped/delayed GitHub schedule events have
+  # more recovery opportunities without colliding with the exact top of the hour.
   schedule:
-    - cron: '4-59/15 * * * *'
+    - cron: '4-59/5 * * * *'
   push:
     branches: [main]
     paths:
