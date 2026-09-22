@@ -65,7 +65,7 @@ def target_close_preferred(target_iso: str, preferred_source: str) -> tuple[floa
 @lru_cache(maxsize=1)
 def _cached_binance_ws_rows():
     """Load and validate the current dedicated Binance WS cache once per settle run."""
-    return tuple(load_binance_ws_cache(BINANCE_WS_CACHE, 240))
+    return load_binance_ws_cache(BINANCE_WS_CACHE, 240)
 
 def _target_from_ws_cache(rows, start_ms: int) -> float | None:
     """Read the exact closed Binance Futures candle from the local WS cache."""
