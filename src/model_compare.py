@@ -182,7 +182,11 @@ def metrics(ys,probs):
 
 def aligned(model,X):
     p=model.predict_proba(X); out=np.full((len(X),3),1e-6)
-    for j,c in enumerate(model.classes_): out[:,CLASSES.index(c)]=p[:,j]
+    for j,c in enumerate(model.classes_):
+        if str(c) in CLASSES:
+            out[:,CLASSES.index(str(c))]=p[:,j]
+        elif isinstance(c,(int,np.integer)) and 0 <= int(c) < 3:
+            out[:,int(c)]=p[:,j]
     return normalize(out)
 
 def _temperature(probs,ys):
