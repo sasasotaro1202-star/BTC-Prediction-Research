@@ -4,58 +4,16 @@ import json
 import sqlite3
 import sys
 
-SETTLEMENT_COLUMNS = (
-    'actual_price_5m', 'actual_direction_5m', 'correct_5m', 'settled_5m_at_utc',
-    'actual_price_10m', 'actual_direction_10m', 'correct_10m', 'settled_10m_at_utc',
+from src.prediction_identity import (
+    SETTLEMENT_COLUMNS,
+    canonical_compaction_snapshot,
+    prediction_identity,
 )
-
-
-def prediction_identity(row):
-    """Immutable identity for one prediction event.
-
-    Settlement fields are mutable and excluded. Distinct model versions or
-    probability emissions are distinct prediction events even when timestamps
-    and features match.
-    """
-    try:
-        features = json.dumps(
-            json.loads(row.get('feature_json') or '{}'),
-            sort_keys=True,
-            separators=(',', ':'),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError, json.JSONDecodeError):
-        features = str(row.get('feature_json'))
-    values = (
-        str(row.get('created_at_utc')),
-        str(row.get('target_5m')),
-        str(row.get('target_10m')),
-        str(row.get('model_version')),
-        features,
-        row.get('p_up_5m'),
-        row.get('p_down_5m'),
-        row.get('p_flat_5m'),
-        row.get('p_up_10m'),
-        row.get('p_down_10m'),
-        row.get('p_flat_10m'),
-    )
-    return values
-
 
 
 def expected_compacted_event_count(con):
     """Return the number of immutable prediction events before compaction."""
-    info = con.execute('PRAGMA table_info(predictions)').fetchall()
-    if not info:
-        return 0
-    cols = [r[1] for r in info]
-    names = ','.join('"' + c + '"' for c in cols)
-    rows = con.execute(f'SELECT rowid, {names} FROM predictions').fetchall()
-    identities = set()
-    for item in rows:
-        row = dict(zip(['rowid'] + cols, item))
-        identities.add(prediction_identity(row))
-    return len(identities)
+    return int(canonical_compaction_snapshot(con)["unique_event_count"])
 
 def settlement_score(row):
     present = sum(row.get(c) is not None for c in SETTLEMENT_COLUMNS)
@@ -67,7 +25,13 @@ def settlement_score(row):
 
 
 def compact_predictions(con):
-    """Collapse only exact immutable duplicate events and preserve settlement state."""
+    """Collapse only exact immutable duplicates after checking settlement conflicts."""
+    before_snapshot = canonical_compaction_snapshot(con)
+    if before_snapshot["settlement_conflicts"]:
+        raise RuntimeError(
+            "conflicting non-null settlement states for immutable prediction event: "
+            + "; ".join(before_snapshot["settlement_conflicts"][:10])
+        )
     info = con.execute('PRAGMA table_info(predictions)').fetchall()
     if not info:
         return {'compacted_duplicates': 0, 'total_events': 0}
