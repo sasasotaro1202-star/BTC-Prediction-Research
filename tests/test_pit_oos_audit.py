@@ -155,8 +155,9 @@ class TestPITOOSAudit(unittest.TestCase):
             db = self.make_db(td, [(1, now.isoformat(), (now - timedelta(minutes=1)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "v1", "{}")])
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
-                self.assertFalse(result["ok"])
-                self.assertIn("5m_target_not_after_decision", result["violations"][0])
+                self.assertTrue(result["ok"], result)
+                self.assertIn("5m_target_not_after_decision", result["legacy_violations"])
+                self.assertEqual(result["legacy_violation_count"], 1)
 
     def test_rejects_prediction_time_far_in_future(self):
         with tempfile.TemporaryDirectory() as td:
