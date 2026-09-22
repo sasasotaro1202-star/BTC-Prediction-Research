@@ -12,6 +12,7 @@ from typing import Any
 
 HORIZONS = ("5m", "10m")
 POLICY = "no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence"
+MIN_CALIBRATION_ROWS = 300
 
 
 def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dict[str, dict[str, Any]], pit: dict[str, Any] | None = None, calibrations: dict[str, dict[str, Any]] | None = None, research_input: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -61,6 +62,9 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
                 item.get("horizon") == h
                 and 0.5 <= float(item.get("temperature", 1.0)) <= 3.0
                 and bool(item.get("model_version"))
+                and int(item.get("n_settled", 0)) >= MIN_CALIBRATION_ROWS
+                and item.get("fit_logloss") is not None
+                and item.get("holdout_logloss") is not None
             )
         except (TypeError, ValueError):
             calibration_ok = False
