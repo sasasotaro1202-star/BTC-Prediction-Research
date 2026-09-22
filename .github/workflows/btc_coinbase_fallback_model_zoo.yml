@@ -1,0 +1,49 @@
+name: BTC Coinbase Fallback Model Zoo Research
+
+on:
+  schedule:
+    - cron: '37 */6 * * *'
+  pull_request:
+    paths:
+      - 'src/coinbase_fallback_model_zoo_oos.py'
+      - 'tests/test_coinbase_fallback_model_zoo_oos.py'
+      - '.github/workflows/btc_coinbase_fallback_model_zoo.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-coinbase-fallback-model-zoo-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  model-zoo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install lightweight research dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --retries 5 --timeout 60             "numpy>=2.0,<3"             "scikit-learn>=1.5,<2"             "joblib>=1.4,<2"
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m unittest -q tests/test_coinbase_fallback_model_zoo_oos.py
+      - name: Run fresh Coinbase OOS model zoo
+        run: |
+          set -euo pipefail
+          python src/coinbase_fallback_model_zoo_oos.py
+          test -s data/historical_research/coinbase_fallback_model_zoo_oos.json
+      - name: Upload evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-coinbase-fallback-model-zoo
+          path: data/historical_research/coinbase_fallback_model_zoo_oos.json
+          retention-days: 3
