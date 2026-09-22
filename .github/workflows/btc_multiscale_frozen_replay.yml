@@ -1,0 +1,102 @@
+name: BTC Multi-Scale Frozen Replay Research
+
+on:
+  schedule:
+    - cron: '11 */6 * * *'
+  workflow_run:
+    workflows: ["BTC Archive Refresh Research"]
+    types: [completed]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/multiscale_frozen_replay_oos.py'
+      - 'tests/test_multiscale_frozen_replay_oos.py'
+      - '.github/workflows/btc_multiscale_frozen_replay.yml'
+
+concurrency:
+  group: btc-multiscale-frozen-replay
+  # Keep scheduled/archive-triggered research alive; cancel superseded PR runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  multiscale-replay:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m pytest -q tests/test_multiscale_frozen_replay_oos.py
+
+      - name: Run multi-scale frozen replay
+        run: |
+          set -euo pipefail
+          python src/multiscale_frozen_replay_oos.py
+          test -s data/historical_research/multiscale_frozen_replay_oos.json
+
+      - name: Validate research-only and frozen-replay contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          obj = json.loads(Path(
+              'data/historical_research/multiscale_frozen_replay_oos.json'
+          ).read_text(encoding='utf-8'))
+
+          if obj.get('research_only') is not True:
+              raise SystemExit('multiscale replay must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('multiscale replay changed production state')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('archive replay cannot be promotion evidence')
+
+          horizons = obj.get('horizons')
+          if not isinstance(horizons, dict) or set(horizons) != {'5m', '10m'}:
+              raise SystemExit('multiscale replay horizon evidence is incomplete')
+
+          for horizon, item in horizons.items():
+              if item.get('status') == 'OK':
+                  if item.get('replay_holdout_protected') is not True:
+                      raise SystemExit(f'{horizon}: replay holdout protection missing')
+                  if item.get('replay_holdout_used_for_selection') is not False:
+                      raise SystemExit(f'{horizon}: replay data used for selection')
+                  if item.get('selected') is None:
+                      raise SystemExit(f'{horizon}: missing selected recipe')
+              elif item.get('status') == 'DEFERRED':
+                  if not str(item.get('reason', '')):
+                      raise SystemExit(f'{horizon}: deferred result has no reason')
+              else:
+                  raise SystemExit(
+                      f'{horizon}: unexpected status {item.get("status")}'
+                  )
+
+          print('multiscale frozen replay contract: VERIFIED')
+          PY
+
+      - name: Upload multi-scale replay evidence
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-multiscale-frozen-replay
+          path: data/historical_research/multiscale_frozen_replay_oos.json
+          if-no-files-found: error
+          retention-days: 3
