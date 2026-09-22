@@ -211,7 +211,23 @@ def evaluate(horizon):
         equal=_mix(parts,np.full(len(parts),1.0/len(parts)))
         meta_pred=_meta_predict(meta_history,parts,keys)
         y=[r["y"] for r in test]
-        em=metrics(y,equal); rm=metrics(y,routed); mm=metrics(y,meta_pred) if meta_pred is not None else None; comp=[metrics(y,p) for p in parts]
+        em=metrics(y,equal)
+        rm=metrics(y,routed)
+        meta_metrics=metrics(y,meta_pred) if meta_pred is not None else None
+        mm=None if meta_metrics is None else {
+            **meta_metrics,
+            "delta_vs_routed": {
+                "accuracy": meta_metrics["accuracy"] - rm["accuracy"],
+                "logloss": meta_metrics["logloss"] - rm["logloss"],
+                "brier": meta_metrics["brier"] - rm["brier"],
+            },
+            "delta_vs_equal": {
+                "accuracy": meta_metrics["accuracy"] - em["accuracy"],
+                "logloss": meta_metrics["logloss"] - em["logloss"],
+                "brier": meta_metrics["brier"] - em["brier"],
+            },
+        }
+        comp=[metrics(y,p) for p in parts]
         # Store one causal observation per row for local-regime learning. This is
         # intentionally prior-block data only for every future block.
         meta_x=_meta_features(parts,keys)
@@ -243,11 +259,11 @@ def evaluate(horizon):
         })
     if len(blocks)<8:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_valid_oos_blocks"}
     ll=np.asarray([b["delta"]["logloss"] for b in blocks]); br=np.asarray([b["delta"]["brier"] for b in blocks]); ac=np.asarray([b["delta"]["accuracy"] for b in blocks])
-    meta_blocks=[b for b in blocks if isinstance(b.get("meta"),dict) and "delta" in b["meta"]]
-    mll=np.asarray([b["meta"]["delta"]["logloss"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
-    mbr=np.asarray([b["meta"]["delta"]["brier"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
-    mac=np.asarray([b["meta"]["delta"]["accuracy"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
-    summary={"blocks":len(blocks),"meta_blocks":len(meta_blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),"meta_mean_accuracy_delta":float(mac.mean()) if len(mac) else None,"meta_mean_logloss_delta":float(mll.mean()) if len(mll) else None,"meta_mean_brier_delta":float(mbr.mean()) if len(mbr) else None,"meta_improved_logloss_ratio":float(np.mean(mll<0)) if len(mll) else None,"meta_improved_brier_ratio":float(np.mean(mbr<0)) if len(mbr) else None,"meta_non_worse_accuracy_ratio":float(np.mean(mac>=-0.005)) if len(mac) else None}
+    meta_blocks=[b for b in blocks if isinstance(b.get("meta"),dict) and "delta_vs_routed" in b["meta"]]
+    mll=np.asarray([b["meta"]["delta_vs_routed"]["logloss"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    mbr=np.asarray([b["meta"]["delta_vs_routed"]["brier"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    mac=np.asarray([b["meta"]["delta_vs_routed"]["accuracy"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
+    summary={"blocks":len(blocks),"meta_blocks":len(meta_blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),"meta_comparison_baseline":"routed_regime_ensemble","meta_mean_accuracy_delta_vs_routed":float(mac.mean()) if len(mac) else None,"meta_mean_logloss_delta_vs_routed":float(mll.mean()) if len(mll) else None,"meta_mean_brier_delta_vs_routed":float(mbr.mean()) if len(mbr) else None,"meta_improved_logloss_ratio_vs_routed":float(np.mean(mll<0)) if len(mll) else None,"meta_improved_brier_ratio_vs_routed":float(np.mean(mbr<0)) if len(mbr) else None,"meta_non_worse_accuracy_ratio_vs_routed":float(np.mean(mac>=-0.005)) if len(mac) else None}
     thresholds=_regime_thresholds(development); hold_keys=[regime_key(r,thresholds) for r in holdout]
     hold_parts=[_fit_calibrated(development,holdout,mf[name]) for name in names]
     if any(p is None for p in hold_parts):return {"status":"DEFERRED","n":len(rows),"reason":"holdout_prediction_failed"}
