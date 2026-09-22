@@ -22,6 +22,10 @@ except ModuleNotFoundError:
     from model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
     from ensemble_model import SoftVotingEnsemble
 
+# Backward-compatible test hook: callers/tests may patch load_rows, while the
+# implementation still defaults to the strict Binance-primary cohort.
+load_rows = load_primary_production_strict_rows
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "adaptive_ensemble_oos.json"
 MIN_TRAIN = 2000
@@ -245,7 +249,7 @@ def _evaluate_development(rows, horizon: str):
 
 
 def evaluate(horizon: str):
-    rows = load_primary_production_strict_rows(horizon)
+    rows = load_rows(horizon)
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
 
