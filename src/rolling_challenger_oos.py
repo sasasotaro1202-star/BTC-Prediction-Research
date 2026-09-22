@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import joblib
 import numpy as np
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -19,7 +20,7 @@ try:
     from model_compare import (
         HORIZONS, CLASSES, MIN_TRAIN, MIN_OOS, TEST_BLOCK,
         metrics, normalize, aligned, _temperature, apply_temperature,
-        hac_test, _adjusted_alpha,
+        hac_test, _adjusted_alpha, load_archive_research_rows, load_archive_research_rows,
     )
 except ModuleNotFoundError:
     from src.db import DB, init_db
@@ -53,11 +54,54 @@ def load_current_rows(horizon: str):
     from model_compare import load_rows
     version = current_generation(horizon)
     if not version:
-        return [], None
+        return [], None, "none"
     prefix = f"{horizon}:{version}|%"
-    rows = [r for r in load_rows(horizon) if str(r.get("model_version", "")).startswith(prefix)]
+    rows = [
+        r for r in load_rows(horizon, strict_pit=True)
+        if str(r.get("model_version", "")).startswith(prefix)
+        and str(r.get("production_mode", "")) == "binance_primary"
+    ]
     rows = rows[-MAX_ROWS:]
-    return rows, version
+    if len(rows) >= MIN_TRAIN + MIN_OOS:
+        return rows, version, "live_binance_primary"
+
+    # Research-only fallback: use contiguous Binance Vision candles to reconstruct
+    # features and the frozen Champion probability. This cohort is never promotion
+    # evidence because it is not a live-primary prediction record.
+    try:
+        from bootstrap_train import make_features
+        from binance_history import binance_archive_rows
+        from label_policy import direction_from_return
+        raw = binance_archive_rows(max(MAX_ROWS + 50, 12000))
+        champion = joblib.load(ROOT / "models" / f"{horizon}.joblib")
+        meta = json.loads((ROOT / "models" / f"{horizon}.json").read_text(encoding="utf-8"))
+        trained_raw = meta.get("trained_at_utc")
+        trained_at = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00")) if trained_raw else None
+        steps = int(str(horizon).rstrip("m"))
+        archive = []
+        for i in range(30, len(raw) - steps):
+            created = datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc)
+            if trained_at is not None and created <= trained_at:
+                continue
+            x = np.asarray(make_features(raw[: i + 1]), dtype=float)
+            if not np.isfinite(x).all():
+                continue
+            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
+            p = aligned(champion, np.asarray([x], dtype=float))[0].tolist()
+            archive.append({
+                "id": f"archive:{int(raw[i][0])}:{horizon}",
+                "created": created.isoformat(),
+                "target": datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc).isoformat(),
+                "x": x.tolist(),
+                "y": direction_from_return(future_return),
+                "production": p,
+                "model_version": version,
+                "production_mode": "binance_vision_frozen_champion",
+                "data_source": "binance_vision_closed_archive",
+            })
+        return archive[-MAX_ROWS:], version, "binance_vision_archive"
+    except Exception:
+        return rows, version, "live_binance_primary"
 
 
 def factories():
@@ -123,13 +167,15 @@ def loss_diff(y, production, candidate):
 
 
 def evaluate(horizon: str):
-    rows, version = load_current_rows(horizon)
+    rows, version, data_source = load_current_rows(horizon)
     if len(rows) < MIN_TRAIN + MIN_OOS:
         return {
             "status": "DEFERRED",
             "reason": "insufficient_current_generation_rows",
             "n": len(rows),
             "model_version": version,
+            "data_source": data_source,
+            "promotion_evidence_eligible": data_source == "live_binance_primary",
         }
 
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
@@ -234,6 +280,8 @@ def evaluate(horizon: str):
         "production_changed": False,
         "final_holdout_protected": True,
         "model_version": version,
+        "data_source": data_source,
+        "promotion_evidence_eligible": data_source == "live_binance_primary",
         "n": len(rows),
         "development_n": len(development),
         "final_holdout_n": len(holdout),

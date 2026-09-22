@@ -81,11 +81,19 @@ def _test_endpoints(n_rows):
 
 def evaluate_horizon(horizon):
     rows = load_primary_production_strict_rows(horizon)
+    data_source = "live_binance_primary"
+    if len(rows) < MIN_TRAIN + TEST_BLOCK:
+        archive = load_archive_research_rows(horizon, max(3000, MIN_TRAIN + TEST_BLOCK + 500))
+        if len(archive) > len(rows):
+            rows = archive
+            data_source = "binance_vision_archive"
     if len(rows) < MIN_TRAIN + TEST_BLOCK:
         return {
             "status": "DEFERRED",
             "reason": "insufficient_chronological_rows",
             "n": len(rows),
+            "data_source": data_source,
+            "promotion_evidence_eligible": data_source == "live_binance_primary",
         }
 
     blocks = []
@@ -144,6 +152,8 @@ def evaluate_horizon(horizon):
         "production_changed": False,
         "eligible_pending_frozen_holdout_confirmation": bool(eligible),
         "summary": summary,
+        "data_source": data_source,
+        "promotion_evidence_eligible": data_source == "live_binance_primary",
         "blocks": blocks,
     }
 
