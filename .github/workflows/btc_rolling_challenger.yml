@@ -35,6 +35,8 @@ jobs:
           from pathlib import Path
           from src.state_archive import restore_db
           restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          # Normalize persisted prediction events before downstream audits/research.
+          python scripts/merge_prediction_state.py --compact data/predictions.db
           PY
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
