@@ -129,6 +129,38 @@ class ResearchInputAuditTests(unittest.TestCase):
         self.assertEqual(result["malformed_identity_rows"], 1)
         self.assertEqual(result["quarantined_identity_rows"], 0)
 
+
+    def test_legacy_coinbase_precontract_missing_cutoff_is_quarantined(self):
+        con = self._db()
+        created = "2026-09-21T12:00:00+00:00"
+        scenario = {
+            "provenance": {
+                "event_time": created,
+                "available_at": created,
+                "retrieved_at": created,
+                "prediction_cutoff": created,
+                "sources": {
+                    "coinbase_futures": {
+                        "status": "ok",
+                        "event_time": created,
+                        "available_at": created,
+                        "retrieved_at": created,
+                        "prediction_cutoff": None,
+                    }
+                },
+            }
+        }
+        row = list(self._row("5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1"))
+        row[0] = created
+        row[1] = "2026-09-21T12:05:00+00:00"
+        row[2] = "2026-09-21T12:10:00+00:00"
+        row[13] = json.dumps(scenario)
+        self._insert(con, [tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["malformed_identity_rows"], 0)
+        self.assertEqual(result["quarantined_identity_rows"], 1)
+        self.assertEqual(result["quarantine_reasons"], {"legacy_coinbase_precontract_missing_cutoff": 1})
+
     def test_different_model_versions_are_distinct_events(self):
         con = self._db()
         self._insert(con, [self._row("model-v1"), self._row("model-v2")])
