@@ -250,7 +250,13 @@ def load_variants(horizon: str):
     """Return complete-case strict-primary cohorts without imputation."""
     base = load_primary_production_strict_rows(horizon)
     if not base:
-        return {"base": [], "binance_micro": [], "cross_venue": []}
+        return {
+            "base": [],
+            "binance_micro": [],
+            "market_flow_v2": [],
+            "full_stack": [],
+            "cross_venue": [],
+        }
 
     scenario_by_id = {}
     with sqlite3.connect(DB) as con:
