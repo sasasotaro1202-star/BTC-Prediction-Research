@@ -111,66 +111,91 @@ def _month_rows(month: datetime):
 
 
 def binance_archive_rows(target: int = 30_000):
-    """Return target recent closed BTCUSDT 1m candles from free archives."""
+    """Return target recent closed BTCUSDT 1m candles from free archives.
+    
+    Freshness-first policy:
+    1. Use the current-month monthly archive when available.
+    2. If it is unavailable, consume recent completed daily archives first.
+    3. Fill any remaining history from prior completed monthly archives.
+    4. Preserve closed-candle, dedupe, and contiguous-suffix guarantees.
+    """
     target = int(target)
     if target <= 0:
         return []
+
     rows, errors = [], []
     now = datetime.now(timezone.utc)
     month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    # Walk backward across several monthly archives. Current-month archives
-    # can be unpublished or delayed; one failed month must never terminate the
-    # historical search when older verified archives are available.
-    seen_months = set()
+
+    # Current month is special: an unpublished/stale monthly archive must not
+    # cause a large older month to satisfy the row-count target first.
     current_month_ok = False
-    m = month
+    try:
+        current_rows = _month_rows(month)
+        if current_rows:
+            current_month_ok = True
+            rows.extend(current_rows)
+            rows = list({int(r[0]): r for r in rows}.values())
+    except Exception as exc:
+        errors.append(f"monthly:{month:%Y-%m}:{type(exc).__name__}:{exc}")
+
+    if not current_month_ok and len(rows) < target:
+        # Freshness-first recovery: build the newest available closed suffix
+        # from daily archives before considering older monthly history.
+        day = (now - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        for _ in range(45):
+            try:
+                day_rows, _ = _load_day(day)
+                rows.extend(day_rows)
+            except Exception as exc:
+                errors.append(
+                    f"daily:{day:%Y-%m-%d}:{type(exc).__name__}:{exc}"
+                )
+            rows = list({int(r[0]): r for r in rows}.values())
+            contiguous = _contiguous_suffix(rows)
+            if len(contiguous) >= target:
+                return contiguous[-target:]
+            day -= timedelta(days=1)
+
+    # Fill the remainder from completed prior monthly archives. Current month
+    # is excluded because it was already attempted above.
+    previous_month = (month - timedelta(days=1)).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    m = previous_month
     for _ in range(6):
-        key = (m.year, m.month)
-        if key in seen_months:
-            break
-        seen_months.add(key)
         try:
             rows.extend(_month_rows(m))
             rows = list({int(r[0]): r for r in rows}.values())
-            if m.year == month.year and m.month == month.month:
-                current_month_ok = True
-            if len(rows) >= target:
-                break
         except Exception as exc:
             errors.append(f"monthly:{m:%Y-%m}:{type(exc).__name__}:{exc}")
+        contiguous = _contiguous_suffix(rows)
+        if len(contiguous) >= target:
+            return contiguous[-target:]
         m = (m - timedelta(days=1)).replace(day=1)
-    # If the current-month monthly archive is unavailable, prioritize recent
-    # completed daily archives before filling the remainder with older months.
-    # Otherwise an older month can satisfy 'target' first and hide the freshest
-    # closed candles from the research cohort.
-    current_month_failed = not current_month_ok
-    if len(rows) < target and current_month_failed:
-        day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Final daily recovery is useful when the current monthly archive exists but
+    # completed monthly history is still insufficient.
+    if len(rows) < target:
+        day = (now - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         for _ in range(45):
             try:
                 day_rows, _ = _load_day(day)
                 rows.extend(day_rows)
             except Exception as exc:
-                errors.append(f"daily:{day:%Y-%m-%d}:{type(exc).__name__}:{exc}")
+                errors.append(
+                    f"daily:{day:%Y-%m-%d}:{type(exc).__name__}:{exc}"
+                )
             rows = list({int(r[0]): r for r in rows}.values())
-            if len(rows) >= target:
-                break
+            contiguous = _contiguous_suffix(rows)
+            if len(contiguous) >= target:
+                return contiguous[-target:]
             day -= timedelta(days=1)
 
-    if len(rows) < target:
-        day = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        # Daily archives are still useful as a final recovery path when
-        # completed monthly archives are insufficient.
-        for _ in range(45):
-            try:
-                day_rows, _ = _load_day(day)
-                rows.extend(day_rows)
-            except Exception as exc:
-                errors.append(f"daily:{day:%Y-%m-%d}:{type(exc).__name__}:{exc}")
-            rows = list({int(r[0]): r for r in rows}.values())
-            if len(rows) >= target:
-                break
-            day -= timedelta(days=1)
     rows = _closed(rows)
     contiguous = _contiguous_suffix(rows)
     if len(contiguous) < target:
@@ -179,3 +204,5 @@ def binance_archive_rows(target: int = 30_000):
             f"need {target}; errors={errors[-10:]}"
         )
     return contiguous[-target:]
+
+
