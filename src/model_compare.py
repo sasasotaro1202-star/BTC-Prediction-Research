@@ -89,58 +89,73 @@ def _valid_timestamp(value):
         return None
 
 
-def _strict_pit_provenance_ok(scenario, created_at_utc):
-    """Validate provenance needed for strict candidate OOS/promotion."""
+def strict_pit_provenance_reason(scenario, created_at_utc):
+    """Return a stable fail-closed reason, or None when strict PIT passes."""
     if not isinstance(scenario, dict):
-        return False
+        return "scenario_not_object"
     created = _valid_timestamp(created_at_utc)
     provenance = scenario.get("provenance")
-    if created is None or not isinstance(provenance, dict):
-        return False
-    provenance = scenario.get("provenance")
-    fallback_cutoff = provenance.get("prediction_cutoff") if isinstance(provenance, dict) else None
-    decision = _valid_timestamp(scenario.get("decision_time_utc") or fallback_cutoff or created_at_utc)
-    if decision is None or abs((decision - created).total_seconds()) > 60:
-        return False
+    if created is None:
+        return "created_timestamp_invalid"
+    if not isinstance(provenance, dict):
+        return "provenance_missing_or_not_object"
+
+    fallback_cutoff = provenance.get("prediction_cutoff")
+    decision = _valid_timestamp(
+        scenario.get("decision_time_utc") or fallback_cutoff or created_at_utc
+    )
+    if decision is None:
+        return "decision_time_invalid"
+    if abs((decision - created).total_seconds()) > 60:
+        return "decision_time_mismatch"
 
     required_top = ("available_at", "retrieved_at", "prediction_cutoff")
     parsed_top = {}
     for key in required_top:
         value = _valid_timestamp(provenance.get(key))
         if value is None:
-            return False
+            return f"top_level_{key}_invalid"
         parsed_top[key] = value
-    if not (parsed_top["available_at"] <= parsed_top["retrieved_at"] <= parsed_top["prediction_cutoff"] <= decision):
-        return False
+    if not (
+        parsed_top["available_at"]
+        <= parsed_top["retrieved_at"]
+        <= parsed_top["prediction_cutoff"]
+        <= decision
+    ):
+        return "top_level_pit_order_invalid"
 
     sources = provenance.get("sources")
     if not isinstance(sources, dict) or not sources:
-        return False
+        return "source_provenance_missing_or_not_object"
 
-    def source_ok(name):
+    def source_reason(name):
         info = sources.get(name)
         if not isinstance(info, dict):
-            return False
+            return f"source_{name}_missing"
         status = str(info.get("status", ""))
         if status not in {"ok", "ok_current_only"}:
-            return False
+            return f"source_{name}_status_{status or 'missing'}"
         available = _valid_timestamp(info.get("available_at"))
         retrieved = _valid_timestamp(info.get("retrieved_at"))
         cutoff = _valid_timestamp(info.get("prediction_cutoff"))
-        if available is None or retrieved is None or cutoff is None:
-            return False
+        if available is None:
+            return f"source_{name}_available_at_invalid"
+        if retrieved is None:
+            return f"source_{name}_retrieved_at_invalid"
+        if cutoff is None:
+            return f"source_{name}_prediction_cutoff_invalid"
         if not (available <= retrieved <= cutoff <= decision):
-            return False
+            return f"source_{name}_pit_order_invalid"
         event_time = _valid_timestamp(info.get("event_time"))
         publication_time = _valid_timestamp(info.get("publication_time"))
         revision_time = _valid_timestamp(info.get("revision_time"))
         if event_time is not None and event_time > available:
-            return False
+            return f"source_{name}_event_after_available"
         if publication_time is not None and publication_time > available:
-            return False
+            return f"source_{name}_publication_after_available"
         if revision_time is not None and publication_time is not None and revision_time < publication_time:
-            return False
-        return True
+            return f"source_{name}_revision_before_publication"
+        return None
 
     mode = str(scenario.get("production_mode", ""))
     if mode == "binance_primary":
@@ -150,10 +165,18 @@ def _strict_pit_provenance_ok(scenario, created_at_utc):
     elif mode == "coinbase_fallback":
         required = ("coinbase_futures",)
     else:
-        # Unknown mode is fail-closed for strict candidate OOS.
-        return False
+        return f"production_mode_unknown:{mode or 'missing'}"
 
-    return all(source_ok(name) for name in required)
+    for name in required:
+        reason = source_reason(name)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _strict_pit_provenance_ok(scenario, created_at_utc):
+    """Validate provenance needed for strict candidate OOS/promotion."""
+    return strict_pit_provenance_reason(scenario, created_at_utc) is None
 
 
 def load_rows(h, strict_pit=False):

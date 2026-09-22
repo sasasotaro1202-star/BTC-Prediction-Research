@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from model_compare import _strict_pit_provenance_ok, prediction_event_key
+from model_compare import _strict_pit_provenance_ok, strict_pit_provenance_reason, prediction_event_key
 from feature_schema import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +50,7 @@ def audit_horizon(con, horizon: str) -> dict:
     class_counts = Counter()
     valid_rows = 0
     strict_pit_rows = 0
+    strict_pit_failure_reasons = Counter()
 
     for (
         prediction_id,
@@ -99,8 +100,11 @@ def audit_horizon(con, horizon: str) -> dict:
                 scenario = json.loads(scenario_json or "{}")
             except (TypeError, ValueError, json.JSONDecodeError):
                 scenario = {}
-            if _strict_pit_provenance_ok(scenario, created_at):
+            pit_reason = strict_pit_provenance_reason(scenario, created_at)
+            if pit_reason is None:
                 strict_pit_rows += 1
+            else:
+                strict_pit_failure_reasons[pit_reason] += 1
 
     duplicate_excess = int(sum(max(0, n - 1) for n in duplicate_groups.values()))
     total = len(rows)
@@ -111,6 +115,7 @@ def audit_horizon(con, horizon: str) -> dict:
         "valid_rows": valid_rows,
         "strict_pit_rows": strict_pit_rows,
         "strict_pit_excluded_rows": total - strict_pit_rows,
+        "strict_pit_failure_reasons": dict(strict_pit_failure_reasons),
         "excluded_rows": total - valid_rows,
         "invalid_timestamp_rows": invalid_ts,
         "chronology_violation_count": len(chronology_violations),
