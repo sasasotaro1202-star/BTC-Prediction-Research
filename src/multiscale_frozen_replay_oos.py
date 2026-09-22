@@ -53,6 +53,7 @@ MIN_TRAIN = 7_000
 MIN_SELECTION = 750
 MIN_GATE = 750
 PURGE = {"5m": 5, "10m": 10}
+EMBARGO = {"5m": 60, "10m": 60}
 
 BASE_FEATURES = (
     "ret_1m", "ret_3m", "ret_5m", "ret_10m", "acceleration",
@@ -282,10 +283,12 @@ def factories():
 
 def _fit_temperature(factory, train_rows, horizon, feature_idx):
     split = int(len(train_rows) * 0.80)
-    if split < 3_000 or len(train_rows) - split < 500:
+    guard = PURGE[horizon] + EMBARGO[horizon]
+    fit_end = split - guard
+    if fit_end < 3_000 or len(train_rows) - split < 500:
         return 1.0
 
-    a = train_rows[:split]
+    a = train_rows[:fit_end]
     b = train_rows[split:]
     X_a = np.asarray([r["x"][:feature_idx] for r in a], dtype=float)
     y_a = np.asarray([r["y"][horizon] for r in a])
@@ -315,12 +318,16 @@ def _slice_partition(rows, horizon):
     gate_start = int(n * 0.70)
     replay_start = int(n * 0.80)
     purge = PURGE[horizon]
+    embargo = EMBARGO[horizon]
+    guard = purge + embargo
 
-    # Purge the tail of each development slice so a forward h-minute label
-    # cannot reach into the next evaluation regime.
-    train_end = max(0, selection_start - purge)
-    selection_end = max(selection_start, gate_start - purge)
-    gate_end = max(gate_start, replay_start - purge)
+    # Purge + embargo the tail of each development slice so labels from rows
+    # near a future evaluation boundary cannot overlap or sit immediately next
+    # to the boundary. This matches the stronger causal separation used by the
+    # production chronological OOS lanes.
+    train_end = max(0, selection_start - guard)
+    selection_end = max(selection_start, gate_start - guard)
+    gate_end = max(gate_start, replay_start - guard)
 
     train = rows[:train_end]
     selection = rows[selection_start:selection_end]
