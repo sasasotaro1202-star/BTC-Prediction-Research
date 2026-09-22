@@ -2,6 +2,8 @@ import unittest
 
 import numpy as np
 
+import numpy as np
+
 from src.selective_nested_oos import _wilson_lower, causal_history, choose_policy, evaluate_policy
 
 
@@ -45,6 +47,13 @@ class SelectiveNestedOOSTests(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["created"], "2026-09-22T00:00:00+00:00")
 
+
+    def test_norm_accepts_vector_and_matrix_probability_inputs(self):
+        vector = _norm([2.0, 1.0, 1.0])
+        self.assertAlmostEqual(float(vector.sum()), 1.0)
+        matrix = _norm([[2.0, 1.0, 1.0], [1.0, 1.0, 2.0]])
+        self.assertEqual(matrix.shape, (2, 3))
+        self.assertTrue(np.allclose(matrix.sum(axis=1), 1.0))
 
 if __name__ == "__main__":
     unittest.main()
