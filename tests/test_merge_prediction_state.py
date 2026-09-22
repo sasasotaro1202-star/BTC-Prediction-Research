@@ -136,6 +136,41 @@ class TestMergePredictionState(unittest.TestCase):
             self.assertEqual(count, 1)
             self.assertEqual(row, (101.0, 102.0))
 
+
+    def test_compact_exact_duplicate_preserves_settlement(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            immutable = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                         '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{"ret_1m":0.1}', '{}')
+            unsettled = immutable + (None, None, None, None, None, None, None, None)
+            settled = immutable + (101.0, 'UP', 1, '2026-09-15T10:05:01+00:00', 102.0, 'UP', 1, '2026-09-15T10:10:01+00:00')
+            make_db(target, [unsettled, settled])
+            subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
+            con = sqlite3.connect(target)
+            rows = con.execute(
+                'SELECT COUNT(*), actual_price_5m, actual_price_10m FROM predictions'
+            ).fetchone()
+            con.close()
+            self.assertEqual(rows, (1, 101.0, 102.0))
+
+    def test_compact_keeps_distinct_model_versions_and_probabilities(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            common = ('2026-09-15T10:00:00+00:00', '2026-09-15T10:05:00+00:00',
+                      '2026-09-15T10:10:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                      'v1', '{"ret_1m":0.1}', '{}')
+            row_same = common + (None, None, None, None, None, None, None, None)
+            row_model = ('2026-09-15T10:00:00+00:00', common[1], common[2], 100.0,
+                         .5, .2, .3, .5, .2, .3, 'v2', '{"ret_1m":0.1}', '{}',
+                         None, None, None, None, None, None, None, None, None)
+            make_db(target, [row_same, row_model])
+            subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
+            con = sqlite3.connect(target)
+            count = con.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]
+            con.close()
+            self.assertEqual(count, 2)
+
     def test_model_registry_prefers_newer_state_and_does_not_roll_back(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
