@@ -196,6 +196,22 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
+def _extended_from_feature_json(feature_json):
+    try:
+        parsed = json.loads(feature_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    values = {}
+    for key in EXTENDED_FEATURES:
+        value = _finite(parsed.get(key))
+        if value is None:
+            return None
+        values[key] = value
+    return values
+
+
 def _market_flow_from_scenario(scenario, created_at=None):
     if not isinstance(scenario, dict):
         return None
@@ -306,19 +322,7 @@ def load_variants(horizon: str):
                 }
             )
 
-        extra = None
-        try:
-            parsed_features = json.loads(feature_json or "{}")
-            if isinstance(parsed_features, dict):
-                extra = {}
-                for key in EXTENDED_FEATURES:
-                    value = _finite(parsed_features.get(key))
-                    if value is None:
-                        extra = None
-                        break
-                    extra[key] = value
-        except (TypeError, ValueError, json.JSONDecodeError):
-            extra = None
+        extra = _extended_from_feature_json(feature_json)
 
         if micro is not None and flow is not None and extra is not None:
             variants["full_stack"].append(
