@@ -149,12 +149,25 @@ def load_rows(h, strict_pit=False):
             # DB storage is UP,DOWN,FLAT; research class order is DOWN,FLAT,UP.
             production=[float(r[6]),float(r[7]),float(r[5])]
             if all(math.isfinite(v) and v>=0 for v in production) and sum(production)>0:
-                out.append({'id':r[0],'created':r[1],'target':r[2],'x':x,'y':r[4],'production':production,'model_version':r[8]})
+                out.append({'id':r[0],'created':r[1],'target':r[2],'x':x,'y':r[4],'production':production,'model_version':r[8],'production_mode':str(scenario.get('production_mode',''))})
     return out
 
 
 def load_strict_rows(h):
+    """Load strict PIT rows for generic research diagnostics.
+
+    Fallback venue observations remain valid as separate research observations.
+    Candidate-versus-Champion production comparison uses the narrower primary
+    Binance cohort below.
+    """
     return load_rows(h, strict_pit=True)
+
+def load_primary_production_strict_rows(h):
+    """Load only Binance-primary strict-PIT observations for Champion comparison."""
+    return [
+        row for row in load_rows(h, strict_pit=True)
+        if str(row.get("production_mode", "")) == "binance_primary"
+    ]
 
 def normalize(probs):
     p=np.clip(np.asarray(probs,float),1e-6,1-1e-6); return p/p.sum(axis=1,keepdims=True)
@@ -337,7 +350,7 @@ def set_prod(h,v):
     with sqlite3.connect(DB) as con: con.execute('INSERT INTO model_registry(horizon,production_version,updated_at_utc) VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc',(h,v,now()))
 
 def compare_h(h):
-    rows=load_strict_rows(h); n=len(rows); milestone=next_due_milestone(n,h)
+    rows=load_primary_production_strict_rows(h); n=len(rows); milestone=next_due_milestone(n,h)
     if milestone is None:
         future=next((m for m in MILESTONES if not checkpoint_done(h,m)),None); return {'status':'collecting','n':n,'next_milestone':future}
     rows=rows[:milestone]

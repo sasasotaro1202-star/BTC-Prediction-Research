@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provenance_ok, metrics, normalize, prediction_precedes_target  # noqa: E402
+from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provenance_ok, load_primary_production_strict_rows, metrics, normalize, prediction_precedes_target  # noqa: E402
 
 
 class TestModelGuards(unittest.TestCase):
@@ -77,6 +77,41 @@ class TestModelGuards(unittest.TestCase):
         scenario["provenance"]["sources"]["binance_taker"]["available_at"] = None
         self.assertFalse(_strict_pit_provenance_ok(scenario, "2026-09-21T19:00:00+00:00"))
         self.assertFalse(_strict_pit_provenance_ok({}, "2026-09-21T19:00:00+00:00"))
+
+
+    def test_primary_production_loader_excludes_fallback_rows(self):
+        import tempfile
+        import sqlite3
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            feature = {k: 0.0 for k in __import__("feature_schema").FEATURES}
+            rows = []
+            for i, mode in enumerate(("binance_primary", "coinbase_fallback")):
+                scenario = {
+                    "decision_time_utc": "2026-09-21T19:00:00+00:00",
+                    "production_mode": mode,
+                    "provenance": {
+                        "available_at": "2026-09-21T18:59:59+00:00",
+                        "retrieved_at": "2026-09-21T19:00:00+00:00",
+                        "prediction_cutoff": "2026-09-21T19:00:00+00:00",
+                        "sources": {
+                            "binance_futures": {"status":"ok","available_at":"2026-09-21T18:59:59+00:00","retrieved_at":"2026-09-21T19:00:00+00:00","prediction_cutoff":"2026-09-21T19:00:00+00:00"},
+                            "binance_depth": {"status":"ok","available_at":"2026-09-21T18:59:59+00:00","retrieved_at":"2026-09-21T19:00:00+00:00","prediction_cutoff":"2026-09-21T19:00:00+00:00"},
+                            "binance_taker": {"status":"ok","available_at":"2026-09-21T18:59:59+00:00","retrieved_at":"2026-09-21T19:00:00+00:00","prediction_cutoff":"2026-09-21T19:00:00+00:00"},
+                            "binance_premium": {"status":"ok","available_at":"2026-09-21T18:59:59+00:00","retrieved_at":"2026-09-21T19:00:00+00:00","prediction_cutoff":"2026-09-21T19:00:00+00:00"},
+                        },
+                    },
+                }
+                rows.append((i+1,"2026-09-21T19:00:00+00:00","2026-09-21T19:05:00+00:00","2026-09-21T19:10:00+00:00",json.dumps(feature),"UP",0.8,0.1,0.1,"bootstrap.bootstrap_rf",json.dumps(scenario)))
+            with sqlite3.connect(db) as con:
+                con.execute("CREATE TABLE predictions (prediction_id INTEGER, created_at_utc TEXT, target_5m TEXT, target_10m TEXT, feature_json TEXT, actual_direction_5m TEXT, p_up_5m REAL, p_down_5m REAL, p_flat_5m REAL, model_version TEXT, scenario_json TEXT)")
+                con.executemany("INSERT INTO predictions VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+            with patch("model_compare.DB", db):
+                got = load_primary_production_strict_rows("5m")
+            self.assertEqual(len(got), 1)
+            self.assertEqual(got[0]["production_mode"], "binance_primary")
 
     def test_prediction_must_precede_target_strictly(self):
         self.assertTrue(prediction_precedes_target(
