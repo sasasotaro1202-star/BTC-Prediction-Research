@@ -40,16 +40,20 @@ def audit_horizon(con, horizon: str) -> dict:
         f"""SELECT prediction_id, created_at_utc, {target_col}, model_version, feature_json, {actual_col},
                    p_up_{horizon}, p_down_{horizon}, p_flat_{horizon}, scenario_json
             FROM predictions
-            WHERE {actual_col} IS NOT NULL
             ORDER BY created_at_utc, prediction_id"""
     ).fetchall()
 
     invalid_ts = 0
     chronology_violations = []
     duplicate_groups = Counter()
+    settled_duplicate_groups = Counter()
     class_counts = Counter()
+    total_rows = len(rows)
+    settled_rows = 0
     valid_rows = 0
+    malformed_identity_rows = 0
     strict_pit_rows = 0
+    strict_pit_settled_rows = 0
     strict_pit_failure_reasons = Counter()
 
     for (
@@ -66,61 +70,75 @@ def audit_horizon(con, horizon: str) -> dict:
     ) in rows:
         created_dt = _dt(created_at)
         target_dt = _dt(target_at)
+        chronological = created_dt is not None and target_dt is not None and created_dt < target_dt
         if created_dt is None or target_dt is None:
             invalid_ts += 1
-        elif created_dt >= target_dt:
+        elif not chronological:
             chronology_violations.append({
                 "prediction_id": int(prediction_id),
                 "created_at_utc": str(created_at),
                 "target_at_utc": str(target_at),
             })
 
-        obj = _safe_json(feature_json)
         try:
+            obj = _safe_json(feature_json)
             x = [float(obj[k]) for k in FEATURES]
             production = [float(p_down), float(p_flat), float(p_up)]
-            duplicate_groups[prediction_event_key({
-                "created": created_at,
-                "target": target_at,
-                "model_version": model_version,
-                "x": x,
-                "production": production,
-            })] += 1
-        except (KeyError, TypeError, ValueError):
-            # Malformed rows remain visible through the timestamp/PIT audits but
-            # are not treated as exact duplicates because their event identity
-            # cannot be reconstructed safely.
-            pass
+            event_key = model_prediction_event_key(
+                created=created_at,
+                target=target_at,
+                model_version=model_version,
+                x=x,
+                production=production,
+            )
+            duplicate_groups[event_key] += 1
+            if actual is not None:
+                settled_duplicate_groups[event_key] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            malformed_identity_rows += 1
 
-        if actual in CLASSES:
-            class_counts[str(actual)] += 1
-        if created_dt is not None and target_dt is not None and created_dt < target_dt:
+        if actual is not None:
+            settled_rows += 1
+            if actual in CLASSES:
+                class_counts[str(actual)] += 1
+
+        try:
+            scenario = json.loads(scenario_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            scenario = {}
+        pit_reason = strict_pit_provenance_reason(scenario, created_at)
+        if pit_reason is None and chronological:
+            strict_pit_rows += 1
+            if actual is not None:
+                strict_pit_settled_rows += 1
+        else:
+            strict_pit_failure_reasons[pit_reason or "prediction_time_not_before_target"] += 1
+
+        if chronological:
             valid_rows += 1
-            try:
-                scenario = json.loads(scenario_json or "{}")
-            except (TypeError, ValueError, json.JSONDecodeError):
-                scenario = {}
-            pit_reason = strict_pit_provenance_reason(scenario, created_at)
-            if pit_reason is None:
-                strict_pit_rows += 1
-            else:
-                strict_pit_failure_reasons[pit_reason] += 1
 
     duplicate_excess = int(sum(max(0, n - 1) for n in duplicate_groups.values()))
-    total = len(rows)
-    majority = (max(class_counts.values()) / total) if total and class_counts else None
+    settled_duplicate_excess = int(
+        sum(max(0, n - 1) for n in settled_duplicate_groups.values())
+    )
+    majority = (max(class_counts.values()) / settled_rows) if settled_rows and class_counts else None
 
     return {
-        "settled_rows": total,
+        "total_rows": total_rows,
+        "settled_rows": settled_rows,
         "valid_rows": valid_rows,
         "strict_pit_rows": strict_pit_rows,
-        "strict_pit_excluded_rows": total - strict_pit_rows,
+        "strict_pit_settled_rows": strict_pit_settled_rows,
+        "strict_pit_excluded_rows": total_rows - strict_pit_rows,
+        "strict_pit_settled_excluded_rows": settled_rows - strict_pit_settled_rows,
         "strict_pit_failure_reasons": dict(strict_pit_failure_reasons),
-        "excluded_rows": total - valid_rows,
+        "malformed_identity_rows": malformed_identity_rows,
+        "excluded_rows": total_rows - valid_rows,
         "invalid_timestamp_rows": invalid_ts,
         "chronology_violation_count": len(chronology_violations),
         "chronology_violations_sample": chronology_violations[:20],
         "duplicate_exact_key_row_excess": duplicate_excess,
+        "settled_duplicate_exact_key_row_excess": settled_duplicate_excess,
         "class_counts": dict(class_counts),
         "majority_accuracy": majority,
     }
@@ -138,6 +156,8 @@ def main() -> int:
             failures.append(f"{h}:invalid_timestamp_rows={item['invalid_timestamp_rows']}")
         if item["chronology_violation_count"]:
             failures.append(f"{h}:chronology_violations={item['chronology_violation_count']}")
+        if item["malformed_identity_rows"]:
+            failures.append(f"{h}:malformed_identity_rows={item['malformed_identity_rows']}")
         if item["duplicate_exact_key_row_excess"]:
             failures.append(f"{h}:duplicate_exact_key_row_excess={item['duplicate_exact_key_row_excess']}")
 
@@ -148,7 +168,7 @@ def main() -> int:
         "production_changed": False,
         "ok": not failures,
         "status": "PASS" if not failures else "HOLD",
-        "policy": "strict_prediction_before_target_filter_plus_immutable_event_duplicate_audit",
+        "policy": "all_prediction_event_chronology_identity_and_strict_pit_audit",
         "failure_reasons": failures,
         "horizons": horizons,
     }
