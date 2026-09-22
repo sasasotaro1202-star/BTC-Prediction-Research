@@ -88,6 +88,22 @@ class ResearchInputAuditTests(unittest.TestCase):
         result = audit_horizon(con, "5m")
         self.assertEqual(result["malformed_identity_rows"], 1)
 
+    def test_degraded_rows_are_explicitly_quarantined_not_malformed(self):
+        con = self._db()
+        row = list(self._row("DEGRADED_NO_FRESH_DATA"))
+        row[4] = "{}"
+        row[5] = None
+        row[6] = None
+        self._insert(con, [tuple(row)])
+        result = audit_horizon(con, "5m")
+        self.assertEqual(result["malformed_identity_rows"], 0)
+        self.assertEqual(result["quarantined_identity_rows"], 1)
+        self.assertEqual(
+            result["quarantine_reasons"],
+            {"degraded_prediction_no_feature_snapshot": 1},
+        )
+        self.assertEqual(result["strict_pit_rows"], 0)
+
     def test_different_model_versions_are_distinct_events(self):
         con = self._db()
         self._insert(con, [self._row("model-v1"), self._row("model-v2")])
