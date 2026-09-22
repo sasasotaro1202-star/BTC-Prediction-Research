@@ -17,7 +17,7 @@ SRC_DIR = Path(__file__).resolve().parent
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from model_compare import HORIZONS, load_primary_production_strict_rows, metrics
+from model_compare import HORIZONS, load_primary_production_strict_rows, load_archive_research_rows, metrics
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -217,6 +217,12 @@ def _block_logloss(y, p):
 
 def evaluate(horizon: str):
     rows = load_primary_production_strict_rows(horizon)
+    data_source = "live_binance_primary"
+    if len(rows) < 2100:
+        archive = load_archive_research_rows(horizon, MAX_ROWS)
+        if len(archive) > len(rows):
+            rows = archive
+            data_source = "binance_vision_archive"
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
     if len(rows) < MIN_TRAIN + TEST_BLOCK + 100:
@@ -355,6 +361,8 @@ def evaluate(horizon: str):
         "research_only": True,
         "production_changed": False,
         "final_holdout_protected": True,
+        "data_source": data_source,
+        "promotion_evidence_eligible": data_source == "live_binance_primary",
         "final_holdout_used_for_selection": False,
         "policy": "causal_blockwise_ema_logloss_brier_ece_plus_redundancy_softmax_with_bounded_weights_and_uniform_shrinkage",
         "summary": summary,

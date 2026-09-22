@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from model_compare import HORIZONS, load_primary_production_strict_rows
+from model_compare import HORIZONS, load_primary_production_strict_rows, load_archive_research_rows
 from context_model_oos import dynamic_route_predictions, evaluate_routing
 
 

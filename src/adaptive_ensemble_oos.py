@@ -15,11 +15,11 @@ for _path in (ROOT_DIR, SRC_DIR):
         sys.path.insert(0, str(_path))
 
 try:
-    from src.model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
+    from src.model_compare import HORIZONS, load_primary_production_strict_rows, load_archive_research_rows, metrics, apply_temperature, _temperature
     load_rows = load_primary_production_strict_rows
     from src.ensemble_model import SoftVotingEnsemble
 except ModuleNotFoundError:
-    from model_compare import HORIZONS, load_primary_production_strict_rows, metrics, apply_temperature, _temperature
+    from model_compare import HORIZONS, load_primary_production_strict_rows, load_archive_research_rows, metrics, apply_temperature, _temperature
     from ensemble_model import SoftVotingEnsemble
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -248,6 +248,12 @@ def evaluate(horizon: str):
     # Compatibility seam for deterministic tests; load_rows is the strict
     # primary-PIT loader used by production research evaluation.
     rows = load_rows(horizon)
+    data_source = "live_binance_primary"
+    if len(rows) < MIN_TRAIN + TEST_BLOCK + 100:
+        archive = load_archive_research_rows(horizon, MAX_ROWS)
+        if len(archive) > len(rows):
+            rows = archive
+            data_source = "binance_vision_archive"
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
 
@@ -255,7 +261,8 @@ def evaluate(horizon: str):
         return {
             "status": "DEFERRED",
             "n": len(rows),
-            "reason": "insufficient_rows_for_protected_holdout",
+            "data_source": data_source,
+            "reason": "insufficient_research_rows_for_protected_holdout",
         }
 
     split = int(len(rows) * 0.80)
@@ -309,6 +316,8 @@ def evaluate(horizon: str):
         "research_only": True,
         "production_changed": False,
         "final_holdout_protected": True,
+        "data_source": data_source,
+        "promotion_evidence_eligible": data_source == "live_binance_primary",
         "final_holdout_used_for_selection": False,
         "policy": "adaptive_ensemble_weight_learning_on_pre_test_training_window_only",
         "eligible_pending_frozen_holdout_confirmation": bool(eligible),

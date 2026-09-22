@@ -162,6 +162,43 @@ def load_strict_rows(h):
     """
     return load_rows(h, strict_pit=True)
 
+def load_archive_research_rows(h, max_rows=12000):
+    """Build contiguous, historical-only BTC research rows from Binance Vision.
+    
+    This fallback is research-only. It never creates live-primary PIT evidence
+    and therefore cannot satisfy Promotion Gate requirements.
+    """
+    steps = int(str(h).rstrip("m"))
+    try:
+        from binance_history import binance_archive_rows
+        from bootstrap_train import make_features
+        from label_policy import direction_from_return
+        raw = binance_archive_rows(max(int(max_rows) + 40, 12000))
+    except Exception:
+        return []
+    out = []
+    for i in range(30, len(raw) - steps):
+        try:
+            x = make_features(raw[: i + 1])
+            arr = np.asarray(x, dtype=float)
+            if not np.isfinite(arr).all():
+                continue
+            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
+            created = _parse_utc(datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc).isoformat())
+            target = datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc)
+            out.append({
+                "id": f"archive:{int(raw[i][0])}:{h}",
+                "created": created.isoformat() if created else "",
+                "target": target.isoformat(),
+                "x": [float(v) for v in arr],
+                "y": direction_from_return(future_return),
+                "production_mode": "binance_vision_archive",
+                "data_source": "binance_vision_closed_archive",
+            })
+        except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
+            continue
+    return out[-int(max_rows):]
+
 def load_primary_production_strict_rows(h):
     """Load only Binance-primary strict-PIT observations for Champion comparison."""
     return [
