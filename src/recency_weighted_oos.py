@@ -82,12 +82,15 @@ def decay_weights(n, half_life):
     return w
 
 def _fit(model,X,y,weights=None):
+    train_y=np.asarray(y)
+    if XGBClassifier is not None and isinstance(model,XGBClassifier):
+        train_y=np.asarray([CLASSES.index(str(v)) for v in y],dtype=int)
     if weights is None:
-        model.fit(X,y)
+        model.fit(X,train_y)
     elif isinstance(model,Pipeline):
-        model.fit(X,y,model__sample_weight=weights)
+        model.fit(X,train_y,model__sample_weight=weights)
     else:
-        model.fit(X,y,sample_weight=weights)
+        model.fit(X,train_y,sample_weight=weights)
     return model
 
 def _predict(model,rows):
