@@ -20,6 +20,18 @@ class TimeRegimeOOSTests(unittest.TestCase):
         self.assertEqual(saturday[4], 1.0)
         self.assertEqual(monday[4], 0.0)
 
+
+    def test_archive_style_id_is_safe_for_chronological_sort(self):
+        row = {
+            "id": "archive:binance_vision:1789314900000:5m",
+            "created": "2026-09-22T08:00:00+00:00",
+            "x": [0.0] * 15,
+            "y": "UP",
+        }
+        out = _augment([row])
+        self.assertEqual(out[0]["id"], row["id"])
+        self.assertEqual(len(out[0]["x"]), 20)
+
     def test_augment_preserves_identity_and_adds_exactly_five_features(self):
         row = {
             "id": 1,
