@@ -87,6 +87,13 @@ MARKET_FLOW_V2 = (
     "taker_imbalance_delta_5m_15m",
 )
 
+EXTENDED_FEATURES = (
+    "ret_15m",
+    "ret_30m",
+    "range_position_30m",
+    "trend_alignment",
+)
+
 CROSS_VENUE = (
     "cross_exchange_gap",
     "spot_futures_gap",
@@ -251,14 +258,19 @@ def load_variants(horizon: str):
         if ids:
             placeholders = ",".join("?" for _ in ids)
             rows = con.execute(
-                f"SELECT prediction_id, scenario_json FROM predictions WHERE prediction_id IN ({placeholders})",
+                f"SELECT prediction_id, feature_json, scenario_json FROM predictions WHERE prediction_id IN ({placeholders})",
                 ids,
             ).fetchall()
-            scenario_by_id = {int(r[0]): _safe_json(r[1]) for r in rows}
+            scenario_by_id = {
+                int(r[0]): {"feature_json": r[1], "scenario": _safe_json(r[2])}
+                for r in rows
+            }
 
-    variants = {"base": [], "binance_micro": [], "market_flow_v2": [], "cross_venue": []}
+    variants = {"base": [], "binance_micro": [], "market_flow_v2": [], "full_stack": [], "cross_venue": []}
     for row in base:
-        scenario = scenario_by_id.get(int(row["id"]))
+        record = scenario_by_id.get(int(row["id"]))
+        scenario = record.get("scenario") if isinstance(record, dict) else None
+        feature_json = record.get("feature_json") if isinstance(record, dict) else None
         if not _strict_primary_sources_ok(scenario):
             continue
         common = {
@@ -283,6 +295,31 @@ def load_variants(horizon: str):
                 {
                     **common,
                     "x": list(row["x"])
+                    + [micro[k] for k in BINANCE_MICRO]
+                    + [flow[k] for k in MARKET_FLOW_V2],
+                }
+            )
+
+        extra = None
+        try:
+            parsed_features = json.loads(feature_json or "{}")
+            if isinstance(parsed_features, dict):
+                extra = {}
+                for key in EXTENDED_FEATURES:
+                    value = _finite(parsed_features.get(key))
+                    if value is None:
+                        extra = None
+                        break
+                    extra[key] = value
+        except (TypeError, ValueError, json.JSONDecodeError):
+            extra = None
+
+        if micro is not None and flow is not None and extra is not None:
+            variants["full_stack"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [extra[k] for k in EXTENDED_FEATURES]
                     + [micro[k] for k in BINANCE_MICRO]
                     + [flow[k] for k in MARKET_FLOW_V2],
                 }
@@ -523,18 +560,22 @@ def main():
     }
     for h in HORIZONS:
         variants = load_variants(h)
-        family_count = max(1, len(factories()) * 3)
+        family_count = max(1, len(factories()) * 4)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
             "binance_micro_rows": len(variants["binance_micro"]),
             "market_flow_v2_rows": len(variants["market_flow_v2"]),
+            "full_stack_rows": len(variants["full_stack"]),
             "cross_venue_rows": len(variants["cross_venue"]),
             "binance_micro": evaluate_variant(
                 h, variants["binance_micro"], corrected_alpha=corrected_alpha
             ),
             "market_flow_v2": evaluate_variant(
                 h, variants["market_flow_v2"], corrected_alpha=corrected_alpha
+            ),
+            "full_stack": evaluate_variant(
+                h, variants["full_stack"], corrected_alpha=corrected_alpha
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha
