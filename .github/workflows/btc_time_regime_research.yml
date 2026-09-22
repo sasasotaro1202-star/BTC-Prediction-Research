@@ -56,9 +56,19 @@ jobs:
               raise SystemExit('time-regime lane must remain research-only')
           if obj.get('production_changed') is not False:
               raise SystemExit('time-regime lane reports production mutation')
-          if obj.get('final_holdout_protected') is not True:
-              raise SystemExit('time-regime holdout protection missing')
-          print('time-regime evidence: VERIFIED')
+          horizons = obj.get('horizons', {})
+          if not isinstance(horizons, dict) or set(horizons) != {'5m', '10m'}:
+              raise SystemExit('time-regime horizon evidence is incomplete')
+          for h, item in horizons.items():
+              if item.get('status') == 'OK':
+                  if item.get('final_holdout_protected') is not True:
+                      raise SystemExit(f'{h}: holdout protection missing for completed evaluation')
+              elif item.get('status') == 'DEFERRED':
+                  if not str(item.get('reason', '')):
+                      raise SystemExit(f'{h}: deferred evaluation missing reason')
+              else:
+                  raise SystemExit(f'{h}: unexpected evaluation status {item.get("status")}')
+          print('time-regime evidence state: VERIFIED')
           PY
       - name: Upload time-regime evidence
         uses: actions/upload-artifact@v6
