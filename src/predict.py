@@ -4,6 +4,7 @@ import asyncio, json, math, sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import joblib, numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from db import DB, init_db
 from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
@@ -133,6 +134,20 @@ def fuse(base,struct,m,data_complete,horizon):
         w=min(base_w,.15)
     w=max(0.0,min(.45,w)); out=(1-w)*p+w*q; out=np.clip(out,.03,.94); out/=out.sum()
     return {'DOWN':float(out[0]),'FLAT':float(out[1]),'UP':float(out[2])},float(w)
+def _parallel_market_calls(calls):
+    """Fetch independent public market-data endpoints concurrently."""
+    if not calls:
+        return {}
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(6, len(calls))) as pool:
+        future_map = {pool.submit(fn): key for key, fn in calls.items()}
+        for future, key in ((f, future_map[f]) for f in future_map):
+            try:
+                results[key] = future.result()
+            except Exception as exc:
+                results[key] = exc
+    return results
+
 def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
@@ -170,8 +185,20 @@ def main():
         status["binance_taker_window_retrieved_at_ms"] = max(
             int(r["retrieved_at_ms"]) for r in ws_candidate
         )
+    market_calls = _parallel_market_calls({
+        "binance_depth": binance_depth,
+        "bybit_depth": bybit_depth,
+        "binance_premium": binance_premium,
+        "binance_oi": binance_oi,
+        "binance_taker": binance_taker,
+        "bybit_funding": bybit_funding,
+    })
+
+    depth_result = market_calls.get("binance_depth")
     try:
-        m['book_imbalance']=imbalance(binance_depth())
+        if isinstance(depth_result, Exception):
+            raise depth_result
+        m['book_imbalance']=imbalance(depth_result)
         status['binance_depth']='ok'
         status['binance_depth_transport']='rest'
     except Exception as exc:
@@ -186,10 +213,16 @@ def main():
             status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
         except Exception:
             status['binance_depth']=f'error:{type(exc).__name__}'
-    bybit_book=None
+
+    bybit_book = market_calls.get("bybit_depth")
     try:
-        bybit_book=bybit_depth(); m['bybit_book_imbalance']=imbalance(bybit_book); status['bybit_depth']='ok'
-    except Exception as exc:status['bybit_depth']=f'error:{type(exc).__name__}'
+        if isinstance(bybit_book, Exception):
+            raise bybit_book
+        m['bybit_book_imbalance']=imbalance(bybit_book)
+        status['bybit_depth']='ok'
+    except Exception as exc:
+        status['bybit_depth']=f'error:{type(exc).__name__}'
+
     # Bybit is a secondary cross-venue signal. It is useful when available,
     # but an outage must not block an otherwise valid production prediction.
     # Prefer the latest closed candle when available; otherwise query the
@@ -220,9 +253,7 @@ def main():
 
     # Prefer the already-fetched Bybit candle/current row. If that is not
     # usable, try the ticker once; if that response is malformed or unavailable,
-    # fall back to the already-required order book. This closes the prior
-    # failure mode where a malformed ticker response prevented the order-book
-    # fallback from running.
+    # fall back to the already-required order book.
     byp=_valid_price(by[-1][4]) if by else None
     if byp is not None:
         status['bybit_futures']='ok_current_only' if len(by) == 1 else status.get('bybit_futures','ok')
@@ -232,10 +263,6 @@ def main():
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
                 row=rows[0]
-                # Bybit can occasionally return an empty lastPrice/markPrice
-                # while still exposing live top-of-book prices. Use those only
-                # as a bounded current-price fallback; never synthesize from
-                # stale/future data.
                 byp=_valid_price(row.get('lastPrice') or row.get('markPrice'))
                 if byp is None:
                     bid=_valid_price(row.get('bid1Price'))
@@ -247,7 +274,7 @@ def main():
         except Exception:
             pass
         if byp is None:
-            byp=_book_midprice(bybit_book)
+            byp=_book_midprice(bybit_book) if not isinstance(bybit_book, Exception) else None
             if byp is not None:
                 status['bybit_futures']='ok_current_only'
             else:
@@ -255,16 +282,18 @@ def main():
     if byp is not None and math.isfinite(byp) and byp>0:
         m['cross_exchange_gap']=byp/price-1
     else:
-        # Explicitly record missing secondary data; do not fabricate a gap.
         m['cross_exchange_gap']=None
         status['bybit_futures']=status.get('bybit_futures','error:missing_current_price')
+
+    premium_result = market_calls.get("binance_premium")
     try:
-        premium_payload=binance_premium()
-        m['funding_binance']=float(premium_payload.get('lastFundingRate'))
+        if isinstance(premium_result, Exception):
+            raise premium_result
+        m['funding_binance']=float(premium_result.get('lastFundingRate'))
         status['binance_premium']='ok'
         status['binance_premium_transport']='rest'
-        if premium_payload.get('time') is not None:
-            status['binance_premium_event_time_ms']=int(premium_payload['time'])
+        if premium_result.get('time') is not None:
+            status['binance_premium_event_time_ms']=int(premium_result['time'])
     except Exception as exc:
         try:
             mark=asyncio.run(capture_mark_price(6.0))
@@ -277,10 +306,21 @@ def main():
             status['binance_premium_retrieved_at_ms']=int(mark['retrieved_at_ms'])
         except Exception:
             status['binance_premium']=f'error:{type(exc).__name__}'
-    try:m['oi']=float(binance_oi().get('openInterest')); status['binance_oi']='ok'
-    except Exception as exc:status['binance_oi']=f'error:{type(exc).__name__}'
+
+    oi_result = market_calls.get("binance_oi")
     try:
-        t=binance_taker()
+        if isinstance(oi_result, Exception):
+            raise oi_result
+        m['oi']=float(oi_result.get('openInterest'))
+        status['binance_oi']='ok'
+    except Exception as exc:
+        status['binance_oi']=f'error:{type(exc).__name__}'
+
+    taker_result = market_calls.get("binance_taker")
+    try:
+        if isinstance(taker_result, Exception):
+            raise taker_result
+        t=taker_result
         t=t[-1] if isinstance(t,list) and t else t
         tb=float(t['takerBuyVol']); ts=float(t['takerSellVol'])
         m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts)
@@ -303,8 +343,16 @@ def main():
             status['binance_taker_retrieved_at_ms']=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else int(event_ms)
         except Exception:
             status['binance_taker']=f'error:{type(exc).__name__}'
-    try:m['funding_bybit']=float(bybit_funding().get('result',{}).get('list',[{}])[0]['fundingRate']); status['bybit_funding']='ok'
-    except Exception as exc:status['bybit_funding']=f'error:{type(exc).__name__}'
+
+    funding_result = market_calls.get("bybit_funding")
+    try:
+        if isinstance(funding_result, Exception):
+            raise funding_result
+        m['funding_bybit']=float(funding_result.get('result',{}).get('list',[{}])[0]['fundingRate'])
+        status['bybit_funding']='ok'
+    except Exception as exc:
+        status['bybit_funding']=f'error:{type(exc).__name__}'
+
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
     # Binance is the production price/target venue. Bybit is optional
     # secondary information and is handled fail-safe by the policy layer.
