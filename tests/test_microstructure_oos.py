@@ -26,8 +26,8 @@ class MicrostructureOOSTests(unittest.TestCase):
                 "bybit_depth": "ok",
                 "bybit_futures": "ok_current_only",
                 "binance_taker_window_transport": "websocket_closed_klines",
-                "binance_taker_window_event_time_ms": 1_758_000_059_000,
-                "binance_taker_window_retrieved_at_ms": 1_758_000_059_500,
+                "binance_taker_window_event_time_ms": 1_790_035_259_000,
+                "binance_taker_window_retrieved_at_ms": 1_790_035_259_500,
             },
             "provenance": {
                 "sources": {
