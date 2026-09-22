@@ -183,7 +183,7 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
-def _market_flow_from_scenario(scenario):
+def _market_flow_from_scenario(scenario, created_at=None):
     if not isinstance(scenario, dict):
         return None
     m = scenario.get("microstructure")
@@ -195,20 +195,39 @@ def _market_flow_from_scenario(scenario):
         if value is None:
             return None
         values[key] = value
-    # Windowed taker features are accepted only with explicit source timing
-    # from the fresh Binance closed-kline cache. No timestamp inference.
+
+    # Windowed taker features are accepted only with an explicit persisted
+    # provenance envelope. The audit rechecks timing instead of trusting a
+    # boolean freshness flag written by the producer.
     dq = scenario.get("data_quality")
     if not isinstance(dq, dict) or dq.get("binance_taker_window_transport") != "websocket_closed_klines":
         return None
-    if _finite_datetime(dq.get("binance_taker_window_retrieved_at_ms")) is not None:
-        # This field is milliseconds since epoch in runtime state; only its
-        # presence/type is needed here because freshness was checked before write.
-        pass
-    else:
-        try:
-            int(dq.get("binance_taker_window_retrieved_at_ms"))
-        except (TypeError, ValueError):
-            return None
+    provenance = scenario.get("provenance")
+    sources = provenance.get("sources") if isinstance(provenance, dict) else None
+    source = sources.get("binance_taker_window") if isinstance(sources, dict) else None
+    if not isinstance(source, dict) or source.get("status") != "ok":
+        return None
+
+    created = _finite_datetime(created_at) if created_at is not None else None
+    source_available = _finite_datetime(source.get("available_at"))
+    source_retrieved = _finite_datetime(source.get("retrieved_at"))
+    source_cutoff = _finite_datetime(source.get("prediction_cutoff"))
+    source_event = _finite_datetime(source.get("event_time"))
+    if None in (created, source_available, source_retrieved, source_cutoff, source_event):
+        return None
+    if not (source_event <= source_available <= source_retrieved <= source_cutoff <= created):
+        return None
+    if (created - source_retrieved).total_seconds() > 180:
+        return None
+
+    # Keep the runtime millisecond marker as a redundant audit anchor.
+    try:
+        marker = int(dq.get("binance_taker_window_retrieved_at_ms"))
+    except (TypeError, ValueError):
+        return None
+    marker_dt = __import__("datetime").datetime.fromtimestamp(marker / 1000, __import__("datetime").timezone.utc)
+    if abs((marker_dt - source_retrieved).total_seconds()) > 2:
+        return None
     return values
 
 
@@ -250,7 +269,7 @@ def load_variants(horizon: str):
                 {**common, "x": list(row["x"]) + [micro[k] for k in BINANCE_MICRO]}
             )
 
-        flow = _market_flow_from_scenario(scenario)
+        flow = _market_flow_from_scenario(scenario, created_at=row["created"])
         if micro is not None and flow is not None:
             variants["market_flow_v2"].append(
                 {
