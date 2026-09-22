@@ -17,6 +17,10 @@ from model_compare import HORIZONS, metrics, _temperature, apply_temperature
 from binance_history import binance_archive_rows
 from bootstrap_train import make_features, THRESHOLD
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -35,6 +39,7 @@ def factories():
         "extra_trees":lambda:ExtraTreesClassifier(n_estimators=320,max_depth=12,min_samples_leaf=10,max_features="sqrt",random_state=42,n_jobs=-1),
         "hgb":lambda:HistGradientBoostingClassifier(max_iter=220,max_leaf_nodes=15,learning_rate=0.04,l2_regularization=1.5,random_state=42),
         "lightgbm":lambda:LGBMClassifier(objective="multiclass",num_class=3,n_estimators=260,num_leaves=15,learning_rate=0.035,min_child_samples=24,reg_lambda=2.0,subsample=0.9,colsample_bytree=0.9,random_state=42,n_jobs=-1,verbosity=-1),
+        **({"xgboost":lambda:XGBClassifier(objective="multi:softprob",num_class=3,n_estimators=220,max_depth=4,learning_rate=0.035,min_child_weight=10,subsample=0.9,colsample_bytree=0.9,reg_lambda=2.0,reg_alpha=0.05,eval_metric="mlogloss",random_state=42,n_jobs=-1,verbosity=0)} if XGBClassifier is not None else {}),
     }
 
 def _regime_thresholds(train):
