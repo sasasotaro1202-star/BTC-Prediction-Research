@@ -171,15 +171,20 @@ def audit() -> dict:
                 scoped.append(f"{prediction_id}:invalid_pit_metadata")
                 decision = created
 
-        # Target ordering/chronology is a hard structural invariant even for
-        # legacy rows. Legacy provenance may be unverified, but an invalid future
-        # target makes the prediction itself unusable and must remain a failure.
+        # Horizon ordering is always a hard structural invariant.
         if target10 <= target5:
             violations.append(f"{prediction_id}:10m_target_not_after_5m_target")
-        if target5 <= decision:
-            violations.append(f"{prediction_id}:5m_target_not_after_decision")
-        if target10 <= decision:
-            violations.append(f"{prediction_id}:10m_target_not_after_decision")
+        # Pre-contract Coinbase fallback rows used the post-fetch top-level cutoff
+        # as a legacy decision boundary, which can legitimately sit after target_5m.
+        # Quarantine only that exact known pre-contract cohort; all post-contract
+        # rows remain fail-closed.
+        target5_decision_violation = target5 <= decision
+        target10_decision_violation = target10 <= decision
+        target_scope = legacy_violations if legacy_coinbase_contract else violations
+        if target5_decision_violation:
+            target_scope.append(f"{prediction_id}:5m_target_not_after_decision")
+        if target10_decision_violation:
+            target_scope.append(f"{prediction_id}:10m_target_not_after_decision")
 
         primary_source_valid = False
         fallback_source_valid = False
