@@ -114,17 +114,31 @@ jobs:
               watchdog_degraded=1
               return 1
             fi
-            if jq -e --arg workflow ".github/workflows/$workflow" '
-              any(.files[]?.filename?;
-                startswith("src/") or
-                startswith("scripts/") or
-                startswith("tests/") or
-                . == "requirements.txt" or
-                . == $workflow
-              )
-            ' <<<"$compare" >/dev/null 2>&1; then
+            changed_files=$(jq -r --arg workflow ".github/workflows/$workflow" '
+              [.files[]?.filename? |
+                select(
+                  startswith("src/") or
+                  startswith("scripts/") or
+                  startswith("tests/") or
+                  . == "requirements.txt" or
+                  . == $workflow
+                )
+              ] | length
+            ' <<<"$compare" 2>/dev/null) || {
+              echo "ERROR: unable to evaluate changed-file scope for ${active_head}...${main_sha}; stale-head cancellation is degraded." >&2
+              watchdog_degraded=1
+              return 1
+            }
+            if ! [[ "$changed_files" =~ ^[0-9]+$ ]]; then
+              echo "ERROR: stale-head changed-file count is malformed for ${active_head}...${main_sha}: ${changed_files:-empty}" >&2
+              watchdog_degraded=1
+              return 1
+            fi
+            if [ "$changed_files" -gt 0 ]; then
+              echo "Detected $changed_files source/protocol files changed since active head ${active_head} for ${workflow}."
               return 0
             fi
+            echo "No monitored source/protocol changes detected since active head ${active_head} for ${workflow}."
             return 1
           }
 
