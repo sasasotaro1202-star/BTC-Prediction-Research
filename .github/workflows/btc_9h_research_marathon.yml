@@ -5,11 +5,11 @@ name: BTC 9H Research Marathon
 # up to 6h of incremental historical research + final integrity checks.
 # Total wall-clock envelope: up to 9h. Scheduled daily outside the hourly load peak.
 on:
-  # This is a long-lived research marathon. Run twice per day to keep the
-  # research loop dense while leaving a recovery window between runs.
+  # This is a long-lived research marathon. Run every 9 hours so the
+  # research loop continuously feeds fresh evidence with minimal idle time.
   # Relevant protocol changes also trigger a fresh run through the push filter below.
   schedule:
-    - cron: '37 1,13 * * *'
+    - cron: '37 0,9,18 * * *'
   workflow_dispatch:
   push:
     paths:
@@ -17,10 +17,10 @@ on:
 
 concurrency:
   group: btc-9h-research-marathon
-  # Research is disposable: when a relevant code change lands, abandon the
-  # stale run and restart from the newest main SHA rather than spending hours
-  # on obsolete evidence. Production workflows are not governed by this group.
-  cancel-in-progress: true
+  # A schedule must not cancel an already-running 9H marathon. Relevant
+  # code changes still supersede stale research immediately; scheduled runs
+  # wait for the current one instead of interrupting it.
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: read
