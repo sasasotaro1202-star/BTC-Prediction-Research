@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q src tests scripts
-          python -m pytest -q tests/test_microstructure_oos.py
+          python -m pytest -q tests/test_microstructure_oos.py tests/test_microstructure_features.py
       - name: Run microstructure OOS
         run: |
           set -euo pipefail
