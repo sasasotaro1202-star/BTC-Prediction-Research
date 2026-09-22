@@ -1,0 +1,49 @@
+name: BTC Recency Research
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/recency_weighted_oos.py'
+      - 'tests/test_recency_weighted_oos.py'
+      - 'requirements.txt'
+
+concurrency:
+  group: btc-recency-research
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  recency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m unittest tests.test_recency_weighted_oos -v
+      - name: Run recency-weighted OOS
+        run: |
+          set -euo pipefail
+          python src/recency_weighted_oos.py
+          test -s data/historical_research/recency_weighted_oos.json
+      - name: Upload recency evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-recency-research
+          path: data/historical_research/recency_weighted_oos.json
+          retention-days: 7
