@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -u
-          workflows=(btc_live_cycle.yml btc_integrity.yml btc_research.yml btc_pit_oos_audit.yml btc_historical_research.yml btc_9h_research_marathon.yml btc_recency_research.yml btc_archive_refresh.yml btc_selective_research.yml btc_microstructure_research.yml)
+          workflows=(btc_live_cycle.yml btc_integrity.yml btc_research.yml btc_pit_oos_audit.yml btc_historical_research.yml btc_9h_research_marathon.yml btc_recency_research.yml btc_archive_refresh.yml btc_selective_research.yml btc_microstructure_research.yml btc_hierarchical_research.yml)
           main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
           if [ -z "$main_sha" ]; then
             echo "WARN: unable to resolve current main SHA; failed-run retries will be skipped for safety."
@@ -111,6 +111,7 @@ jobs:
           recover_if_stale btc_archive_refresh.yml 21600
           recover_if_stale btc_selective_research.yml 28800
           recover_if_stale btc_microstructure_research.yml 21600
+          recover_if_stale btc_hierarchical_research.yml 21600
           recover_if_stale btc_rolling_challenger.yml 28800
           # The 9H marathon is intentionally long-running; only recover it when
           # there is no active run and no completed run for 12 hours.
