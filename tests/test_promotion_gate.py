@@ -15,7 +15,7 @@ class PromotionGateTests(unittest.TestCase):
         }
 
     def _pit(self):
-        return {"ok": True, "pit_verified": True, "checked_predictions": 100, "violation_count": 0}
+        return {"ok": True, "pit_verified": True, "checked_predictions": 100, "verified_predictions": 300, "min_strict_pit_rows": 300, "violation_count": 0}
 
     def _cal(self):
         return {
@@ -34,6 +34,20 @@ class PromotionGateTests(unittest.TestCase):
         self.assertEqual(result["production_safety_gate"], "PASS")
         self.assertEqual(result["promotion_status"], "HOLD")
         self.assertIn("candidate_or_frozen_holdout_non_regression_not_verified", result["reason"])
+
+
+    def test_pit_verified_below_strict_minimum_blocks_promotion(self):
+        pit = self._pit().copy()
+        pit["verified_predictions"] = 299
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            self._robust(),
+            {"5m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.50, "candidate_logloss": 0.49, "baseline_brier": 0.30, "candidate_brier": 0.29},
+             "10m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.55, "candidate_logloss": 0.54, "baseline_brier": 0.32, "candidate_brier": 0.31}},
+            pit, self._cal(), {"ok": True},
+        )
+        self.assertFalse(result["promotion_allowed"])
+        self.assertIn("pit_oos_audit_not_fully_verified", result["reason"])
 
     def test_missing_or_invalid_robustness_is_fail_closed(self):
         result = evaluate_promotion(
