@@ -168,13 +168,179 @@ def _score_frozen_champion(horizon, rows):
     return out, str(meta.get("model_version", ""))
 
 
+def _rows_from_raw(raw, horizon, source_name, max_rows=ARCHIVE_MAX_ROWS):
+    """Build causal archive rows without requiring an optional model_compare helper."""
+    from bootstrap_train import make_features
+    from label_policy import direction_from_return
+
+    steps = int(str(horizon).rstrip("m"))
+    ordered = sorted({int(r[0]): r for r in raw}.values(), key=lambda r: int(r[0]))
+    if not ordered:
+        return []
+    contiguous = [ordered[-1]]
+    for row in reversed(ordered[:-1]):
+        if int(contiguous[-1][0]) - int(row[0]) != 60_000:
+            break
+        contiguous.append(row)
+    contiguous.reverse()
+
+    out = []
+    for i in range(30, len(contiguous) - steps):
+        current = contiguous[i]
+        target = contiguous[i + steps]
+        if int(target[0]) - int(current[0]) != steps * 60_000:
+            continue
+        try:
+            x = np.asarray(make_features(contiguous[: i + 1]), dtype=float)
+            if not np.isfinite(x).all():
+                continue
+            future_return = float(target[4]) / float(current[4]) - 1.0
+            out.append({
+                "id": f"archive:{source_name}:{int(current[0])}:{horizon}",
+                "created": datetime.fromtimestamp(int(current[0]) / 1000.0, timezone.utc).isoformat(),
+                "target": datetime.fromtimestamp(int(target[0]) / 1000.0, timezone.utc).isoformat(),
+                "x": x.tolist(),
+                "y": direction_from_return(future_return),
+                "production_mode": f"{source_name}_archive",
+                "data_source": source_name,
+            })
+        except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
+            continue
+    return out[-int(max_rows):]
+
+
+def _research_rows_from_raw(raw, horizon, max_rows, source_name):
+    """Convert a verified closed 1m candle series into causal research rows."""
+    steps = int(str(horizon).rstrip("m"))
+    from model_compare import prediction_precedes_target
+    from bootstrap_train import make_features
+    from label_policy import direction_from_return
+
+    ordered = sorted(
+        {int(r[0]): r for r in raw}.values(),
+        key=lambda r: int(r[0]),
+    )
+    contiguous = []
+    for row in reversed(ordered):
+        if contiguous and int(contiguous[-1][0]) - int(row[0]) != 60_000:
+            break
+        contiguous.append(row)
+    contiguous.reverse()
+
+    out = []
+    for i in range(30, len(contiguous) - steps):
+        try:
+            x = make_features(contiguous[: i + 1])
+            arr = np.asarray(x, dtype=float)
+            if not np.isfinite(arr).all():
+                continue
+            target_row = contiguous[i + steps]
+            if int(target_row[0]) - int(contiguous[i][0]) != steps * 60_000:
+                continue
+            future_return = float(target_row[4]) / float(contiguous[i][4]) - 1.0
+            created = datetime.fromtimestamp(
+                int(contiguous[i][0]) / 1000.0, timezone.utc
+            ).isoformat()
+            target = datetime.fromtimestamp(
+                int(target_row[0]) / 1000.0, timezone.utc
+            ).isoformat()
+            if not prediction_precedes_target(created, target):
+                continue
+            out.append({
+                "id": f"archive:{source_name}:{int(contiguous[i][0])}:{horizon}",
+                "created": created,
+                "target": target,
+                "x": [float(v) for v in arr],
+                "y": direction_from_return(future_return),
+                "production_mode": f"{source_name}_archive",
+                "data_source": source_name,
+            })
+        except (IndexError, ValueError, TypeError, FloatingPointError, OverflowError):
+            continue
+    return out[-int(max_rows):]
+
+
+def _fresh_post_training_fallback(horizon):
+    """Build research rows from fresh non-Binance venues after Champion training.
+    
+    This is a research-only recovery path. It preserves causal ordering by
+    requiring every evaluation timestamp to be strictly after the frozen
+    Champion's recorded training time, and it never becomes promotion evidence.
+    """
+    meta_path = MODEL_DIR / f"{horizon}.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        trained_raw = meta.get("trained_at_utc")
+        trained_at = (
+            datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+            if trained_raw else None
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return [], None
+    if trained_at is None:
+        return [], None
+
+    loaders = []
+    try:
+        try:
+            from src.bootstrap_train import fetch_bybit
+        except ModuleNotFoundError:
+            from bootstrap_train import fetch_bybit
+        loaders.append(("bybit", fetch_bybit))
+    except Exception:
+        pass
+    try:
+        try:
+            from src.coinbase_fallback_train import fetch_coinbase
+        except ModuleNotFoundError:
+            from coinbase_fallback_train import fetch_coinbase
+        loaders.append(("coinbase", fetch_coinbase))
+    except Exception:
+        pass
+
+    target = max(ARCHIVE_MAX_ROWS + 40, 12000)
+    best = []
+    best_source = None
+    for source_name, loader in loaders:
+        try:
+            raw = loader(target)
+            rows = _rows_from_raw(raw, horizon, source_name, ARCHIVE_MAX_ROWS)
+            fresh = []
+            for row in rows:
+                created = datetime.fromisoformat(
+                    str(row["created"]).replace("Z", "+00:00")
+                )
+                if created > trained_at:
+                    fresh.append(row)
+            scored, _ = _score_frozen_champion(horizon, fresh)
+            if len(scored) > len(best):
+                best, best_source = scored, source_name
+            if len(scored) >= MIN_ROWS:
+                return (
+                    scored[-ARCHIVE_MAX_ROWS:],
+                    f"{source_name}_fresh_archive_frozen_champion",
+                )
+        except Exception:
+            continue
+    return (
+        best[-ARCHIVE_MAX_ROWS:],
+        f"{best_source}_fresh_archive_frozen_champion" if best_source else None,
+    )
+
+
 def load_rows(horizon):
     live = load_primary_production_strict_rows(horizon)
     if len(live) >= MIN_ROWS:
         return live, "live_binance_primary", True
     archive = load_archive_research_rows(horizon, ARCHIVE_MAX_ROWS)
     scored, _ = _score_frozen_champion(horizon, archive)
-    return scored[-ARCHIVE_MAX_ROWS:], "binance_vision_archive_frozen_champion", False
+    if len(scored) >= MIN_ROWS:
+        return scored[-ARCHIVE_MAX_ROWS:], "binance_vision_archive_frozen_champion", False
+
+    fresh, fresh_source = _fresh_post_training_fallback(horizon)
+    if fresh:
+        return fresh, fresh_source or "fresh_venue_archive_frozen_champion", False
+    return [], "binance_vision_archive_frozen_champion", False
 
 
 def _candidate_holdout(factory, train, test, horizon):

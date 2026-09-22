@@ -32,5 +32,27 @@ class HierarchicalOOSTests(unittest.TestCase):
             model.fit(X, y)
 
 
+    def test_load_rows_uses_fresh_venue_fallback_when_archive_has_no_post_train_rows(self):
+        from unittest.mock import patch
+        from src import hierarchical_oos as hierarchical
+
+        fallback = [{
+            "id": "fresh:1",
+            "created": "2026-09-22T00:01:00+00:00",
+            "x": [0.0],
+            "y": "UP",
+            "production": [0.2, 0.3, 0.5],
+        }]
+        with patch.object(hierarchical, "load_primary_production_strict_rows", return_value=[]), \
+             patch.object(hierarchical, "load_archive_research_rows", return_value=[]), \
+             patch.object(hierarchical, "_fresh_post_training_fallback",
+                           return_value=(fallback, "bybit_fresh_archive_frozen_champion")):
+            rows, source, eligible = hierarchical.load_rows("5m")
+
+        self.assertEqual(rows, fallback)
+        self.assertEqual(source, "bybit_fresh_archive_frozen_champion")
+        self.assertFalse(eligible)
+
+
 if __name__ == "__main__":
     unittest.main()
