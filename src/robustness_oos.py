@@ -8,6 +8,7 @@ import json, math, sqlite3
 from pathlib import Path
 import numpy as np
 from sklearn.metrics import log_loss
+from model_compare import _strict_pit_provenance_ok
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=ROOT/"data"/"predictions.db"
@@ -86,6 +87,7 @@ def load(h):
             if not all(math.isfinite(x) for x in vals+probs): continue
             scenario=json.loads(r[8] or "{}")
             if scenario.get("production_mode") != "binance_primary": continue
+            if not _strict_pit_provenance_ok(scenario, r[1]): continue
             if r[3] not in CLASSES or min(probs)<0 or sum(probs)<=0: continue
             result.append({"id":r[0],"created":r[1],"ret":vals[0],"vol":vals[1],"y":r[3],"p":probs,"model_version":r[7]})
         except (TypeError,ValueError,KeyError,json.JSONDecodeError): continue

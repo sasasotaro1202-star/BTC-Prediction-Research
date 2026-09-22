@@ -64,6 +64,14 @@ class TestPITOOSAudit(unittest.TestCase):
                             "available_at": None,
                             "retrieved_at": None,
                             "prediction_cutoff": None,
+                        },
+                        "coinbase_futures": {
+                            "information_origin": "Coinbase Exchange BTC-USD",
+                            "status": "ok",
+                            "event_time": now.isoformat(),
+                            "available_at": now.isoformat(),
+                            "retrieved_at": now.isoformat(),
+                            "prediction_cutoff": now.isoformat(),
                         }
                     },
                 },

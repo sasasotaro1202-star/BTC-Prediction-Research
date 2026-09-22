@@ -23,7 +23,7 @@ except ImportError:
     LGBMClassifier = None
 
 from feature_schema import FEATURES
-from model_compare import CLASSES, TEST_BLOCK, MIN_TRAIN, MIN_OOS, PURGE_BARS, EMBARGO_BARS, metrics, aligned, apply_temperature, _temperature
+from model_compare import _strict_pit_provenance_ok, CLASSES, TEST_BLOCK, MIN_TRAIN, MIN_OOS, PURGE_BARS, EMBARGO_BARS, metrics, aligned, apply_temperature, _temperature
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "data" / "predictions.db"
@@ -63,6 +63,8 @@ def load_rows(horizon: str):
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
         if scenario.get("production_mode") != "binance_primary":
+            continue
+        if not _strict_pit_provenance_ok(scenario, created):
             continue
         try:
             f = json.loads(feature_json or "{}")
