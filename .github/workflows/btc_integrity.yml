@@ -86,6 +86,30 @@ jobs:
           mkdir -p /tmp/btc_upstream_artifact
           gh run download "${{ github.event.workflow_run.id }}"             --repo "${{ github.repository }}"             --name btc-predictions-db             --dir /tmp/btc_upstream_artifact
 
+      - name: Restore exact upstream BTC state archive
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=$(find /tmp/btc_upstream_artifact -type f -name 'predictions.db.gz' -print -quit)
+          if [ -z "$src" ]; then
+            echo 'BTC upstream state archive is missing from immutable live-cycle artifact' >&2
+            exit 1
+          fi
+          cp "$src" data/predictions.db.gz
+          rm -f data/predictions.db
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          archive = Path('data/predictions.db.gz')
+          target = Path('data/predictions.db')
+          restore_db(archive, target)
+          if not target.exists() or target.stat().st_size <= 0:
+              raise SystemExit('exact upstream prediction database restore failed')
+          print(f'Using exact upstream live-cycle state: {target.stat().st_size} bytes')
+          PY
+
+
       - name: Validate upstream BTC live cycle outcome
         if: github.event_name == 'workflow_run'
         shell: bash
