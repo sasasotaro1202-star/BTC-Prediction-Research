@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/selective_nested_oos.py'
       - 'tests/test_selective_nested_oos.py'
+      - 'tests/test_adaptive_ensemble_oos.py'
       - '.github/workflows/btc_selective_research.yml'
   workflow_dispatch:
 
@@ -20,21 +21,39 @@ permissions:
 jobs:
   selective:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Install selective-lane dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --retries 5 --timeout 60             "numpy>=2.0,<3"             "scikit-learn>=1.5,<2"             "joblib>=1.4,<2"
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          if [ -s data/predictions.db.gz ]; then
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored predictions.db from compressed repository state.')
+          PY
+          elif [ -s data/predictions.db ]; then
+            echo 'Using existing uncompressed predictions.db'
+          else
+            echo 'prediction state archive/database is missing'
+            exit 1
+          fi
+          test -s data/predictions.db
       - name: Compile and run nested selective OOS
         run: |
           set -euo pipefail
           python -m compileall -q src tests scripts
-          python -m unittest -q tests/test_selective_nested_oos.py
+          python -m unittest -q tests/test_selective_nested_oos.py tests/test_adaptive_ensemble_oos.py
           python src/selective_nested_oos.py
           test -s data/historical_research/selective_nested_oos.json
       - name: Upload selective evidence
