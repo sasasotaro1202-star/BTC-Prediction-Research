@@ -55,11 +55,17 @@ jobs:
           import json
           from pathlib import Path
           from src.prediction_state_guard import prediction_table_fingerprint
-          fp = prediction_table_fingerprint(Path('data/predictions.db'))
+          from scripts.merge_prediction_state import expected_compacted_event_count
+          db = Path('data/predictions.db')
+          fp = prediction_table_fingerprint(db)
+          import sqlite3
+          with sqlite3.connect(db) as con:
+              expected_unique = expected_compacted_event_count(con)
+          snapshot = {**fp, 'expected_exact_unique_events': expected_unique}
           Path('/tmp/btc_compaction_before.json').write_text(
-              json.dumps(fp, sort_keys=True), encoding='utf-8'
+              json.dumps(snapshot, sort_keys=True), encoding='utf-8'
           )
-          print(json.dumps(fp, sort_keys=True))
+          print(json.dumps(snapshot, sort_keys=True))
           PY
       - name: Compact exact immutable prediction events
         shell: bash
@@ -75,27 +81,25 @@ jobs:
           import json
           from pathlib import Path
           from src.prediction_state_guard import prediction_table_fingerprint
-          
+
           before = json.loads(Path('/tmp/btc_compaction_before.json').read_text(encoding='utf-8'))
           after = prediction_table_fingerprint(Path('data/predictions.db'))
           before_n = int(before['count'])
           after_n = int(after['count'])
-          removed = max(0, before_n - after_n)
-          removal_fraction = removed / before_n if before_n else 0.0
+          expected_unique = int(before['expected_exact_unique_events'])
 
-          # Compaction is intended only for exact duplicates. A large removal
-          # fraction is therefore a fail-closed signal of state corruption,
-          # identity drift, or an unexpected schema/data change.
-          max_fraction = 0.25
-          if removed < 0:
-              raise SystemExit('canonical compaction increased row count unexpectedly')
-          if removal_fraction > max_fraction:
+          if after_n != expected_unique:
               raise SystemExit(
-                  f'canonical compaction removed too much state: '
-                  f'before={before_n} after={after_n} removed={removed} '
-                  f'fraction={removal_fraction:.6f} max={max_fraction:.6f}'
+                  f'canonical compaction count mismatch: before={before_n} '
+                  f'expected_exact_unique={expected_unique} after={after_n}'
               )
-          
+          if after_n > before_n:
+              raise SystemExit(
+                  f'canonical compaction increased row count: before={before_n} after={after_n}'
+              )
+
+          removed = before_n - after_n
+          removal_fraction = removed / before_n if before_n else 0.0
           payload = {
               'schema_version': 1,
               'research_only': True,
@@ -105,8 +109,8 @@ jobs:
               'after': after,
               'removed_rows': removed,
               'removal_fraction': removal_fraction,
-              'max_allowed_removal_fraction': max_fraction,
-              'policy': 'exact-duplicate-compaction-with-fail-closed-loss-cap',
+              'expected_exact_unique_events': expected_unique,
+              'policy': 'post-count-must-equal-precomputed-exact-immutable-unique-events',
           }
           out = Path('data/historical_research/canonical_compaction_guard.json')
           out.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +118,7 @@ jobs:
           print('canonical compaction state guard: VERIFIED')
           print(json.dumps(payload, sort_keys=True))
           PY
+
       - name: Validate repaired prediction state
         shell: bash
         run: |
