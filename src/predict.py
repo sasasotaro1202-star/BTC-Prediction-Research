@@ -284,6 +284,7 @@ def main():
             'publication_time':None,
             'retrieved_at':retrieved,
             'revision_time':None,
+            'prediction_cutoff':retrieved,
             'status':status.get(source_key),
         }
     # Bybit adapters used here expose current market snapshots but do not expose
@@ -308,6 +309,7 @@ def main():
             'publication_time':None,
             'retrieved_at':retrieved,
             'revision_time':None,
+            'prediction_cutoff':retrieved,
             'status':'ok',
         }
     scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else ('coinbase_fallback_model_only_uncalibrated' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}

@@ -47,6 +47,33 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertTrue(result["ok"], result)
 
 
+    def test_ignores_failed_unused_source_provenance(self):
+        with tempfile.TemporaryDirectory() as td:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            scenario = {
+                "decision_time_utc": now.isoformat(),
+                "provenance": {
+                    "event_time": now.isoformat(),
+                    "available_at": now.isoformat(),
+                    "retrieved_at": now.isoformat(),
+                    "prediction_cutoff": now.isoformat(),
+                    "sources": {
+                        "binance_futures": {
+                            "information_origin": "Binance",
+                            "status": "error:HTTPError:451",
+                            "available_at": None,
+                            "retrieved_at": None,
+                            "prediction_cutoff": None,
+                        }
+                    },
+                },
+            }
+            db = self.make_db(td, [(1, now.isoformat(), (now + timedelta(minutes=5)).isoformat(), (now + timedelta(minutes=10)).isoformat(), "coinbase_fallback.rf.v1", json.dumps(scenario))])
+            with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertTrue(result["pit_verified"])
+
     def test_accepts_provenance_cutoff_as_decision_time(self):
         with tempfile.TemporaryDirectory() as td:
             created = datetime.now(timezone.utc).replace(microsecond=0)

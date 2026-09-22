@@ -190,7 +190,12 @@ def audit() -> dict:
                 violations.append(f"{prediction_id}:missing_source_provenance")
             else:
                 for source_name, source_record in sources.items():
-                    violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
+                    source_status = str(source_record.get("status", "")) if isinstance(source_record, dict) else ""
+                    # Only sources declared available participate in the strict
+                    # provenance envelope. Explicitly failed/unused sources must
+                    # not be treated as if they were usable PIT inputs.
+                    if source_status in {"ok", "ok_current_only"}:
+                        violations.extend(validate_provenance_envelope(source_record, f"{prediction_id}:source:{source_name}"))
         if provenance is not None and not any(v.startswith(f"{prediction_id}:") for v in violations):
             verified_count += 1
 
