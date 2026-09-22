@@ -155,7 +155,37 @@ def build_panel():
     return rows
 
 def labels(rows,h):
-    n=len(rows)-h; X=np.asarray([rows[i][1] for i in range(n)],float); base=np.asarray([rows[i][2] for i in range(n)],float); fut=np.asarray([rows[i+h][2] for i in range(n)],float); r=(fut/base-1)*10000; y=np.where(r>NEUTRAL_BPS,"UP",np.where(r<-NEUTRAL_BPS,"DOWN","FLAT")); return X,y,np.asarray([rows[i][0] for i in range(n)]),base
+    # Define 5m/10m targets by exact elapsed wall-clock time, not row offset.
+    # Missing candles therefore reduce sample count instead of stretching the
+    # effective target horizon.
+    steps=int(h)
+    by_ts={int(row[0]):row for row in rows}
+    selected=[]; ys=[]; bases=[]
+    for row in rows:
+        t=int(row[0])
+        future=by_ts.get(t+steps*60_000)
+        if future is None:
+            continue
+        base=float(row[2]); future_price=float(future[2])
+        if not (math.isfinite(base) and base>0 and math.isfinite(future_price)):
+            continue
+        ret=(future_price/base-1.0)*10000.0
+        selected.append(row)
+        bases.append(base)
+        ys.append("UP" if ret>NEUTRAL_BPS else "DOWN" if ret<-NEUTRAL_BPS else "FLAT")
+    if not selected:
+        return (
+            np.empty((0,len(FEATURES))),
+            np.asarray([],dtype=object),
+            np.asarray([],dtype=np.int64),
+            np.asarray([],dtype=float),
+        )
+    return (
+        np.asarray([row[1] for row in selected],float),
+        np.asarray(ys),
+        np.asarray([row[0] for row in selected],dtype=np.int64),
+        np.asarray(bases,float),
+    )
 
 def norm(p):p=np.clip(np.asarray(p,float),1e-7,1);return p/p.sum(axis=1,keepdims=True)
 def metrics(y,p):
