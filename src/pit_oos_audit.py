@@ -16,6 +16,10 @@ MAX_FUTURE_SKEW_SECONDS = 60
 MIN_PREDICTIONS = 1
 MIN_STRICT_PIT_ROWS = 300
 AVAILABLE_STATUSES = {"ok", "ok_current_only"}
+# a4d43aa added per-source prediction_cutoff to live Coinbase provenance.
+# Rows created before that contract existed are quarantined, not upgraded retroactively.
+LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
+LEGACY_COINBASE_MODEL_VERSION = "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1"
 
 
 def parse_utc(value: str) -> datetime:
@@ -135,7 +139,18 @@ def audit() -> dict:
             and "decision_time_utc" not in scenario
             and "market_data_cutoff_utc" not in scenario
         )
-        scoped = legacy_violations if is_legacy else violations
+        coinbase_source = (
+            provenance.get("sources", {}).get("coinbase_futures", {})
+            if provenance_present and isinstance(provenance.get("sources"), dict)
+            else {}
+        )
+        legacy_coinbase_contract = (
+            model_version == LEGACY_COINBASE_MODEL_VERSION
+            and created < LEGACY_COINBASE_CUTOFF_UTC
+            and isinstance(coinbase_source, dict)
+            and not coinbase_source.get("prediction_cutoff")
+        )
+        scoped = legacy_violations if (is_legacy or legacy_coinbase_contract) else violations
 
         decision_raw = scenario.get("decision_time_utc")
         if not decision_raw and provenance_present:
@@ -201,6 +216,8 @@ def audit() -> dict:
                 violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
         if is_legacy:
+            legacy_unverified_count += 1
+        elif legacy_coinbase_contract:
             legacy_unverified_count += 1
         elif not any(v.startswith(row_prefix) for v in violations):
             verified_count += 1
