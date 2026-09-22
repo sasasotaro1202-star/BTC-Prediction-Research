@@ -75,7 +75,19 @@ def audit_horizon(con, horizon: str) -> dict:
             })
 
         is_degraded = model_version == "DEGRADED_NO_FRESH_DATA"
-        if is_degraded:
+        legacy_coinbase_v1 = (
+            model_version == "5m:v1.0|10m:v1.0"
+            and _safe_json(scenario_json).get("price_source") == "coinbase_btc_usd"
+        )
+        if legacy_coinbase_v1:
+            # First-generation Coinbase fallback rows predate the canonical
+            # 15-feature snapshot contract. Keep them visible as historical
+            # state, but exclude them from identity/OOS evidence explicitly.
+            quarantined_identity_rows += 1
+            quarantine_reasons["legacy_coinbase_v1_incomplete_feature_snapshot"] += 1
+        if legacy_coinbase_v1:
+            pass
+        elif is_degraded:
             # Degraded rows intentionally contain no directional feature snapshot.
             # They are preserved in the canonical DB but are not valid candidate/OOS
             # events and therefore cannot participate in immutable model-event
@@ -104,7 +116,9 @@ def audit_horizon(con, horizon: str) -> dict:
                 class_counts[str(actual)] += 1
 
         scenario = _safe_json(scenario_json)
-        if is_degraded:
+        if legacy_coinbase_v1:
+            strict_pit_failure_reasons["legacy_coinbase_v1_quarantined"] += 1
+        elif is_degraded:
             strict_pit_failure_reasons["degraded_prediction_quarantined"] += 1
         else:
             pit_reason = strict_pit_provenance_reason(scenario, created_at)
