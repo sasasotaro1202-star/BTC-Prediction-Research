@@ -51,8 +51,18 @@ def audit_horizon(con, horizon: str) -> dict:
     valid_rows = 0
     strict_pit_rows = 0
 
-    for prediction_id, created_at, target_at, model_version, feature_json, actual,
-        p_up, p_down, p_flat, scenario_json in rows:
+    for (
+        prediction_id,
+        created_at,
+        target_at,
+        model_version,
+        feature_json,
+        actual,
+        p_up,
+        p_down,
+        p_flat,
+        scenario_json,
+    ) in rows:
         created_dt = _dt(created_at)
         target_dt = _dt(target_at)
         if created_dt is None or target_dt is None:
