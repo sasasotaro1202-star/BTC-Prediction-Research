@@ -298,6 +298,7 @@ def main():
             'available_at':retrieved if status.get(source_key) in {'ok','ok_current_only'} else None,
             'publication_time':None,
             'retrieved_at':retrieved,
+            'prediction_cutoff':retrieved if status.get(source_key) in {'ok','ok_current_only'} else None,
             'revision_time':None,
             'status':status.get(source_key),
         }
