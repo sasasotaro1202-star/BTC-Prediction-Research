@@ -114,17 +114,31 @@ jobs:
               watchdog_degraded=1
               return 1
             fi
-            if jq -e --arg workflow ".github/workflows/$workflow" '
-              any(.files[]?.filename?;
-                startswith("src/") or
-                startswith("scripts/") or
-                startswith("tests/") or
-                . == "requirements.txt" or
-                . == $workflow
-              )
-            ' <<<"$compare" >/dev/null 2>&1; then
+            changed_files=$(jq -r --arg workflow ".github/workflows/$workflow" '
+              [.files[]?.filename? |
+                select(
+                  startswith("src/") or
+                  startswith("scripts/") or
+                  startswith("tests/") or
+                  . == "requirements.txt" or
+                  . == $workflow
+                )
+              ] | length
+            ' <<<"$compare" 2>/dev/null) || {
+              echo "ERROR: unable to evaluate changed-file scope for ${active_head}...${main_sha}; stale-head cancellation is degraded." >&2
+              watchdog_degraded=1
+              return 1
+            }
+            if ! [[ "$changed_files" =~ ^[0-9]+$ ]]; then
+              echo "ERROR: stale-head changed-file count is malformed for ${active_head}...${main_sha}: ${changed_files:-empty}" >&2
+              watchdog_degraded=1
+              return 1
+            fi
+            if [ "$changed_files" -gt 0 ]; then
+              echo "Detected $changed_files source/protocol files changed since active head ${active_head} for ${workflow}."
               return 0
             fi
+            echo "No monitored source/protocol changes detected since active head ${active_head} for ${workflow}."
             return 1
           }
 
@@ -133,7 +147,7 @@ jobs:
             threshold="$2"
             active_grace="$3"
             stale_head_grace="$4"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=100" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
             latest=$(jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty' <<<"$response")
             running=$(jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length' <<<"$response")
