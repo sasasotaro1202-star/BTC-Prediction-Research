@@ -15,7 +15,8 @@ on:
 
 concurrency:
   group: btc-multiscale-frozen-replay
-  cancel-in-progress: false
+  # Keep scheduled/archive-triggered research alive; cancel superseded PR runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
