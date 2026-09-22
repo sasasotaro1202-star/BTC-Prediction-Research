@@ -1,16 +1,14 @@
-name: BTC Integrity Gate
-
 on:
+  # Full integrity is intentionally hourly. BTC Live Cycle already performs
+  # per-cycle production-critical validation; a per-live trigger every five
+  # minutes would repeatedly cancel this longer audit and reduce coverage.
   schedule:
     - cron: '23 * * * *'
-  workflow_run:
-    workflows: ["BTC Live Cycle"]
-    types: [completed]
   workflow_dispatch:
 
 concurrency:
   group: btc-integrity-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -18,8 +16,6 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  BTC_EXPECTED_LIVE_RUN_ID: ${{ github.event.workflow_run.id || '0' }}
-  BTC_EXPECTED_LIVE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   # Code pushes validate repository/model integrity without being blocked by an
   # intentionally stale prediction state. Manual integrity runs prove freshness.
   BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
@@ -27,10 +23,6 @@ env:
 
 jobs:
   integrity:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -77,82 +69,10 @@ jobs:
         run: python -m compileall -q src tests
       - name: Run all BTC tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Fetch immutable upstream BTC cycle artifact
-        if: github.event_name == 'workflow_run'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/btc_upstream_artifact
-          mkdir -p /tmp/btc_upstream_artifact
-          gh run download "${{ github.event.workflow_run.id }}"             --repo "${{ github.repository }}"             --name btc-predictions-db             --dir /tmp/btc_upstream_artifact
-
-      - name: Restore exact upstream BTC state archive
-        if: github.event_name == 'workflow_run'
-        shell: bash
-        run: |
-          set -euo pipefail
-          src=$(find /tmp/btc_upstream_artifact -type f -name 'predictions.db.gz' -print -quit)
-          if [ -z "$src" ]; then
-            echo 'BTC upstream state archive is missing from immutable live-cycle artifact' >&2
-            exit 1
-          fi
-          cp "$src" data/predictions.db.gz
-          rm -f data/predictions.db
-          python - <<'PY'
-          from pathlib import Path
-          from src.state_archive import restore_db
-          archive = Path('data/predictions.db.gz')
-          target = Path('data/predictions.db')
-          restore_db(archive, target)
-          if not target.exists() or target.stat().st_size <= 0:
-              raise SystemExit('exact upstream prediction database restore failed')
-          print(f'Using exact upstream live-cycle state: {target.stat().st_size} bytes')
-          PY
-
-
-      - name: Validate upstream BTC live cycle outcome
-        if: github.event_name == 'workflow_run'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-
-          p = Path('/tmp/btc_upstream_artifact/data/live_cycle_status.json')
-          if not p.exists():
-              matches = list(Path('/tmp/btc_upstream_artifact').rglob('live_cycle_status.json'))
-              if matches:
-                  p = matches[0]
-              else:
-                  raise SystemExit('BTC upstream cycle status artifact is missing')
-          obj = json.loads(p.read_text(encoding='utf-8'))
-          if obj.get('schema_version') != 1:
-              raise SystemExit('BTC live cycle status schema mismatch')
-          if obj.get('workflow_run_id') != int(os.environ['BTC_EXPECTED_LIVE_RUN_ID']):
-              raise SystemExit('BTC live cycle status does not belong to the completed upstream live run')
-          expected_sha = os.environ['BTC_EXPECTED_LIVE_SHA']
-          if expected_sha and obj.get('head_sha') != expected_sha:
-              raise SystemExit('BTC live cycle status head SHA does not match the completed upstream live run')
-          if obj.get('mode') not in {'prediction_created', 'deferred'}:
-              raise SystemExit('BTC live cycle status mode invalid')
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
-              fh.write('BTC_UPSTREAM_DEFERRED=' + ('1' if obj['mode'] == 'deferred' else '0') + '\n')
-          print(json.dumps(obj, sort_keys=True))
-          PY
-
       - name: Run production integrity gate
-        if: github.event_name == 'workflow_dispatch' || env.BTC_UPSTREAM_DEFERRED != '1'
         run: |
           mkdir -p data/historical_research
           python src/production_integrity.py > data/historical_research/production_integrity.json
-
-      - name: Confirm safe deferred BTC cycle
-        if: github.event_name == 'workflow_run' && env.BTC_UPSTREAM_DEFERRED == '1'
-        run: |
-          echo "BTC upstream live cycle was explicitly deferred after fail-closed critical-data validation; no fresh prediction was expected or fabricated."
       - name: Run strict research input audit
         run: python src/research_input_audit.py
 
@@ -222,34 +142,8 @@ jobs:
           PY
 
       - name: Evaluate final promotion safety gate
-        if: success() && env.BTC_UPSTREAM_DEFERRED != '1'
         run: |
           python src/promotion_gate.py
-
-      - name: Record safe deferred promotion gate
-        if: env.BTC_UPSTREAM_DEFERRED == '1'
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          root = Path('data/historical_research')
-          root.mkdir(parents=True, exist_ok=True)
-          (root / 'production_integrity.json').write_text(json.dumps({
-              'status': 'SKIPPED_DEFERRED',
-              'reason': 'upstream live cycle was explicitly deferred by fail-closed input validation'
-          }, indent=2))
-          (root / 'promotion_gate.json').write_text(json.dumps({
-              'schema_version': 1,
-              'research_only': True,
-              'final_holdout_protected': True,
-              'production_safety_gate': 'HOLD',
-              'promotion_allowed': False,
-              'promotion_status': 'HOLD',
-              'reason': 'upstream_live_cycle_deferred',
-              'policy': 'no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence',
-          }, indent=2, sort_keys=True))
-          PY
 
       - name: Upload final integrity evidence
         if: always()
