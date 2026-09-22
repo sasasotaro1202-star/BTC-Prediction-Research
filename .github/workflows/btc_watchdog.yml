@@ -147,7 +147,7 @@ jobs:
             threshold="$2"
             active_grace="$3"
             stale_head_grace="$4"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=10" 2>/dev/null || true)
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=100" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
             latest=$(jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty' <<<"$response")
             running=$(jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length' <<<"$response")
