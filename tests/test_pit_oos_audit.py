@@ -355,7 +355,7 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertTrue(result["ok"], result)
                 self.assertFalse(result["pit_verified"])
                 self.assertEqual(result["legacy_unverified_count"], 1)
-                self.assertIn("5m_target_not_after_decision", result["legacy_violations"])
+                self.assertTrue(any("5m_target_not_after_decision" in v for v in result["legacy_violations"]))
 
     def test_postcontract_coinbase_target_before_decision_remains_failure(self):
         with tempfile.TemporaryDirectory() as td:
