@@ -65,18 +65,18 @@ class MultiScaleFrozenReplayTests(unittest.TestCase):
         self.assertEqual(len(VARIANTS["time"]), 20)
         self.assertEqual(len(VARIANTS["full"]), 33)
 
-    def test_partition_has_horizon_purge_between_slices(self):
+    def test_partition_has_horizon_purge_and_embargo_between_slices(self):
         rows = list(range(10_000))
         train5, selection5, gate5, replay5 = _slice_partition(rows, "5m")
         train10, selection10, gate10, replay10 = _slice_partition(rows, "10m")
 
-        self.assertEqual(train5[-1] + 1 + 5, 6000)
-        self.assertEqual(selection5[-1] + 1 + 5, 7000)
-        self.assertEqual(gate5[-1] + 1 + 5, 8000)
+        self.assertEqual(train5[-1] + 1 + 5 + 60, 6000)
+        self.assertEqual(selection5[-1] + 1 + 5 + 60, 7000)
+        self.assertEqual(gate5[-1] + 1 + 5 + 60, 8000)
 
-        self.assertEqual(train10[-1] + 1 + 10, 6000)
-        self.assertEqual(selection10[-1] + 1 + 10, 7000)
-        self.assertEqual(gate10[-1] + 1 + 10, 8000)
+        self.assertEqual(train10[-1] + 1 + 10 + 60, 6000)
+        self.assertEqual(selection10[-1] + 1 + 10 + 60, 7000)
+        self.assertEqual(gate10[-1] + 1 + 10 + 60, 8000)
         self.assertEqual(replay5[0], 8000)
         self.assertEqual(replay10[0], 8000)
 
