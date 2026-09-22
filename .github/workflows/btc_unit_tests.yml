@@ -19,7 +19,8 @@ on:
 
 
 concurrency:
-  group: btc-unit-tests
+  # Keep main and PR validation independent; only supersede stale runs on the same ref.
+  group: btc-unit-tests-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
