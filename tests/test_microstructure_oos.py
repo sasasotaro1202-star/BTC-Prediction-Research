@@ -1,8 +1,10 @@
 import unittest
 
 from src.microstructure_oos import (
+    BASE_FEATURES,
     BINANCE_MICRO,
     CROSS_VENUE,
+    EXTENDED_FEATURES,
     MARKET_FLOW_V2,
     _extended_from_feature_json,
     _market_flow_from_scenario,
@@ -12,6 +14,16 @@ from src.microstructure_oos import (
 
 
 class MicrostructureOOSTests(unittest.TestCase):
+    def test_feature_variant_manifest_matches_output_variants(self):
+        expected = {
+            "binance_micro": list(BASE_FEATURES + BINANCE_MICRO),
+            "market_flow_v2": list(BASE_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2),
+            "full_stack": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2),
+            "cross_venue": list(BASE_FEATURES + BINANCE_MICRO + CROSS_VENUE),
+        }
+        self.assertEqual(set(expected), {"binance_micro", "market_flow_v2", "full_stack", "cross_venue"})
+        self.assertEqual(len(expected["full_stack"]), 33)
+
     def _scenario(self):
         return {
             "microstructure": {
