@@ -399,8 +399,15 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -- data/predictions.db.gz data/live_cycle_status.json
-          if [ -d data/historical_research ]; then git add -- data/historical_research; fi
-          if [ -d models ]; then git add -- models; fi
+          for path in \
+            data/historical_research/research_health.json \
+            data/historical_research/venue_drift.json \
+            data/historical_research/flat_diagnostic.json; do
+            if [ -f "$path" ]; then git add -- "$path"; fi
+          done
+          for path in models/*.json models/*.joblib; do
+            if [ -f "$path" ]; then git add -- "$path"; fi
+          done
           if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
             git rm --cached -- data/predictions.db
           fi
@@ -441,8 +448,15 @@ jobs:
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
             git add -- data/predictions.db.gz data/live_cycle_status.json
-            if [ -d data/historical_research ]; then git add -- data/historical_research; fi
-            if [ -d models ]; then git add -- models; fi
+            for path in \
+              data/historical_research/research_health.json \
+              data/historical_research/venue_drift.json \
+              data/historical_research/flat_diagnostic.json; do
+              if [ -f "$path" ]; then git add -- "$path"; fi
+            done
+            for path in models/*.json models/*.joblib; do
+              if [ -f "$path" ]; then git add -- "$path"; fi
+            done
             if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
               git rm --cached -- data/predictions.db
             fi
