@@ -7,6 +7,8 @@ name: BTC Canonical State Compaction
 on:
   push:
     branches: [main]
+    # Keep the compaction gate coupled to audit-policy fixes so a repaired
+    # research-input contract is re-verified immediately after merge.
     paths:
       - 'scripts/merge_prediction_state.py'
       - '.github/workflows/btc_canonical_state_compaction.yml'
