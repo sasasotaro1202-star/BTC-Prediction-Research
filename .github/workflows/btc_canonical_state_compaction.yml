@@ -56,12 +56,19 @@ jobs:
           from pathlib import Path
           from src.prediction_state_guard import prediction_table_fingerprint
           from scripts.merge_prediction_state import expected_compacted_event_count
+          from src.prediction_identity import canonical_compaction_snapshot
           db = Path('data/predictions.db')
           fp = prediction_table_fingerprint(db)
           import sqlite3
           with sqlite3.connect(db) as con:
               expected_unique = expected_compacted_event_count(con)
-          snapshot = {**fp, 'expected_exact_unique_events': expected_unique}
+              identity = canonical_compaction_snapshot(con)
+          snapshot = {**fp, 'expected_exact_unique_events': expected_unique, **identity}
+          if snapshot['settlement_conflicts']:
+              raise SystemExit(
+                  'conflicting settlement state detected before compaction: '
+                  + '; '.join(snapshot['settlement_conflicts'][:10])
+              )
           Path('/tmp/btc_compaction_before.json').write_text(
               json.dumps(snapshot, sort_keys=True), encoding='utf-8'
           )
@@ -81,12 +88,30 @@ jobs:
           import json
           from pathlib import Path
           from src.prediction_state_guard import prediction_table_fingerprint
+          from src.prediction_identity import canonical_compaction_snapshot
 
           before = json.loads(Path('/tmp/btc_compaction_before.json').read_text(encoding='utf-8'))
           after = prediction_table_fingerprint(Path('data/predictions.db'))
+          import sqlite3
+          with sqlite3.connect('data/predictions.db') as con:
+              after_identity = canonical_compaction_snapshot(con)
           before_n = int(before['count'])
           after_n = int(after['count'])
           expected_unique = int(before['expected_exact_unique_events'])
+
+          if after_identity['immutable_identity_sha256'] != before['immutable_identity_sha256']:
+              raise SystemExit(
+                  'canonical compaction immutable identity digest mismatch'
+              )
+          if after_identity['settlement_state_sha256'] != before['settlement_state_sha256']:
+              raise SystemExit(
+                  'canonical compaction settlement-state digest mismatch'
+              )
+          if after_identity['settlement_conflicts']:
+              raise SystemExit(
+                  'conflicting settlement state remained after compaction: '
+                  + '; '.join(after_identity['settlement_conflicts'][:10])
+              )
 
           if after_n != expected_unique:
               raise SystemExit(
@@ -110,7 +135,9 @@ jobs:
               'removed_rows': removed,
               'removal_fraction': removal_fraction,
               'expected_exact_unique_events': expected_unique,
-              'policy': 'post-count-must-equal-precomputed-exact-immutable-unique-events',
+              'immutable_identity_digest_verified': True,
+              'settlement_state_digest_verified': True,
+              'policy': 'exact-identity-and-settlement-digest-preservation-plus-precomputed-unique-count',
           }
           out = Path('data/historical_research/canonical_compaction_guard.json')
           out.parent.mkdir(parents=True, exist_ok=True)
