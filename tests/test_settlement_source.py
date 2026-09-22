@@ -27,6 +27,29 @@ class TestSettlementSource(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'only_binance_futures'):
             ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'coinbase')
 
+    def test_websocket_cache_target_is_used_before_rest(self):
+        rows = [{
+            "open_time_ms": 1726394700000,
+            "close": "102.5",
+            "closed": True,
+        }]
+        with patch.object(ss, 'load_binance_ws_cache', return_value=rows), \
+             patch.object(ss, '_target_binance', side_effect=AssertionError("REST should not be called")):
+            price, source = ss.target_close_preferred(
+                '2024-09-15T10:06:00+00:00', 'binance_futures'
+            )
+        self.assertEqual(price, 102.5)
+        self.assertEqual(source, 'binance_websocket_cache')
+
+    def test_websocket_cache_ignores_wrong_or_open_candle(self):
+        rows = [
+            {"open_time_ms": 1000, "close": "101", "closed": False},
+            {"open_time_ms": 2000, "close": "0", "closed": True},
+        ]
+        with patch.object(ss, 'load_binance_ws_cache', return_value=rows):
+            self.assertIsNone(ss._target_from_ws_cache(rows, 1000))
+            self.assertIsNone(ss._target_from_ws_cache(rows, 2000))
+
     def test_binance_target_is_used(self):
         with patch.object(ss, '_target_binance', return_value=102.0) as binance:
             price, source = ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'binance_futures')
