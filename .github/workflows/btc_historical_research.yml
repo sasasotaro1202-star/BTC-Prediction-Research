@@ -103,12 +103,18 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; rebuilding research state on origin/main"
-            cp -a data/historical_research /tmp/btc_local_historical_research
+            cp data/historical_research/report.json /tmp/btc_local_historical_report.json
+            find data/historical_research -maxdepth 1 -type f -name 'oos_*.csv' -print0 | tar --null -T - -cf /tmp/btc_local_historical_oos.tar
             git rebase --abort 2>/dev/null || true
             git fetch --prune origin main
             git reset --hard origin/main
-            rm -rf data/historical_research
-            cp -a /tmp/btc_local_historical_research data/historical_research
+            # Restore only files owned by this workflow. Never replace the
+            # complete historical_research directory, because parallel
+            # research lanes may have newer evidence.
+            cp /tmp/btc_local_historical_report.json data/historical_research/report.json
+            if [ -s /tmp/btc_local_historical_oos.tar ]; then
+              tar -xf /tmp/btc_local_historical_oos.tar -C data/historical_research
+            fi
             git rm -r --cached --ignore-unmatch data/historical_research/cache data/historical_research/aligned_panel.csv
             git add data/historical_research/report.json data/historical_research/oos_*.csv
             git diff --cached --quiet || git commit -m 'Merge BTC historical research state safely'
