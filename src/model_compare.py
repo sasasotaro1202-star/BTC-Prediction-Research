@@ -252,17 +252,26 @@ def load_archive_research_rows(h, max_rows=12000):
     target = max(int(max_rows) + 40, 12000)
     loaders = []
     try:
-        from binance_history import binance_archive_rows
+        try:
+            from src.binance_history import binance_archive_rows
+        except ModuleNotFoundError:
+            from binance_history import binance_archive_rows
         loaders.append(("binance_vision", lambda: binance_archive_rows(target)))
     except Exception:
         pass
     try:
-        from bootstrap_train import fetch_bybit
+        try:
+            from src.bootstrap_train import fetch_bybit
+        except ModuleNotFoundError:
+            from bootstrap_train import fetch_bybit
         loaders.append(("bybit", lambda: fetch_bybit(target)))
     except Exception:
         pass
     try:
-        from coinbase_fallback_train import fetch_coinbase
+        try:
+            from src.coinbase_fallback_train import fetch_coinbase
+        except ModuleNotFoundError:
+            from coinbase_fallback_train import fetch_coinbase
         loaders.append(("coinbase", lambda: fetch_coinbase(target)))
     except Exception:
         pass
