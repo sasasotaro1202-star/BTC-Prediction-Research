@@ -173,19 +173,24 @@ def load_archive_research_rows(h, max_rows=12000):
         from binance_history import binance_archive_rows
         from bootstrap_train import make_features
         from label_policy import direction_from_return
+        from research_time_policy import exact_elapsed_pairs
         raw = binance_archive_rows(max(int(max_rows) + 40, 12000))
     except Exception:
         return []
     out = []
-    for i in range(30, len(raw) - steps):
+    future_by_ts = {int(row[0]): future for row, future in exact_elapsed_pairs(raw, steps)}
+    for i in range(30, len(raw)):
         try:
+            future = future_by_ts.get(int(raw[i][0]))
+            if future is None:
+                continue
             x = make_features(raw[: i + 1])
             arr = np.asarray(x, dtype=float)
             if not np.isfinite(arr).all():
                 continue
-            future_return = float(raw[i + steps][4]) / float(raw[i][4]) - 1.0
+            future_return = float(future[4]) / float(raw[i][4]) - 1.0
             created = _parse_utc(datetime.fromtimestamp(int(raw[i][0]) / 1000.0, timezone.utc).isoformat())
-            target = datetime.fromtimestamp(int(raw[i + steps][0]) / 1000.0, timezone.utc)
+            target = datetime.fromtimestamp(int(future[0]) / 1000.0, timezone.utc)
             out.append({
                 "id": f"archive:{int(raw[i][0])}:{h}",
                 "created": created.isoformat() if created else "",
