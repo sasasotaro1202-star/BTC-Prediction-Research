@@ -5,11 +5,11 @@ name: BTC 9H Research Marathon
 # up to 6h of incremental historical research + final integrity checks.
 # Total wall-clock envelope: up to 9h. Scheduled daily outside the hourly load peak.
 on:
-  # This is a long-lived research marathon. Keep it independent of frequent
-  # production-state/code pushes so a 9h run can finish and publish a complete
-  # evidence set. Use workflow_dispatch after a major protocol change.
+  # This is a long-lived research marathon. Run twice per day to keep the
+  # research loop dense while leaving a recovery window between runs.
+  # Relevant protocol changes also trigger a fresh run through the push filter below.
   schedule:
-    - cron: '37 13 * * *'
+    - cron: '37 1,13 * * *'
   workflow_dispatch:
   push:
     paths:
