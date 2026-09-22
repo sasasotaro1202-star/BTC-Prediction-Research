@@ -60,6 +60,20 @@ jobs:
           exit 1
       - name: Compile research code
         run: python -m compileall -q src tests scripts
+      - name: Snapshot prediction state before research
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          fp = prediction_table_fingerprint(Path('data/predictions.db'))
+          Path('/tmp/btc_prediction_state_before.json').write_text(json.dumps(fp, sort_keys=True), encoding='utf-8')
+          print(json.dumps(fp, sort_keys=True))
+          PY
+          test -s /tmp/btc_prediction_state_before.json
       - name: Snapshot Champion registry before research
         shell: bash
         run: |
@@ -88,6 +102,20 @@ jobs:
           if after != before:
               raise SystemExit(f'Champion registry changed during research: before={before} after={after}')
           print('Champion registry unchanged by candidate research: VERIFIED')
+      - name: Assert research preserved prediction state exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          before = json.loads(Path('/tmp/btc_prediction_state_before.json').read_text(encoding='utf-8'))
+          after = prediction_table_fingerprint(Path('data/predictions.db'))
+          if before != after:
+              raise SystemExit(f'prediction state mutated during research: before={before} after={after}')
+          print('prediction state preservation guard: VERIFIED')
+          PY
       - name: Recalculate calibration metrics after any model adoption
         run: python src/calibration.py
       - name: Audit production artifact provenance
@@ -142,6 +170,32 @@ jobs:
                   raise SystemExit('invalid production artifact fingerprint')
           print('prediction database, production model, and provenance artifact validation: OK')
           PY
+      - name: Record prediction state preservation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          before = json.loads(Path('/tmp/btc_prediction_state_before.json').read_text(encoding='utf-8'))
+          after = prediction_table_fingerprint(Path('data/predictions.db'))
+          payload = {
+              'schema_version': 1,
+              'research_only': True,
+              'production_changed': False,
+              'status': 'PASS' if before == after else 'HOLD',
+              'before': before,
+              'after': after,
+              'policy': 'research_workflow_must_not_mutate_prediction_event_state',
+          }
+          out=Path('data/historical_research/research_state_mutation_guard.json')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding='utf-8')
+          if payload['status'] != 'PASS':
+              raise SystemExit('prediction state preservation evidence failed')
+          print('prediction state preservation evidence: VERIFIED')
+          PY
       - name: Compress validated BTC prediction database for repository storage
         shell: bash
         run: |
@@ -173,6 +227,7 @@ jobs:
           path: |
             data/predictions.db.gz
             data/historical_research/production_artifact_audit.json
+            data/historical_research/research_state_mutation_guard.json
             models/*.json
             models/*.joblib
           retention-days: 14

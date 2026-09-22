@@ -47,12 +47,73 @@ jobs:
       - name: Install runtime dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
+      - name: Snapshot canonical prediction state before compaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          fp = prediction_table_fingerprint(Path('data/predictions.db'))
+          Path('/tmp/btc_compaction_before.json').write_text(
+              json.dumps(fp, sort_keys=True), encoding='utf-8'
+          )
+          print(json.dumps(fp, sort_keys=True))
+          PY
       - name: Compact exact immutable prediction events
         shell: bash
         run: |
           set -euo pipefail
           python scripts/merge_prediction_state.py --compact data/predictions.db
 
+      - name: Guard compaction against unexpected state loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          
+          before = json.loads(Path('/tmp/btc_compaction_before.json').read_text(encoding='utf-8'))
+          after = prediction_table_fingerprint(Path('data/predictions.db'))
+          before_n = int(before['count'])
+          after_n = int(after['count'])
+          removed = max(0, before_n - after_n)
+          removal_fraction = removed / before_n if before_n else 0.0
+
+          # Compaction is intended only for exact duplicates. A large removal
+          # fraction is therefore a fail-closed signal of state corruption,
+          # identity drift, or an unexpected schema/data change.
+          max_fraction = 0.25
+          if removed < 0:
+              raise SystemExit('canonical compaction increased row count unexpectedly')
+          if removal_fraction > max_fraction:
+              raise SystemExit(
+                  f'canonical compaction removed too much state: '
+                  f'before={before_n} after={after_n} removed={removed} '
+                  f'fraction={removal_fraction:.6f} max={max_fraction:.6f}'
+              )
+          
+          payload = {
+              'schema_version': 1,
+              'research_only': True,
+              'production_changed': False,
+              'status': 'PASS',
+              'before': before,
+              'after': after,
+              'removed_rows': removed,
+              'removal_fraction': removal_fraction,
+              'max_allowed_removal_fraction': max_fraction,
+              'policy': 'exact-duplicate-compaction-with-fail-closed-loss-cap',
+          }
+          out = Path('data/historical_research/canonical_compaction_guard.json')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding='utf-8')
+          print('canonical compaction state guard: VERIFIED')
+          print(json.dumps(payload, sort_keys=True))
+          PY
       - name: Validate repaired prediction state
         shell: bash
         run: |
@@ -88,7 +149,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -- data/predictions.db.gz data/historical_research/research_input_audit.json
+          git add -- data/predictions.db.gz data/historical_research/research_input_audit.json data/historical_research/canonical_compaction_guard.json
           if git diff --cached --quiet; then
             echo 'No canonical state changes to commit.'
             exit 0
