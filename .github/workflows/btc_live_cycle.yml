@@ -79,10 +79,10 @@ jobs:
             tests/test_state_archive.py
             tests/test_merge_prediction_state.py
           )
-          for test_file in "\${tests[@]}"; do
-            test -s "\${test_file}" || { echo "Missing production guard test: \${test_file}" >&2; exit 1; }
+          for test_file in "${tests[@]}"; do
+            test -s "${test_file}" || { echo "Missing production guard test: ${test_file}" >&2; exit 1; }
           done
-          PYTHONPATH="\${GITHUB_WORKSPACE}/src:\${GITHUB_WORKSPACE}/scripts" python -m pytest -q "\${tests[@]}"
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m pytest -q "${tests[@]}"
 
       - name: Ensure BTC production models exist without retraining every 5 minutes
         shell: bash
