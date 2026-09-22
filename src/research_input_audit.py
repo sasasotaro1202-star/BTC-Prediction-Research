@@ -19,6 +19,8 @@ OUT = ROOT / "data" / "historical_research" / "research_input_audit.json"
 HORIZONS = {"5m": "actual_direction_5m", "10m": "actual_direction_10m"}
 TARGETS = {"5m": "target_5m", "10m": "target_10m"}
 CLASSES = ("DOWN", "FLAT", "UP")
+LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
+LEGACY_COINBASE_MODEL_VERSION = "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1"
 
 def _dt(value):
     try:
@@ -85,7 +87,22 @@ def audit_horizon(con, horizon: str) -> dict:
             # state, but exclude them from identity/OOS evidence explicitly.
             quarantined_identity_rows += 1
             quarantine_reasons["legacy_coinbase_v1_incomplete_feature_snapshot"] += 1
-        if legacy_coinbase_v1:
+        legacy_coinbase_contract = (
+            model_version == LEGACY_COINBASE_MODEL_VERSION
+            and created_dt is not None
+            and created_dt < LEGACY_COINBASE_CUTOFF_UTC
+            and isinstance(_safe_json(scenario_json).get("provenance"), dict)
+            and not (
+                _safe_json(scenario_json).get("provenance", {})
+                .get("sources", {})
+                .get("coinbase_futures", {})
+                .get("prediction_cutoff")
+            )
+        )
+        if legacy_coinbase_contract:
+            quarantined_identity_rows += 1
+            quarantine_reasons["legacy_coinbase_precontract_missing_cutoff"] += 1
+        if legacy_coinbase_v1 or legacy_coinbase_contract:
             pass
         elif is_degraded:
             # Degraded rows intentionally contain no directional feature snapshot.
@@ -118,6 +135,8 @@ def audit_horizon(con, horizon: str) -> dict:
         scenario = _safe_json(scenario_json)
         if legacy_coinbase_v1:
             strict_pit_failure_reasons["legacy_coinbase_v1_quarantined"] += 1
+        elif legacy_coinbase_contract:
+            strict_pit_failure_reasons["legacy_coinbase_precontract_quarantined"] += 1
         elif is_degraded:
             strict_pit_failure_reasons["degraded_prediction_quarantined"] += 1
         else:
