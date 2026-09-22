@@ -51,8 +51,18 @@ MARGIN_GRID = tuple(float(x) for x in np.arange(0.05, 0.801, 0.025))
 
 
 def _norm(p):
-    p = np.clip(np.asarray(p, dtype=float), 1e-8, 1.0)
-    return p / p.sum(axis=1, keepdims=True)
+    arr = np.clip(np.asarray(p, dtype=float), 1e-8, 1.0)
+    if arr.ndim == 1:
+        total = float(arr.sum())
+        if not np.isfinite(total) or total <= 0:
+            raise ValueError("invalid probability vector")
+        return arr / total
+    if arr.ndim != 2 or arr.shape[1] != len(CLASSES):
+        raise ValueError("probabilities must be shape (n, 3)")
+    totals = arr.sum(axis=1, keepdims=True)
+    if not np.isfinite(totals).all() or np.any(totals <= 0):
+        raise ValueError("invalid probability matrix")
+    return arr / totals
 
 
 def _wilson_lower(hits: int, n: int, z: float = Z95) -> float:
