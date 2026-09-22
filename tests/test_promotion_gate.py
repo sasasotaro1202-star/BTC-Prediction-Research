@@ -39,7 +39,7 @@ class PromotionGateTests(unittest.TestCase):
         result = evaluate_promotion(
             {"status": "PASS"},
             {"research_only": True, "horizons": {}},
-            {"5m": {"status": "accepted"}, "10m": {"status": "accepted"}},
+            {"5m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.50, "candidate_logloss": 0.49, "baseline_brier": 0.30, "candidate_brier": 0.29}, "10m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.55, "candidate_logloss": 0.54, "baseline_brier": 0.32, "candidate_brier": 0.31}},
             self._pit(), self._cal(), {"ok": True},
         )
         self.assertFalse(result["promotion_allowed"])
