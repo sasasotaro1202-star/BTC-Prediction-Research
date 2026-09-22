@@ -51,6 +51,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         and pit.get("pit_verified") is True
         and int(pit.get("violation_count", 1)) == 0
         and int(pit.get("checked_predictions", 0)) > 0
+        and int(pit.get("verified_predictions", 0)) >= int(pit.get("min_strict_pit_rows", 300))
     )
     calibration_ok = True
     for h in HORIZONS:
