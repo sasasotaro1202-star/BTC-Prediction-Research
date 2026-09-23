@@ -317,16 +317,11 @@ jobs:
           # The remote cache is authoritative when it is newer or equal. This
           # makes the publish operation monotonic across overlapping runners.
           if remote_retrieved >= local_retrieved:
-              local["snapshot"] = remote_snap
-              local["updated_at_utc"] = remote.get("updated_at_utc")
               print(
                   f"Depth checkpoint is older than/equal to remote "
                   f"(local={local_retrieved}, remote={remote_retrieved}); preserving remote."
               )
-              local_path.write_text(
-                  json.dumps(local,sort_keys=True,separators=(",",":"))+"\n",
-                  encoding="utf-8",
-              )
+              raise SystemExit(0)
           PY
             fi
 
