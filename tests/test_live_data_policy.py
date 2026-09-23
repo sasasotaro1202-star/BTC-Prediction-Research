@@ -34,11 +34,32 @@ class TestLiveDataPolicy(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "binance_depth"):
             validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=40)
 
-    def test_rejects_fallback_even_if_rows_exist(self):
+    def test_rejects_fallback_without_explicit_permission(self):
         status = self.good()
         status["price_feature_fallback"] = "coinbase"
-        with self.assertRaisesRegex(ValueError, "price_feature_fallback"):
+        with self.assertRaisesRegex(ValueError, "fallback_not_allowed"):
             validate_live_inputs(status, fut_rows=40, spot_rows=0, bybit_rows=40)
+
+    def test_allows_coinbase_fallback_with_explicit_permission_and_history(self):
+        status = self.good()
+        status["price_feature_fallback"] = "coinbase"
+        status["binance_futures"] = "error:HTTPError"
+        validate_live_inputs(
+            status,
+            fut_rows=40,
+            spot_rows=0,
+            bybit_rows=40,
+            allow_coinbase_fallback=True,
+        )
+        self.assertTrue(
+            is_valid_status(
+                status,
+                fut_rows=40,
+                spot_rows=0,
+                bybit_rows=40,
+                allow_coinbase_fallback=True,
+            )
+        )
 
     def test_rejects_insufficient_primary_history(self):
         with self.assertRaisesRegex(ValueError, "contiguous_history_insufficient"):
