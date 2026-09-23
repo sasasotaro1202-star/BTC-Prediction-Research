@@ -9,7 +9,7 @@ from db import DB, init_db
 from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
 from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
-from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, taker_imbalance as ws_taker_imbalance
+from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
 from microstructure_features import derive_market_flow_features
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -259,15 +259,24 @@ def main():
         status['binance_depth_transport']='rest'
     except Exception as exc:
         try:
-            ws_book=asyncio.run(capture_depth_snapshot(6.0))
-            if ws_book is None:
-                raise RuntimeError('websocket_depth_snapshot_missing')
-            m['book_imbalance']=imbalance(ws_book)
-            status['binance_depth']='ok'
-            status['binance_depth_transport']='websocket'
-            status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
-            status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
-            status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
+            ws_book=load_depth_cache()
+            if ws_book is not None:
+                m['book_imbalance']=imbalance(ws_book)
+                status['binance_depth']='ok'
+                status['binance_depth_transport']='websocket_cache'
+                status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
+                status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
+                status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
+            else:
+                ws_book=asyncio.run(capture_depth_snapshot(6.0))
+                if ws_book is None:
+                    raise RuntimeError('websocket_depth_snapshot_missing')
+                m['book_imbalance']=imbalance(ws_book)
+                status['binance_depth']='ok'
+                status['binance_depth_transport']='websocket'
+                status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
+                status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
+                status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
         except Exception as ws_exc:
             status['binance_depth']=f'error:{type(ws_exc).__name__}'
 
