@@ -16,7 +16,10 @@ on:
 
 concurrency:
   group: btc-binance-ws-cache
-  cancel-in-progress: false
+  # Replace an older collector immediately when a new collector run is
+  # triggered (e.g. after a collector-code update). The dedicated cache branch
+  # already preserves the latest valid rows, so the old process need not finish.
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -160,7 +163,7 @@ jobs:
           # Keep the dedicated Binance cache continuously warm. Each window is
           # long enough to obtain a closed 1m bar, but short enough that Live
           # Cycle never has to rely on a multi-minute-stale cache.
-          iterations=35
+          iterations=30
           capture_seconds=90
 
           for n in $(seq 1 "${iterations}"); do
