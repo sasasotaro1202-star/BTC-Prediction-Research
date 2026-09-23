@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -246,7 +247,10 @@ async def _collect_url(url: str, timeout_seconds: float, parser) -> list[dict[st
             while time.monotonic() < deadline:
                 remaining = max(0.25, deadline - time.monotonic())
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    # Kline updates arrive frequently. Treat a silent transport as
+                    # unhealthy after 45s so the remaining window can fail over
+                    # without forcing a full reconnect at every checkpoint.
+                    raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 45.0))
                 except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
                     break
                 received_ms = int(time.time() * 1000)
@@ -276,6 +280,114 @@ async def _collect_with_fallback(urls, timeout_seconds: float, parser) -> tuple[
     return [], None
 
 
+async def _stream_url(
+    url: str,
+    timeout_seconds: float,
+    parser,
+    on_row,
+) -> tuple[int, bool]:
+    """Keep one WebSocket connection open for the bounded capture window.
+
+    Returns (parsed_row_count, connection_started). If the connection closes
+    early, the caller can fail over to another transport without restarting the
+    entire capture window.
+    """
+    deadline = time.monotonic() + float(timeout_seconds)
+    parsed_count = 0
+    connection_started = False
+    try:
+        async with websockets.connect(
+            url,
+            ping_interval=20,
+            ping_timeout=10,
+            open_timeout=10,
+            close_timeout=5,
+            max_size=2_000_000,
+        ) as ws:
+            connection_started = True
+            while time.monotonic() < deadline:
+                remaining = max(0.25, deadline - time.monotonic())
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+                    break
+                received_ms = int(time.time() * 1000)
+                try:
+                    msg = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                parsed = parser(msg, received_ms)
+                if parsed is None:
+                    continue
+                parsed_count += 1
+                await on_row(parsed)
+    except Exception:
+        return parsed_count, connection_started
+    return parsed_count, connection_started
+
+
+async def capture_closed_klines_stream(
+    timeout_seconds: float = 2700.0,
+    checkpoint_seconds: float = 60.0,
+    initial_rows: list[dict[str, Any]] | None = None,
+    on_checkpoint=None,
+) -> list[dict[str, Any]]:
+    """Capture closed 1m bars on one continuous connection with failover.
+
+    The primary stream is kept open for the entire bounded window. A legacy
+    endpoint is only attempted if the current connection cannot continue.
+    Checkpoints are emitted without closing the WebSocket so the cache publisher
+    can persist fresh data while the same connection continues receiving bars.
+    """
+    merged = {
+        int(row["open_time_ms"]): row
+        for row in (initial_rows or [])
+        if isinstance(row, dict)
+    }
+    started_at = time.monotonic()
+    last_checkpoint = started_at
+
+    async def on_row(row: dict[str, Any]) -> None:
+        nonlocal last_checkpoint
+        merged[int(row["open_time_ms"])] = row
+        if on_checkpoint is not None and (
+            time.monotonic() - last_checkpoint >= float(checkpoint_seconds)
+        ):
+            rows = [
+                merged[k]
+                for k in sorted(merged)[-MAX_CACHE_ROWS:]
+            ]
+            result = on_checkpoint(rows)
+            if asyncio.iscoroutine(result):
+                await result
+            last_checkpoint = time.monotonic()
+
+    deadline = started_at + float(timeout_seconds)
+    for url in (KLINE_URL, *KLINE_FALLBACK_URLS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        count, started = await _stream_url(
+            url,
+            remaining,
+            parse_kline_message,
+            on_row,
+        )
+        if time.monotonic() >= deadline:
+            break
+        # If a stream yielded data but then closed, fail over using the remaining
+        # budget. A stable primary stream normally consumes the entire window.
+        if started and count > 0:
+            continue
+
+    rows = [merged[k] for k in sorted(merged)[-MAX_CACHE_ROWS:]]
+    if on_checkpoint is not None:
+        result = on_checkpoint(rows)
+        if asyncio.iscoroutine(result):
+            await result
+    return rows
+
+
 async def capture_closed_klines(timeout_seconds: float = 62.0) -> list[dict[str, Any]]:
     rows, _ = await _collect_with_fallback((KLINE_URL, *KLINE_FALLBACK_URLS), timeout_seconds, parse_kline_message)
     return rows
@@ -300,19 +412,36 @@ def write_cache(rows: list[dict[str, Any]], path: Path = DEFAULT_CACHE) -> None:
         "rows": rows[-MAX_CACHE_ROWS:],
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temp.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temp, path)
 
 
-async def collect_forever_window(timeout_seconds: float, path: Path) -> dict[str, Any]:
+async def collect_forever_window(
+    timeout_seconds: float,
+    path: Path,
+    checkpoint_seconds: float = 60.0,
+) -> dict[str, Any]:
     existing = load_cache(path)
-    incoming = await capture_closed_klines(timeout_seconds)
-    merged = merge_cache(existing, incoming)
+
+    async def checkpoint(rows: list[dict[str, Any]]) -> None:
+        write_cache(rows, path)
+
+    merged = await capture_closed_klines_stream(
+        timeout_seconds,
+        checkpoint_seconds=checkpoint_seconds,
+        initial_rows=existing,
+        on_checkpoint=checkpoint,
+    )
     write_cache(merged, path)
     suffix = contiguous_suffix(merged, minimum=40)
     latest = merged[-1] if merged else None
     return {
         "schema_version": SCHEMA_VERSION,
-        "captured_rows": len(incoming),
+        "captured_rows": max(0, len(merged) - len(existing)),
         "cache_rows": len(merged),
         "contiguous_rows": len(suffix),
         "latest_open_time_ms": latest["open_time_ms"] if latest else None,
@@ -323,10 +452,17 @@ async def collect_forever_window(timeout_seconds: float, path: Path) -> dict[str
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--capture-seconds", type=float, default=280.0)
+    parser.add_argument("--capture-seconds", type=float, default=2700.0)
+    parser.add_argument("--checkpoint-seconds", type=float, default=60.0)
     parser.add_argument("--output", type=Path, default=DEFAULT_CACHE)
     args = parser.parse_args()
-    result = asyncio.run(collect_forever_window(args.capture_seconds, args.output))
+    result = asyncio.run(
+        collect_forever_window(
+            args.capture_seconds,
+            args.output,
+            checkpoint_seconds=args.checkpoint_seconds,
+        )
+    )
     print(json.dumps(result, sort_keys=True))
     return 0
 
