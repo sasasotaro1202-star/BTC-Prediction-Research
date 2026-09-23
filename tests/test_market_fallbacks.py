@@ -80,6 +80,44 @@ class TestMarketFallbacks(unittest.TestCase):
             predict.Path.exists = original_exists
             predict.joblib.load = original_load
 
+    def test_evidence_gated_fallback_requires_matching_metadata_and_holdout_gain(self):
+        import json
+        import tempfile
+
+        original_dir = predict.MODEL_DIR
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                predict.MODEL_DIR = Path(td)
+                meta = {
+                    "model_version": "coinbase_fallback.rf.v1",
+                    "source": "Coinbase Exchange BTC-USD 1m candles",
+                    "horizon": "5m",
+                    "classes": ["DOWN", "FLAT", "UP"],
+                    "features": predict.FEATURES,
+                    "artifact": "coinbase_5m.joblib",
+                    "holdout_n": 5394,
+                    "holdout_metrics": {"logloss": 1.0302},
+                    "baseline_metrics": {"logloss": 1.0482},
+                }
+                (predict.MODEL_DIR / "coinbase_5m.json").write_text(
+                    json.dumps(meta), encoding="utf-8"
+                )
+                (predict.MODEL_DIR / "coinbase_5m.joblib").write_bytes(b"placeholder")
+                self.assertTrue(predict._fallback_model_ready("coinbase", "5m"))
+                self.assertFalse(predict._fallback_model_ready("coinbase", "10m"))
+        finally:
+            predict.MODEL_DIR = original_dir
+
+    def test_select_fallback_source_is_none_when_either_horizon_is_not_ready(self):
+        original = predict._fallback_model_ready
+        try:
+            predict._fallback_model_ready = lambda source, horizon: horizon == "5m"
+            self.assertIsNone(
+                predict._select_fallback_source({"price_feature_fallback": "coinbase"})
+            )
+        finally:
+            predict._fallback_model_ready = original
+
     def test_predict_model_directory_matches_production_artifacts(self):
         self.assertTrue(str(predict.MODEL_DIR).endswith('/models'))
         self.assertNotIn('/data/models', str(predict.MODEL_DIR))
