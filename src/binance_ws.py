@@ -96,11 +96,21 @@ def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict
         return None
     if clean_bids[0][0] > clean_asks[0][0]:
         return None
+    try:
+        event_time_ms = int(data["E"])
+    except (KeyError, TypeError, ValueError):
+        # Exchange event time is required for strict PIT provenance. Never
+        # substitute local receipt time for an exchange timestamp.
+        return None
+    retrieved = int(received_at_ms if received_at_ms is not None else time.time() * 1000)
+    if event_time_ms > retrieved + 60_000:
+        return None
     return {
         "bids": clean_bids,
         "asks": clean_asks,
         "last_update_id": int(data.get("lastUpdateId", 0)),
-        "retrieved_at_ms": int(received_at_ms if received_at_ms is not None else time.time() * 1000),
+        "event_time_ms": event_time_ms,
+        "retrieved_at_ms": retrieved,
     }
 
 
