@@ -66,6 +66,21 @@ jobs:
             echo 'Binance WebSocket cache: unavailable/invalid; primary REST/inline WebSocket path remains authoritative.'
           fi
 
+      - name: Load latest Binance depth cache from dedicated state branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f data/binance_ws_depth.json
+          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+            if git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
+              echo 'Loaded Binance depth WS cache.'
+            else
+              echo 'WARN: Binance depth WS cache unavailable at cycle start.' >&2
+            fi
+          else
+            echo 'WARN: binance-ws-cache branch unavailable at cycle start.' >&2
+          fi
+
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -213,6 +228,48 @@ jobs:
             echo 'WARN: no fresh verified Binance WS cache after 90s; existing predictor fallback policy remains authoritative.' >&2
           fi
           rm -f "$tmp_cache"
+
+      - name: Refresh latest Binance depth cache immediately before prediction
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_depth="$(mktemp)"
+          depth_loaded=false
+          validate_depth() {
+            python - "$tmp_depth" <<'PY'
+          import json,sys,time
+          from src.binance_ws import parse_depth_message
+          from pathlib import Path
+          obj=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket' or obj.get('stream') != 'btcusdt@depth20@100ms':
+              raise SystemExit('invalid Binance depth cache provenance')
+          snap=obj.get('snapshot')
+          parsed=parse_depth_message(snap,int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
+          if parsed is None: raise SystemExit('invalid Binance depth cache snapshot')
+          age=int(time.time()*1000)-int(parsed['retrieved_at_ms'])
+          print(f'binance_depth_cache_age_ms={age} event_time_ms={parsed["event_time_ms"]} levels={min(len(parsed["bids"]),len(parsed["asks"]))}')
+          if age<0 or age>180000 or min(len(parsed['bids']),len(parsed['asks']))<20: raise SystemExit('Binance depth cache stale_or_insufficient')
+          PY
+          }
+          for attempt in 1 2 3 4 5 6; do
+            rm -f "$tmp_depth"
+            if git fetch --no-tags --depth=1 origin binance-ws-cache && git show origin/binance-ws-cache:data/binance_ws_depth.json > "$tmp_depth" 2>/dev/null; then
+              if validate_depth; then
+                cp "$tmp_depth" data/binance_ws_depth.json
+                depth_loaded=true
+                echo 'Loaded fresh Binance depth WS cache immediately before prediction.'
+                break
+              fi
+            fi
+            if [ "$attempt" -lt 6 ]; then
+              echo "Waiting 15s for fresh Binance depth checkpoint (attempt ${attempt}/6)." >&2
+              sleep 15
+            fi
+          done
+          if [ "$depth_loaded" != true ]; then
+            echo 'WARN: no fresh Binance depth cache after 90s; predictor will attempt direct WS recovery and fail closed if depth remains unavailable.' >&2
+          fi
+          rm -f "$tmp_depth"
 
       - name: Generate next BTC prediction
         shell: bash
