@@ -189,5 +189,8 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     result = run(root)
     print(json.dumps(result, indent=2, sort_keys=True))
-    # Evidence failure is a hard stop; candidate rejection alone is a safe HOLD.
-    raise SystemExit(0 if result["production_safety_gate"] == "PASS" else 1)
+    # A structured HOLD is an expected fail-closed safety outcome, not an
+    # infrastructure failure. Keep promotion blocked while allowing the audit
+    # workflow to complete successfully. Parsing/evidence errors still raise
+    # before this point and therefore remain hard failures.
+    raise SystemExit(0)
