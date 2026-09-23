@@ -1,9 +1,10 @@
 """Fail-closed policy for live BTC prediction inputs.
 
-Primary Binance price history and required structural inputs remain hard
-requirements. Cross-venue Bybit signals are optional because a single venue
-outage must not disable an otherwise valid production prediction; missing
-optional signals are explicitly recorded and never replaced with guesses.
+Binance remains the normal production venue. During a venue outage, an
+explicitly permitted, separately trained fallback may be used only when its
+source-native history is sufficient. Missing or untrusted inputs are never
+replaced with guesses, and fallback permission must be explicit at the call
+site.
 """
 from __future__ import annotations
 
