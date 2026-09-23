@@ -134,11 +134,15 @@ def depth_midprice(snapshot: dict[str, Any]) -> float:
 
 def write_depth_cache(snapshot: dict[str, Any], path: Path = DEFAULT_DEPTH_CACHE) -> None:
     path.parent.mkdir(parents=True,exist_ok=True)
+    stored_snapshot=dict(snapshot)
+    # Preserve the parser discriminator so a serialized snapshot can be
+    # revalidated exactly like the live Binance depthUpdate message.
+    stored_snapshot.setdefault("e","depthUpdate")
     payload={
         "schema_version":SCHEMA_VERSION,
         "source":"Binance USD-M Futures WebSocket",
         "stream":"btcusdt@depth20@100ms",
-        "snapshot":snapshot,
+        "snapshot":stored_snapshot,
         "updated_at_utc":datetime.now(timezone.utc).isoformat(),
     }
     temp=path.with_name(f".{path.name}.{os.getpid()}.tmp")
