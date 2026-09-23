@@ -90,7 +90,22 @@ def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout
         'holdout_fraction':float(holdout_fraction),
         'updated_at_utc':datetime.now(timezone.utc).isoformat()
     }
+
+    # Avoid creating a new repository state commit when the safe calibration
+    # artifact is semantically unchanged. In particular, repeated no-settled
+    # cycles must not rewrite only updated_at_utc and churn main every 5 minutes.
+    try:
+        existing=json.loads(path.read_text(encoding='utf-8')) if path.exists() else None
+        if isinstance(existing,dict):
+            comparable={k:v for k,v in payload.items() if k!='updated_at_utc'}
+            existing_comparable={k:v for k,v in existing.items() if k!='updated_at_utc'}
+            if existing_comparable == comparable:
+                return False
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+
     path.write_text(json.dumps(payload,indent=2),encoding='utf-8')
+    return True
 
 
 def _current_registry_version(con, horizon):
