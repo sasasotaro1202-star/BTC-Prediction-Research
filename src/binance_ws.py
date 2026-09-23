@@ -162,6 +162,8 @@ def load_depth_cache(path: Path = DEFAULT_DEPTH_CACHE, max_age_ms: int = 180_000
             return None
         parse_input=dict(snap)
         parse_input.setdefault("e","depthUpdate")
+        if "E" not in parse_input and "event_time_ms" in parse_input:
+            parse_input["E"]=parse_input["event_time_ms"]
         parsed=parse_depth_message(
             parse_input,
             int(parse_input.get("retrieved_at_ms",0)),
