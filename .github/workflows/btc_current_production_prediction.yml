@@ -40,9 +40,16 @@ jobs:
           set -euo pipefail
           mkdir -p data
           rm -f data/binance_ws_1m.json data/binance_ws_depth.json
-          git fetch --no-tags --depth=1 origin binance-ws-cache
-          git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null || true
-          git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null || true
+           if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+             if ! git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null; then
+               echo 'WARN: Binance kline WS cache unavailable; predictor will use its fail-closed market-data path.'
+             fi
+             if ! git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
+               echo 'WARN: Binance depth WS cache unavailable; predictor will use its direct-WS/REST recovery path.'
+             fi
+           else
+             echo 'WARN: binance-ws-cache branch unavailable; predictor will use its fail-closed market-data path.'
+           fi
 
       - name: Restore current production state
         shell: bash
