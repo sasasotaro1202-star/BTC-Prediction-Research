@@ -102,42 +102,58 @@ jobs:
           }
 
           publish_cache() {
-            cp data/binance_ws_1m.json /tmp/publish_ws_cache.json
-            rm -f data/binance_ws_1m.json
-            git fetch --no-tags origin binance-ws-cache
-            git checkout -B binance-ws-cache origin/binance-ws-cache
-            mkdir -p data
-            cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
-            git diff --check
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add -- data/binance_ws_1m.json
-            if git diff --cached --quiet; then
-              echo 'No Binance WS cache update for this window.'
+            # Publish directly to the dedicated cache branch via the GitHub
+            # Contents API. Never checkout/switch branches in the active
+            # collector workspace: that I/O previously created multi-minute
+            # gaps between otherwise healthy WebSocket windows.
+            local_file="data/binance_ws_1m.json"
+            test -s "$local_file"
+
+            content_b64="$(python - "$local_file" <<'PY'
+          import base64,sys
+          from pathlib import Path
+          print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+          PY
+            )"
+
+            existing_sha=""
+            if existing_sha="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$local_file?ref=binance-ws-cache" --jq '.sha' 2>/dev/null)"; then
+              :
             else
-              git commit -m 'Update Binance Futures WS cache'
-              for attempt in 1 2 3 4; do
-                if timeout 60s git push origin HEAD:binance-ws-cache; then
-                  echo "Published Binance WS cache on push attempt ${attempt}."
-                  break
-                fi
-                if [ "${attempt}" -eq 4 ]; then
-                  echo 'Binance WS cache push failed after all retries' >&2
-                  return 1
-                fi
-                echo "Cache push attempt ${attempt} failed; rebuilding from origin."
-                git fetch --no-tags origin binance-ws-cache
-                git reset --hard origin/binance-ws-cache
-                git clean -fd
-                cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
-                git add -- data/binance_ws_1m.json
-                git commit -m 'Merge Binance Futures WS cache safely'
-                sleep $((3 * ${attempt}))
-              done
+              existing_sha=""
             fi
-            rm -f data/binance_ws_1m.json
-            git checkout -B main "${BASE_SHA}"
-            cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
+
+            message="Update Binance Futures WS cache"
+            args=(
+              --method PUT
+              "/repos/$GITHUB_REPOSITORY/contents/$local_file"
+              -f "message=$message"
+              -f "content=$content_b64"
+              -f "branch=binance-ws-cache"
+            )
+            if [ -n "$existing_sha" ]; then
+              args+=( -f "sha=$existing_sha" )
+            fi
+
+            for attempt in 1 2 3 4; do
+              if gh api "${args[@]}" >/dev/null 2>&1; then
+                echo "Published Binance WS cache via Contents API on attempt ${attempt}."
+                return 0
+              fi
+
+              if [ "${attempt}" -eq 4 ]; then
+                echo "Binance WS cache API publish failed after all retries." >&2
+                return 1
+              fi
+
+              # Re-read the remote blob SHA in case another writer advanced the
+              # branch between our GET and PUT.
+              existing_sha="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$local_file?ref=binance-ws-cache" --jq '.sha' 2>/dev/null || true)"
+              if [ -n "$existing_sha" ]; then
+                args+=( -f "sha=$existing_sha" )
+              fi
+              sleep $((2 * ${attempt}))
+            done
           }
 
           # Keep the dedicated Binance cache continuously warm. Each window is
