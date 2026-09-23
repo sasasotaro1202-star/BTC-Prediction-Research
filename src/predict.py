@@ -83,15 +83,65 @@ def structural(f,m):
     elif taker<-.55: score-=.10
     crowd=max(-1.0,min(1.0,m.get('funding_binance',m.get('funding_bybit',0.0))/0.0003)); score-=.05*crowd
     score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
+def _fallback_model_ready(source, horizon):
+    """Allow only a separately trained, evidence-bearing venue fallback."""
+    if source not in {'bybit', 'coinbase'} or horizon not in {'5m', '10m'}:
+        return False
+    meta_path = MODEL_DIR / f'{source}_{horizon}.json'
+    artifact_path = MODEL_DIR / f'{source}_{horizon}.joblib'
+    if not meta_path.is_file() or meta_path.stat().st_size <= 0:
+        return False
+    if not artifact_path.is_file() or artifact_path.stat().st_size <= 0:
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+        if meta.get('horizon') != horizon:
+            return False
+        if meta.get('artifact') != artifact_path.name:
+            return False
+        if meta.get('classes') != CLASSES:
+            return False
+        if meta.get('features') != list(FEATURES):
+            return False
+        if not str(meta.get('model_version','')).startswith(f'{source}_fallback.'):
+            return False
+        holdout = meta.get('holdout_metrics') or {}
+        baseline = meta.get('baseline_metrics') or {}
+        n = int(meta.get('holdout_n', 0))
+        ll = float(holdout.get('logloss'))
+        base_ll = float(baseline.get('logloss'))
+        if n < 5000 or not math.isfinite(ll) or not math.isfinite(base_ll):
+            return False
+        if ll > base_ll - 0.005:
+            return False
+        return True
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _select_fallback_source(status):
+    """Return a gated venue fallback source, or None to remain fail-closed."""
+    if not isinstance(status, dict):
+        return None
+    source = str(status.get('price_feature_fallback', ''))
+    if source not in {'bybit', 'coinbase'}:
+        return None
+    if all(_fallback_model_ready(source, h) for h in ('5m', '10m')):
+        return source
+    return None
+
+
 def load_model(h, source='primary'):
-    """Load a validated model; production always resolves the current safe bundle."""
+    """Load a validated model; production resolves only the primary bundle normally."""
     if source == 'primary':
         return resolve_production_model(h).load()
     prefix = f'{source}_{h}'
     p=MODEL_DIR/f'{prefix}.joblib'
     if not p.exists(): raise FileNotFoundError(f'model_missing:{source}:{h}')
-    try:return joblib.load(p)
-    except Exception as exc: raise RuntimeError(f'model_load_failed:{source}:{h}:{type(exc).__name__}') from exc
+    try:
+        return joblib.load(p)
+    except Exception as exc:
+        raise RuntimeError(f'model_load_failed:{source}:{h}:{type(exc).__name__}') from exc
 def model_probs(model,f):
     raw=model.predict_proba(np.array([[f[k] for k in FEATURES]]))[0]; out={c:1e-6 for c in CLASSES}
     for c,p in zip(model.classes_,raw):out[str(c)]=float(p)
@@ -427,15 +477,27 @@ def main():
         status['bybit_funding']=f'error:{type(exc).__name__}'
 
     if spotp is not None:m['spot_futures_gap']=spotp/price-1
-    # Binance is the production price/target venue. Bybit is optional
-    # secondary information and is handled fail-safe by the policy layer.
+    # Binance remains the normal production venue. A separately trained,
+    # evidence-gated fallback may be used only when the data adapter explicitly
+    # reports a Bybit/Coinbase price-history fallback.
+    fallback_source = _select_fallback_source(status)
+    use_bybit_fallback = fallback_source == 'bybit'
+    use_coinbase_fallback = fallback_source == 'coinbase'
+    use_fallback = use_bybit_fallback or use_coinbase_fallback
     if use_bybit_fallback:
-        # Binance is geo-blocked on GitHub-hosted runners; use the explicitly
-        # trained Bybit fallback model with neutral Binance-only microstructure.
+        # Use neutral Binance-only microstructure because the Binance-native
+        # signals are unavailable in this degraded venue mode.
         m['book_imbalance'] = m.get('bybit_book_imbalance', 0.0)
         m['taker_imbalance'] = 0.0
         m['funding_binance'] = 0.0
-    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=False,allow_coinbase_fallback=False)
+    validate_live_inputs(
+        status,
+        fut_rows=len(fut),
+        spot_rows=len(spot),
+        bybit_rows=len(by),
+        allow_bybit_fallback=use_bybit_fallback,
+        allow_coinbase_fallback=use_coinbase_fallback,
+    )
     prediction_cutoff=utcnow()
     now=prediction_cutoff
     latest_event_ms=int(fut[-1][0]); latest_event=validate_latest_event_time(latest_event_ms, now=prediction_cutoff)
