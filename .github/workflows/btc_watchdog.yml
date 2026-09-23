@@ -24,6 +24,8 @@ on:
       - BTC Microstructure Research
       - BTC Exogenous Research
       - BTC Time-Regime OOS Research
+      - BTC Frozen Archive Replay Research
+      - BTC Unit Tests
     types: [completed]
 
 permissions:
@@ -68,6 +70,8 @@ jobs:
             btc_multiscale_frozen_replay.yml
             btc_archive_primary_bridge.yml
             btc_canonical_state_compaction.yml
+            btc_frozen_archive_replay.yml
+            btc_unit_tests.yml
             btc_binance_ws_collector.yml
           )
           main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
@@ -273,6 +277,8 @@ jobs:
           recover_if_stale btc_calibration_frozen_replay.yml 28800 43200 900
           recover_if_stale btc_adaptive_calibration_replay.yml 28800 43200 900
           recover_if_stale btc_multiscale_frozen_replay.yml 21600 32400 900
+          recover_if_stale btc_frozen_archive_replay.yml 25200 12600 900
+          recover_if_stale btc_unit_tests.yml 1800 1200 300
           # The WS collector is a long-lived rolling publisher (up to ~50m); do not cancel a healthy run merely because it exceeds the old 30m grace window.
           recover_if_stale btc_binance_ws_collector.yml 900 3900 900
           if [ "$watchdog_degraded" -ne 0 ]; then
