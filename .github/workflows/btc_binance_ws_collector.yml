@@ -113,9 +113,18 @@ jobs:
                   if data.get("e") != "kline" or not isinstance(k, dict) or k.get("s") != "BTCUSDT" or k.get("i") != "1m":
                       raise SystemExit("Binance kline WebSocket endpoint returned an unexpected stream payload")
               elif name == "depth":
-                  bids, asks = data.get("bids"), data.get("asks")
-                  if data.get("e") != "depthUpdate" or not isinstance(bids, list) or not isinstance(asks, list) or min(len(bids), len(asks)) < 20:
-                      raise SystemExit("Binance depth WebSocket endpoint returned an unexpected snapshot payload")
+                  bids, asks = data.get("b"), data.get("a")
+                  if (
+                      data.get("e") != "depthUpdate"
+                      or data.get("s") != "BTCUSDT"
+                      or data.get("ps") != "BTCUSDT"
+                      or data.get("st") != 1
+                      or not isinstance(bids, list)
+                      or not isinstance(asks, list)
+                      or min(len(bids), len(asks)) < 20
+                      or "E" not in data
+                  ):
+                      raise SystemExit("Binance depth WebSocket endpoint returned an unexpected current partial-depth payload")
               else:
                   if data.get("e") != "markPriceUpdate" or data.get("s") != "BTCUSDT" or float(data.get("p", 0)) <= 0:
                       raise SystemExit("Binance mark-price WebSocket endpoint returned an unexpected payload")
