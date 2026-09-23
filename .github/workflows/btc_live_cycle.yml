@@ -157,6 +157,55 @@ jobs:
         run: python src/blend_calibration.py
       - name: Audit BTC production artifact provenance
         run: python src/production_artifact_audit.py
+      - name: Refresh latest Binance WebSocket cache immediately before prediction
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_cache="$(mktemp)"
+          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache"; then
+              if python - "$tmp_cache" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          try:
+              obj=json.loads(p.read_text(encoding='utf-8'))
+              rows=obj.get('rows')
+              if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
+                  raise SystemExit('invalid Binance WS cache provenance')
+              if obj.get('stream') != 'btcusdt@kline_1m' or not isinstance(rows,list) or len(rows)<40:
+                  raise SystemExit('invalid Binance WS cache shape')
+              required={'open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base'}
+              if not all(isinstance(row,dict) and required.issubset(row) for row in rows):
+                  raise SystemExit('invalid Binance WS cache row schema')
+              ordered=sorted(rows,key=lambda row:int(row['open_time_ms']))
+              suffix=[ordered[-1]]
+              for row in reversed(ordered[:-1]):
+                  if int(suffix[0]['open_time_ms'])-int(row['open_time_ms']) != 60000:
+                      break
+                  suffix.insert(0,row)
+              latest=suffix[-1]
+              age=int(time.time()*1000)-int(latest['retrieved_at_ms'])
+              print(f'latest_retrieved_age_ms={age} contiguous_rows={len(suffix)} latest_open_time_ms={latest["open_time_ms"]}')
+              if len(suffix)<40 or age>180000:
+                  raise SystemExit('Binance WS cache stale_or_insufficient_at_prediction_boundary')
+          except (OSError,ValueError,TypeError,KeyError) as exc:
+              raise SystemExit(f'Binance WS cache validation failed: {type(exc).__name__}') from exc
+          PY
+              then
+                cp "$tmp_cache" data/binance_ws_1m.json
+                echo 'Loaded fresh Binance WS cache immediately before prediction.'
+              else
+                echo 'WARN: latest Binance WS cache failed boundary validation; existing predictor fallback policy remains authoritative.' >&2
+              fi
+            else
+              echo 'WARN: Binance WS cache file unavailable at prediction boundary; existing predictor fallback policy remains authoritative.' >&2
+            fi
+          else
+            echo 'WARN: binance-ws-cache branch unavailable at prediction boundary; existing predictor fallback policy remains authoritative.' >&2
+          fi
+          rm -f "$tmp_cache"
+
       - name: Generate next BTC prediction
         shell: bash
         run: |
