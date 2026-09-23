@@ -494,7 +494,7 @@ def main():
     }
 
     depth_event=_iso_ms(status.get('binance_depth_event_time_ms')) if status.get('binance_depth_event_time_ms') else None
-    depth_available=_iso_ms(status.get('binance_depth_ws_retrieved_at_ms')) if status.get('binance_depth_transport') == 'websocket' else retrieved
+    depth_available=_iso_ms(status.get('binance_depth_ws_retrieved_at_ms')) if str(status.get('binance_depth_transport','')).startswith('websocket') else retrieved
     source_provenance['binance_depth']={
         'information_origin':'Binance',
         'transport':status.get('binance_depth_transport','rest'),
