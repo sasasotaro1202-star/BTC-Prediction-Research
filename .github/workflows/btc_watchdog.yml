@@ -210,15 +210,24 @@ jobs:
               return 1
             }
             active_count=0
+            in_progress_active_count=0
+            oldest_in_progress_age=0
             cancellation_requested_count=0
             while IFS= read -r active; do
                 active_count=$((active_count + 1))
                 [ -n "$active" ] || continue
                 active_id=$(jq -r '.id // 0' <<<"$active")
+                active_status=$(jq -r '.status // ""' <<<"$active")
                 active_head=$(jq -r '.head_sha // ""' <<<"$active")
                 active_updated=$(jq -r '.updated_at // ""' <<<"$active")
                 active_epoch=$(date -d "$active_updated" +%s 2>/dev/null || echo 0)
                 active_age=$((now - active_epoch))
+                if [ "$active_status" = "in_progress" ]; then
+                  in_progress_active_count=$((in_progress_active_count + 1))
+                  if [ "$active_age" -gt "$oldest_in_progress_age" ]; then
+                    oldest_in_progress_age="$active_age"
+                  fi
+                fi
                 stale_by_source=false
                 stale_by_age=false
                 if [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head" "$workflow"; then
@@ -256,6 +265,17 @@ jobs:
             fi
             if [ "$force_dispatch" = true ] || { [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; }; then
               should_dispatch=true
+            fi
+
+            # The collector uses a run-id keyed concurrency group, so one healthy
+            # in-progress capture can overlap a second run. Starting the next run
+            # after 30 minutes preserves roughly 15 minutes of rolling overlap.
+            if [ "$workflow" = "btc_binance_ws_collector.yml" ] \
+              && [ "$active_count" -eq 1 ] \
+              && [ "$in_progress_active_count" -eq 1 ] \
+              && [ "$oldest_in_progress_age" -ge 1800 ]; then
+              should_dispatch=true
+              echo "btc_binance_ws_collector.yml: starting staggered overlap collector after 30 minutes."
             fi
             if [ "$should_dispatch" = true ]; then
               echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
