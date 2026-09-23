@@ -173,7 +173,7 @@ jobs:
             stale_head_grace="$4"
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=100" 2>/dev/null || true)
             if [ -z "$response" ]; then echo "WARN: unable to inspect ${workflow}; no recovery dispatch"; return; fi
-            latest=$(jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty' <<<"$response")
+            latest=$(jq -c --arg main_sha "$main_sha" '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped" and .head_sha == $main_sha)] | sort_by(.updated_at) | last // empty' <<<"$response")
             running=$(jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length' <<<"$response")
 
             # A completed-run freshness check alone cannot recover a stuck active
