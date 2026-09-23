@@ -1,9 +1,10 @@
 name: BTC Binance WS Collector
 
-# A single hourly rolling collector keeps a warm same-product Binance Futures
-# WebSocket cache without spawning a near-continuous sequence of short jobs.
-# Each capture window is published independently, so Live Cycle can consume the
-# latest verified cache even if a later window fails.
+# Two staggered rolling collectors keep the same-product Binance Futures
+# WebSocket cache continuously warm. Scheduled runs are intentionally allowed
+# to overlap; the dedicated cache branch merges checkpoints safely.
+# Each capture window is independently recoverable, so a delayed schedule does
+# not create a predictable 15-minute cache gap.
 on:
   push:
     branches: [main]
@@ -11,15 +12,15 @@ on:
       - '.github/workflows/btc_binance_ws_collector.yml'
       - 'src/binance_ws.py'
   schedule:
-    - cron: '3 * * * *'
+    - cron: '3,33 * * * *'
   workflow_dispatch:
 
 concurrency:
-  group: btc-binance-ws-cache
-  # Replace an older collector immediately when a new collector run is
-  # triggered (e.g. after a collector-code update). The dedicated cache branch
-  # already preserves the latest valid rows, so the old process need not finish.
-  cancel-in-progress: true
+  # Scheduled collectors deliberately get independent concurrency keys so two
+  # staggered windows can overlap and cover transient schedule jitter. Manual /
+  # push control runs still replace one another to avoid stale-code execution.
+  group: btc-binance-ws-cache-${{ github.event_name == 'schedule' && github.run_id || 'control' }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 permissions:
   contents: write
@@ -159,6 +160,24 @@ jobs:
 
           rows=[merged[k] for k in sorted(merged)[-720:]]
           local['rows']=rows
+
+          # Concurrent staggered collectors frequently observe the same newest
+          # closed bars. Skip a semantic no-op publish so overlapping runs do not
+          # create needless cache-branch commits or ref contention.
+          remote_rows = [
+              {k: v for k, v in row.items() if k != 'retrieved_at_ms'}
+              for row in rrows[-720:]
+              if isinstance(row, dict)
+          ]
+          local_rows = [
+              {k: v for k, v in row.items() if k != 'retrieved_at_ms'}
+              for row in rows[-720:]
+              if isinstance(row, dict)
+          ]
+          if local_rows == remote_rows:
+              print('Binance WS cache semantic no-op; remote checkpoint already contains the same rows.')
+              return
+
           temp=local_path.with_name('.binance_ws_1m.merge.tmp')
           temp.write_text(
               json.dumps(local,sort_keys=True,separators=(',',':'))+'\n',
@@ -227,7 +246,10 @@ jobs:
           # Keep one WebSocket connection open for the entire collector slot.
           # Checkpoints are written atomically by the Python process and published
           # by a separate lightweight loop, so publication never disconnects the stream.
-          capture_seconds=2700
+          # 35m capture every 30m gives a 5m overlap between healthy scheduled
+          # collectors. This removes the deterministic hourly 15m cache gap while
+          # remaining bounded and recoverable on hosted runners.
+          capture_seconds=2100
           checkpoint_seconds=60
 
           rm -f /tmp/btc_ws_collector.log /tmp/btc_ws_publisher.log
