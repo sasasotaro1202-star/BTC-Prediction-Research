@@ -91,16 +91,32 @@ def parse_kline_message(message: Any, received_at_ms: int | None = None) -> dict
 
 
 def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict[str, Any] | None:
+    """Parse current Binance USD-M Partial/Depth-Update payloads safely.
+
+    The current public Partial Book Depth stream uses b/a arrays with
+    exchange event timestamps E/T. Keep accepting the normalized
+    bids/asks shape for already-persisted cache data and tests.
+    """
     data = _unwrap(message)
-    bids = data.get("bids")
-    asks = data.get("asks")
+    event_type = data.get("e")
+    if event_type not in {"depthUpdate", None}:
+        return None
+
+    bids = data.get("b")
+    asks = data.get("a")
+    if bids is None and asks is None:
+        bids = data.get("bids")
+        asks = data.get("asks")
     if not isinstance(bids, list) or not isinstance(asks, list) or not bids or not asks:
         return None
+
     clean_bids: list[list[float]] = []
     clean_asks: list[list[float]] = []
     try:
         for side, out in ((bids, clean_bids), (asks, clean_asks)):
             for level in side[:20]:
+                if not isinstance(level, (list, tuple)) or len(level) < 2:
+                    return None
                 price, qty = float(level[0]), float(level[1])
                 if not (math.isfinite(price) and math.isfinite(qty) and price > 0 and qty >= 0):
                     return None
@@ -111,6 +127,18 @@ def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict
         return None
     if clean_bids[0][0] > clean_asks[0][0]:
         return None
+
+    symbol = data.get("s") or data.get("ps")
+    if symbol is not None and str(symbol).upper() != "BTCUSDT":
+        return None
+    symbol_type = data.get("st")
+    if symbol_type is not None:
+        try:
+            if int(symbol_type) != 1:
+                return None
+        except (TypeError, ValueError):
+            return None
+
     try:
         event_time_ms = int(data["E"])
     except (KeyError, TypeError, ValueError):
@@ -120,14 +148,18 @@ def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict
     retrieved = int(received_at_ms if received_at_ms is not None else time.time() * 1000)
     if event_time_ms > retrieved + 60_000:
         return None
+    update_id = data.get("u", data.get("lastUpdateId", 0))
+    try:
+        update_id = int(update_id)
+    except (TypeError, ValueError):
+        return None
     return {
         "bids": clean_bids,
         "asks": clean_asks,
-        "last_update_id": int(data.get("lastUpdateId", 0)),
+        "last_update_id": update_id,
         "event_time_ms": event_time_ms,
         "retrieved_at_ms": retrieved,
     }
-
 
 def depth_midprice(snapshot: dict[str, Any]) -> float:
     bids=snapshot.get("bids") if isinstance(snapshot,dict) else None
