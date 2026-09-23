@@ -10,6 +10,13 @@ on:
     paths:
       - '.github/workflows/btc_watchdog.yml'
       - '.github/workflows/btc_9h_research_marathon.yml'
+      - '.github/workflows/btc_binance_ws_collector.yml'
+      - '.github/workflows/btc_live_cycle.yml'
+      - 'src/binance_ws.py'
+      - 'src/market_data.py'
+      - 'src/predict.py'
+      - 'src/live_data_policy.py'
+      - 'src/live_data_fail_closed.py'
   workflow_dispatch:
   # Completion of frequent BTC workflows provides a second recovery heartbeat
   # when GitHub delays or drops schedule events. The watchdog itself is still
