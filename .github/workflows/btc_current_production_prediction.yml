@@ -1,0 +1,158 @@
+name: BTC Current Production Prediction
+
+# On-demand path for producing a prediction with the exact production model
+# registered on main at run start. It never selects candidate/research/fallback
+# models and never mutates the repository prediction state.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: btc-current-production-prediction
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  predict:
+    name: Predict with current production model
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Restore latest Binance WebSocket caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          rm -f data/binance_ws_1m.json data/binance_ws_depth.json
+          git fetch --no-tags --depth=1 origin binance-ws-cache
+          git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null || true
+          git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null || true
+
+      - name: Restore current production state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile production code
+        run: python -m compileall -q src scripts
+
+      - name: Snapshot exact production model binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          with sqlite3.connect("data/predictions.db") as con:
+              registry = dict(con.execute(
+                  "SELECT horizon, production_version FROM model_registry"
+              ).fetchall())
+
+          if set(registry) != {"5m", "10m"}:
+              raise SystemExit(f"production registry incomplete: {registry}")
+
+          for horizon in ("5m", "10m"):
+              meta_path = Path(f"models/{horizon}.json")
+              model_path = Path(f"models/{horizon}.joblib")
+              if not meta_path.is_file() or not model_path.is_file():
+                  raise SystemExit(f"production artifact missing: {horizon}")
+
+              meta = json.loads(meta_path.read_text(encoding="utf-8"))
+              if meta.get("model_version") != registry[horizon]:
+                  raise SystemExit(
+                      f"production binding mismatch: {horizon}: "
+                      f"registry={registry[horizon]!r} metadata={meta.get('model_version')!r}"
+                  )
+              if meta.get("candidate") is True:
+                  raise SystemExit(f"candidate exposed as production: {horizon}")
+              if meta.get("artifact") != model_path.name:
+                  raise SystemExit(f"artifact name mismatch: {horizon}")
+
+              print(json.dumps({
+                  "horizon": horizon,
+                  "production_model_version": registry[horizon],
+                  "artifact": model_path.name,
+                  "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
+              }, sort_keys=True))
+          PY
+
+      - name: Generate prediction with current production model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/predict.py | tee /tmp/btc_current_production_prediction.jsonl
+
+      - name: Verify latest record is bound to current production registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/btc_current_production_prediction.jsonl").read_text(encoding="utf-8").strip().splitlines()[-1])
+          with sqlite3.connect("data/predictions.db") as con:
+              reg = dict(con.execute("SELECT horizon, production_version FROM model_registry").fetchall())
+              row = con.execute(
+                  "SELECT model_version FROM predictions ORDER BY prediction_id DESC LIMIT 1"
+              ).fetchone()
+
+          expected = f"5m:{reg['5m']}|10m:{reg['10m']}"
+          if not row or row[0] != expected:
+              raise SystemExit(f"latest prediction model binding mismatch: {row} expected={expected!r}")
+
+          def pct(v):
+              return f"{float(v)*100:.2f}%"
+
+          summary = [
+              "# BTC Current Production Prediction",
+              "",
+              f"- Timestamp (JST): **{payload['timestamp_jst']}**",
+              f"- BTC price: **{float(payload['btc_price']):.2f}**",
+              f"- Production model 5m: **{payload['model_5m']}**",
+              f"- Production model 10m: **{payload['model_10m']}**",
+              "",
+              "| Horizon | UP | FLAT | DOWN |",
+              "|---|---:|---:|---:|",
+              f"| 5m | {pct(payload['probabilities_5m']['UP'])} | {pct(payload['probabilities_5m']['FLAT'])} | {pct(payload['probabilities_5m']['DOWN'])} |",
+              f"| 10m | {pct(payload['probabilities_10m']['UP'])} | {pct(payload['probabilities_10m']['FLAT'])} | {pct(payload['probabilities_10m']['DOWN'])} |",
+              "",
+              f"- Regime: **{payload['regime']}**",
+              f"- Confidence (5m): **{pct(payload['confidence'])}**",
+          ]
+          warnings = payload.get("warnings") or []
+          if warnings:
+              summary.append("- Warnings: " + ", ".join(map(str, warnings)))
+          with open("/tmp/btc_current_production_summary.md", "w", encoding="utf-8") as fh:
+              fh.write("\n".join(summary) + "\n")
+          print("\n".join(summary))
+          PY
