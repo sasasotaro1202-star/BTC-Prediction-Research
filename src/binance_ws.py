@@ -308,7 +308,13 @@ async def _stream_url(
             while time.monotonic() < deadline:
                 remaining = max(0.25, deadline - time.monotonic())
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    # A healthy kline stream emits updates continuously. Bound
+                    # silent receive time so the caller can fail over instead of
+                    # waiting for the entire remaining capture window.
+                    raw = await asyncio.wait_for(
+                        ws.recv(),
+                        timeout=min(remaining, 45.0),
+                    )
                 except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
                     break
                 received_ms = int(time.time() * 1000)
