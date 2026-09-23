@@ -34,6 +34,7 @@ on:
       - BTC Frozen Archive Replay Research
       - BTC Unit Tests
       - BTC Ops Preflight
+      - BTC Selective Prediction OOS
     types: [completed]
 
 permissions:
@@ -84,6 +85,7 @@ jobs:
             btc_frozen_archive_replay.yml
             btc_unit_tests.yml
             btc_ops_preflight.yml
+            btc_selective_prediction_oos.yml
             btc_binance_ws_collector.yml
           )
           main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
@@ -334,6 +336,7 @@ jobs:
           recover_if_stale btc_frozen_archive_replay.yml 25200 12600 900
           recover_if_stale btc_unit_tests.yml 1800 1200 300
           recover_if_stale btc_ops_preflight.yml 3600 1800 900
+          recover_if_stale btc_selective_prediction_oos.yml 43200 64800 900
           # The WS collector is a long-lived rolling publisher (up to ~50m including startup/publication overhead); do not cancel a healthy run merely because it exceeds the old 30m grace window.
           # The collector intentionally runs for ~45 minutes plus bounded setup/publication overhead; allow it to
           # survive both its full capture window and frequent main state commits.
