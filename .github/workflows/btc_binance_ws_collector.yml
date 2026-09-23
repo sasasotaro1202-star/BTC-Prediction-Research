@@ -244,10 +244,10 @@ jobs:
           # Keep one WebSocket connection open for the entire collector slot.
           # Checkpoints are written atomically by the Python process and published
           # by a separate lightweight loop, so publication never disconnects the stream.
-          # 35m capture every 30m gives a 5m overlap between healthy scheduled
+          # 45m capture every 30m gives a 15m overlap between healthy scheduled
           # collectors. This removes the deterministic hourly 15m cache gap while
           # remaining bounded and recoverable on hosted runners.
-          capture_seconds=2100
+          capture_seconds=2700
           checkpoint_seconds=60
 
           rm -f /tmp/btc_ws_collector.log /tmp/btc_ws_publisher.log

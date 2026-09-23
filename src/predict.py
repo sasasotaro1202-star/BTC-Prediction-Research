@@ -209,9 +209,12 @@ def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_j
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
 def main():
     init_db(); now=utcnow(); fut,spot,by,status=resilient_1m_series()
-    use_bybit_fallback = status.get('price_feature_fallback') == 'bybit'
-    use_coinbase_fallback = status.get('price_feature_fallback') == 'coinbase'
-    use_fallback = use_bybit_fallback or use_coinbase_fallback
+    # Production live runs remain Binance-primary. Cross-venue fallback models
+    # are research/recovery artifacts only and are never allowed to create a
+    # production prediction when required Binance inputs are unavailable.
+    use_bybit_fallback = False
+    use_coinbase_fallback = False
+    use_fallback = False
     if len(fut)<40: raise SystemExit('live_prediction_fail_closed: insufficient futures data')
     f=features(fut); price=float(fut[-1][4]); spotp=float(spot[-1][4]) if len(spot)>=40 else None
     m={}
@@ -434,7 +437,7 @@ def main():
         m['book_imbalance'] = m.get('bybit_book_imbalance', 0.0)
         m['taker_imbalance'] = 0.0
         m['funding_binance'] = 0.0
-    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=use_bybit_fallback,allow_coinbase_fallback=use_coinbase_fallback)
+    validate_live_inputs(status,fut_rows=len(fut),spot_rows=len(spot),bybit_rows=len(by),allow_bybit_fallback=False,allow_coinbase_fallback=False)
     prediction_cutoff=utcnow()
     now=prediction_cutoff
     latest_event_ms=int(fut[-1][0]); latest_event=validate_latest_event_time(latest_event_ms, now=prediction_cutoff)
