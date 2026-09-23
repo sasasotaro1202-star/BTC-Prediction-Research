@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 import predict  # noqa: E402
+import db as db_module  # noqa: E402
 
 
 class TestPredictFeatureSafety(unittest.TestCase):
@@ -114,6 +115,77 @@ class TestPredictGenerationBinding(unittest.TestCase):
         bad[-1]=(30, 131.0, 129.0, 130.0, 131.0, 10.0)
         with self.assertRaisesRegex(ValueError, "invalid_ohlc_relationship"):
             predict.features(bad)
+
+
+    def test_insert_prediction_rejects_missing_pit_provenance(self):
+        now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
+        with tempfile.TemporaryDirectory() as td:
+            old_db = predict.DB
+            old_db_module = db_module.DB
+            try:
+                temp_db = Path(td) / 'predictions.db'
+                predict.DB = str(temp_db)
+                db_module.DB = temp_db
+                db_module.init_db()
+                with self.assertRaisesRegex(ValueError, "prediction_provenance_missing"):
+                    predict.insert_prediction(
+                        now,
+                        now + predict.timedelta(minutes=5),
+                        now + predict.timedelta(minutes=10),
+                        100.0,
+                        {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                        {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                        "test-model",
+                        {},
+                        {},
+                    )
+            finally:
+                predict.DB = old_db
+                db_module.DB = old_db_module
+
+    def test_insert_prediction_accepts_complete_pit_provenance(self):
+        now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
+        stamp = now.isoformat()
+        scenario = {
+            "decision_time_utc": stamp,
+            "provenance": {
+                "available_at": stamp,
+                "retrieved_at": stamp,
+                "prediction_cutoff": stamp,
+                "sources": {
+                    "binance_futures": {
+                        "available_at": stamp,
+                        "retrieved_at": stamp,
+                        "prediction_cutoff": stamp,
+                        "status": "ok",
+                    }
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as td:
+            old_db = predict.DB
+            old_db_module = db_module.DB
+            try:
+                temp_db = Path(td) / 'predictions.db'
+                predict.DB = str(temp_db)
+                db_module.DB = temp_db
+                db_module.init_db()
+                predict.insert_prediction(
+                    now,
+                    now + predict.timedelta(minutes=5),
+                    now + predict.timedelta(minutes=10),
+                    100.0,
+                    {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                    {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                    "test-model",
+                    {k: 0.0 for k in predict.FEATURES},
+                    scenario,
+                )
+                with __import__("sqlite3").connect(predict.DB) as con:
+                    self.assertEqual(con.execute("SELECT COUNT(*) FROM predictions").fetchone()[0], 1)
+            finally:
+                predict.DB = old_db
+                db_module.DB = old_db_module
 
     def test_secondary_venue_completeness_requires_valid_status(self):
         status = {"bybit_futures": "ok_current_only", "bybit_depth": "error:Timeout"}

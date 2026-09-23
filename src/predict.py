@@ -148,7 +148,63 @@ def _parallel_market_calls(calls):
                 results[key] = exc
     return results
 
+def _validate_persisted_provenance(scenario, now):
+    """Fail closed before persisting any new prediction without auditable PIT metadata."""
+    if not isinstance(scenario, dict):
+        raise ValueError("prediction_provenance_missing")
+    provenance = scenario.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("prediction_provenance_missing")
+    decision = scenario.get("decision_time_utc")
+    available = provenance.get("available_at")
+    retrieved = provenance.get("retrieved_at")
+    cutoff = provenance.get("prediction_cutoff")
+    if not all(isinstance(v, str) and v for v in (decision, available, retrieved, cutoff)):
+        raise ValueError("prediction_provenance_incomplete")
+    try:
+        decision_dt = datetime.fromisoformat(decision.replace("Z", "+00:00"))
+        available_dt = datetime.fromisoformat(available.replace("Z", "+00:00"))
+        retrieved_dt = datetime.fromisoformat(retrieved.replace("Z", "+00:00"))
+        cutoff_dt = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise ValueError("prediction_provenance_invalid_timestamp")
+    if decision_dt.tzinfo is None or available_dt.tzinfo is None or retrieved_dt.tzinfo is None or cutoff_dt.tzinfo is None:
+        raise ValueError("prediction_provenance_timezone_required")
+    # Acquisition/retrieval must not occur after the prediction cutoff; allowing
+    # otherwise would create a post-decision feature snapshot.
+    if available_dt > cutoff_dt or retrieved_dt > cutoff_dt or cutoff_dt > decision_dt + timedelta(seconds=1):
+        raise ValueError("prediction_provenance_temporal_violation")
+    sources = provenance.get("sources")
+    if not isinstance(sources, dict) or not sources:
+        raise ValueError("prediction_provenance_sources_missing")
+    valid_sources = 0
+    for key, item in sources.items():
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        if status in {"ok", "ok_current_only"}:
+            item_available = item.get("available_at")
+            item_retrieved = item.get("retrieved_at")
+            item_cutoff = item.get("prediction_cutoff")
+            if not all(isinstance(v, str) and v for v in (item_available, item_retrieved, item_cutoff)):
+                raise ValueError(f"prediction_source_provenance_incomplete:{key}")
+            try:
+                source_available = datetime.fromisoformat(item_available.replace("Z", "+00:00"))
+                source_retrieved = datetime.fromisoformat(item_retrieved.replace("Z", "+00:00"))
+                source_cutoff = datetime.fromisoformat(item_cutoff.replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                raise ValueError(f"prediction_source_provenance_invalid_timestamp:{key}")
+            if source_available.tzinfo is None or source_retrieved.tzinfo is None or source_cutoff.tzinfo is None:
+                raise ValueError(f"prediction_source_provenance_timezone_required:{key}")
+            if source_available > source_cutoff or source_retrieved > source_cutoff or source_cutoff > decision_dt + timedelta(seconds=1):
+                raise ValueError(f"prediction_source_provenance_temporal_violation:{key}")
+            valid_sources += 1
+    if valid_sources == 0:
+        raise ValueError("prediction_provenance_no_valid_sources")
+
+
 def insert_prediction(now,target5,target10,price,p5,p10,model_version,features_json,scenario):
+    _validate_persisted_provenance(scenario, now)
     with sqlite3.connect(DB) as c:
         c.execute('INSERT INTO predictions(created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(now.isoformat(),target5.isoformat(),target10.isoformat(),price,p5['UP'],p5['DOWN'],p5['FLAT'],p10['UP'],p10['DOWN'],p10['FLAT'],model_version,json.dumps(features_json),json.dumps(scenario)))
 def main():
