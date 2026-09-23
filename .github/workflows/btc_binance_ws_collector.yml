@@ -76,26 +76,59 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import asyncio
-          from src.binance_ws import capture_closed_klines, capture_depth_snapshot, capture_mark_price
+          import json
+          import websockets
+
+          ENDPOINTS = {
+              "kline": "wss://fstream.binance.com/market/ws/btcusdt@kline_1m",
+              "depth": "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms",
+              "mark": "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s",
+          }
+
+          async def probe(name, url):
+              try:
+                  async with websockets.connect(
+                      url,
+                      open_timeout=8,
+                      close_timeout=3,
+                      ping_interval=20,
+                      ping_timeout=20,
+                      max_size=2**20,
+                  ) as ws:
+                      raw = await asyncio.wait_for(ws.recv(), timeout=12)
+              except Exception as exc:
+                  raise SystemExit(f"Binance {name} WebSocket endpoint probe failed: {type(exc).__name__}: {exc}") from exc
+
+              try:
+                  msg = json.loads(raw)
+              except Exception as exc:
+                  raise SystemExit(f"Binance {name} WebSocket endpoint returned non-JSON data") from exc
+
+              data = msg.get("data") if isinstance(msg, dict) and isinstance(msg.get("data"), dict) else msg
+              if not isinstance(data, dict):
+                  raise SystemExit(f"Binance {name} WebSocket endpoint returned malformed payload")
+
+              if name == "kline":
+                  k = data.get("k")
+                  if data.get("e") != "kline" or not isinstance(k, dict) or k.get("s") != "BTCUSDT" or k.get("i") != "1m":
+                      raise SystemExit("Binance kline WebSocket endpoint returned an unexpected stream payload")
+              elif name == "depth":
+                  bids, asks = data.get("bids"), data.get("asks")
+                  if data.get("e") != "depthUpdate" or not isinstance(bids, list) or not isinstance(asks, list) or min(len(bids), len(asks)) < 20:
+                      raise SystemExit("Binance depth WebSocket endpoint returned an unexpected snapshot payload")
+              else:
+                  if data.get("e") != "markPriceUpdate" or data.get("s") != "BTCUSDT" or float(data.get("p", 0)) <= 0:
+                      raise SystemExit("Binance mark-price WebSocket endpoint returned an unexpected payload")
+
+              return {
+                  "name": name,
+                  "url": url,
+                  "event": data.get("e"),
+              }
 
           async def main():
-              klines = await capture_closed_klines(12.0)
-              if not klines:
-                  raise SystemExit("Binance current market WebSocket smoke test: no closed kline received")
-              depth = await capture_depth_snapshot(12.0)
-              if not depth:
-                  raise SystemExit("Binance current public WebSocket smoke test: no depth snapshot received")
-              levels = min(len(depth.get("bids", [])), len(depth.get("asks", [])))
-              if levels < 20:
-                  raise SystemExit("Binance current public WebSocket smoke test: fewer than 20 depth levels")
-              mark = await capture_mark_price(12.0)
-              if not mark or not (float(mark["mark_price"]) > 0):
-                  raise SystemExit("Binance current market WebSocket smoke test: no valid mark-price event received")
-              print({
-                  "kline_closed_bars": len(klines),
-                  "depth_levels": levels,
-                  "mark_price": float(mark["mark_price"]),
-              })
+              results = [await probe(name, url) for name, url in ENDPOINTS.items()]
+              print(json.dumps({"endpoint_smoke": results}, sort_keys=True))
 
           asyncio.run(main())
           PY
