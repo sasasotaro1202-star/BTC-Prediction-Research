@@ -541,19 +541,57 @@ async def collect_forever_window(
     }
 
 
+async def collect_depth_forever(
+    timeout_seconds: float,
+    path: Path,
+    checkpoint_seconds: float = 60.0,
+) -> dict[str, Any]:
+    initial = load_depth_cache(path, max_age_ms=24 * 60 * 60 * 1000)
+
+    async def checkpoint(snapshot: dict[str, Any]) -> None:
+        write_depth_cache(snapshot, path)
+
+    latest = await capture_depth_snapshot_stream(
+        timeout_seconds,
+        checkpoint_seconds=checkpoint_seconds,
+        initial_snapshot=initial,
+        on_checkpoint=checkpoint,
+    )
+    if latest is not None:
+        write_depth_cache(latest, path)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "mode": "depth",
+        "ok": latest is not None,
+        "event_time_ms": latest["event_time_ms"] if latest else None,
+        "retrieved_at_ms": latest["retrieved_at_ms"] if latest else None,
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=("kline", "depth"), default="kline")
     parser.add_argument("--capture-seconds", type=float, default=2700.0)
     parser.add_argument("--checkpoint-seconds", type=float, default=60.0)
     parser.add_argument("--output", type=Path, default=DEFAULT_CACHE)
     args = parser.parse_args()
-    result = asyncio.run(
-        collect_forever_window(
-            args.capture_seconds,
-            args.output,
-            checkpoint_seconds=args.checkpoint_seconds,
+    if args.mode == "depth":
+        result = asyncio.run(
+            collect_depth_forever(
+                args.capture_seconds,
+                args.output,
+                checkpoint_seconds=args.checkpoint_seconds,
+            )
         )
-    )
+    else:
+        result = asyncio.run(
+            collect_forever_window(
+                args.capture_seconds,
+                args.output,
+                checkpoint_seconds=args.checkpoint_seconds,
+            )
+        )
     print(json.dumps(result, sort_keys=True))
     return 0
 
