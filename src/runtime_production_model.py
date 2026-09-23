@@ -62,16 +62,22 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _registry_version(horizon: str) -> str | None:
+def _registry_version(horizon: str) -> str:
+    if not DB.exists() or DB.stat().st_size <= 0:
+        raise RuntimeError(f"production_registry_missing:{horizon}")
     try:
         with sqlite3.connect(DB) as con:
             row = con.execute(
                 "SELECT production_version FROM model_registry WHERE horizon=?",
                 (horizon,),
             ).fetchone()
-        return str(row[0]) if row and row[0] else None
-    except (sqlite3.Error, OSError):
-        return None
+    except (sqlite3.Error, OSError) as exc:
+        raise RuntimeError(
+            f"production_registry_unreadable:{horizon}:{type(exc).__name__}"
+        ) from exc
+    if not row or not row[0]:
+        raise RuntimeError(f"production_registry_version_missing:{horizon}")
+    return str(row[0]).strip()
 
 
 def resolve_production_model(horizon: str) -> ProductionModel:
@@ -101,7 +107,7 @@ def resolve_production_model(horizon: str) -> ProductionModel:
         raise RuntimeError(f"production_metadata_version_missing:{horizon}")
 
     registry = _registry_version(horizon)
-    if registry is not None and registry != version:
+    if registry != version:
         raise RuntimeError(
             f"production_registry_metadata_mismatch:{horizon}:{registry}!={version}"
         )
