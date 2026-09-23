@@ -244,6 +244,9 @@ jobs:
           if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket' or obj.get('stream') != 'btcusdt@depth20@100ms':
               raise SystemExit('invalid Binance depth cache provenance')
           snap=obj.get('snapshot')
+          if isinstance(snap,dict) and 'E' not in snap and 'event_time_ms' in snap:
+              snap=dict(snap)
+              snap['E']=snap['event_time_ms']
           parsed=parse_depth_message(snap,int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
           if parsed is None: raise SystemExit('invalid Binance depth cache snapshot')
           age=int(time.time()*1000)-int(parsed['retrieved_at_ms'])
