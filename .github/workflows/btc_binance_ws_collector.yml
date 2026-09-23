@@ -53,17 +53,16 @@ jobs:
           if git fetch --no-tags --depth=1 origin binance-ws-cache; then
             if git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null; then
               echo 'Loaded prior Binance WS cache from dedicated state branch.'
-           if git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
-             echo 'Loaded prior Binance depth WS cache from dedicated state branch.'
-           else
-             rm -f data/binance_ws_depth.json
-           fi
             else
-              echo 'Dedicated cache branch has no cache file yet; starting fresh.'
-              rm -f data/binance_ws_1m.json
+              echo 'Dedicated cache branch has no kline cache yet; starting kline cache fresh.'
+            fi
+            if git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
+              echo 'Loaded prior Binance depth WS cache from dedicated state branch.'
+            else
+              echo 'Dedicated cache branch has no depth cache yet; starting depth cache fresh.'
             fi
           else
-            echo 'Dedicated cache branch unavailable; starting fresh cache.'
+            echo 'Dedicated cache branch unavailable; starting fresh caches.'
           fi
 
       - name: Record fixed collector base SHA
