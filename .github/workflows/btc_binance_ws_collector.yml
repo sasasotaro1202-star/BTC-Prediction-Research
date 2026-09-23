@@ -27,7 +27,6 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  GH_TOKEN: ${{ github.token }}
 
 jobs:
   collector:
@@ -106,57 +105,41 @@ jobs:
           }
 
           publish_cache() {
-            # Publish directly to the dedicated cache branch via the GitHub
-            # Contents API. Never checkout/switch branches in the active
-            # collector workspace: that I/O previously created multi-minute
-            # gaps between otherwise healthy WebSocket windows.
+            # Publish without switching branches or creating an Actions working-tree
+            # commit. Use a temporary index so the live kline capture process keeps
+            # running uninterrupted between checkpoints.
             local_file="data/binance_ws_1m.json"
             test -s "$local_file"
-
-            content_b64="$(python - "$local_file" <<'PY'
-          import base64,sys
-          from pathlib import Path
-          print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
-          PY
-            )"
-
-            existing_sha=""
-            if existing_sha="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$local_file?ref=binance-ws-cache" --jq '.sha' 2>/dev/null)"; then
-              :
-            else
-              existing_sha=""
-            fi
-
-            message="Update Binance Futures WS cache"
-            args=(
-              --method PUT
-              "/repos/$GITHUB_REPOSITORY/contents/$local_file"
-              -f "message=$message"
-              -f "content=$content_b64"
-              -f "branch=binance-ws-cache"
-            )
-            if [ -n "$existing_sha" ]; then
-              args+=( -f "sha=$existing_sha" )
-            fi
+            git fetch --no-tags --depth=1 origin binance-ws-cache
 
             for attempt in 1 2 3 4; do
-              if gh api "${args[@]}" >/dev/null 2>&1; then
-                echo "Published Binance WS cache via Contents API on attempt ${attempt}."
-                return 0
-              fi
-
-              if [ "${attempt}" -eq 4 ]; then
-                echo "Binance WS cache API publish failed after all retries." >&2
+              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
+              if [ -z "$cache_base" ]; then
+                echo 'Dedicated cache branch base is unavailable.' >&2
                 return 1
               fi
 
-              # Re-read the remote blob SHA in case another writer advanced the
-              # branch between our GET and PUT.
-              existing_sha="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$local_file?ref=binance-ws-cache" --jq '.sha' 2>/dev/null || true)"
-              if [ -n "$existing_sha" ]; then
-                args+=( -f "sha=$existing_sha" )
+              tmp_index="$(mktemp)"
+              trap 'rm -f "$tmp_index"' RETURN
+              GIT_INDEX_FILE="$tmp_index" git read-tree "$cache_base"
+              GIT_INDEX_FILE="$tmp_index" git add -- "$local_file"
+              cache_tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)"
+              cache_commit="$(printf '%s\n\n%s\n' 'Update Binance Futures WS cache' 'Continuous Binance WS checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$cache_tree" -p "$cache_base")"
+              rm -f "$tmp_index"
+              trap - RETURN
+
+              if git push origin "$cache_commit:refs/heads/binance-ws-cache"; then
+                echo "Published Binance WS cache via direct ref push on attempt ${attempt}."
+                return 0
               fi
-              sleep $((2 * ${attempt}))
+
+              if [ "$attempt" -eq 4 ]; then
+                echo 'Binance WS cache direct ref publish failed after all retries.' >&2
+                return 1
+              fi
+              echo "Cache direct-ref publish attempt ${attempt} rejected; refreshing branch base." >&2
+              git fetch --no-tags --depth=1 origin binance-ws-cache
+              sleep $((2 * attempt))
             done
           }
 
