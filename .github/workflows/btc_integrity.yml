@@ -153,7 +153,33 @@ jobs:
 
       - name: Evaluate final promotion safety gate
         run: |
+          set -euo pipefail
           python src/promotion_gate.py
+
+      - name: Validate final promotion safety gate evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/promotion_gate.json')
+          if not p.is_file():
+              raise SystemExit('promotion gate artifact missing')
+          obj=json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('promotion gate must remain research-only')
+          if obj.get('final_holdout_protected') is not True:
+              raise SystemExit('promotion gate must protect final holdout')
+          if obj.get('production_safety_gate') not in {'PASS','HOLD'}:
+              raise SystemExit('unexpected production safety gate status')
+          if obj.get('promotion_status') not in {'ELIGIBLE_PENDING_EXPLICIT_PROMOTION','HOLD'}:
+              raise SystemExit('unexpected promotion status')
+          if not isinstance(obj.get('promotion_allowed'), bool):
+              raise SystemExit('promotion_allowed must be boolean')
+          if obj.get('production_safety_gate') == 'HOLD' and obj.get('promotion_allowed') is not False:
+              raise SystemExit('promotion must remain blocked when safety gate is HOLD')
+          print('final promotion safety gate evidence: VERIFIED')
+          print(json.dumps(obj, indent=2, sort_keys=True))
 
       - name: Upload final integrity evidence
         if: always()
