@@ -81,6 +81,21 @@ def check_model(horizon: str) -> dict:
         fail(f"{horizon}: serialized model probability output invalid")
     if not meta.get("model_version"):
         fail(f"{horizon}: missing model_version")
+    try:
+        with sqlite3.connect(DB) as con:
+            registry_row = con.execute(
+                "SELECT production_version FROM model_registry WHERE horizon=?",
+                (horizon,),
+            ).fetchone()
+    except (sqlite3.Error, OSError) as exc:
+        fail(f"{horizon}: production registry unreadable: {type(exc).__name__}")
+    if not registry_row or not registry_row[0]:
+        fail(f"{horizon}: production registry version missing")
+    if str(registry_row[0]) != str(meta["model_version"]):
+        fail(
+            f"{horizon}: production registry metadata mismatch: "
+            f"registry={registry_row[0]!r} metadata={meta['model_version']!r}"
+        )
     return {"horizon": horizon, "model_version": meta["model_version"], "feature_count": len(FEATURES)}
 
 

@@ -24,24 +24,21 @@ import websockets
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE = ROOT / "data" / "binance_ws_1m.json"
 DEFAULT_DEPTH_CACHE = ROOT / "data" / "binance_ws_depth.json"
-# Prefer Binance's documented raw-stream endpoint. Keep combined-stream and
-# legacy-compatible paths only as bounded transport fallbacks.
-KLINE_URL = "wss://fstream.binance.com/ws/btcusdt@kline_1m"
+# Binance USDⓈ-M Futures migrated public market streams to category-specific
+# WebSocket bases in 2026. Legacy /ws and /stream URLs were retired on
+# 2026-04-23, so production transport starts directly on the current endpoint
+# and only falls back to the current combined-stream form.
+KLINE_URL = "wss://fstream.binance.com/market/ws/btcusdt@kline_1m"
 KLINE_FALLBACK_URLS = (
-    "wss://fstream.binance.com/stream?streams=btcusdt@kline_1m",
-    "wss://fstream.binance.com/market/ws/btcusdt@kline_1m",
+    "wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m",
 )
-# Binance's USDⓈ-M market streams use the same raw /ws/<stream> convention as
-# other market streams; use the combined /stream form as the primary fallback.
-DEPTH_URL = "wss://fstream.binance.com/ws/btcusdt@depth20@100ms"
+DEPTH_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms"
 DEPTH_FALLBACK_URLS = (
-    "wss://fstream.binance.com/stream?streams=btcusdt@depth20@100ms",
-    "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms",
+    "wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms",
 )
-MARK_URL = "wss://fstream.binance.com/ws/btcusdt@markPrice@1s"
+MARK_URL = "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s"
 MARK_FALLBACK_URLS = (
-    "wss://fstream.binance.com/stream?streams=btcusdt@markPrice@1s",
-    "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s",
+    "wss://fstream.binance.com/market/stream?streams=btcusdt@markPrice@1s",
 )
 SCHEMA_VERSION = 1
 MAX_CACHE_ROWS = 720

@@ -98,6 +98,19 @@ class TestRuntimeProductionModel(unittest.TestCase):
             finally:
                 rpm.MODEL_DIR, rpm.DB = old_model_dir, old_db
 
+    def test_refuses_missing_registry_version(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._write_bundle(root, version="production.v1")
+            db = self._db(root, None)
+            old_model_dir, old_db = rpm.MODEL_DIR, rpm.DB
+            try:
+                rpm.MODEL_DIR, rpm.DB = root / "models", db
+                with self.assertRaisesRegex(RuntimeError, "production_registry_version_missing"):
+                    rpm.resolve_production_model("5m")
+            finally:
+                rpm.MODEL_DIR, rpm.DB = old_model_dir, old_db
+
 
 if __name__ == "__main__":
     unittest.main()

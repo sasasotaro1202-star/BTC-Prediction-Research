@@ -70,6 +70,36 @@ jobs:
           set -euo pipefail
           echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
+      - name: Verify current Binance Futures WebSocket endpoints before long capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import asyncio
+          from src.binance_ws import capture_closed_klines, capture_depth_snapshot, capture_mark_price
+
+          async def main():
+              klines = await capture_closed_klines(12.0)
+              if not klines:
+                  raise SystemExit("Binance current market WebSocket smoke test: no closed kline received")
+              depth = await capture_depth_snapshot(12.0)
+              if not depth:
+                  raise SystemExit("Binance current public WebSocket smoke test: no depth snapshot received")
+              levels = min(len(depth.get("bids", [])), len(depth.get("asks", [])))
+              if levels < 20:
+                  raise SystemExit("Binance current public WebSocket smoke test: fewer than 20 depth levels")
+              mark = await capture_mark_price(12.0)
+              if not mark or not (float(mark["mark_price"]) > 0):
+                  raise SystemExit("Binance current market WebSocket smoke test: no valid mark-price event received")
+              print({
+                  "kline_closed_bars": len(klines),
+                  "depth_levels": levels,
+                  "mark_price": float(mark["mark_price"]),
+              })
+
+          asyncio.run(main())
+          PY
+
       - name: Capture and publish rolling Binance Futures WS windows
         shell: bash
         run: |
