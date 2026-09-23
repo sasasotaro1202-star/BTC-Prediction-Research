@@ -84,10 +84,10 @@ jobs:
           now=$(date -u +%s)
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
-            # 100 recent runs cover the retry eligibility window while keeping
+            # 20 recent runs are sufficient for the short retry eligibility window while keeping
             # per-workflow API/rate-limit cost bounded. Active stale-run inspection
-            # below also uses 100, independently of this retry-history window.
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=100" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
+            # below also uses the same short window, independently of this retry-history scan.
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=20" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
               echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
               exit 1
