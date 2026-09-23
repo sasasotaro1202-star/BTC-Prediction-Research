@@ -162,47 +162,55 @@ jobs:
         run: |
           set -euo pipefail
           tmp_cache="$(mktemp)"
-          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
-            if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache"; then
-              if python - "$tmp_cache" <<'PY'
-          import json, sys, time
+          cache_loaded=false
+
+          validate_boundary_cache() {
+            python - "$tmp_cache" <<'PY'
+          import json,sys,time
           from pathlib import Path
-          p=Path(sys.argv[1])
-          try:
-              obj=json.loads(p.read_text(encoding='utf-8'))
-              rows=obj.get('rows')
-              if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
-                  raise SystemExit('invalid Binance WS cache provenance')
-              if obj.get('stream') != 'btcusdt@kline_1m' or not isinstance(rows,list) or len(rows)<40:
-                  raise SystemExit('invalid Binance WS cache shape')
-              required={'open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base'}
-              if not all(isinstance(row,dict) and required.issubset(row) for row in rows):
-                  raise SystemExit('invalid Binance WS cache row schema')
-              ordered=sorted(rows,key=lambda row:int(row['open_time_ms']))
-              suffix=[ordered[-1]]
-              for row in reversed(ordered[:-1]):
-                  if int(suffix[0]['open_time_ms'])-int(row['open_time_ms']) != 60000:
-                      break
-                  suffix.insert(0,row)
-              latest=suffix[-1]
-              age=int(time.time()*1000)-int(latest['retrieved_at_ms'])
-              print(f'latest_retrieved_age_ms={age} contiguous_rows={len(suffix)} latest_open_time_ms={latest["open_time_ms"]}')
-              if len(suffix)<40 or age>180000:
-                  raise SystemExit('Binance WS cache stale_or_insufficient_at_prediction_boundary')
-          except (OSError,ValueError,TypeError,KeyError) as exc:
-              raise SystemExit(f'Binance WS cache validation failed: {type(exc).__name__}') from exc
+          obj=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          rows=obj.get('rows')
+          if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('invalid Binance WS cache provenance')
+          if obj.get('stream') != 'btcusdt@kline_1m' or not isinstance(rows,list) or len(rows)<40:
+              raise SystemExit('invalid Binance WS cache shape')
+          required={'open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base'}
+          if not all(isinstance(row,dict) and required.issubset(row) for row in rows):
+              raise SystemExit('invalid Binance WS cache row schema')
+          ordered=sorted(rows,key=lambda row:int(row['open_time_ms']))
+          suffix=1
+          for i in range(len(ordered)-1,0,-1):
+              if int(ordered[i]['open_time_ms'])-int(ordered[i-1]['open_time_ms']) != 60000:
+                  break
+              suffix+=1
+          age=int(time.time()*1000)-int(ordered[-1]['retrieved_at_ms'])
+          print(f'latest_retrieved_age_ms={age} contiguous_rows={suffix} latest_open_time_ms={ordered[-1]["open_time_ms"]}')
+          if suffix<40 or age>180000:
+              raise SystemExit('Binance WS cache stale_or_insufficient_at_prediction_boundary')
           PY
-              then
+          }
+
+          for attempt in 1 2 3 4 5 6; do
+            rm -f "$tmp_cache"
+            if git fetch --no-tags --depth=1 origin binance-ws-cache \
+              && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
+              if validate_boundary_cache; then
                 cp "$tmp_cache" data/binance_ws_1m.json
+                cache_loaded=true
                 echo 'Loaded fresh Binance WS cache immediately before prediction.'
-              else
-                echo 'WARN: latest Binance WS cache failed boundary validation; existing predictor fallback policy remains authoritative.' >&2
+                break
               fi
             else
-              echo 'WARN: Binance WS cache file unavailable at prediction boundary; existing predictor fallback policy remains authoritative.' >&2
+              echo "WARN: Binance WS cache unavailable at prediction boundary (attempt ${attempt}/6)." >&2
             fi
-          else
-            echo 'WARN: binance-ws-cache branch unavailable at prediction boundary; existing predictor fallback policy remains authoritative.' >&2
+            if [ "$attempt" -lt 6 ]; then
+              echo "Waiting 15s for next verified Binance WS checkpoint (attempt ${attempt}/6)." >&2
+              sleep 15
+            fi
+          done
+
+          if [ "$cache_loaded" != true ]; then
+            echo 'WARN: no fresh verified Binance WS cache after 90s; existing predictor fallback policy remains authoritative.' >&2
           fi
           rm -f "$tmp_cache"
 
