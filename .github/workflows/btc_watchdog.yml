@@ -230,6 +230,9 @@ jobs:
               fi
             fi
           }
+          # Integrity is read-only and has a 15m hard timeout. Cancel only
+          # genuinely stale runs so an old-head audit cannot block the next current-main audit.
+          recover_if_stale btc_integrity.yml 3600 1200 900
           recover_if_stale btc_live_cycle.yml 600 1800 600
           recover_if_stale btc_pit_oos_audit.yml 7200 10800 7200
           # Keep the daily research lanes alive without dispatching duplicates
