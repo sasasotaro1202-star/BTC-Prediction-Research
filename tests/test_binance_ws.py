@@ -1,6 +1,8 @@
+import asyncio
 import json
 import sys
 import unittest
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -18,6 +20,36 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn("wss://fstream.binance.com/market/ws/btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
+
+    def test_collect_with_fallback_uses_legacy_when_primary_is_empty(self):
+        primary = "wss://primary"
+        legacy = "wss://legacy"
+        fallback_rows = [{"open_time_ms": 1}]
+        async_mock = AsyncMock(side_effect=[[], fallback_rows])
+        with patch.object(binance_ws, "_collect_url", async_mock):
+            rows, source = asyncio.run(
+                binance_ws._collect_with_fallback(
+                    (primary, legacy), 1.0, binance_ws.parse_kline_message
+                )
+            )
+        self.assertEqual(rows, fallback_rows)
+        self.assertEqual(source, legacy)
+        self.assertEqual([call.args[0] for call in async_mock.await_args_list], [primary, legacy])
+
+    def test_collect_with_fallback_stops_after_primary_success(self):
+        primary = "wss://primary"
+        legacy = "wss://legacy"
+        primary_rows = [{"open_time_ms": 2}]
+        async_mock = AsyncMock(return_value=primary_rows)
+        with patch.object(binance_ws, "_collect_url", async_mock):
+            rows, source = asyncio.run(
+                binance_ws._collect_with_fallback(
+                    (primary, legacy), 1.0, binance_ws.parse_kline_message
+                )
+            )
+        self.assertEqual(rows, primary_rows)
+        self.assertEqual(source, primary)
+        async_mock.assert_awaited_once_with(primary, 1.0, binance_ws.parse_kline_message)
 
     def test_kline_parser_requires_closed_one_minute_bar(self):
         base = {
