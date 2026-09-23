@@ -79,9 +79,13 @@ jobs:
           from src.binance_ws import capture_closed_klines, capture_depth_snapshot, capture_mark_price
 
           async def main():
-              klines = await capture_closed_klines(12.0)
+              # A 1-minute kline closes only once per minute. A 12-second probe
+              # can therefore fail deterministically even when the endpoint is
+              # healthy, depending on when the runner starts. Keep this bounded
+              # but long enough to observe at least one normal close event.
+              klines = await capture_closed_klines(75.0)
               if not klines:
-                  raise SystemExit("Binance current market WebSocket smoke test: no closed kline received")
+                  raise SystemExit("Binance current market WebSocket smoke test: no closed kline received within 75s")
               depth = await capture_depth_snapshot(12.0)
               if not depth:
                   raise SystemExit("Binance current public WebSocket smoke test: no depth snapshot received")
