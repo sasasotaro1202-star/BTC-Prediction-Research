@@ -40,8 +40,12 @@ permissions:
   contents: read
 
 concurrency:
+  # The watchdog is both schedule- and workflow_run-driven. Cancelling an active
+  # watchdog from the next trigger creates avoidable "cancelled" runs and can
+  # terminate a recovery decision halfway through. Queue later watchdog ticks
+  # instead; each run re-checks active/completed state before taking action.
   group: btc-workflow-watchdog
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   watchdog:
