@@ -19,6 +19,7 @@ HEALTH = ROOT / "data" / "historical_research" / "research_health.json"
 CLASSES = ["DOWN", "FLAT", "UP"]
 FEATURES = list(CANONICAL_FEATURES)
 DEFAULT_MAX_AGE_SECONDS = 900
+LIVE_STATUS = ROOT / "data" / "live_cycle_status.json"
 
 
 def fail(msg: str) -> None:
@@ -94,8 +95,26 @@ def check_db() -> dict:
         age = (datetime.now(timezone.utc) - created).total_seconds()
         max_age = max_prediction_age_seconds()
         fresh_required = require_fresh_prediction()
+        deferred_safe = False
         if fresh_required and (age < -60 or age > max_age):
-            fail(f"latest prediction is stale or future-dated: {age:.0f}s (max {max_age:.0f}s)")
+            # A primary-venue outage is allowed to produce an explicit deferred
+            # Live Cycle instead of a fabricated prediction. Treat that state as
+            # healthy only when the deferred status file itself is fresh enough.
+            if age > max_age and LIVE_STATUS.is_file():
+                try:
+                    status_obj = json.loads(LIVE_STATUS.read_text(encoding="utf-8"))
+                    completed = datetime.fromisoformat(
+                        str(status_obj["completed_at_utc"]).replace("Z", "+00:00")
+                    )
+                    status_age = (datetime.now(timezone.utc) - completed).total_seconds()
+                    deferred_safe = (
+                        status_obj.get("mode") == "deferred"
+                        and -60 <= status_age <= max_age
+                    )
+                except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    deferred_safe = False
+            if not deferred_safe:
+                fail(f"latest prediction is stale or future-dated: {age:.0f}s (max {max_age:.0f}s)")
         if not finite_probs(row[2:5]) or not finite_probs(row[5:8]):
             fail("latest prediction probabilities invalid")
         scenario = json.loads(row[10] or "{}")
@@ -171,7 +190,7 @@ def check_db() -> dict:
                 fail("latest prediction feature snapshot is incomplete or non-finite")
             if not row[8]:
                 fail("latest prediction lacks model_version")
-    return {"latest_age_seconds": int(age), "prediction_ok": True, "freshness_required": fresh_required, "max_age_seconds": max_age, "safe_degraded": degraded}
+    return {"latest_age_seconds": int(age), "prediction_ok": True, "freshness_required": fresh_required, "max_age_seconds": max_age, "safe_degraded": degraded, "safe_deferred": deferred_safe}
 
 
 def main() -> int:
