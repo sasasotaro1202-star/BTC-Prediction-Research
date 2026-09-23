@@ -26,12 +26,21 @@ DEFAULT_CACHE = ROOT / "data" / "binance_ws_1m.json"
 DEFAULT_DEPTH_CACHE = ROOT / "data" / "binance_ws_depth.json"
 # Prefer the documented raw-stream endpoint. Keep the legacy path as a
 # transport fallback because hosted runners can see endpoint-specific behavior.
-KLINE_URL = "wss://fstream.binance.com/ws/btcusdt@kline_1m"
-KLINE_FALLBACK_URLS = ("wss://fstream.binance.com/market/ws/btcusdt@kline_1m",)
-DEPTH_URL = "wss://fstream.binance.com/ws/btcusdt@depth20@100ms"
-DEPTH_FALLBACK_URLS = ("wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms",)
-MARK_URL = "wss://fstream.binance.com/ws/btcusdt@markPrice@1s"
-MARK_FALLBACK_URLS = ("wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s",)
+KLINE_URL = "wss://fstream.binance.com/market/ws/btcusdt@kline_1m"
+KLINE_FALLBACK_URLS = (
+    "wss://fstream.binance.com/ws/btcusdt@kline_1m",
+    "wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m",
+)
+DEPTH_URL = "wss://fstream.binance.com/market/ws/btcusdt@depth20@100ms"
+DEPTH_FALLBACK_URLS = (
+    "wss://fstream.binance.com/ws/btcusdt@depth20@100ms",
+    "wss://fstream.binance.com/market/stream?streams=btcusdt@depth20@100ms",
+)
+MARK_URL = "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s"
+MARK_FALLBACK_URLS = (
+    "wss://fstream.binance.com/ws/btcusdt@markPrice@1s",
+    "wss://fstream.binance.com/market/stream?streams=btcusdt@markPrice@1s",
+)
 SCHEMA_VERSION = 1
 MAX_CACHE_ROWS = 720
 
@@ -390,7 +399,14 @@ async def _stream_url(
                 parsed_count += 1
                 last_accepted_row_at = time.monotonic()
                 await on_row(parsed)
-    except Exception:
+    except Exception as exc:
+        # Keep transport failures observable in Actions logs while preserving
+        # fail-closed semantics: parser/reconnect policy still decides acceptance.
+        print(
+            f"Binance WS transport error url={url} type={type(exc).__name__} "
+            f"detail={str(exc)[:240]!r}",
+            flush=True,
+        )
         return parsed_count, connection_started
     return parsed_count, connection_started
 
@@ -526,8 +542,10 @@ async def capture_depth_snapshot_stream(
 
 
 async def capture_depth_snapshot(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
-    rows, _ = await _collect_with_fallback((DEPTH_URL, *DEPTH_FALLBACK_URLS), timeout_seconds, parse_depth_message)
-    return rows[-1] if rows else None
+    # Use the same bounded reconnect/failover logic as the long-lived depth
+    # collector so an early socket drop does not consume the entire live recovery
+    # window on a single dead transport.
+    return await capture_depth_snapshot_stream(timeout_seconds=timeout_seconds)
 
 
 async def capture_mark_price(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
