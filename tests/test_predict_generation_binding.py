@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 import predict  # noqa: E402
+import db as db_module  # noqa: E402
 
 
 class TestPredictFeatureSafety(unittest.TestCase):
@@ -120,9 +121,12 @@ class TestPredictGenerationBinding(unittest.TestCase):
         now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
         with tempfile.TemporaryDirectory() as td:
             old_db = predict.DB
+            old_db_module = db_module.DB
             try:
-                predict.DB = str(Path(td) / 'predictions.db')
-                predict.init_db()
+                temp_db = Path(td) / 'predictions.db'
+                predict.DB = str(temp_db)
+                db_module.DB = temp_db
+                db_module.init_db()
                 with self.assertRaisesRegex(ValueError, "prediction_provenance_missing"):
                     predict.insert_prediction(
                         now,
@@ -137,6 +141,7 @@ class TestPredictGenerationBinding(unittest.TestCase):
                     )
             finally:
                 predict.DB = old_db
+                db_module.DB = old_db_module
 
     def test_insert_prediction_accepts_complete_pit_provenance(self):
         now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
@@ -177,6 +182,7 @@ class TestPredictGenerationBinding(unittest.TestCase):
                     self.assertEqual(con.execute("SELECT COUNT(*) FROM predictions").fetchone()[0], 1)
             finally:
                 predict.DB = old_db
+                db_module.DB = old_db_module
 
     def test_secondary_venue_completeness_requires_valid_status(self):
         status = {"bybit_futures": "ok_current_only", "bybit_depth": "error:Timeout"}
