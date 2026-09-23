@@ -159,7 +159,15 @@ jobs:
             if [ ! -s "models/coinbase_${horizon}.joblib" ] || [ ! -s "models/coinbase_${horizon}.json" ]; then missing=1; fi
           done
           if [ "${missing}" -eq 0 ]; then exit 0; fi
-          python src/coinbase_fallback_train.py
+          # Coinbase fallback is optional continuity infrastructure. A training
+          # outage must not make the entire Live workflow red; the predictor will
+          # explicitly remain fail-closed/deferred when the gated artifact is absent.
+          if python src/coinbase_fallback_train.py; then
+            exit 0
+          fi
+          echo "WARN: gated Coinbase fallback training unavailable; live prediction may defer safely if Binance is unavailable." >&2
+          echo "BTC_FALLBACK_MODEL_UNAVAILABLE=1" >> "$GITHUB_ENV"
+          exit 0
       - name: Settle due BTC predictions
         run: python src/settle.py
       # Model adoption must precede both calibration layers so a newly
