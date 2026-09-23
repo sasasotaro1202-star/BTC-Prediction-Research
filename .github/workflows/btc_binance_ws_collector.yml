@@ -143,70 +143,75 @@ jobs:
             done
           }
 
-          # Keep the dedicated Binance cache continuously warm. Each window is
-          # long enough to obtain a closed 1m bar, but short enough that Live
-          # Cycle never has to rely on a multi-minute-stale cache.
-          iterations=30
-          capture_seconds=90
+          # Keep one WebSocket connection open for the entire collector slot.
+          # Checkpoints are written atomically by the Python process and published
+          # by a separate lightweight loop, so publication never disconnects the stream.
+          capture_seconds=2700
+          checkpoint_seconds=60
 
-          for n in $(seq 1 "${iterations}"); do
-            echo "=== Binance WS rolling window ${n}/${iterations} (${capture_seconds}s) ==="
+          rm -f /tmp/btc_ws_collector.log /tmp/btc_ws_publisher.log
+          python -m src.binance_ws             --capture-seconds "${capture_seconds}"             --checkpoint-seconds "${checkpoint_seconds}"             --output data/binance_ws_1m.json             > /tmp/btc_ws_collector.log 2>&1 &
+          collector_pid="$!"
 
-            captured=false
-            for attempt in 1 2; do
-              previous_latest=0
-              if [ -s data/binance_ws_1m.json ]; then
-                previous_latest=$(python - <<'PY'
+          publisher_loop() {
+            local last_published=0
+            if [ -s data/binance_ws_1m.json ]; then
+              last_published="$(python - <<'PY'
           import json
           from pathlib import Path
           rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
           print(int(rows[-1]['open_time_ms']) if rows else 0)
           PY
-                )
-              fi
-
-              if python -m src.binance_ws --capture-seconds "${capture_seconds}" --output data/binance_ws_1m.json; then
-                if validate_cache; then
-                  current_latest=$(python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
-          print(int(rows[-1]['open_time_ms']) if rows else 0)
-          PY
-                  )
-                  if [ "${previous_latest}" -eq 0 ] || [ "${current_latest}" -gt "${previous_latest}" ]; then
-                    captured=true
-                    break
-                  fi
-                  echo "WARN: WS capture completed but did not advance the latest closed bar (previous=${previous_latest}, current=${current_latest})."
-                fi
-              fi
-
-              echo "WARN: rolling WS capture attempt ${attempt} did not produce a fresh valid bar; retrying."
-              if [ -s /tmp/publish_ws_cache.json ]; then
-                cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
-              else
-                rm -f data/binance_ws_1m.json
-              fi
-              sleep $((10 * ${attempt}))
-            done
-
-            if [ "${captured}" != true ]; then
-              echo "Binance WS rolling capture failed for window ${n}; preserving prior published cache and failing closed." >&2
-              exit 1
+              )"
             fi
 
-            publish_cache
-
-            rows=$(python - <<'PY'
+            while kill -0 "$collector_pid" 2>/dev/null; do
+              sleep 75
+              [ -s data/binance_ws_1m.json ] || continue
+              current_latest="$(python - <<'PY'
           import json
           from pathlib import Path
-          print(len(json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))['rows']))
+          rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
+          print(int(rows[-1]['open_time_ms']) if rows else 0)
           PY
-            )
-            echo "Published rolling cache rows=${rows}"
-          done
+              )"
+              if [ "$current_latest" -le "$last_published" ]; then
+                continue
+              fi
+              if publish_cache; then
+                last_published="$current_latest"
+                echo "Checkpoint published latest_open_time_ms=$current_latest"
+              else
+                echo "WARN: checkpoint publication failed; collector stream continues and final publication will retry." >&2
+              fi
+            done
+          }
 
-          rm -f data/binance_ws_1m.json
-          git checkout -B main "${BASE_SHA}"
+          publisher_loop > /tmp/btc_ws_publisher.log 2>&1 &
+          publisher_pid="$!"
+
+          collector_status=0
+          wait "$collector_pid" || collector_status=$?
+
+          if kill -0 "$publisher_pid" 2>/dev/null; then
+            kill "$publisher_pid" || true
+            wait "$publisher_pid" || true
+          fi
+
+          cat /tmp/btc_ws_collector.log
+          cat /tmp/btc_ws_publisher.log
+
+          if [ "$collector_status" -ne 0 ]; then
+            echo "Binance continuous WS collector failed closed with status ${collector_status}." >&2
+            exit "$collector_status"
+          fi
+
+          if ! validate_cache; then
+            echo "Final Binance WS cache validation failed." >&2
+            exit 1
+          fi
+
+          publish_cache
+          echo "Binance WS continuous collector completed successfully."
+
           echo 'Binance WS rolling collector completed all windows successfully.'
