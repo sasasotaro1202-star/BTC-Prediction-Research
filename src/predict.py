@@ -11,6 +11,7 @@ from feature_schema import FEATURES
 from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
 from microstructure_features import derive_market_flow_features
+from runtime_production_model import resolve_production_model
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
@@ -83,8 +84,10 @@ def structural(f,m):
     crowd=max(-1.0,min(1.0,m.get('funding_binance',m.get('funding_bybit',0.0))/0.0003)); score-=.05*crowd
     score=max(-2.5,min(2.5,score)); up=1/(1+math.exp(-score)); flat=max(.08,min(.40,.25-.055*min(2.5,abs(score)))); up=(1-flat)*up; return {'DOWN':1-up-flat,'FLAT':flat,'UP':up}
 def load_model(h, source='primary'):
-    """Load the model artifact for the selected production source."""
-    prefix = h if source == 'primary' else f'{source}_{h}'
+    """Load a validated model; production always resolves the current safe bundle."""
+    if source == 'primary':
+        return resolve_production_model(h).load()
+    prefix = f'{source}_{h}'
     p=MODEL_DIR/f'{prefix}.joblib'
     if not p.exists(): raise FileNotFoundError(f'model_missing:{source}:{h}')
     try:return joblib.load(p)
@@ -97,9 +100,7 @@ def model_probs(model,f):
     if not math.isfinite(s) or s<=0: raise ValueError('model_probability_invalid_sum')
     return {k:v/s for k,v in out.items()}
 def regver(h):
-    with sqlite3.connect(DB) as con:r=con.execute('SELECT production_version FROM model_registry WHERE horizon=?',(h,)).fetchone()
-    if not r or not r[0]: raise RuntimeError(f'model_registry_missing:{h}')
-    return r[0]
+    return resolve_production_model(h).model_version
 def load_temperature(h):
     p=MODEL_DIR/f'{h}.calibration.json'
     try:
