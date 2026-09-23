@@ -31,10 +31,12 @@ KLINE_FALLBACK_URLS = (
     "wss://fstream.binance.com/ws/btcusdt@kline_1m",
     "wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m",
 )
-DEPTH_URL = "wss://fstream.binance.com/market/ws/btcusdt@depth20@100ms"
+# Binance documents depth as high-frequency public market data, routed via
+# /public; keep unrouted /ws and routed combined-stream forms as fallbacks.
+DEPTH_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms"
 DEPTH_FALLBACK_URLS = (
     "wss://fstream.binance.com/ws/btcusdt@depth20@100ms",
-    "wss://fstream.binance.com/market/stream?streams=btcusdt@depth20@100ms",
+    "wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms",
 )
 MARK_URL = "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s"
 MARK_FALLBACK_URLS = (

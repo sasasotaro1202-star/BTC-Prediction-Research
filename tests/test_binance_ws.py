@@ -15,12 +15,12 @@ import binance_ws
 class TestBinanceWebSocket(unittest.TestCase):
     def test_documented_raw_endpoints_are_primary_with_legacy_fallbacks(self):
         self.assertEqual(binance_ws.KLINE_URL, "wss://fstream.binance.com/market/ws/btcusdt@kline_1m")
-        self.assertEqual(binance_ws.DEPTH_URL, "wss://fstream.binance.com/market/ws/btcusdt@depth20@100ms")
+        self.assertEqual(binance_ws.DEPTH_URL, "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms")
         self.assertEqual(binance_ws.MARK_URL, "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s")
         self.assertIn("wss://fstream.binance.com/ws/btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/ws/btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
-        self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/ws/btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
         self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
 
