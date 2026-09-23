@@ -6,6 +6,7 @@ name: BTC Historical Research
 # remains auditable through its nightly schedule or explicit dispatch.
 on:
   push:
+    branches: [main]
     paths:
       - '.github/workflows/btc_historical_research.yml'
       - 'src/historical_research_runner.py'
@@ -27,7 +28,7 @@ env:
 
 jobs:
   research:
-    if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
