@@ -178,6 +178,8 @@ def write_depth_cache(snapshot: dict[str, Any], path: Path = DEFAULT_DEPTH_CACHE
     # Preserve the parser discriminator so a serialized snapshot can be
     # revalidated exactly like the live Binance depthUpdate message.
     stored_snapshot.setdefault("e","depthUpdate")
+    if "E" not in stored_snapshot and "event_time_ms" in stored_snapshot:
+        stored_snapshot["E"] = int(stored_snapshot["event_time_ms"])
     payload={
         "schema_version":SCHEMA_VERSION,
         "source":"Binance USD-M Futures WebSocket",
