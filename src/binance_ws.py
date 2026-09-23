@@ -305,12 +305,16 @@ async def _stream_url(
             max_size=2_000_000,
         ) as ws:
             connection_started = True
+            last_accepted_row_at = time.monotonic()
             while time.monotonic() < deadline:
                 remaining = max(0.25, deadline - time.monotonic())
+                if time.monotonic() - last_accepted_row_at >= 150.0:
+                    # The socket may still be emitting open-kline updates while
+                    # never delivering a valid closed bar. Treat that transport
+                    # as unhealthy and fail over instead of waiting for 45 minutes.
+                    break
                 try:
-                    # A healthy kline stream emits updates continuously. Bound
-                    # silent receive time so the caller can fail over instead of
-                    # waiting for the entire remaining capture window.
+                    # Bound both transport silence and accepted closed-bar silence.
                     raw = await asyncio.wait_for(
                         ws.recv(),
                         timeout=min(remaining, 45.0),
@@ -326,6 +330,7 @@ async def _stream_url(
                 if parsed is None:
                     continue
                 parsed_count += 1
+                last_accepted_row_at = time.monotonic()
                 await on_row(parsed)
     except Exception:
         return parsed_count, connection_started

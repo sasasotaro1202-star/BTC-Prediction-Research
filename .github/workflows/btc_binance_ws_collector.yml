@@ -87,6 +87,19 @@ jobs:
           rows=obj.get('rows')
           if not isinstance(rows,list) or not rows:
               raise SystemExit('Binance WebSocket collector produced no usable closed bars')
+          ordered=sorted(rows,key=lambda row:int(row.get('open_time_ms',0)))
+          suffix=1
+          for i in range(len(ordered)-1,0,-1):
+              if int(ordered[i]['open_time_ms'])-int(ordered[i-1]['open_time_ms']) != 60000:
+                  break
+              suffix += 1
+          print(json.dumps({
+              'cache_rows':len(ordered),
+              'contiguous_rows':suffix,
+              'latest_open_time_ms':ordered[-1].get('open_time_ms'),
+              'latest_retrieved_at_ms':ordered[-1].get('retrieved_at_ms'),
+              'updated_at_utc':obj.get('updated_at_utc'),
+          },sort_keys=True))
           required=('open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base')
           for row in rows:
               if not isinstance(row,dict):
@@ -111,6 +124,45 @@ jobs:
             local_file="data/binance_ws_1m.json"
             test -s "$local_file"
             git fetch --no-tags --depth=1 origin binance-ws-cache
+
+            # Merge rows already published remotely before creating the next
+            # checkpoint. This prevents a long-lived collector that started with
+            # an older snapshot from overwriting a newer bootstrap/cache update.
+            remote_file="/tmp/btc_remote_ws_cache.json"
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$remote_file" 2>/dev/null; then
+              python - "$local_file" "$remote_file" <<'PY'
+          import json,sys
+          from pathlib import Path
+
+          local_path=Path(sys.argv[1])
+          remote_path=Path(sys.argv[2])
+          local=json.loads(local_path.read_text(encoding='utf-8'))
+          remote=json.loads(remote_path.read_text(encoding='utf-8'))
+
+          if remote.get('schema_version') != 1 or remote.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('remote Binance WS cache provenance invalid')
+
+          lrows=local.get('rows',[]) if isinstance(local,dict) else []
+          rrows=remote.get('rows',[]) if isinstance(remote,dict) else []
+          merged={int(row['open_time_ms']):row for row in rrows if isinstance(row,dict)}
+          for row in lrows:
+              if not isinstance(row,dict) or 'open_time_ms' not in row:
+                  continue
+              key=int(row['open_time_ms'])
+              previous=merged.get(key)
+              if previous is None or int(row.get('retrieved_at_ms',0)) >= int(previous.get('retrieved_at_ms',0)):
+                  merged[key]=row
+
+          rows=[merged[k] for k in sorted(merged)[-720:]]
+          local['rows']=rows
+          temp=local_path.with_name('.binance_ws_1m.merge.tmp')
+          temp.write_text(
+              json.dumps(local,sort_keys=True,separators=(',',':'))+'\n',
+              encoding='utf-8',
+          )
+          temp.replace(local_path)
+          PY
+            fi
 
             for attempt in 1 2 3 4; do
               cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
@@ -211,7 +263,25 @@ jobs:
             exit 1
           fi
 
+          final_contiguous="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=sorted(
+              json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))['rows'],
+              key=lambda row:int(row['open_time_ms']),
+          )
+          suffix=1
+          for i in range(len(rows)-1,0,-1):
+              if int(rows[i]['open_time_ms'])-int(rows[i-1]['open_time_ms']) != 60000:
+                  break
+              suffix += 1
+          print(suffix)
+          PY
+          )"
+          if [ "$final_contiguous" -lt 40 ]; then
+            echo "Final Binance WS cache has only $final_contiguous contiguous closed bars; failing closed." >&2
+            exit 1
+          fi
+
           publish_cache
           echo "Binance WS continuous collector completed successfully."
-
-          echo 'Binance WS rolling collector completed all windows successfully.'
