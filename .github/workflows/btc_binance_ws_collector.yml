@@ -6,11 +6,18 @@ name: BTC Binance WS Collector
 # Each capture window is independently recoverable, so a delayed schedule does
 # not create a predictable 15-minute cache gap.
 on:
-  # Collector lifetime is independent of code/state pushes. This prevents a
-  # healthy rolling WebSocket window from being cancelled by a new main commit.
-  # Deployments take effect on the next scheduled/manual collector window.
+  # Keep the rolling cache continuously warm, and bootstrap a fresh collector
+  # immediately after a market-data/protocol change so recovery does not wait
+  # for the next scheduled slot.
   schedule:
     - cron: '3,33 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_binance_ws_collector.yml'
+      - 'src/binance_ws.py'
+      - 'tests/test_binance_ws.py'
+      - 'requirements.txt'
   workflow_dispatch:
 
 concurrency:
