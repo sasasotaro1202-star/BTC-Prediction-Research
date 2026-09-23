@@ -164,9 +164,12 @@ class TestPredictGenerationBinding(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as td:
             old_db = predict.DB
+            old_db_module = db_module.DB
             try:
-                predict.DB = str(Path(td) / 'predictions.db')
-                predict.init_db()
+                temp_db = Path(td) / 'predictions.db'
+                predict.DB = str(temp_db)
+                db_module.DB = temp_db
+                db_module.init_db()
                 predict.insert_prediction(
                     now,
                     now + predict.timedelta(minutes=5),
