@@ -87,6 +87,19 @@ jobs:
           rows=obj.get('rows')
           if not isinstance(rows,list) or not rows:
               raise SystemExit('Binance WebSocket collector produced no usable closed bars')
+          ordered=sorted(rows,key=lambda row:int(row.get('open_time_ms',0)))
+          suffix=1
+          for i in range(len(ordered)-1,0,-1):
+              if int(ordered[i]['open_time_ms'])-int(ordered[i-1]['open_time_ms']) != 60000:
+                  break
+              suffix += 1
+          print(json.dumps({
+              'cache_rows':len(ordered),
+              'contiguous_rows':suffix,
+              'latest_open_time_ms':ordered[-1].get('open_time_ms'),
+              'latest_retrieved_at_ms':ordered[-1].get('retrieved_at_ms'),
+              'updated_at_utc':obj.get('updated_at_utc'),
+          },sort_keys=True))
           required=('open_time_ms','event_time_ms','retrieved_at_ms','open','high','low','close','volume','taker_buy_base')
           for row in rows:
               if not isinstance(row,dict):
@@ -250,7 +263,25 @@ jobs:
             exit 1
           fi
 
+          final_contiguous="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=sorted(
+              json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))['rows'],
+              key=lambda row:int(row['open_time_ms']),
+          )
+          suffix=1
+          for i in range(len(rows)-1,0,-1):
+              if int(rows[i]['open_time_ms'])-int(rows[i-1]['open_time_ms']) != 60000:
+                  break
+              suffix += 1
+          print(suffix)
+          PY
+          )"
+          if [ "$final_contiguous" -lt 40 ]; then
+            echo "Final Binance WS cache has only $final_contiguous contiguous closed bars; failing closed." >&2
+            exit 1
+          fi
+
           publish_cache
           echo "Binance WS continuous collector completed successfully."
-
-          echo 'Binance WS rolling collector completed all windows successfully.'
