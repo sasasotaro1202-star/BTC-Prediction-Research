@@ -288,7 +288,7 @@ jobs:
             # dedicated cache branch.
             remote_file="/tmp/btc_remote_ws_depth.json"
             if git show origin/binance-ws-cache:data/binance_ws_depth.json > "$remote_file" 2>/dev/null; then
-              python - "$local_file" "$remote_file" <<'PY'
+              if python - "$local_file" "$remote_file" <<'PY'
           import json,sys
           from pathlib import Path
 
@@ -311,18 +311,28 @@ jobs:
                   raise SystemExit(f"{label} depth cache timestamps invalid")
               return snap, retrieved
 
-          local_snap, local_retrieved = snapshot(local, "local")
-          remote_snap, remote_retrieved = snapshot(remote, "remote")
+          _, local_retrieved = snapshot(local, "local")
+          _, remote_retrieved = snapshot(remote, "remote")
 
-          # The remote cache is authoritative when it is newer or equal. This
-          # makes the publish operation monotonic across overlapping runners.
+          # Exit 11 is a controlled no-op signal to the shell function: the
+          # remote checkpoint is newer/equal, so publishing local bytes would
+          # regress the dedicated cache and must be skipped entirely.
           if remote_retrieved >= local_retrieved:
               print(
                   f"Depth checkpoint is older than/equal to remote "
                   f"(local={local_retrieved}, remote={remote_retrieved}); preserving remote."
               )
-              raise SystemExit(0)
+              raise SystemExit(11)
           PY
+              then
+                :
+              else
+                rc=$?
+                if [ "$rc" -eq 11 ]; then
+                  return 0
+                fi
+                return "$rc"
+              fi
             fi
 
             for attempt in 1 2 3 4; do
