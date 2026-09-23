@@ -287,7 +287,7 @@ jobs:
           # survive both its full capture window and frequent main state commits.
           # Staggered collectors normally overlap. Recover quickly if both
           # scheduled runs are delayed or dropped, without cancelling a healthy run.
-          recover_if_stale btc_binance_ws_collector.yml 600 3900 900
+          recover_if_stale btc_binance_ws_collector.yml 600 3900 300
           if [ "$watchdog_degraded" -ne 0 ]; then
             echo 'ERROR: BTC workflow watchdog completed in DEGRADED state; at least one recovery/inspection action failed.' >&2
             exit 1
