@@ -200,6 +200,31 @@ jobs:
             done
           }
 
+          publish_depth_cache() {
+            local local_file="data/binance_ws_depth.json"
+            test -s "$local_file"
+            git fetch --no-tags --depth=1 origin binance-ws-cache
+            for attempt in 1 2 3 4; do
+              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
+              if [ -z "$cache_base" ]; then return 1; fi
+              tmp_index="$(mktemp)"
+              trap 'rm -f "$tmp_index"' RETURN
+              GIT_INDEX_FILE="$tmp_index" git read-tree "$cache_base"
+              GIT_INDEX_FILE="$tmp_index" git add -- "$local_file"
+              cache_tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)"
+              cache_commit="$(printf '%s\n\n%s\n' 'Update Binance Futures depth cache' 'Continuous Binance depth WS checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$cache_tree" -p "$cache_base")"
+              rm -f "$tmp_index"
+              trap - RETURN
+              if git push origin "$cache_commit:refs/heads/binance-ws-cache"; then
+                echo "Published Binance depth WS cache on attempt ${attempt}."
+                return 0
+              fi
+              if [ "$attempt" -eq 4 ]; then return 1; fi
+              git fetch --no-tags --depth=1 origin binance-ws-cache
+              sleep $((2 * attempt))
+            done
+          }
+
           # Keep one WebSocket connection open for the entire collector slot.
           # Checkpoints are written atomically by the Python process and published
           # by a separate lightweight loop, so publication never disconnects the stream.
@@ -209,9 +234,14 @@ jobs:
           rm -f /tmp/btc_ws_collector.log /tmp/btc_ws_publisher.log
           python -m src.binance_ws             --capture-seconds "${capture_seconds}"             --checkpoint-seconds "${checkpoint_seconds}"             --output data/binance_ws_1m.json             > /tmp/btc_ws_collector.log 2>&1 &
           collector_pid="$!"
+           depth_pid=""
+           rm -f /tmp/btc_ws_depth.log
+           python -m src.binance_ws --mode depth --capture-seconds "${capture_seconds}" --checkpoint-seconds "${checkpoint_seconds}" --output data/binance_ws_depth.json > /tmp/btc_ws_depth.log 2>&1 &
+           depth_pid="$!"
 
           publisher_loop() {
             local last_published=0
+            local last_depth_published=0
             if [ -s data/binance_ws_1m.json ]; then
               last_published="$(python - <<'PY'
           import json
@@ -221,25 +251,52 @@ jobs:
           PY
               )"
             fi
-
-            while kill -0 "$collector_pid" 2>/dev/null; do
-              sleep 75
-              [ -s data/binance_ws_1m.json ] || continue
-              current_latest="$(python - <<'PY'
+            if [ -s data/binance_ws_depth.json ]; then
+              last_depth_published="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_ws_depth.json').read_text(encoding='utf-8'))
+          snap=obj.get('snapshot',{})
+          print(int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
+          PY
+              )"
+            fi
+            while kill -0 "$collector_pid" 2>/dev/null || { [ -n "$depth_pid" ] && kill -0 "$depth_pid" 2>/dev/null; }; do
+              sleep 30
+              if kill -0 "$collector_pid" 2>/dev/null && [ -s data/binance_ws_1m.json ]; then
+                current_latest="$(python - <<'PY'
           import json
           from pathlib import Path
           rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
           print(int(rows[-1]['open_time_ms']) if rows else 0)
           PY
-              )"
-              if [ "$current_latest" -le "$last_published" ]; then
-                continue
+                )"
+                if [ "$current_latest" -gt "$last_published" ]; then
+                  if publish_cache; then
+                    last_published="$current_latest"
+                    echo "Checkpoint published latest_open_time_ms=$current_latest"
+                  else
+                    echo "WARN: kline checkpoint publication failed; stream continues." >&2
+                  fi
+                fi
               fi
-              if publish_cache; then
-                last_published="$current_latest"
-                echo "Checkpoint published latest_open_time_ms=$current_latest"
-              else
-                echo "WARN: checkpoint publication failed; collector stream continues and final publication will retry." >&2
+              if [ -n "$depth_pid" ] && kill -0 "$depth_pid" 2>/dev/null && [ -s data/binance_ws_depth.json ]; then
+                current_depth="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_ws_depth.json').read_text(encoding='utf-8'))
+          snap=obj.get('snapshot',{})
+          print(int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
+          PY
+                )"
+                if [ "$current_depth" -gt "$last_depth_published" ]; then
+                  if publish_depth_cache; then
+                    last_depth_published="$current_depth"
+                    echo "Depth checkpoint published retrieved_at_ms=$current_depth"
+                  else
+                    echo "WARN: depth checkpoint publication failed; stream continues." >&2
+                  fi
+                fi
               fi
             done
           }
@@ -247,16 +304,29 @@ jobs:
           publisher_loop > /tmp/btc_ws_publisher.log 2>&1 &
           publisher_pid="$!"
 
-          collector_status=0
-          wait "$collector_pid" || collector_status=$?
+           collector_status=0
+           depth_status=0
+           wait "$collector_pid" || collector_status=$?
+           if [ -n "$depth_pid" ]; then
+             wait "$depth_pid" || depth_status=$?
+           fi
 
-          if kill -0 "$publisher_pid" 2>/dev/null; then
-            kill "$publisher_pid" || true
-            wait "$publisher_pid" || true
-          fi
+           if kill -0 "$publisher_pid" 2>/dev/null; then
+             kill "$publisher_pid" || true
+             wait "$publisher_pid" || true
+           fi
 
-          cat /tmp/btc_ws_collector.log
-          cat /tmp/btc_ws_publisher.log
+           cat /tmp/btc_ws_collector.log
+           cat /tmp/btc_ws_depth.log
+           cat /tmp/btc_ws_publisher.log
+
+           if [ "$collector_status" -ne 0 ]; then
+             echo "Binance continuous WS collector failed closed with status $collector_status." >&2
+             exit "$collector_status"
+           fi
+           if [ "$depth_status" -ne 0 ]; then
+             echo "WARN: Binance depth WS collector ended with status $depth_status; Live direct-WS depth recovery remains available." >&2
+           fi
 
           if [ "$collector_status" -ne 0 ]; then
             echo "Binance continuous WS collector failed closed with status ${collector_status}." >&2
@@ -289,4 +359,7 @@ jobs:
           fi
 
           publish_cache
+           if [ -s data/binance_ws_depth.json ]; then
+             publish_depth_cache || echo "WARN: final Binance depth cache publication failed; Live will use direct WS recovery." >&2
+           fi
           echo "Binance WS continuous collector completed successfully."
