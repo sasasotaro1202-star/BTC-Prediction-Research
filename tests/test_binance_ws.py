@@ -109,6 +109,38 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertEqual(parsed["retrieved_at_ms"], 1_800_000_001_000)
         self.assertIsNone(binance_ws.parse_depth_message(bad, 1_800_000_001_000))
 
+    def test_partial_depth_parser_accepts_current_binance_b_a_payload(self):
+        received = 1_800_000_001_000
+        message = {
+            "e": "depthUpdate",
+            "E": 1_800_000_000_900,
+            "T": 1_800_000_000_899,
+            "s": "BTCUSDT",
+            "U": 390497796,
+            "u": 390497878,
+            "pu": 390497794,
+            "ps": "BTCUSDT",
+            "st": 1,
+            "b": [["100.0", "5.0"], ["99.9", "3.0"]],
+            "a": [["100.1", "1.0"], ["100.2", "1.0"]],
+        }
+        parsed = binance_ws.parse_depth_message(message, received)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["last_update_id"], 390497878)
+        self.assertEqual(parsed["event_time_ms"], 1_800_000_000_900)
+        self.assertEqual(parsed["retrieved_at_ms"], received)
+        self.assertEqual(parsed["bids"][0], [100.0, 5.0])
+        self.assertEqual(parsed["asks"][0], [100.1, 1.0])
+
+    def test_partial_depth_parser_rejects_missing_exchange_event_time(self):
+        message = {
+            "e": "depthUpdate",
+            "s": "BTCUSDT",
+            "b": [["100.0", "5.0"]],
+            "a": [["100.1", "1.0"]],
+        }
+        self.assertIsNone(binance_ws.parse_depth_message(message, 1_800_000_001_000))
+
     def test_mark_price_parser_keeps_exchange_event_time(self):
         message = {"e": "markPriceUpdate", "E": 1_800_000_060_100, "p": "100.5", "r": "0.0001"}
         parsed = binance_ws.parse_mark_price_message(message, 1_800_000_061_000)
