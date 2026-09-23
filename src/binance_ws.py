@@ -432,10 +432,12 @@ async def capture_closed_klines_stream(
             last_checkpoint = time.monotonic()
 
     deadline = started_at + float(timeout_seconds)
-    for url in (KLINE_URL, *KLINE_FALLBACK_URLS):
+    urls = (KLINE_URL, *KLINE_FALLBACK_URLS)
+    url_index = 0
+    reconnect_backoff_seconds = 0.5
+    while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
+        url = urls[url_index % len(urls)]
         count, started = await _stream_url(
             url,
             remaining,
@@ -444,10 +446,21 @@ async def capture_closed_klines_stream(
         )
         if time.monotonic() >= deadline:
             break
-        # If a stream yielded data but then closed, fail over using the remaining
-        # budget. A stable primary stream normally consumes the entire window.
+        # A dropped socket must not end the capture window. Reconnect the
+        # primary transport first, then its fallback, until the bounded window
+        # expires. A stable connection still consumes the full remaining budget.
         if started and count > 0:
-            continue
+            url_index = 0
+            reconnect_backoff_seconds = 0.5
+        else:
+            url_index += 1
+            reconnect_backoff_seconds = min(5.0, reconnect_backoff_seconds * 2.0)
+        sleep_for = min(
+            reconnect_backoff_seconds,
+            max(0.0, deadline - time.monotonic()),
+        )
+        if sleep_for > 0:
+            await asyncio.sleep(sleep_for)
 
     rows = [merged[k] for k in sorted(merged)[-MAX_CACHE_ROWS:]]
     if on_checkpoint is not None:
@@ -481,15 +494,30 @@ async def capture_depth_snapshot_stream(
             last_checkpoint=time.monotonic()
 
     deadline=time.monotonic()+float(timeout_seconds)
-    for url in (DEPTH_URL,*DEPTH_FALLBACK_URLS):
+    urls=(DEPTH_URL,*DEPTH_FALLBACK_URLS)
+    url_index=0
+    reconnect_backoff_seconds=1.0
+    while time.monotonic()<deadline:
         remaining=deadline-time.monotonic()
-        if remaining<=0:
-            break
+        url=urls[url_index % len(urls)]
         count,started=await _stream_url(url,remaining,parse_depth_message,on_row)
         if time.monotonic()>=deadline:
             break
+        # Keep retrying the same bounded capture window after transport drops.
+        # Live prediction still applies strict depth freshness and fail-closed
+        # validation; this only makes the cache collector recoverable.
         if started and count>0:
-            continue
+            url_index=0
+            reconnect_backoff_seconds=1.0
+        else:
+            url_index+=1
+            reconnect_backoff_seconds=min(10.0,reconnect_backoff_seconds*2.0)
+        sleep_for=min(
+            reconnect_backoff_seconds,
+            max(0.0,deadline-time.monotonic()),
+        )
+        if sleep_for>0:
+            await asyncio.sleep(sleep_for)
     if latest is not None and on_checkpoint is not None:
         result=on_checkpoint(latest)
         if asyncio.iscoroutine(result):
