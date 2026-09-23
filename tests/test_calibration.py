@@ -84,6 +84,34 @@ class TestCalibration(unittest.TestCase):
                 obj = calibration_module._calibration_state(model_dir / "10m.calibration.json")
                 self.assertTrue(calibration_module._can_reuse_cached_calibration(obj, "10m", "bootstrap.bootstrap_rf", 2153))
 
+    def test_save_temperature_skips_semantically_unchanged_artifact(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            model_dir = Path(td)
+            path = model_dir / "5m.calibration.json"
+            path.write_text(json.dumps({
+                "horizon": "5m",
+                "temperature": 1.0,
+                "n_settled": 0,
+                "model_version": "bootstrap.bootstrap_rf",
+                "method": "bounded_temperature_scaling_current_model_generation_holdout_guard",
+                "fit_logloss": None,
+                "holdout_logloss": None,
+                "holdout_fraction": 0.25,
+                "updated_at_utc": "2026-01-01T00:00:00+00:00",
+            }), encoding="utf-8")
+            before = path.read_text(encoding="utf-8")
+            with patch.object(calibration_module, "MODEL_DIR", model_dir):
+                changed = calibration_module.save_temperature(
+                    "5m", 1.0, 0, None, None, 0.25, "bootstrap.bootstrap_rf"
+                )
+            self.assertFalse(changed)
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+
     def test_settled_rows_uses_existing_horizon_suffix(self):
         con = _FakeConnection()
         calibration._settled_rows(
