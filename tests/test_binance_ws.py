@@ -41,10 +41,11 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIsNotNone(binance_ws.parse_kline_message(message, 1_800_000_061_000))
 
     def test_depth_parser_is_bounded_and_validates_crossed_book(self):
-        good = {"e": "depthUpdate", "bids": [["100", "5"], ["99", "3"]], "asks": [["101", "1"], ["102", "1"]]}
+        good = {"e": "depthUpdate", "E": 1_800_000_001_100, "bids": [["100", "5"], ["99", "3"]], "asks": [["101", "1"], ["102", "1"]]}
         bad = {"e": "depthUpdate", "bids": [["102", "5"]], "asks": [["101", "1"]]}
         parsed = binance_ws.parse_depth_message(good, 1_800_000_001_000)
         self.assertEqual(len(parsed["bids"]), 2)
+        self.assertEqual(parsed["event_time_ms"], 1_800_000_001_100)
         self.assertEqual(parsed["retrieved_at_ms"], 1_800_000_001_000)
         self.assertIsNone(binance_ws.parse_depth_message(bad, 1_800_000_001_000))
 

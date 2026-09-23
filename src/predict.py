@@ -209,10 +209,11 @@ def main():
             m['book_imbalance']=imbalance(ws_book)
             status['binance_depth']='ok'
             status['binance_depth_transport']='websocket'
+            status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
             status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
             status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
-        except Exception:
-            status['binance_depth']=f'error:{type(exc).__name__}'
+        except Exception as ws_exc:
+            status['binance_depth']=f'error:{type(ws_exc).__name__}'
 
     bybit_book = market_calls.get("bybit_depth")
     try:
@@ -328,21 +329,27 @@ def main():
         status['binance_taker_transport']='rest'
     except Exception as exc:
         try:
-            ws_rows=load_binance_ws_cache(BINANCE_WS_CACHE, 120)
+            # Reuse the already-validated fresh Binance WS cache loaded above.
+            # This avoids a second file read and keeps the exact PIT window
+            # identical to the market-flow observation used by this run.
+            ws_rows=ws_candidate if ws_fresh else []
             result=ws_taker_imbalance(ws_rows, 5)
             if result is None:
                 raise RuntimeError('websocket_taker_history_missing')
             m['taker_imbalance'], event_ms=result
             latest_rows=[r for r in ws_rows if int(r['open_time_ms']) >= int(ws_rows[-1]['open_time_ms'])-4*60_000]
             freshest_retrieved=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else 0
-            if int(datetime.now(timezone.utc).timestamp()*1000) - freshest_retrieved > 180_000:
+            now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
+            if now_ms - freshest_retrieved > 180_000:
                 raise RuntimeError('websocket_taker_cache_stale')
+            if freshest_retrieved > now_ms + 60_000:
+                raise RuntimeError('websocket_taker_cache_future')
             status['binance_taker']='ok'
             status['binance_taker_transport']='websocket_derived_from_closed_klines'
             status['binance_taker_event_time_ms']=int(event_ms)
-            status['binance_taker_retrieved_at_ms']=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else int(event_ms)
-        except Exception:
-            status['binance_taker']=f'error:{type(exc).__name__}'
+            status['binance_taker_retrieved_at_ms']=int(freshest_retrieved)
+        except Exception as ws_exc:
+            status['binance_taker']=f'error:{type(ws_exc).__name__}'
 
     funding_result = market_calls.get("bybit_funding")
     try:
