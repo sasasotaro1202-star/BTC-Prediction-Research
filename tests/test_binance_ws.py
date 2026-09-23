@@ -118,6 +118,45 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertAlmostEqual(value, 0.4)
         self.assertEqual(event_time, rows[-1]["event_time_ms"])
 
+    def test_continuous_capture_preserves_existing_rows_and_emits_checkpoint(self):
+        initial = [{
+            "open_time_ms": 1_800_000_000_000,
+            "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+            "volume": 10.0, "taker_buy_base": 4.0,
+            "event_time_ms": 1_800_000_060_000,
+            "retrieved_at_ms": 1_800_000_061_000,
+        }]
+        incoming = {
+            **initial[0],
+            "open_time_ms": 1_800_000_060_000,
+            "event_time_ms": 1_800_000_120_000,
+            "retrieved_at_ms": 1_800_000_121_000,
+            "close": 101.0,
+        }
+        checkpoints = []
+
+        async def fake_stream(url, timeout_seconds, parser, on_row):
+            await on_row(incoming)
+            return 1, True
+
+        async def checkpoint(rows):
+            checkpoints.append(list(rows))
+
+        with patch.object(binance_ws, "_stream_url", new=AsyncMock(side_effect=fake_stream)):
+            rows = asyncio.run(
+                binance_ws.capture_closed_klines_stream(
+                    timeout_seconds=0.01,
+                    checkpoint_seconds=0.0,
+                    initial_rows=initial,
+                    on_checkpoint=checkpoint,
+                )
+            )
+
+        opens = [row["open_time_ms"] for row in rows]
+        self.assertIn(initial[0]["open_time_ms"], opens)
+        self.assertIn(incoming["open_time_ms"], opens)
+        self.assertGreaterEqual(len(checkpoints), 1)
+
     def test_cache_round_trip(self):
         row = {
             "open_time_ms": 1_800_000_000_000, "open": 100, "high": 101, "low": 99, "close": 100.5,
