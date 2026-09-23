@@ -157,6 +157,40 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn(incoming["open_time_ms"], opens)
         self.assertGreaterEqual(len(checkpoints), 1)
 
+    def test_depth_cache_round_trip_and_freshness_guard(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        now_ms = int(binance_ws.time.time() * 1000)
+        snapshot = {
+            "bids": [["100.0", "2.0"], ["99.9", "1.0"]],
+            "asks": [["100.1", "2.5"], ["100.2", "1.5"]],
+            "last_update_id": 123,
+            "event_time_ms": now_ms - 1000,
+            "retrieved_at_ms": now_ms,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "depth.json"
+            binance_ws.write_depth_cache(snapshot, path)
+            loaded = binance_ws.load_depth_cache(path, max_age_ms=180_000)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["event_time_ms"], snapshot["event_time_ms"])
+            self.assertEqual(loaded["retrieved_at_ms"], snapshot["retrieved_at_ms"])
+
+            obj = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(obj["stream"], "btcusdt@depth20@100ms")
+            with patch.object(
+                binance_ws.time,
+                "time",
+                return_value=(snapshot["retrieved_at_ms"] + 180_001) / 1000,
+            ):
+                self.assertIsNone(
+                    binance_ws.load_depth_cache(path, max_age_ms=180_000)
+                )
+
+
     def test_cache_round_trip(self):
         row = {
             "open_time_ms": 1_800_000_000_000, "open": 100, "high": 101, "low": 99, "close": 100.5,
