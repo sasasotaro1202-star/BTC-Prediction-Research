@@ -157,6 +157,38 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn(incoming["open_time_ms"], opens)
         self.assertGreaterEqual(len(checkpoints), 1)
 
+    def test_continuous_capture_reconnects_after_primary_socket_drop(self):
+        incoming = {
+            "open_time_ms": 1_800_000_000_000,
+            "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+            "volume": 10.0, "taker_buy_base": 4.0,
+            "event_time_ms": 1_800_000_060_000,
+            "retrieved_at_ms": 1_800_000_061_000,
+        }
+        calls = []
+
+        async def fake_stream(url, timeout_seconds, parser, on_row):
+            calls.append(url)
+            await on_row(incoming)
+            return 1, True
+
+        async def no_sleep(_seconds):
+            return None
+
+        with patch.object(binance_ws, "_stream_url", new=AsyncMock(side_effect=fake_stream)):
+            with patch.object(binance_ws.asyncio, "sleep", new=AsyncMock(side_effect=no_sleep)):
+                asyncio.run(
+                    binance_ws.capture_closed_klines_stream(
+                        timeout_seconds=0.02,
+                        checkpoint_seconds=999.0,
+                        initial_rows=[],
+                        on_checkpoint=None,
+                    )
+                )
+
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(all(url == binance_ws.KLINE_URL for url in calls))
+
     def test_depth_cache_round_trip_and_freshness_guard(self):
         import json
         import tempfile
