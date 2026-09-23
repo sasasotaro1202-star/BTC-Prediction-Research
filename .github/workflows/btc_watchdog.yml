@@ -11,6 +11,20 @@ on:
       - '.github/workflows/btc_watchdog.yml'
       - '.github/workflows/btc_9h_research_marathon.yml'
   workflow_dispatch:
+  # Completion of frequent BTC workflows provides a second recovery heartbeat
+  # when GitHub delays or drops schedule events. The watchdog itself is still
+  # lightweight and collapses bursts through its concurrency group.
+  workflow_run:
+    workflows:
+      - BTC Live Cycle
+      - BTC Binance WS Collector
+      - BTC PIT OOS Audit
+      - BTC Research
+      - BTC Nested Selective Research
+      - BTC Microstructure Research
+      - BTC Exogenous Research
+      - BTC Time-Regime OOS Research
+    types: [completed]
 
 permissions:
   actions: write
