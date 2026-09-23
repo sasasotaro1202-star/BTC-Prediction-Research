@@ -4,6 +4,16 @@ on:
   # minutes would repeatedly cancel this longer audit and reduce coverage.
   schedule:
     - cron: '23 * * * *'
+  # Run immediately after code/protocol changes as a read-only verification.
+  # Routine data/state commits do not trigger this expensive integrity audit.
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/btc_integrity.yml'
   workflow_dispatch:
 
 concurrency:
