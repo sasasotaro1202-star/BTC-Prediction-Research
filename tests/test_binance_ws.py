@@ -14,12 +14,15 @@ import binance_ws
 
 class TestBinanceWebSocket(unittest.TestCase):
     def test_documented_raw_endpoints_are_primary_with_legacy_fallbacks(self):
-        self.assertEqual(binance_ws.KLINE_URL, "wss://fstream.binance.com/ws/btcusdt@kline_1m")
-        self.assertEqual(binance_ws.DEPTH_URL, "wss://fstream.binance.com/ws/btcusdt@depth20@100ms")
-        self.assertEqual(binance_ws.MARK_URL, "wss://fstream.binance.com/ws/btcusdt@markPrice@1s")
-        self.assertIn("wss://fstream.binance.com/market/ws/btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
-        self.assertIn("wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
-        self.assertIn("wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
+        self.assertEqual(binance_ws.KLINE_URL, "wss://fstream.binance.com/market/ws/btcusdt@kline_1m")
+        self.assertEqual(binance_ws.DEPTH_URL, "wss://fstream.binance.com/market/ws/btcusdt@depth20@100ms")
+        self.assertEqual(binance_ws.MARK_URL, "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s")
+        self.assertIn("wss://fstream.binance.com/ws/btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m", binance_ws.KLINE_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/ws/btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@depth20@100ms", binance_ws.DEPTH_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/ws/btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
+        self.assertIn("wss://fstream.binance.com/market/stream?streams=btcusdt@markPrice@1s", binance_ws.MARK_FALLBACK_URLS)
 
     def test_collect_with_fallback_uses_legacy_when_primary_is_empty(self):
         primary = "wss://primary"
@@ -188,6 +191,34 @@ class TestBinanceWebSocket(unittest.TestCase):
 
         self.assertGreaterEqual(len(calls), 2)
         self.assertTrue(all(url == binance_ws.KLINE_URL for url in calls))
+
+    def test_direct_depth_snapshot_retries_after_transport_drop(self):
+        incoming = {
+            "bids": [["100.0", "2.0"], ["99.9", "1.0"]],
+            "asks": [["100.1", "2.5"], ["100.2", "1.5"]],
+            "last_update_id": 123,
+            "event_time_ms": 1_800_000_001_100,
+            "retrieved_at_ms": 1_800_000_001_000,
+        }
+        calls = []
+
+        async def fake_stream(url, timeout_seconds, parser, on_row):
+            calls.append(url)
+            if len(calls) == 1:
+                return 0, True
+            await on_row(incoming)
+            return 1, True
+
+        async def no_sleep(_seconds):
+            return None
+
+        with patch.object(binance_ws, "_stream_url", new=AsyncMock(side_effect=fake_stream)):
+            with patch.object(binance_ws.asyncio, "sleep", new=AsyncMock(side_effect=no_sleep)):
+                result = asyncio.run(binance_ws.capture_depth_snapshot(0.02))
+
+        self.assertEqual(result["event_time_ms"], incoming["event_time_ms"])
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertEqual(calls[0], binance_ws.DEPTH_URL)
 
     def test_depth_cache_round_trip_and_freshness_guard(self):
         import json
