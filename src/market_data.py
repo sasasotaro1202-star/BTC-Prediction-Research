@@ -232,11 +232,27 @@ def _parallel_result_calls(calls):
 def resilient_1m_series(limit: int = 120):
     status = {}
 
-    parallel = _parallel_result_calls({
+    # Prefer a fresh Binance Futures WS cache when one is available. This keeps
+    # the production price/target venue independent of REST reachability and
+    # avoids spending the live-cycle budget on a known-good market-data source.
+    ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
+    ws_suffix = _fresh_ws_suffix(ws_cache, 40)
+    fut = _ws_series_rows(ws_suffix[-limit:]) if len(ws_suffix) >= 40 else []
+    if fut:
+        status["binance_futures"] = "ok"
+        status["binance_futures_transport"] = "websocket"
+        status["binance_futures_ws_event_time_ms"] = int(ws_suffix[-1]["event_time_ms"])
+        status["binance_futures_ws_retrieved_at_ms"] = int(ws_suffix[-1]["retrieved_at_ms"])
+    else:
+        status["binance_futures"] = "not_loaded_from_websocket"
+
+    parallel_calls = {
         "bybit": lambda: closed_bybit(bybit_klines(limit)),
-        "binance_futures": lambda: closed_binance(binance_klines(False, limit)),
         "binance_spot": lambda: closed_binance(binance_klines(True, limit)),
-    })
+    }
+    if not fut:
+        parallel_calls["binance_futures"] = lambda: closed_binance(binance_klines(False, limit))
+    parallel = _parallel_result_calls(parallel_calls)
 
     by = []
     by_current = None
@@ -277,13 +293,13 @@ def resilient_1m_series(limit: int = 120):
             by_current = None
         status["bybit_futures"] = "ok_current_only" if by_current else f"error:{_error_label(e)}"
 
-    fut = []
-    fut_error = parallel.get("binance_futures")
-    if isinstance(fut_error, Exception):
-        status["binance_futures"] = f"error:{_error_label(fut_error)}"
-    else:
-        fut = _latest_contiguous_suffix(fut_error, 40)
-        status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
+    if not fut:
+        fut_error = parallel.get("binance_futures")
+        if isinstance(fut_error, Exception):
+            status["binance_futures"] = f"error:{_error_label(fut_error)}"
+        elif fut_error is not None:
+            fut = _latest_contiguous_suffix(fut_error, 40)
+            status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
 
     spot = []
     spot_error = parallel.get("binance_spot")
@@ -293,21 +309,21 @@ def resilient_1m_series(limit: int = 120):
         spot = _latest_contiguous_suffix(spot_error, 40)
         status["binance_spot"] = "ok" if spot else "non_contiguous_or_insufficient"
 
-    # When Binance REST is unavailable, recover the same Binance Futures product
-    # through its public WebSocket market stream.
+    # When neither the fresh cache nor Binance REST provides a usable Futures
+    # history, recover the same Binance product through a bounded WebSocket capture.
     if len(fut) < 40:
-        ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
-        ws_suffix = _fresh_ws_suffix(ws_cache, 40)
-        if not ws_suffix:
-            ws_suffix = _capture_ws_suffix(ws_cache, 62.0)
-        if len(ws_suffix) >= 40:
-            fut = _ws_series_rows(ws_suffix[-limit:])
+        live_ws = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
+        live_ws_suffix = _fresh_ws_suffix(live_ws, 40)
+        if not live_ws_suffix:
+            live_ws_suffix = _capture_ws_suffix(live_ws, 62.0)
+        if len(live_ws_suffix) >= 40:
+            fut = _ws_series_rows(live_ws_suffix[-limit:])
             status["binance_futures"] = "ok"
             status["binance_futures_transport"] = "websocket"
-            status["binance_futures_ws_event_time_ms"] = int(ws_suffix[-1]["event_time_ms"])
-            status["binance_futures_ws_retrieved_at_ms"] = int(ws_suffix[-1]["retrieved_at_ms"])
+            status["binance_futures_ws_event_time_ms"] = int(live_ws_suffix[-1]["event_time_ms"])
+            status["binance_futures_ws_retrieved_at_ms"] = int(live_ws_suffix[-1]["retrieved_at_ms"])
         else:
-            status["binance_futures_ws_contiguous_rows"] = len(ws_suffix)
+            status["binance_futures_ws_contiguous_rows"] = len(live_ws_suffix)
 
     if len(fut) >= 40 and status.get("binance_futures_transport") == "websocket":
         status["price_feature_fallback"] = "none"

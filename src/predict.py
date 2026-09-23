@@ -244,44 +244,52 @@ def main():
         status["binance_taker_window_retrieved_at_ms"] = max(
             int(r["retrieved_at_ms"]) for r in ws_candidate
         )
-    market_calls = _parallel_market_calls({
-        "binance_depth": binance_depth,
-        "bybit_depth": bybit_depth,
-        "binance_premium": binance_premium,
-        "binance_oi": binance_oi,
-        "binance_taker": binance_taker,
-        "bybit_funding": bybit_funding,
-    })
+    ws_taker_result = ws_taker_imbalance(ws_candidate, 5) if ws_fresh else None
 
-    depth_result = market_calls.get("binance_depth")
+    # Prefer a fresh WS depth snapshot over Binance REST. A short direct-WS
+    # recovery is attempted only when the rolling cache is unavailable.
+    ws_book = load_depth_cache()
+    if ws_book is None:
+        try:
+            ws_book = asyncio.run(capture_depth_snapshot(6.0))
+        except Exception:
+            ws_book = None
+
+    # Prefer Binance mark-price WS for funding; REST is a bounded recovery path.
+    ws_mark = None
     try:
-        if isinstance(depth_result, Exception):
-            raise depth_result
+        ws_mark = asyncio.run(capture_mark_price(6.0))
+    except Exception:
+        ws_mark = None
+
+    market_call_defs = {
+        "bybit_depth": bybit_depth,
+        "binance_oi": binance_oi,
+        "bybit_funding": bybit_funding,
+    }
+    if ws_book is None:
+        market_call_defs["binance_depth"] = binance_depth
+    if ws_mark is None:
+        market_call_defs["binance_premium"] = binance_premium
+    if ws_taker_result is None:
+        market_call_defs["binance_taker"] = binance_taker
+    market_calls = _parallel_market_calls(market_call_defs)
+
+    depth_result = ws_book if ws_book is not None else market_calls.get("binance_depth")
+    try:
+        if isinstance(depth_result, Exception) or depth_result is None:
+            raise RuntimeError('binance_depth_unavailable')
         m['book_imbalance']=imbalance(depth_result)
         status['binance_depth']='ok'
-        status['binance_depth_transport']='rest'
+        if ws_book is not None:
+            status['binance_depth_transport']='websocket_cache_or_direct'
+            status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
+            status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
+            status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
+        else:
+            status['binance_depth_transport']='rest'
     except Exception as exc:
-        try:
-            ws_book=load_depth_cache()
-            if ws_book is not None:
-                m['book_imbalance']=imbalance(ws_book)
-                status['binance_depth']='ok'
-                status['binance_depth_transport']='websocket_cache'
-                status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
-                status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
-                status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
-            else:
-                ws_book=asyncio.run(capture_depth_snapshot(6.0))
-                if ws_book is None:
-                    raise RuntimeError('websocket_depth_snapshot_missing')
-                m['book_imbalance']=imbalance(ws_book)
-                status['binance_depth']='ok'
-                status['binance_depth_transport']='websocket'
-                status['binance_depth_event_time_ms']=int(ws_book['event_time_ms'])
-                status['binance_depth_ws_retrieved_at_ms']=int(ws_book['retrieved_at_ms'])
-                status['binance_depth_ws_levels']=min(len(ws_book['bids']),len(ws_book['asks']))
-        except Exception as ws_exc:
-            status['binance_depth']=f'error:{type(ws_exc).__name__}'
+        status['binance_depth']=f'error:{type(exc).__name__}'
 
     bybit_book = market_calls.get("bybit_depth")
     try:
@@ -354,27 +362,24 @@ def main():
         m['cross_exchange_gap']=None
         status['bybit_futures']=status.get('bybit_futures','error:missing_current_price')
 
-    premium_result = market_calls.get("binance_premium")
+    premium_result = ws_mark if ws_mark is not None else market_calls.get("binance_premium")
     try:
-        if isinstance(premium_result, Exception):
-            raise premium_result
-        m['funding_binance']=float(premium_result.get('lastFundingRate'))
-        status['binance_premium']='ok'
-        status['binance_premium_transport']='rest'
-        if premium_result.get('time') is not None:
-            status['binance_premium_event_time_ms']=int(premium_result['time'])
-    except Exception as exc:
-        try:
-            mark=asyncio.run(capture_mark_price(6.0))
-            if mark is None:
-                raise RuntimeError('websocket_mark_price_missing')
-            m['funding_binance']=float(mark['funding_rate'])
+        if premium_result is None or isinstance(premium_result, Exception):
+            raise RuntimeError('binance_premium_unavailable')
+        if ws_mark is not None:
+            m['funding_binance']=float(ws_mark['funding_rate'])
             status['binance_premium']='ok'
             status['binance_premium_transport']='websocket'
-            status['binance_premium_event_time_ms']=int(mark['event_time_ms'])
-            status['binance_premium_retrieved_at_ms']=int(mark['retrieved_at_ms'])
-        except Exception:
-            status['binance_premium']=f'error:{type(exc).__name__}'
+            status['binance_premium_event_time_ms']=int(ws_mark['event_time_ms'])
+            status['binance_premium_retrieved_at_ms']=int(ws_mark['retrieved_at_ms'])
+        else:
+            m['funding_binance']=float(premium_result.get('lastFundingRate'))
+            status['binance_premium']='ok'
+            status['binance_premium_transport']='rest'
+            if premium_result.get('time') is not None:
+                status['binance_premium_event_time_ms']=int(premium_result['time'])
+    except Exception as exc:
+        status['binance_premium']=f'error:{type(exc).__name__}'
 
     oi_result = market_calls.get("binance_oi")
     try:
@@ -385,39 +390,31 @@ def main():
     except Exception as exc:
         status['binance_oi']=f'error:{type(exc).__name__}'
 
-    taker_result = market_calls.get("binance_taker")
+    taker_result = ws_taker_result if ws_taker_result is not None else market_calls.get("binance_taker")
     try:
-        if isinstance(taker_result, Exception):
-            raise taker_result
-        t=taker_result
-        t=t[-1] if isinstance(t,list) and t else t
-        tb=float(t['takerBuyVol']); ts=float(t['takerSellVol'])
-        m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts)
-        status['binance_taker']='ok'
-        status['binance_taker_transport']='rest'
-    except Exception as exc:
-        try:
-            # Reuse the already-validated fresh Binance WS cache loaded above.
-            # This avoids a second file read and keeps the exact PIT window
-            # identical to the market-flow observation used by this run.
-            ws_rows=ws_candidate if ws_fresh else []
-            result=ws_taker_imbalance(ws_rows, 5)
-            if result is None:
-                raise RuntimeError('websocket_taker_history_missing')
-            m['taker_imbalance'], event_ms=result
-            latest_rows=[r for r in ws_rows if int(r['open_time_ms']) >= int(ws_rows[-1]['open_time_ms'])-4*60_000]
+        if ws_taker_result is not None:
+            m['taker_imbalance'], event_ms = ws_taker_result
+            latest_rows=[r for r in ws_candidate if int(r['open_time_ms']) >= int(ws_candidate[-1]['open_time_ms'])-4*60_000]
             freshest_retrieved=max(int(r['retrieved_at_ms']) for r in latest_rows) if latest_rows else 0
             now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
-            if now_ms - freshest_retrieved > 180_000:
-                raise RuntimeError('websocket_taker_cache_stale')
-            if freshest_retrieved > now_ms + 60_000:
-                raise RuntimeError('websocket_taker_cache_future')
+            if now_ms - freshest_retrieved > 180_000 or freshest_retrieved > now_ms + 60_000:
+                raise RuntimeError('websocket_taker_cache_stale_or_future')
+            m['taker_imbalance']=float(m['taker_imbalance'])
             status['binance_taker']='ok'
             status['binance_taker_transport']='websocket_derived_from_closed_klines'
             status['binance_taker_event_time_ms']=int(event_ms)
             status['binance_taker_retrieved_at_ms']=int(freshest_retrieved)
-        except Exception as ws_exc:
-            status['binance_taker']=f'error:{type(ws_exc).__name__}'
+        else:
+            if taker_result is None or isinstance(taker_result, Exception):
+                raise RuntimeError('binance_taker_unavailable')
+            t=taker_result
+            t=t[-1] if isinstance(t,list) and t else t
+            tb=float(t['takerBuyVol']); ts=float(t['takerSellVol'])
+            m['taker_imbalance']=(tb-ts)/max(1e-12,tb+ts)
+            status['binance_taker']='ok'
+            status['binance_taker_transport']='rest'
+    except Exception as exc:
+        status['binance_taker']=f'error:{type(exc).__name__}'
 
     funding_result = market_calls.get("bybit_funding")
     try:
