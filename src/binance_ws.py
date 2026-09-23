@@ -23,6 +23,7 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE = ROOT / "data" / "binance_ws_1m.json"
+DEFAULT_DEPTH_CACHE = ROOT / "data" / "binance_ws_depth.json"
 # Prefer the documented raw-stream endpoint. Keep the legacy path as a
 # transport fallback because hosted runners can see endpoint-specific behavior.
 KLINE_URL = "wss://fstream.binance.com/ws/btcusdt@kline_1m"
@@ -118,6 +119,50 @@ def parse_depth_message(message: Any, received_at_ms: int | None = None) -> dict
         "event_time_ms": event_time_ms,
         "retrieved_at_ms": retrieved,
     }
+
+
+def depth_midprice(snapshot: dict[str, Any]) -> float:
+    bids=snapshot.get("bids") if isinstance(snapshot,dict) else None
+    asks=snapshot.get("asks") if isinstance(snapshot,dict) else None
+    if not bids or not asks:
+        raise ValueError("depth_snapshot_missing_sides")
+    bid=float(bids[0][0]); ask=float(asks[0][0])
+    if not (math.isfinite(bid) and math.isfinite(ask) and bid>0 and ask>0 and bid<=ask):
+        raise ValueError("depth_snapshot_invalid_top_of_book")
+    return (bid+ask)/2.0
+
+
+def write_depth_cache(snapshot: dict[str, Any], path: Path = DEFAULT_DEPTH_CACHE) -> None:
+    path.parent.mkdir(parents=True,exist_ok=True)
+    payload={
+        "schema_version":SCHEMA_VERSION,
+        "source":"Binance USD-M Futures WebSocket",
+        "stream":"btcusdt@depth20@100ms",
+        "snapshot":snapshot,
+        "updated_at_utc":datetime.now(timezone.utc).isoformat(),
+    }
+    temp=path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temp.write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+    os.replace(temp,path)
+
+
+def load_depth_cache(path: Path = DEFAULT_DEPTH_CACHE, max_age_ms: int = 180_000) -> dict[str, Any] | None:
+    try:
+        obj=json.loads(path.read_text(encoding="utf-8"))
+        if obj.get("schema_version") != SCHEMA_VERSION or obj.get("source") != "Binance USD-M Futures WebSocket":
+            return None
+        if obj.get("stream") != "btcusdt@depth20@100ms":
+            return None
+        snap=obj.get("snapshot")
+        parsed=parse_depth_message(snap, int(snap.get("retrieved_at_ms",0)) if isinstance(snap,dict) else 0)
+        if parsed is None:
+            return None
+        age=int(time.time()*1000)-int(parsed["retrieved_at_ms"])
+        if age < 0 or age > int(max_age_ms):
+            return None
+        return parsed
+    except (OSError,ValueError,TypeError,KeyError):
+        return None
 
 
 def parse_mark_price_message(message: Any, received_at_ms: int | None = None) -> dict[str, Any] | None:
@@ -402,6 +447,41 @@ async def capture_closed_klines_stream(
 async def capture_closed_klines(timeout_seconds: float = 62.0) -> list[dict[str, Any]]:
     rows, _ = await _collect_with_fallback((KLINE_URL, *KLINE_FALLBACK_URLS), timeout_seconds, parse_kline_message)
     return rows
+
+
+async def capture_depth_snapshot_stream(
+    timeout_seconds: float = 2700.0,
+    checkpoint_seconds: float = 60.0,
+    initial_snapshot: dict[str, Any] | None = None,
+    on_checkpoint=None,
+) -> dict[str, Any] | None:
+    latest=initial_snapshot
+    last_checkpoint=time.monotonic()
+
+    async def on_row(row: dict[str, Any]) -> None:
+        nonlocal latest,last_checkpoint
+        latest=row
+        if on_checkpoint is not None and time.monotonic()-last_checkpoint >= float(checkpoint_seconds):
+            result=on_checkpoint(row)
+            if asyncio.iscoroutine(result):
+                await result
+            last_checkpoint=time.monotonic()
+
+    deadline=time.monotonic()+float(timeout_seconds)
+    for url in (DEPTH_URL,*DEPTH_FALLBACK_URLS):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:
+            break
+        count,started=await _stream_url(url,remaining,parse_depth_message,on_row)
+        if time.monotonic()>=deadline:
+            break
+        if started and count>0:
+            continue
+    if latest is not None and on_checkpoint is not None:
+        result=on_checkpoint(latest)
+        if asyncio.iscoroutine(result):
+            await result
+    return latest
 
 
 async def capture_depth_snapshot(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
