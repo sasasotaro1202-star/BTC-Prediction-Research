@@ -203,7 +203,11 @@ jobs:
                 active_age=$((now - active_epoch))
                 stale_by_source=false
                 stale_by_age=false
-                if [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head" "$workflow"; then
+                # The rolling Binance collector is intentionally long-lived across source
+                # changes. Never interrupt a healthy streaming window merely because
+                # a newer main commit exists; the next scheduled/manual collector
+                # starts from current main. Age-based recovery remains authoritative.
+                if [ "$workflow" != "btc_binance_ws_collector.yml" ] && [ "$active_age" -ge "$stale_head_grace" ] && code_or_protocol_changed_since "$active_head" "$workflow"; then
                   stale_by_source=true
                 fi
                 if [ "$active_age" -ge "$active_grace" ]; then
