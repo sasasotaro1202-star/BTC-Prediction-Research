@@ -22,9 +22,14 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE = ROOT / "data" / "binance_ws_1m.json"
-KLINE_URL = "wss://fstream.binance.com/market/ws/btcusdt@kline_1m"
-DEPTH_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms"
-MARK_URL = "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s"
+# Prefer the documented raw-stream endpoint. Keep the legacy path as a
+# transport fallback because hosted runners can see endpoint-specific behavior.
+KLINE_URL = "wss://fstream.binance.com/ws/btcusdt@kline_1m"
+KLINE_FALLBACK_URLS = ("wss://fstream.binance.com/market/ws/btcusdt@kline_1m",)
+DEPTH_URL = "wss://fstream.binance.com/ws/btcusdt@depth20@100ms"
+DEPTH_FALLBACK_URLS = ("wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms",)
+MARK_URL = "wss://fstream.binance.com/ws/btcusdt@markPrice@1s"
+MARK_FALLBACK_URLS = ("wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s",)
 SCHEMA_VERSION = 1
 MAX_CACHE_ROWS = 720
 
@@ -257,17 +262,32 @@ async def _collect_url(url: str, timeout_seconds: float, parser) -> list[dict[st
     return out
 
 
+async def _collect_with_fallback(urls, timeout_seconds: float, parser) -> tuple[list[dict[str, Any]], str | None]:
+    """Try the documented raw stream first, then a legacy-compatible path.
+
+    A fallback is used only when the primary endpoint yields no parsed
+    observations. Parser-level validation remains authoritative, so an
+    endpoint can never turn malformed/future data into an accepted row.
+    """
+    for url in urls:
+        rows = await _collect_url(url, timeout_seconds, parser)
+        if rows:
+            return rows, url
+    return [], None
+
+
 async def capture_closed_klines(timeout_seconds: float = 62.0) -> list[dict[str, Any]]:
-    return await _collect_url(KLINE_URL, timeout_seconds, parse_kline_message)
+    rows, _ = await _collect_with_fallback((KLINE_URL, *KLINE_FALLBACK_URLS), timeout_seconds, parse_kline_message)
+    return rows
 
 
 async def capture_depth_snapshot(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
-    rows = await _collect_url(DEPTH_URL, timeout_seconds, parse_depth_message)
+    rows, _ = await _collect_with_fallback((DEPTH_URL, *DEPTH_FALLBACK_URLS), timeout_seconds, parse_depth_message)
     return rows[-1] if rows else None
 
 
 async def capture_mark_price(timeout_seconds: float = 6.0) -> dict[str, Any] | None:
-    rows = await _collect_url(MARK_URL, timeout_seconds, parse_mark_price_message)
+    rows, _ = await _collect_with_fallback((MARK_URL, *MARK_FALLBACK_URLS), timeout_seconds, parse_mark_price_message)
     return rows[-1] if rows else None
 
 
