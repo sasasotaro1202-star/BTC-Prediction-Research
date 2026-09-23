@@ -282,6 +282,54 @@ jobs:
             local local_file="data/binance_ws_depth.json"
             test -s "$local_file"
             git fetch --no-tags --depth=1 origin binance-ws-cache
+
+            # Overlapping collectors can finish in either order. Never let an
+            # older depth snapshot overwrite a newer checkpoint already on the
+            # dedicated cache branch.
+            remote_file="/tmp/btc_remote_ws_depth.json"
+            if git show origin/binance-ws-cache:data/binance_ws_depth.json > "$remote_file" 2>/dev/null; then
+              python - "$local_file" "$remote_file" <<'PY'
+          import json,sys
+          from pathlib import Path
+
+          local_path=Path(sys.argv[1])
+          remote_path=Path(sys.argv[2])
+          local=json.loads(local_path.read_text(encoding="utf-8"))
+          remote=json.loads(remote_path.read_text(encoding="utf-8"))
+
+          def snapshot(obj, label):
+              if not isinstance(obj,dict):
+                  raise SystemExit(f"{label} depth cache is not an object")
+              if obj.get("schema_version") != 1 or obj.get("source") != "Binance USD-M Futures WebSocket":
+                  raise SystemExit(f"{label} depth cache provenance invalid")
+              snap=obj.get("snapshot")
+              if not isinstance(snap,dict):
+                  raise SystemExit(f"{label} depth cache snapshot missing")
+              retrieved=int(snap.get("retrieved_at_ms",0))
+              event=int(snap.get("event_time_ms",0))
+              if retrieved <= 0 or event <= 0:
+                  raise SystemExit(f"{label} depth cache timestamps invalid")
+              return snap, retrieved
+
+          local_snap, local_retrieved = snapshot(local, "local")
+          remote_snap, remote_retrieved = snapshot(remote, "remote")
+
+          # The remote cache is authoritative when it is newer or equal. This
+          # makes the publish operation monotonic across overlapping runners.
+          if remote_retrieved >= local_retrieved:
+              local["snapshot"] = remote_snap
+              local["updated_at_utc"] = remote.get("updated_at_utc")
+              print(
+                  f"Depth checkpoint is older than/equal to remote "
+                  f"(local={local_retrieved}, remote={remote_retrieved}); preserving remote."
+              )
+              local_path.write_text(
+                  json.dumps(local,sort_keys=True,separators=(",",":"))+"\n",
+                  encoding="utf-8",
+              )
+          PY
+            fi
+
             for attempt in 1 2 3 4; do
               cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
               if [ -z "$cache_base" ]; then return 1; fi
@@ -297,7 +345,7 @@ jobs:
                 echo "Published Binance depth WS cache on attempt ${attempt}."
                 return 0
               fi
-              if [ "$attempt" -eq 4 ]; then return 1; fi
+              if [ "${attempt}" -eq 4 ]; then return 1; fi
               git fetch --no-tags --depth=1 origin binance-ws-cache
               sleep $((2 * attempt))
             done
