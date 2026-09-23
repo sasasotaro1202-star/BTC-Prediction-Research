@@ -1,0 +1,143 @@
+name: BTC Ops Preflight
+
+# Lightweight continuous contract check for the GitHub-side BTC runtime.
+# It is deliberately read-only: no prediction state or production artifact is mutated.
+on:
+  schedule:
+    - cron: '19,49 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_ops_preflight.yml'
+      - '.github/workflows/btc_watchdog.yml'
+      - '.github/workflows/btc_live_cycle.yml'
+      - '.github/workflows/btc_binance_ws_collector.yml'
+      - 'src/**'
+      - 'models/*.json'
+      - 'data/predictions.db.gz'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-ops-preflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Validate BTC runtime contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate every workflow YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].sort.each { |p| YAML.load_file(p, aliases: true); puts "YAML OK: #{p}" }'
+
+      - name: Validate watchdog inventory and continuous schedules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          root = Path(".github/workflows")
+          watchdog = (root / "btc_watchdog.yml").read_text(encoding="utf-8")
+
+          block_match = re.search(r"workflows=\(\n(.*?)\n\s*\)", watchdog, re.S)
+          if not block_match:
+              raise SystemExit("watchdog recovery inventory block missing")
+
+          names = re.findall(r"^\s+(btc_[a-z0-9_]+\.yml)\s*$", block_match.group(1), re.M)
+          if not names:
+              raise SystemExit("watchdog recovery inventory empty")
+
+          missing = [name for name in names if not (root / name).is_file()]
+          if missing:
+              raise SystemExit("watchdog references missing workflow(s): " + ", ".join(missing))
+
+          required = {
+              "btc_live_cycle.yml",
+              "btc_binance_ws_collector.yml",
+              "btc_9h_research_marathon.yml",
+              "btc_unit_tests.yml",
+              "btc_ops_preflight.yml",
+          }
+          absent = sorted(required - set(names))
+          if absent:
+              raise SystemExit("watchdog coverage missing required workflow(s): " + ", ".join(absent))
+
+          schedule_contracts = {
+              "btc_watchdog.yml": "cron: '4-59/5 * * * *'",
+              "btc_live_cycle.yml": "cron: '2-59/5 * * * *'",
+              "btc_binance_ws_collector.yml": "cron: '3,33 * * * *'",
+              "btc_ops_preflight.yml": "cron: '19,49 * * * *'",
+          }
+          for filename, marker in schedule_contracts.items():
+              text = (root / filename).read_text(encoding="utf-8")
+              if marker not in text:
+                  raise SystemExit(f"{filename}: required schedule contract missing: {marker}")
+
+          if "actions: write" not in watchdog:
+              raise SystemExit("watchdog must retain Actions write permission for recovery")
+          print(f"watchdog inventory verified: {len(names)} recovery workflows")
+          PY
+
+      - name: Compile BTC source and test modules
+        run: python -m compileall -q src tests scripts
+
+      - name: Verify production registry, metadata, and artifact bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip
+          import json
+          import sqlite3
+          from pathlib import Path
+          from src.feature_schema import FEATURES
+
+          root = Path(".")
+          db_gz = root / "data" / "predictions.db.gz"
+          if not db_gz.is_file() or db_gz.stat().st_size <= 0:
+              raise SystemExit("production prediction DB archive missing")
+
+          db_path = Path("/tmp/predictions.db")
+          with gzip.open(db_gz, "rb") as src, db_path.open("wb") as dst:
+              dst.write(src.read())
+
+          with sqlite3.connect(db_path) as con:
+              rows = con.execute(
+                  "SELECT horizon, production_version FROM model_registry ORDER BY horizon"
+              ).fetchall()
+          registry = dict(rows)
+          if set(registry) != {"5m", "10m"} or any(not str(v).strip() for v in registry.values()):
+              raise SystemExit(f"production registry incomplete: {registry}")
+
+          model_dir = root / "models"
+          for horizon in ("5m", "10m"):
+              meta_path = model_dir / f"{horizon}.json"
+              artifact_path = model_dir / f"{horizon}.joblib"
+              if not meta_path.is_file() or not artifact_path.is_file() or artifact_path.stat().st_size <= 0:
+                  raise SystemExit(f"{horizon}: production artifact bundle incomplete")
+              meta = json.loads(meta_path.read_text(encoding="utf-8"))
+              if meta.get("candidate") is True:
+                  raise SystemExit(f"{horizon}: candidate artifact exposed as production")
+              if meta.get("model_version") != registry[horizon]:
+                  raise SystemExit(
+                      f"{horizon}: registry/metadata mismatch: "
+                      f"{registry[horizon]!r} != {meta.get('model_version')!r}"
+                  )
+              if meta.get("artifact") != artifact_path.name:
+                  raise SystemExit(f"{horizon}: artifact name mismatch")
+              if meta.get("classes") != ["DOWN", "FLAT", "UP"]:
+                  raise SystemExit(f"{horizon}: invalid class contract")
+              if meta.get("features") != list(FEATURES):
+                  raise SystemExit(f"{horizon}: feature schema drift")
+          print("production registry + metadata + artifact bindings: VERIFIED")
+          PY
