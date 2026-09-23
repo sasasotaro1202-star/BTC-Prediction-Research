@@ -89,6 +89,21 @@ jobs:
             echo "Current main SHA: ${main_sha}"
           fi
           now=$(date -u +%s)
+          live_status_stale=0
+          live_status_file=$(mktemp)
+          if gh api "/repos/${REPO}/contents/data/live_cycle_status.json?ref=main" --jq '.content' 2>/dev/null | base64 -d > "$live_status_file"; then
+            status_completed=$(jq -r '.completed_at_utc // ""' "$live_status_file" 2>/dev/null || echo "")
+            status_head=$(jq -r '.head_sha // ""' "$live_status_file" 2>/dev/null || echo "")
+            status_epoch=$(date -d "$status_completed" +%s 2>/dev/null || echo 0)
+            status_age=$((now - status_epoch))
+            if [ "$status_epoch" -gt 0 ] && [ "$status_age" -ge 300 ] && [ "$status_head" != "$main_sha" ]; then
+              live_status_stale=1
+            fi
+            echo "Live status heartbeat: completed=${status_completed:-none} head=${status_head:-unknown} age=${status_age}s stale=${live_status_stale}"
+          else
+            echo "WARN: unable to read live_cycle_status heartbeat; workflow-run inspection remains authoritative." >&2
+          fi
+          rm -f "$live_status_file"
           for workflow in "${workflows[@]}"; do
             echo "Checking ${workflow}"
             # 20 recent runs are sufficient for the short retry eligibility window while keeping
@@ -232,6 +247,10 @@ jobs:
             age=$((now - latest_epoch))
             echo "${workflow}: latest=${latest_updated:-none} age=${age}s running=${running} threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s"
             should_dispatch=false
+            if [ "$workflow" = "btc_live_cycle.yml" ] && [ "$live_status_stale" -eq 1 ] && [ "$running" -eq 0 ]; then
+              should_dispatch=true
+              echo "btc_live_cycle.yml: stale committed live heartbeat requires recovery dispatch."
+            fi
             if [ "$force_dispatch" = true ] || { [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; }; then
               should_dispatch=true
             fi
