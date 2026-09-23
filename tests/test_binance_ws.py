@@ -271,6 +271,19 @@ class TestBinanceWebSocket(unittest.TestCase):
                 )
 
 
+    def test_depth_publisher_skips_stale_remote_overlap_fail_closed(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("remote_retrieved >= local_retrieved", workflow)
+        self.assertIn('if [ "$rc" -eq 11 ]; then', workflow)
+        self.assertIn("return 0", workflow)
+        guard_start = workflow.index("publish_depth_cache() {")
+        guard_end = workflow.index("# Keep one WebSocket connection open", guard_start)
+        guard = workflow[guard_start:guard_end]
+        self.assertLess(guard.index("remote_retrieved >= local_retrieved"), guard.index("for attempt in 1 2 3 4; do"))
+        self.assertIn("raise SystemExit(11)", guard)
+
     def test_cache_round_trip(self):
         row = {
             "open_time_ms": 1_800_000_000_000, "open": 100, "high": 101, "low": 99, "close": 100.5,
