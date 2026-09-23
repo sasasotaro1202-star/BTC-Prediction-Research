@@ -23,7 +23,7 @@ env:
 jobs:
   collector:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
         with:
@@ -135,8 +135,11 @@ jobs:
             cp /tmp/publish_ws_cache.json data/binance_ws_1m.json
           }
 
-          iterations=11
-          capture_seconds=270
+          # Keep the dedicated Binance cache continuously warm. Each window is
+          # long enough to obtain a closed 1m bar, but short enough that Live
+          # Cycle never has to rely on a multi-minute-stale cache.
+          iterations=35
+          capture_seconds=90
 
           for n in $(seq 1 "${iterations}"); do
             echo "=== Binance WS rolling window ${n}/${iterations} (${capture_seconds}s) ==="
