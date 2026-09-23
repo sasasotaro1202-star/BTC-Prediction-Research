@@ -497,10 +497,12 @@ jobs:
               raise SystemExit('promotion gate must remain research-only')
           if obj.get('final_holdout_protected') is not True:
               raise SystemExit('promotion gate must protect final holdout')
-          if obj.get('production_safety_gate') != 'PASS':
-              raise SystemExit('production safety gate is not PASS')
+          if obj.get('production_safety_gate') not in {'PASS','HOLD'}:
+              raise SystemExit('unexpected production safety gate status')
           if obj.get('promotion_status') not in {'ELIGIBLE_PENDING_EXPLICIT_PROMOTION','HOLD'}:
               raise SystemExit('unexpected promotion status')
+          if obj.get('production_safety_gate') == 'HOLD' and obj.get('promotion_allowed') is not False:
+              raise SystemExit('promotion must remain blocked when safety gate is HOLD')
           if not isinstance(obj.get('promotion_allowed'), bool):
               raise SystemExit('promotion_allowed must be boolean')
           print('promotion gate evidence: VERIFIED')
