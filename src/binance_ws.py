@@ -263,16 +263,19 @@ async def _collect_url(url: str, timeout_seconds: float, parser) -> list[dict[st
 
 
 async def _collect_with_fallback(urls, timeout_seconds: float, parser) -> tuple[list[dict[str, Any]], str | None]:
-    """Try the documented raw stream first, then a legacy-compatible path.
+    """Collect primary and fallback endpoints within one bounded timeout window.
 
-    A fallback is used only when the primary endpoint yields no parsed
-    observations. Parser-level validation remains authoritative, so an
-    endpoint can never turn malformed/future data into an accepted row.
+    Primary remains authoritative when it yields any parsed observations. The
+    fallback is started concurrently so a dead primary endpoint cannot consume
+    the entire window before a usable legacy transport is attempted.
     """
-    for url in urls:
-        rows = await _collect_url(url, timeout_seconds, parser)
-        if rows:
-            return rows, url
+    tasks=[asyncio.create_task(_collect_url(url, timeout_seconds, parser)) for url in urls]
+    results=await asyncio.gather(*tasks, return_exceptions=True)
+    for url, result in zip(urls, results):
+        if isinstance(result, Exception):
+            continue
+        if result:
+            return result, url
     return [], None
 
 
