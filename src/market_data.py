@@ -232,11 +232,21 @@ def _parallel_result_calls(calls):
 def resilient_1m_series(limit: int = 120):
     status = {}
 
-    parallel = _parallel_result_calls({
+    # A fresh Binance Futures WebSocket cache is a first-class production input.
+    # Hosted runners can be geo-restricted from Binance REST, so do not spend
+    # the live-cycle latency budget on a REST request when an independently
+    # validated WS checkpoint already satisfies the same 40-bar PIT boundary.
+    ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
+    ws_suffix_primary = _fresh_ws_suffix(ws_cache, 40)
+
+    parallel_calls = {
         "bybit": lambda: closed_bybit(bybit_klines(limit)),
-        "binance_futures": lambda: closed_binance(binance_klines(False, limit)),
         "binance_spot": lambda: closed_binance(binance_klines(True, limit)),
-    })
+    }
+    if not ws_suffix_primary:
+        parallel_calls["binance_futures"] = lambda: closed_binance(binance_klines(False, limit))
+
+    parallel = _parallel_result_calls(parallel_calls)
 
     by = []
     by_current = None
@@ -277,13 +287,20 @@ def resilient_1m_series(limit: int = 120):
             by_current = None
         status["bybit_futures"] = "ok_current_only" if by_current else f"error:{_error_label(e)}"
 
-    fut = []
-    fut_error = parallel.get("binance_futures")
-    if isinstance(fut_error, Exception):
-        status["binance_futures"] = f"error:{_error_label(fut_error)}"
+    if ws_suffix_primary:
+        fut = _ws_series_rows(ws_suffix_primary[-limit:])
+        status["binance_futures"] = "ok"
+        status["binance_futures_transport"] = "websocket"
+        status["binance_futures_ws_event_time_ms"] = int(ws_suffix_primary[-1]["event_time_ms"])
+        status["binance_futures_ws_retrieved_at_ms"] = int(ws_suffix_primary[-1]["retrieved_at_ms"])
     else:
-        fut = _latest_contiguous_suffix(fut_error, 40)
-        status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
+        fut = []
+        fut_error = parallel.get("binance_futures")
+        if isinstance(fut_error, Exception):
+            status["binance_futures"] = f"error:{_error_label(fut_error)}"
+        else:
+            fut = _latest_contiguous_suffix(fut_error, 40)
+            status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
 
     spot = []
     spot_error = parallel.get("binance_spot")
