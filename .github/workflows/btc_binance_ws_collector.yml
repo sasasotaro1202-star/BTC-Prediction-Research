@@ -5,6 +5,11 @@ name: BTC Binance WS Collector
 # Each capture window is published independently, so Live Cycle can consume the
 # latest verified cache even if a later window fails.
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_binance_ws_collector.yml'
+      - 'src/binance_ws.py'
   schedule:
     - cron: '3 * * * *'
   workflow_dispatch:
