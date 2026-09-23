@@ -76,30 +76,62 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import asyncio
-          from src.binance_ws import capture_closed_klines, capture_depth_snapshot, capture_mark_price
+          import json
+          import websockets
+
+          ENDPOINTS = {
+              "kline": "wss://fstream.binance.com/market/ws/btcusdt@kline_1m",
+              "depth": "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms",
+              "mark": "wss://fstream.binance.com/market/ws/btcusdt@markPrice@1s",
+          }
+
+          async def probe(name, url):
+              try:
+                  async with websockets.connect(
+                      url,
+                      open_timeout=8,
+                      close_timeout=3,
+                      ping_interval=20,
+                      ping_timeout=20,
+                      max_size=2**20,
+                  ) as ws:
+                      raw = await asyncio.wait_for(ws.recv(), timeout=12)
+              except Exception as exc:
+                  raise SystemExit(f"Binance {name} WebSocket endpoint probe failed: {type(exc).__name__}: {exc}") from exc
+
+              try:
+                  msg = json.loads(raw)
+              except Exception as exc:
+                  raise SystemExit(f"Binance {name} WebSocket endpoint returned non-JSON data") from exc
+
+              data = msg.get("data") if isinstance(msg, dict) and isinstance(msg.get("data"), dict) else msg
+              if not isinstance(data, dict):
+                  raise SystemExit(f"Binance {name} WebSocket endpoint returned malformed payload")
+
+              if name == "kline":
+                  k = data.get("k")
+                  if data.get("e") != "kline" or not isinstance(k, dict) or k.get("s") != "BTCUSDT" or k.get("i") != "1m":
+                      raise SystemExit("Binance kline WebSocket endpoint returned an unexpected stream payload")
+              elif name == "depth":
+                  bids, asks = data.get("bids"), data.get("asks")
+                  if data.get("e") != "depthUpdate" or not isinstance(bids, list) or not isinstance(asks, list) or min(len(bids), len(asks)) < 20:
+                      raise SystemExit("Binance depth WebSocket endpoint returned an unexpected snapshot payload")
+              else:
+                  if data.get("e") != "markPriceUpdate" or data.get("s") != "BTCUSDT" or float(data.get("p", 0)) <= 0:
+                      raise SystemExit("Binance mark-price WebSocket endpoint returned an unexpected payload")
+
+              return {
+                  "name": name,
+                  "url": url,
+                  "event": data.get("e"),
+              }
 
           async def main():
-              klines = await capture_closed_klines(12.0)
-              if not klines:
-                  raise SystemExit("Binance current market WebSocket smoke test: no closed kline received")
-              depth = await capture_depth_snapshot(12.0)
-              if not depth:
-                  raise SystemExit("Binance current public WebSocket smoke test: no depth snapshot received")
-              levels = min(len(depth.get("bids", [])), len(depth.get("asks", [])))
-              if levels < 20:
-                  raise SystemExit("Binance current public WebSocket smoke test: fewer than 20 depth levels")
-              mark = await capture_mark_price(12.0)
-              if not mark or not (float(mark["mark_price"]) > 0):
-                  raise SystemExit("Binance current market WebSocket smoke test: no valid mark-price event received")
-              print({
-                  "kline_closed_bars": len(klines),
-                  "depth_levels": levels,
-                  "mark_price": float(mark["mark_price"]),
-              })
+              results = [await probe(name, url) for name, url in ENDPOINTS.items()]
+              print(json.dumps({"endpoint_smoke": results}, sort_keys=True))
 
           asyncio.run(main())
           PY
-
       - name: Capture and publish rolling Binance Futures WS windows
         shell: bash
         run: |
@@ -250,6 +282,49 @@ jobs:
             local local_file="data/binance_ws_depth.json"
             test -s "$local_file"
             git fetch --no-tags --depth=1 origin binance-ws-cache
+
+            # Overlapping collectors can finish in either order. Never let an
+            # older depth snapshot overwrite a newer checkpoint already on the
+            # dedicated cache branch.
+            remote_file="/tmp/btc_remote_ws_depth.json"
+            if git show origin/binance-ws-cache:data/binance_ws_depth.json > "$remote_file" 2>/dev/null; then
+              python - "$local_file" "$remote_file" <<'PY'
+          import json,sys
+          from pathlib import Path
+
+          local_path=Path(sys.argv[1])
+          remote_path=Path(sys.argv[2])
+          local=json.loads(local_path.read_text(encoding="utf-8"))
+          remote=json.loads(remote_path.read_text(encoding="utf-8"))
+
+          def snapshot(obj, label):
+              if not isinstance(obj,dict):
+                  raise SystemExit(f"{label} depth cache is not an object")
+              if obj.get("schema_version") != 1 or obj.get("source") != "Binance USD-M Futures WebSocket":
+                  raise SystemExit(f"{label} depth cache provenance invalid")
+              snap=obj.get("snapshot")
+              if not isinstance(snap,dict):
+                  raise SystemExit(f"{label} depth cache snapshot missing")
+              retrieved=int(snap.get("retrieved_at_ms",0))
+              event=int(snap.get("event_time_ms",0))
+              if retrieved <= 0 or event <= 0:
+                  raise SystemExit(f"{label} depth cache timestamps invalid")
+              return snap, retrieved
+
+          local_snap, local_retrieved = snapshot(local, "local")
+          remote_snap, remote_retrieved = snapshot(remote, "remote")
+
+          # The remote cache is authoritative when it is newer or equal. This
+          # makes the publish operation monotonic across overlapping runners.
+          if remote_retrieved >= local_retrieved:
+              print(
+                  f"Depth checkpoint is older than/equal to remote "
+                  f"(local={local_retrieved}, remote={remote_retrieved}); preserving remote."
+              )
+              raise SystemExit(0)
+          PY
+            fi
+
             for attempt in 1 2 3 4; do
               cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
               if [ -z "$cache_base" ]; then return 1; fi
@@ -265,7 +340,7 @@ jobs:
                 echo "Published Binance depth WS cache on attempt ${attempt}."
                 return 0
               fi
-              if [ "$attempt" -eq 4 ]; then return 1; fi
+              if [ "${attempt}" -eq 4 ]; then return 1; fi
               git fetch --no-tags --depth=1 origin binance-ws-cache
               sleep $((2 * attempt))
             done
