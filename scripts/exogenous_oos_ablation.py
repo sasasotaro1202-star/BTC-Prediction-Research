@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
@@ -35,7 +36,7 @@ from model_compare import (
     metrics,
 )
 from exogenous_information import aggregate_event_features, events_from_records
-from gdelt_exogenous_research import coverage_complete, _load_coverage
+from scripts.gdelt_exogenous_research import coverage_complete, _load_coverage
 
 EVENTS = ROOT / "data" / "exogenous" / "gdelt_events.jsonl"
 COVERAGE = ROOT / "data" / "exogenous" / "gdelt_coverage.json"
