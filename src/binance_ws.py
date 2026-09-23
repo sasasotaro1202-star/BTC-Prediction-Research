@@ -158,7 +158,14 @@ def load_depth_cache(path: Path = DEFAULT_DEPTH_CACHE, max_age_ms: int = 180_000
         if obj.get("stream") != "btcusdt@depth20@100ms":
             return None
         snap=obj.get("snapshot")
-        parsed=parse_depth_message(snap, int(snap.get("retrieved_at_ms",0)) if isinstance(snap,dict) else 0)
+        if not isinstance(snap,dict):
+            return None
+        parse_input=dict(snap)
+        parse_input.setdefault("e","depthUpdate")
+        parsed=parse_depth_message(
+            parse_input,
+            int(parse_input.get("retrieved_at_ms",0)),
+        )
         if parsed is None:
             return None
         age=int(time.time()*1000)-int(parsed["retrieved_at_ms"])
