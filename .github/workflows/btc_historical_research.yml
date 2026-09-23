@@ -5,6 +5,11 @@ name: BTC Historical Research
 # state updates. Integrity tests validate code changes; the full research run
 # remains auditable through its nightly schedule or explicit dispatch.
 on:
+  push:
+    paths:
+      - '.github/workflows/btc_historical_research.yml'
+      - 'src/historical_research_runner.py'
+      - 'scripts/historical_research_spot_fallback.py'
   schedule:
     - cron: '17 1,7,13,19 * * *'
   workflow_dispatch:
