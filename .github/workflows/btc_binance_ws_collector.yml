@@ -174,7 +174,7 @@ jobs:
           ]
           if local_rows == remote_rows:
               print('Binance WS cache semantic no-op; remote checkpoint already contains the same rows.')
-              return
+              raise SystemExit(0)
 
           temp=local_path.with_name('.binance_ws_1m.merge.tmp')
           temp.write_text(
