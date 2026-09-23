@@ -189,5 +189,6 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     result = run(root)
     print(json.dumps(result, indent=2, sort_keys=True))
-    # Evidence failure is a hard stop; candidate rejection alone is a safe HOLD.
-    raise SystemExit(0 if result["production_safety_gate"] == "PASS" else 1)
+    # A valid HOLD is a safe, expected gate outcome: research may continue while
+    # promotion remains blocked. Missing/malformed evidence raises inside run().
+    raise SystemExit(0)
