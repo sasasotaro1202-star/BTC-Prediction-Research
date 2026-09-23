@@ -293,6 +293,7 @@ class TestBinanceWebSocket(unittest.TestCase):
 
             obj = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(obj["stream"], "btcusdt@depth20@100ms")
+            self.assertEqual(obj["snapshot"]["E"], snapshot["event_time_ms"])
             with patch.object(
                 binance_ws.time,
                 "time",
