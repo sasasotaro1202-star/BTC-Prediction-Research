@@ -1,0 +1,103 @@
+name: BTC Candidate OOS Validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/btc_candidate_oos_validation.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-candidate-oos-\${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  candidate_oos:
+    name: Candidate OOS/PIT validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Restore prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+          test -s data/predictions.db
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile candidate research code
+        run: python -m compileall -q src tests scripts
+
+      - name: Run recency-weighted OOS
+        run: |
+          set -euo pipefail
+          python src/recency_weighted_oos.py
+          test -s data/historical_research/recency_weighted_oos.json
+
+      - name: Run situation-aware OOS
+        run: |
+          set -euo pipefail
+          python src/situation_meta_oos.py
+          test -s data/historical_research/situation_meta_oos.json
+
+      - name: Validate candidate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = {
+              "recency_weighted_oos.json",
+              "situation_meta_oos.json",
+          }
+          root = Path("data/historical_research")
+          for name in expected:
+              path = root / name
+              if not path.is_file() or path.stat().st_size <= 0:
+                  raise SystemExit(f"missing candidate evidence: {path}")
+              obj = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(obj, dict):
+                  raise SystemExit(f"{path}: root must be object")
+              if obj.get("research_only") is not True:
+                  raise SystemExit(f"{path}: research_only must be true")
+              if obj.get("production_changed") is not False:
+                  raise SystemExit(f"{path}: production_changed must be false")
+              print(f"VERIFIED {path}: status={obj.get('status')}")
+          PY
+
+      - name: Upload candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-candidate-oos-\${{ github.run_id }}
+          path: |
+            data/historical_research/recency_weighted_oos.json
+            data/historical_research/situation_meta_oos.json
+          if-no-files-found: error
+          retention-days: 3
