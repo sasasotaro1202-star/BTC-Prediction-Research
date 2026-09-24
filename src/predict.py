@@ -30,22 +30,6 @@ def enforce_primary_production_source(status):
     if source != "none" and not PRODUCTION_FALLBACKS_ENABLED:
         raise ValueError(
             "live_prediction_inputs_incomplete:price_feature_fallback="
-            f"{source},production_fallback_disabled"
+            f"{source},fallback_not_allowed;production_fallback_disabled"
         )
 def jst(dt): return dt.astimezone(timezone(timedelta(hours=9))).isoformat()
-def next_grid(dt,steps=1):
-    ts=int(dt.timestamp()); return datetime.fromtimestamp(((ts//INTERVAL)+steps)*INTERVAL,timezone.utc)
-def validate_latest_event_time(event_ms, *, now=None):
-    """Reject stale/future market candles before a directional prediction."""
-    current=utcnow() if now is None else now
-    event=datetime.fromtimestamp(int(event_ms)/1000,timezone.utc)
-    age=(current-event).total_seconds()
-    if age > MAX_LIVE_EVENT_AGE_SECONDS:
-        raise ValueError(f"stale_live_market_event:{age:.0f}s")
-    if age < -60:
-        raise ValueError(f"future_live_market_event:{age:.0f}s")
-    return event
-def _ema(v,span):
-    a=2/(span+1); e=float(v[0])
-    for x in v[1:]: e=a*float(x)+(1-a)*e
-    return e
