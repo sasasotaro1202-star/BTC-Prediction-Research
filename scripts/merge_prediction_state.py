@@ -32,11 +32,34 @@ def settlement_score(row):
 def compact_predictions(con):
     """Collapse only exact immutable duplicates after checking settlement conflicts."""
     before_snapshot = canonical_compaction_snapshot(con)
-    if before_snapshot["settlement_conflicts"]:
+    # Settlement timestamps can legitimately differ when the same immutable
+    # prediction is settled/replayed more than once. They are provenance fields,
+    # not outcome values. Keep the strict fail-closed behavior for conflicting
+    # prices/directions/correctness, but allow timestamp-only duplicate state so
+    # compaction can converge the DB without inventing an outcome.
+    blocking_conflicts = [
+        conflict
+        for conflict in before_snapshot["settlement_conflicts"]
+        if not conflict.startswith("settled_5m_at_utc:")
+        and not conflict.startswith("settled_10m_at_utc:")
+    ]
+    if blocking_conflicts:
         raise RuntimeError(
-            "conflicting non-null settlement states for immutable prediction event: "
-            + "; ".join(before_snapshot["settlement_conflicts"][:10])
+            "conflicting non-null settlement outcome states for immutable prediction event: "
+            + "; ".join(blocking_conflicts[:10])
         )
+    timestamp_only_conflicts = [
+        conflict
+        for conflict in before_snapshot["settlement_conflicts"]
+        if conflict.startswith("settled_5m_at_utc:")
+        or conflict.startswith("settled_10m_at_utc:")
+    ]
+    if timestamp_only_conflicts:
+        print(json.dumps({
+            "prediction-state compaction": {
+                "timestamp_only_conflicts_normalized": len(timestamp_only_conflicts)
+            }
+        }, sort_keys=True))
     info = con.execute('PRAGMA table_info(predictions)').fetchall()
     if not info:
         return {'compacted_duplicates': 0, 'total_events': 0}
