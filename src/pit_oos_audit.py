@@ -24,6 +24,10 @@ LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
 LEGACY_COINBASE_MODEL_VERSION = "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1"
 
 
+def table_columns(con, table: str) -> set[str]:
+    return {row[1] for row in con.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
 def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
