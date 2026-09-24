@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import src.reconcile_fallback_settlements as reconcile
-import src.db as db_module
+import db as db_module
 
 class TestReconcileFallbackSettlements(unittest.TestCase):
     def test_reopens_only_unknown_or_wrong_fallback_rows(self):

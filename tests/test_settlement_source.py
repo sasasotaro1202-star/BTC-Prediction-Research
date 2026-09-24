@@ -98,8 +98,6 @@ class TestSettlementSource(unittest.TestCase):
         self.assertEqual(source, 'unavailable')
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
     def test_coinbase_target_dispatches_to_native_resolver(self):
@@ -117,3 +115,6 @@ if __name__ == '__main__':
                 (102.5, "bybit_linear"),
             )
             fn.assert_called_once()
+if __name__ == '__main__':
+    unittest.main()
+
