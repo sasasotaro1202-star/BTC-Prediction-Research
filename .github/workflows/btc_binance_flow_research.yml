@@ -1,0 +1,147 @@
+name: BTC Binance Flow Research
+
+on:
+  pull_request:
+    paths:
+      - 'src/binance_flow_ws.py'
+      - 'src/binance_flow_features.py'
+      - 'tests/test_binance_flow_ws.py'
+      - 'tests/test_binance_flow_features.py'
+      - '.github/workflows/btc_binance_flow_research.yml'
+      - 'requirements.txt'
+  schedule:
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-binance-flow-research-${{ github.event_name == 'schedule' && github.run_id || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  validation:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile flow research code
+        run: python -m compileall -q src tests
+      - name: Run flow unit tests
+        run: python -m pytest -q tests/test_binance_flow_ws.py tests/test_binance_flow_features.py
+      - name: Live Binance flow smoke
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          python src/binance_flow_ws.py --capture-seconds 20 --checkpoint-seconds 5 --output /tmp/flow.json
+          test -s /tmp/flow.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('/tmp/flow.json').read_text())
+          rows=obj.get('rows',[])
+          if not rows:
+              raise SystemExit('flow smoke produced no finalized bins')
+          if obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('unexpected flow source')
+          print({'finalized_bins':len(rows),'latest_available_at_ms':rows[-1].get('available_at_ms')})
+          PY
+
+  collector:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install free WebSocket dependency
+        run: python -m pip install --disable-pip-version-check 'websockets>=15,<16'
+      - name: Restore dedicated flow cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f data/binance_flow_5s.json
+          if git fetch --no-tags --depth=1 origin binance-flow-cache; then
+            if git show origin/binance-flow-cache:data/binance_flow_5s.json > data/binance_flow_5s.json 2>/dev/null; then
+              echo 'Loaded prior flow cache.'
+            else
+              echo 'No prior flow cache in dedicated branch; starting empty.'
+            fi
+          fi
+      - name: Capture rolling flow/liquidation window
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          python src/binance_flow_ws.py --capture-seconds 1500 --checkpoint-seconds 30 --output data/binance_flow_5s.json
+          test -s data/binance_flow_5s.json
+      - name: Validate flow cache
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_flow_5s.json').read_text())
+          if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit('flow cache provenance invalid')
+          if obj.get('streams') != ['btcusdt@aggTrade','btcusdt@forceOrder']:
+              raise SystemExit('flow streams invalid')
+          rows=obj.get('rows')
+          if not isinstance(rows,list) or not rows:
+              raise SystemExit('flow cache has no finalized bins')
+          last_end=0
+          for row in rows:
+              start=int(row['start_time_ms']); end=int(row['end_time_ms'])
+              available=int(row['available_at_ms']); event=int(row['last_event_time_ms'])
+              if end != start + 5000 or end <= last_end:
+                  raise SystemExit('flow cache chronology/bin contract invalid')
+              if available < event:
+                  raise SystemExit('flow cache PIT violation')
+              last_end=end
+          print({'bins':len(rows),'latest_end_time_ms':last_end})
+          PY
+      - name: Publish dedicated flow cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git fetch --no-tags --depth=1 origin binance-flow-cache; then
+            echo 'binance-flow-cache branch is unavailable; refusing implicit branch creation in collector.' >&2
+            exit 1
+          fi
+          base=$(git rev-parse origin/binance-flow-cache)
+          tmp_index=$(mktemp)
+          trap 'rm -f "$tmp_index"' EXIT
+          GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
+          GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
+          tree=$(GIT_INDEX_FILE="$tmp_index" git write-tree)
+          commit=$(printf '%s\n\n%s\n' 'Update Binance flow research cache' 'Continuous PIT-safe aggressive-flow/liquidation checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$tree" -p "$base")
+          for attempt in 1 2 3 4; do
+            if git push origin "$commit:refs/heads/binance-flow-cache"; then exit 0; fi
+            git fetch --no-tags --depth=1 origin binance-flow-cache
+            base=$(git rev-parse origin/binance-flow-cache)
+            GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
+            GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
+            tree=$(GIT_INDEX_FILE="$tmp_index" git write-tree)
+            commit=$(printf '%s\n\n%s\n' 'Update Binance flow research cache' 'Continuous PIT-safe aggressive-flow/liquidation checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$tree" -p "$base")
+            sleep $((attempt * 2))
+          done
+          echo 'flow cache push failed after retries' >&2
+          exit 1
