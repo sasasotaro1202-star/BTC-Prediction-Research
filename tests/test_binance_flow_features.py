@@ -42,7 +42,7 @@ def test_features_reject_unavailable_bins():
          "trade_count":5,"buy_qty":5.0,"sell_qty":1.0,"buy_notional":500.0,"sell_notional":100.0,
          "max_trade_notional":200.0,"liquidation_count":1,"liquidation_buy_notional":50.0,"liquidation_sell_notional":0.0},
     ]
-    feat=derive_flow_features(rows,10000)
+    feat=derive_flow_features(rows,10000)  # 15s is the shortest derived feature window
     assert feat["flow_15s_missing"]==1.0
     assert feat["flow_15s_signed_notional"]==0.0
     assert feat["flow_30s_trade_count"]==2.0
