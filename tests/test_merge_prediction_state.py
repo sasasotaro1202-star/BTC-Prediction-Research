@@ -215,5 +215,39 @@ class TestMergePredictionState(unittest.TestCase):
             self.assertEqual(row, ('new_model', '2026-09-15T12:00:00+00:00'))
 
 
+    def test_settlement_source_is_merged_and_kept_out_of_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            con = sqlite3.connect(target)
+            con.execute('''CREATE TABLE predictions (
+                prediction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at_utc TEXT NOT NULL, target_5m TEXT NOT NULL, target_10m TEXT NOT NULL,
+                base_price REAL NOT NULL, p_up_5m REAL NOT NULL, p_down_5m REAL NOT NULL,
+                p_flat_5m REAL NOT NULL, p_up_10m REAL NOT NULL, p_down_10m REAL NOT NULL,
+                p_flat_10m REAL NOT NULL, model_version TEXT NOT NULL, feature_json TEXT NOT NULL,
+                scenario_json TEXT NOT NULL, actual_price_5m REAL, actual_direction_5m TEXT,
+                correct_5m INTEGER, settled_5m_at_utc TEXT, settlement_source_5m TEXT,
+                actual_price_10m REAL, actual_direction_10m TEXT, correct_10m INTEGER,
+                settled_10m_at_utc TEXT, settlement_source_10m TEXT
+            )''')
+            values = ('2026-09-15T11:00:00+00:00','2026-09-15T11:05:00+00:00',
+                      '2026-09-15T11:10:00+00:00',100.0,.4,.3,.3,.4,.3,.3,'v1','{}','{}')
+            row = values + (101.0,'UP',1,'2026-09-15T11:05:01+00:00','binance_futures',
+                            None,None,None,None,None)
+            cols = ('created_at_utc,target_5m,target_10m,base_price,p_up_5m,p_down_5m,p_flat_5m,'
+                    'p_up_10m,p_down_10m,p_flat_10m,model_version,feature_json,scenario_json,'
+                    'actual_price_5m,actual_direction_5m,correct_5m,settled_5m_at_utc,'
+                    'settlement_source_5m,actual_price_10m,actual_direction_10m,correct_10m,'
+                    'settled_10m_at_utc,settlement_source_10m')
+            con.execute(f'INSERT INTO predictions ({cols}) VALUES ({",".join("?" for _ in cols.split(","))})', row)
+            con.commit(); con.close()
+
+            subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
+            con = sqlite3.connect(target)
+            result = con.execute('SELECT COUNT(*), settlement_source_5m FROM predictions').fetchone()
+            con.close()
+            self.assertEqual(result, (1, 'binance_futures'))
+
+
 if __name__ == '__main__':
     unittest.main()
