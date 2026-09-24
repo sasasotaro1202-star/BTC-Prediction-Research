@@ -17,6 +17,10 @@ concurrency:
   group: btc-calibration-frozen-replay
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+concurrency:
+  group: btc-aux-research-admission
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
