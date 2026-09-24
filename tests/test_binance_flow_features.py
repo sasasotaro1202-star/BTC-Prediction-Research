@@ -1,5 +1,5 @@
 import numpy as np
-from src.binance_flow_features import derive_flow_features
+from src.binance_flow_features import derive_flow_features, _eligible
 from src.binance_flow_ws import ingest_event, normalize_bins, parse_agg_trade_message, parse_force_order_message
 
 
@@ -42,7 +42,10 @@ def test_features_reject_unavailable_bins():
          "trade_count":5,"buy_qty":5.0,"sell_qty":1.0,"buy_notional":500.0,"sell_notional":100.0,
          "max_trade_notional":200.0,"liquidation_count":1,"liquidation_buy_notional":50.0,"liquidation_sell_notional":0.0},
     ]
+    eligible=_eligible(rows,10000)
+    assert len(eligible)==1 and eligible[0]["end_time_ms"]==5000
     feat=derive_flow_features(rows,10000)
+    assert feat["flow_any_available"]==1.0
     # Only the first bin is PIT-available at the cutoff; the later bin is rejected.
     assert feat["flow_15s_missing"]==0.0
     assert feat["flow_15s_signed_notional"]==100.0
