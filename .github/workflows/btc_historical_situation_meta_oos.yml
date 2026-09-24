@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-historical-situation-meta-\${{ github.head_ref || github.ref_name }}
+  group: btc-historical-situation-meta-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -61,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: btc-historical-situation-meta-\${{ github.run_id }}
+          name: btc-historical-situation-meta-${{ github.run_id }}
           path: data/historical_research/historical_situation_meta_oos.json
           if-no-files-found: warn
           retention-days: 7
