@@ -195,6 +195,20 @@ def candidate_factories():
             ),
         ),
         (
+            # Research-backed deeper RF variant from frozen multi-window replay.
+            # It remains subject to the same chronological validation + gate and
+            # does not bypass any production safety condition.
+            "rf_replay",
+            RandomForestClassifier(
+                n_estimators=500,
+                max_depth=10,
+                min_samples_leaf=10,
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
             "extra_trees",
             __import__("sklearn.ensemble", fromlist=["ExtraTreesClassifier"]).ExtraTreesClassifier(
                 n_estimators=350,
