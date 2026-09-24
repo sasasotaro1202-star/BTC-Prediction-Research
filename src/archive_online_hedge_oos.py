@@ -87,26 +87,31 @@ def run_equal(rows: list[dict[str,Any]])->np.ndarray:
     return np.stack([np.mean(np.stack([r["probs"][e] for e in EXPERTS]),axis=0) for r in rows])
 
 
-def run_hedge(rows: list[dict[str,Any]])->tuple[np.ndarray,list[dict[str,float]]]:
-    losses=np.zeros(len(EXPERTS),float)
-    weights=np.ones(len(EXPERTS),float)/len(EXPERTS)
+def run_hedge(rows: list[dict[str,Any]], state: dict[str,Any]|None=None)->tuple[np.ndarray,list[dict[str,float]],dict[str,Any]]:
+    if state is None:
+        state={"losses":np.zeros(len(EXPERTS),float),"seen":0}
+    losses=np.asarray(state["losses"],dtype=float)
+    seen=int(state["seen"])
     out=[]; traces=[]
-    for i,r in enumerate(rows):
-        if i<WARMUP:
-            weights=np.ones(len(EXPERTS),float)/len(EXPERTS)
-        else:
-            scores=-ETA*losses
-            scores-=scores.max()
-            weights=np.exp(scores); weights/=weights.sum()
+    for r in rows:
+        weights=np.ones(len(EXPERTS),float)/len(EXPERTS) if seen<WARMUP else _hedge_weights(losses)
         matrix=np.stack([r["probs"][e] for e in EXPERTS])
         p=np.sum(weights[:,None]*matrix,axis=0)
         p=np.clip(p,EPS,1.0); p/=p.sum()
         out.append(p)
         traces.append({e:float(w) for e,w in zip(EXPERTS,weights)})
         y=CLASSES.index(r["y"])
-        # Crucial causal boundary: update state only after prediction t is fixed.
+        # Prediction is fixed before incorporating the realized outcome.
         losses += -np.log(np.clip(matrix[:,y],EPS,1.0))
-    return np.stack(out),traces
+        seen += 1
+    return np.stack(out),traces,{"losses":losses,"seen":seen}
+
+
+def _hedge_weights(losses:np.ndarray)->np.ndarray:
+    scores=-ETA*losses
+    scores-=scores.max()
+    weights=np.exp(scores); weights/=weights.sum()
+    return weights
 
 
 def block_deltas(rows,a,b):
@@ -133,9 +138,9 @@ def evaluate(h: str)->dict[str,Any]:
     split=int(len(rows)*(1-HOLDOUT_FRAC))
     dev,hold=rows[:split],rows[split:]
     eq_dev=run_equal(dev)
-    hedge_dev,tr_dev=run_hedge(dev)
+    hedge_dev,tr_dev,state=run_hedge(dev)
     eq_hold=run_equal(hold)
-    hedge_hold,tr_hold=run_hedge(hold)
+    hedge_hold,tr_hold,_=run_hedge(hold,state=state)
     dev_m_eq=metrics(dev,eq_dev); dev_m_h=metrics(dev,hedge_dev)
     hold_m_eq=metrics(hold,eq_hold); hold_m_h=metrics(hold,hedge_hold)
     blocks=block_deltas(dev,eq_dev,hedge_dev)
