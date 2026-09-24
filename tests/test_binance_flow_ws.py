@@ -43,10 +43,10 @@ def test_features_reject_unavailable_bins():
          "max_trade_notional":200.0,"liquidation_count":1,"liquidation_buy_notional":50.0,"liquidation_sell_notional":0.0},
     ]
     feat=derive_flow_features(rows,10000)
-    # Only the first bin is PIT-available at the cutoff; the later bin is rejected.
-    assert feat["flow_15s_missing"]==0.0
-    assert feat["flow_15s_signed_notional"]==100.0
-    assert feat["flow_30s_trade_count"]==2.0
+    # Both bins are unavailable by the cutoff: 10.5s and 12s availability.
+    assert feat["flow_15s_missing"]==1.0
+    assert feat["flow_15s_signed_notional"]==0.0
+    assert feat["flow_30s_trade_count"]==0.0
 
 
 def test_features_use_only_available_bins():
