@@ -89,6 +89,82 @@ def binance_archive_month(month: datetime):
     return [r for r in rows if r[0] + 60000 <= now_ms]
 
 
+
+
+def _archive_daily_urls(day: datetime) -> list[str]:
+    stamp = day.strftime("%Y-%m-%d")
+    name = f"BTCUSDT-1m-{stamp}.zip"
+    rel = f"data/futures/um/daily/klines/BTCUSDT/1m/{name}"
+    return [
+        f"https://data.binance.vision/{rel}",
+        f"https://s3-ap-northeast-1.amazonaws.com/data.binance.vision/{rel}",
+    ]
+
+
+def binance_archive_daily_rows(target: int = 120) -> list[list[float]]:
+    """Load the newest closed BTCUSDT 1m Futures candles from Binance Vision daily files.
+
+    This is the same Binance USD-M product as the Futures REST endpoint. Because
+    the archive is retrieved during the current prediction cycle, its
+    retrieval/availability timestamp is conservatively treated as the current
+    cutoff; candle event times remain the exchange candle open times.
+    """
+    target = max(40, min(int(target), 1500))
+    now = datetime.now(timezone.utc)
+    days = [now, now - timedelta(days=1)]
+    rows: list[list[float]] = []
+    errors: list[str] = []
+
+    for day in days:
+        for url in _archive_daily_urls(day):
+            try:
+                req = Request(url, headers={"User-Agent": UA})
+                with urlopen(req, timeout=20) as response:
+                    payload = response.read()
+                with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+                    if zf.testzip() is not None:
+                        raise RuntimeError("archive_zip_crc_failed")
+                    names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+                    if not names:
+                        raise RuntimeError("archive_contains_no_csv")
+                    with zf.open(names[0]) as fh:
+                        reader = csv.reader(io.TextIOWrapper(fh, encoding="utf-8", newline=""))
+                        for raw in reader:
+                            if len(raw) < 6:
+                                continue
+                            try:
+                                open_ms = int(raw[0])
+                                o = float(raw[1])
+                                h = float(raw[2])
+                                low = float(raw[3])
+                                c = float(raw[4])
+                                volume = float(raw[5])
+                            except (TypeError, ValueError):
+                                continue
+                            if open_ms <= 0 or min(o, h, low, c) <= 0 or volume < 0:
+                                continue
+                            if h < max(o, c) or low > min(o, c):
+                                continue
+                            if open_ms + 60_000 > int(now.timestamp() * 1000):
+                                continue
+                            rows.append([open_ms, o, h, low, c, volume])
+                if len(rows) >= target:
+                    break
+            except Exception as exc:
+                errors.append(f"{day.strftime('%Y-%m-%d')}:{type(exc).__name__}")
+        if len(rows) >= target:
+            break
+
+    dedup = {int(r[0]): r for r in rows}
+    ordered = [dedup[k] for k in sorted(dedup)]
+    suffix = _latest_contiguous_suffix(ordered, target)
+    if not suffix:
+        raise RuntimeError(
+            f"Binance Vision daily archive returned insufficient contiguous rows: "
+            f"{len(ordered)} need {target}; errors={errors}"
+        )
+    return suffix[-target:]
+
 def binance_archive_rows(target: int):
     now = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     months = [now]
@@ -324,6 +400,25 @@ def resilient_1m_series(limit: int = 120):
             status["binance_futures_ws_retrieved_at_ms"] = int(live_ws_suffix[-1]["retrieved_at_ms"])
         else:
             status["binance_futures_ws_contiguous_rows"] = len(live_ws_suffix)
+
+    # Binance Vision is a same-product, closed-candle archive. It is used only
+    # to reconstruct historical Futures candles after the live REST/WS paths fail.
+    # Each archive observation is conservatively treated as available at the
+    # current acquisition cutoff; no post-cutoff candle is accepted.
+    if len(fut) < 40:
+        try:
+            archive_rows = binance_archive_daily_rows(max(120, limit))
+            if len(archive_rows) >= 40:
+                fut = archive_rows[-limit:]
+                status["binance_futures"] = "ok"
+                status["binance_futures_transport"] = "binance_vision_daily_archive"
+                status["binance_futures_archive_retrieved_at_ms"] = int(
+                    time.time() * 1000
+                )
+            else:
+                status["binance_futures_archive_contiguous_rows"] = len(archive_rows)
+        except Exception as exc:
+            status["binance_futures_archive"] = f"error:{_error_label(exc)}"
 
     if len(fut) >= 40 and status.get("binance_futures_transport") == "websocket":
         status["price_feature_fallback"] = "none"
