@@ -174,6 +174,7 @@ def main():
                 mutable = {
                     'actual_price_5m', 'actual_direction_5m', 'correct_5m', 'settled_5m_at_utc',
                     'actual_price_10m', 'actual_direction_10m', 'correct_10m', 'settled_10m_at_utc',
+                    'settlement_source_5m', 'settlement_source_10m',
                 }
                 identity_cols = [
                     c for c in common
