@@ -290,7 +290,14 @@ jobs:
           set -euo pipefail
           out="$(mktemp)"
           err="$(mktemp)"
-          if python src/predict.py >"$out" 2>"$err"; then
+          # Bound network/model generation latency. A hung public endpoint must
+          # become a safe DEFERRED cycle rather than consuming the full 20-minute
+          # production slot and blocking subsequent 5-minute cycles.
+          set +e
+          timeout --signal=TERM --kill-after=15s 210s python src/predict.py >"$out" 2>"$err"
+          predict_status=$?
+          set -e
+          if [ "$predict_status" -eq 0 ]; then
             cat "$out"
             rm -f "$out" "$err"
             exit 0
@@ -301,7 +308,9 @@ jobs:
           # do not manufacture a prediction or promote a fallback. Preserve the
           # database and let diagnostics/state archival continue, while keeping
           # real code/data-contract failures red.
-          if grep -q "live_prediction_inputs_incomplete:" "$err"              && (grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err" || grep -q "fallback_not_allowed" "$err"); then
+          if [ "$predict_status" -eq 124 ] || [ "$predict_status" -eq 137 ] || \
+             (grep -q "live_prediction_inputs_incomplete:" "$err" && \
+              (grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err" || grep -q "fallback_not_allowed" "$err")); then
             echo "BTC_LIVE_DEFERRED=1" >> "$GITHUB_ENV"
             echo "BTC live prediction deferred: Binance critical market-data endpoints are unavailable. No prediction was fabricated." >&2
             rm -f "$out" "$err"
