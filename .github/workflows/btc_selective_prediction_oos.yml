@@ -18,7 +18,8 @@ on:
 
 concurrency:
   group: btc-selective-prediction-oos
-  cancel-in-progress: false
+  # Only the newest research generation is relevant; stale generations are discarded.
+  cancel-in-progress: true
 
 permissions:
   contents: read
