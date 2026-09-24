@@ -16,7 +16,7 @@ class TestModelGuards(unittest.TestCase):
         names = [name for name, _ in candidate_factories()]
         self.assertEqual(
             names,
-            ["logreg", "rf", "extra_trees", "hgb", "soft_ensemble"],
+            ["logreg", "rf", "rf_replay", "extra_trees", "hgb", "soft_ensemble"],
         )
 
 
