@@ -9,7 +9,7 @@ def _row(y="UP", ctx="TREND_UP|EXPANDING|BUY_PRESSURE|HIGH"):
         "fused_raw": np.asarray([0.2, 0.2, 0.6], dtype=float),
         "calibrated": np.asarray([0.2, 0.2, 0.6], dtype=float),
     }
-    return {"y": y, "context": ctx, "experts": base, "created": "2026-09-25T00:00:00+00:00"}
+    return {"y": y, "context": ctx, "experts": base, "created": "2026-09-25T00:00:00+00:00", "target": "2026-09-25T00:10:00+00:00"}
 
 
 def test_online_weight_normalizes():
