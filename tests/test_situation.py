@@ -50,3 +50,12 @@ def test_degraded_data_forces_low_quality():
     )
     assert result["data_state"] == "DEGRADED"
     assert result["signal_quality"] == "LOW"
+
+
+def test_missing_market_signals_are_not_reported_as_neutral():
+    features, market, p5, p10 = _inputs()
+    result = summarize_situation(features, market, p5, p10, data_quality={})
+    assert result["microstructure_flow_available"] is False
+    assert result["cross_exchange_divergence"] == "UNKNOWN"
+    assert result["unknown_signal_count"] >= 2
+    assert result["orderflow_state"] == "UNKNOWN"
