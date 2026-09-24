@@ -270,8 +270,12 @@ async def _stream(url:str, parser, timeout_seconds:float, on_event:Callable[[dic
                         continue
                     count+=1
                     await on_event(event)
-        except (asyncio.TimeoutError,websockets.exceptions.ConnectionClosed,OSError,Exception):
-            pass
+        except Exception as exc:
+            print(
+                f"flow transport retry url={url} type={type(exc).__name__} "
+                f"detail={str(exc)[:200]!r}",
+                flush=True,
+            )
         if time.monotonic()<deadline:
             await asyncio.sleep(0.5)
     return count
