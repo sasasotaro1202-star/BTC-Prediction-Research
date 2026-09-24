@@ -11,6 +11,8 @@ on:
       - 'src/selective_prediction_oos.py'
       - 'src/ensemble_model.py'
       - 'src/model_compare.py'
+      - 'src/uncertainty_router_oos.py'
+      - 'tests/test_uncertainty_router_oos.py'
       - 'tests/test_selective_prediction_oos.py'
       - '.github/workflows/btc_selective_prediction_oos.yml'
 
@@ -22,6 +24,56 @@ permissions:
   contents: read
 
 jobs:
+  uncertainty_router:
+    name: Prequential uncertainty/disagreement router
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile research code
+        run: python -m compileall -q src tests scripts
+      - name: Run uncertainty router OOS
+        run: |
+          set -euo pipefail
+          python src/uncertainty_router_oos.py
+          test -s data/historical_research/uncertainty_router_oos.json
+      - name: Validate research-only contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/uncertainty_router_oos.json').read_text())
+          assert obj.get('research_only') is True
+          assert obj.get('production_changed') is False
+          for h,p in obj['horizons'].items():
+              assert p['final_holdout_used_for_selection'] is False
+          print('uncertainty router contract: VERIFIED')
+          PY
+      - name: Upload uncertainty router evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-uncertainty-router-oos
+          path: data/historical_research/uncertainty_router_oos.json
+          if-no-files-found: error
+          retention-days: 7
+
   research:
     runs-on: ubuntu-latest
     timeout-minutes: 90
