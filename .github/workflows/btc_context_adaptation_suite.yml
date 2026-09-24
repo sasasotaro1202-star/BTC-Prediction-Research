@@ -1,0 +1,127 @@
+name: BTC Context Adaptation Suite
+
+on:
+  schedule:
+    - cron: '47 4,13,22 * * *'
+  pull_request:
+    paths:
+      - 'src/research_ledger.py'
+      - 'src/situation_meta_oos.py'
+      - 'src/historical_situation_meta_oos.py'
+      - 'src/online_expert_oos.py'
+      - 'src/recency_weighted_oos.py'
+      - 'tests/test_*situation*'
+      - 'tests/test_online_expert_oos.py'
+      - 'tests/test_research_ledger.py'
+      - '.github/workflows/btc_context_adaptation_suite.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-context-adaptation-suite
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  context_adaptation:
+    name: Context / drift / online adaptation OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile suite
+        run: python -m compileall -q src scripts tests
+
+      - name: Run recency-weighted OOS
+        run: |
+          set -euo pipefail
+          python src/recency_weighted_oos.py
+          test -s data/historical_research/recency_weighted_oos.json
+
+      - name: Run strict live situation OOS
+        run: |
+          set -euo pipefail
+          python src/situation_meta_oos.py
+          test -s data/historical_research/situation_meta_oos.json
+
+      - name: Run PIT-safe online expert OOS
+        run: |
+          set -euo pipefail
+          python src/online_expert_oos.py
+          test -s data/historical_research/online_expert_oos.json
+
+      - name: Run frozen archive situation OOS
+        run: |
+          set -euo pipefail
+          python src/historical_situation_meta_oos.py
+          test -s data/historical_research/historical_situation_meta_oos.json
+
+      - name: Validate research contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          names = [
+              "recency_weighted_oos.json",
+              "situation_meta_oos.json",
+              "online_expert_oos.json",
+              "historical_situation_meta_oos.json",
+          ]
+          root = Path("data/historical_research")
+          for name in names:
+              path = root / name
+              obj = json.loads(path.read_text(encoding="utf-8"))
+              if obj.get("research_only") is not True:
+                  raise SystemExit(f"{name}: research_only != true")
+              if obj.get("production_changed") is not False:
+                  raise SystemExit(f"{name}: production_changed != false")
+              print(f"VERIFIED {name}: status={obj.get('status')}")
+
+          history = json.loads(
+              (root / "historical_situation_meta_oos.json").read_text(encoding="utf-8")
+          )
+          if history.get("production_promotion_allowed") is not False:
+              raise SystemExit("historical situation lane must remain promotion-blocked")
+          PY
+
+      - name: Upload context adaptation evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-context-adaptation-suite-\${{ github.run_id }}
+          path: |
+            data/historical_research/recency_weighted_oos.json
+            data/historical_research/situation_meta_oos.json
+            data/historical_research/online_expert_oos.json
+            data/historical_research/historical_situation_meta_oos.json
+          if-no-files-found: error
+          retention-days: 7
