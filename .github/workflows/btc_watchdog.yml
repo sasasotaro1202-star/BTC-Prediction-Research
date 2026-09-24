@@ -5,18 +5,6 @@ on:
   # more recovery opportunities without colliding with the exact top of the hour.
   schedule:
     - cron: '4-59/5 * * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/btc_watchdog.yml'
-      - '.github/workflows/btc_9h_research_marathon.yml'
-      - '.github/workflows/btc_binance_ws_collector.yml'
-      - '.github/workflows/btc_live_cycle.yml'
-      - 'src/binance_ws.py'
-      - 'src/market_data.py'
-      - 'src/predict.py'
-      - 'src/live_data_policy.py'
-      - 'src/live_data_fail_closed.py'
   workflow_dispatch:
   # The 5-minute scheduled heartbeat is the authoritative recovery loop.
   # Do not start a watchdog run for every workflow completion; that creates
@@ -185,19 +173,13 @@ jobs:
             workflow="$1"
             threshold="$2"
 
-            # Push/workflow_run events are allowed to recover only production
-            # heartbeat/collector lanes. Research lanes are inspected for stale
-            # cancellation on pushes, but are dispatched by the scheduled heartbeat.
+            # The 5-minute scheduled heartbeat is authoritative. Manual dispatch
+            # is also allowed. Push-triggered recovery is disabled to prevent
+            # watchdog self-cancellation and research dispatch storms.
             dispatch_allowed=true
             case "${GITHUB_EVENT_NAME:-schedule}" in
-              push|workflow_run)
-                case "$workflow" in
-                  btc_live_cycle.yml|btc_binance_ws_collector.yml|btc_continuous_supervisor.yml) ;;
-                  *) dispatch_allowed=false ;;
-                esac
-                ;;
               schedule|workflow_dispatch) ;;
-              *) echo "${workflow}: unknown watchdog event; no recovery dispatch."; return 0 ;;
+              *) dispatch_allowed=false ;;
             esac
 
 
