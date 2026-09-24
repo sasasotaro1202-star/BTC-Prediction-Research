@@ -22,6 +22,8 @@ SETTLEMENT_COLUMNS = (
     "actual_direction_10m",
     "correct_10m",
     "settled_10m_at_utc",
+    "settlement_source_5m",
+    "settlement_source_10m",
 )
 
 # Settlement timestamps describe when a known outcome was recorded, not the
@@ -33,8 +35,14 @@ SETTLEMENT_TIMESTAMP_COLUMNS = (
     "settled_10m_at_utc",
 )
 
+SETTLEMENT_SOURCE_COLUMNS = (
+    "settlement_source_5m",
+    "settlement_source_10m",
+)
+
 SETTLEMENT_STATE_COLUMNS = tuple(
-    c for c in SETTLEMENT_COLUMNS if c not in SETTLEMENT_TIMESTAMP_COLUMNS
+    c for c in SETTLEMENT_COLUMNS
+    if c not in SETTLEMENT_TIMESTAMP_COLUMNS
 )
 
 
