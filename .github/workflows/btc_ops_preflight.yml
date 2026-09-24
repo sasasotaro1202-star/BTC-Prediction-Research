@@ -104,6 +104,16 @@ jobs:
           print("continuous supervisor heartbeat coverage: VERIFIED")
           PY
 
+      - name: Install BTC runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --disable-pip-version-check --retries 8 --timeout 90 -r requirements.txt; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          exit 1
+
       - name: Compile BTC source and test modules
         run: python -m compileall -q src tests scripts
 
