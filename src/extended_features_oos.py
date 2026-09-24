@@ -272,26 +272,40 @@ def factories():
     return factories
 
 
-def candidate_block(factory, train, test):
+def candidate_block(factory, train, test, horizon):
     if len(train) < MIN_TRAIN or len(set(r["y"] for r in train)) < 3:
         return None
     split = max(int(len(train) * 0.75), MIN_TRAIN - 100)
     if split < MIN_TRAIN - 200 or len(train) - split < 30:
         return None
-    cal_train = train[:split]
+
+    # The temperature fit is itself a learned calibration step. Its fitting
+    # rows must be causally separated from the calibration evaluation rows,
+    # otherwise target outcomes near the split can leak across the boundary.
+    gap = PURGE_BARS[horizon] + EMBARGO_BARS[horizon]
     cal_eval = train[split:]
+    cal_train_end = max(0, split - gap)
+    cal_train = train[:cal_train_end]
+    if len(cal_train) < MIN_TRAIN - 200 or len(cal_eval) < 30:
+        return None
     if len(set(r["y"] for r in cal_train)) < 3:
         return None
 
     cal_model = factory()
-    cal_model.fit(np.asarray([r["extended"] for r in cal_train], dtype=float),
-                  np.asarray([r["y"] for r in cal_train]))
-    cal_probs = aligned(cal_model, np.asarray([r["extended"] for r in cal_eval], dtype=float))
+    cal_model.fit(
+        np.asarray([r["extended"] for r in cal_train], dtype=float),
+        np.asarray([r["y"] for r in cal_train]),
+    )
+    cal_probs = aligned(
+        cal_model, np.asarray([r["extended"] for r in cal_eval], dtype=float)
+    )
     temperature = _temperature(cal_probs, [r["y"] for r in cal_eval])
 
     model = factory()
-    model.fit(np.asarray([r["extended"] for r in train], dtype=float),
-              np.asarray([r["y"] for r in train]))
+    model.fit(
+        np.asarray([r["extended"] for r in train], dtype=float),
+        np.asarray([r["y"] for r in train]),
+    )
     probs = aligned(model, np.asarray([r["extended"] for r in test], dtype=float))
     return apply_temperature(probs, temperature)
 
@@ -331,7 +345,7 @@ def evaluate(horizon: str):
             test = development[end:min(end + TEST_BLOCK, len(development))]
             if len(train) < MIN_TRAIN or len(test) < max(10, TEST_BLOCK // 2):
                 continue
-            cp = candidate_block(factory, train, test)
+            cp = candidate_block(factory, train, test, horizon)
             if cp is None:
                 continue
             y = [r["y"] for r in test]
@@ -390,7 +404,7 @@ def evaluate(horizon: str):
     for name, factory in factories().items():
         if name not in results:
             continue
-        cp = candidate_block(factory, development, holdout)
+        cp = candidate_block(factory, development, holdout, horizon)
         if cp is None:
             holdout_result["candidate_evaluations"][name] = {"status": "DEFERRED"}
         else:
