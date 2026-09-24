@@ -17,8 +17,19 @@ class TestPITOOSAudit(unittest.TestCase):
     def make_db(self, td, rows):
         db = Path(td) / "predictions.db"
         with sqlite3.connect(db) as con:
-            con.execute("CREATE TABLE predictions (prediction_id INTEGER PRIMARY KEY, created_at_utc TEXT, target_5m TEXT, target_10m TEXT, model_version TEXT, scenario_json TEXT)")
-            con.executemany("INSERT INTO predictions VALUES (?,?,?,?,?,?)", rows)
+            con.execute(
+                "CREATE TABLE predictions ("
+                "prediction_id INTEGER PRIMARY KEY, created_at_utc TEXT, target_5m TEXT, "
+                "target_10m TEXT, model_version TEXT, actual_direction_5m TEXT, "
+                "actual_direction_10m TEXT, scenario_json TEXT)"
+            )
+            normalized = []
+            for row in rows:
+                if len(row) == 6:
+                    normalized.append(tuple(row[:5]) + (None, None, row[5]))
+                else:
+                    normalized.append(tuple(row))
+            con.executemany("INSERT INTO predictions VALUES (?,?,?,?,?,?,?,?)", normalized)
         return db
 
     def test_strict_pit_reason_identifies_missing_source_cutoff(self):
@@ -513,6 +524,62 @@ class TestPITOOSAudit(unittest.TestCase):
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
                 self.assertTrue(result["ok"], result)
+
+
+
+    def test_tracks_strict_pit_readiness_for_adaptive_research(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime.now(timezone.utc).replace(microsecond=0)
+            rows = []
+            for i in range(2):
+                at = (created + timedelta(seconds=i)).isoformat()
+                scenario = {
+                    "decision_time_utc": at,
+                    "production_mode": "binance_primary",
+                    "situation": {"market_state": "TREND_UP"},
+                    "microstructure": {"vwap_distance_5m": 0.01},
+                    "components": {"calibrated_5m": {"DOWN": 0.2, "FLAT": 0.2, "UP": 0.6}},
+                    "provenance": {
+                        "event_time": at,
+                        "available_at": at,
+                        "retrieved_at": at,
+                        "prediction_cutoff": at,
+                        "sources": {
+                            "binance_futures": {
+                                "status": "ok",
+                                "event_time": at,
+                                "available_at": at,
+                                "retrieved_at": at,
+                                "prediction_cutoff": at,
+                            }
+                        },
+                    },
+                }
+                rows.append((
+                    i + 1,
+                    at,
+                    (created + timedelta(minutes=5, seconds=i + 1)).isoformat(),
+                    (created + timedelta(minutes=10, seconds=i + 1)).isoformat(),
+                    "v1",
+                    "UP",
+                    "DOWN",
+                    json.dumps(scenario),
+                ))
+
+            db = self.make_db(td, rows)
+            with patch.object(pit_oos_audit, "DB", db), patch.object(
+                pit_oos_audit, "OUT", Path(td) / "audit.json"
+            ):
+                result = pit_oos_audit.audit()
+
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["coverage"]["5m"]["settled_predictions"], 2)
+            self.assertEqual(result["coverage"]["5m"]["strict_primary_settled"], 2)
+            self.assertEqual(result["coverage"]["5m"]["situation_meta_ready"], 2)
+            self.assertEqual(result["coverage"]["10m"]["strict_primary_settled"], 2)
+            self.assertEqual(result["coverage"]["10m"]["situation_meta_ready"], 2)
+            self.assertEqual(result["coverage"]["5m"]["situation_meta_rows_needed"], 2998)
+            self.assertEqual(result["coverage"]["10m"]["online_expert_rows_needed"], 138)
 
 if __name__ == "__main__":
     unittest.main()
