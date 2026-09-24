@@ -8,7 +8,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import Pipeline

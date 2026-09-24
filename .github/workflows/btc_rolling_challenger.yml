@@ -1,6 +1,12 @@
 name: BTC Rolling Challenger Research
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/rolling_challenger_oos.py'
+      - 'tests/test_model_guards.py'
+      - '.github/workflows/btc_rolling_challenger.yml'
   schedule:
     - cron: '47 */6 * * *'
   workflow_dispatch:
