@@ -185,13 +185,21 @@ jobs:
             workflow="$1"
             threshold="$2"
 
-            # Main pushes are valid recovery opportunities for every listed lane.
-          # Active-run/source-change guards prevent duplicate dispatches; stale research
-          # runs are cancelled and rebuilt from the current main before new evidence is used.
-          case "${GITHUB_EVENT_NAME:-schedule}" in
-            push|workflow_run|schedule|workflow_dispatch) ;;
-            *) echo "${workflow}: unknown watchdog event; no recovery dispatch."; return 0 ;;
-          esac
+            # Push/workflow_run events are allowed to recover only production
+            # heartbeat/collector lanes. Research lanes are inspected for stale
+            # cancellation on pushes, but are dispatched by the scheduled heartbeat.
+            dispatch_allowed=true
+            case "${GITHUB_EVENT_NAME:-schedule}" in
+              push|workflow_run)
+                case "$workflow" in
+                  btc_live_cycle.yml|btc_binance_ws_collector.yml|btc_continuous_supervisor.yml) ;;
+                  *) dispatch_allowed=false ;;
+                esac
+                ;;
+              schedule|workflow_dispatch) ;;
+              *) echo "${workflow}: unknown watchdog event; no recovery dispatch."; return 0 ;;
+            esac
+
 
             active_grace="$3"
             stale_head_grace="$4"
@@ -284,7 +292,7 @@ jobs:
               should_dispatch=true
               echo "btc_binance_ws_collector.yml: starting staggered overlap collector after 30 minutes."
             fi
-            if [ "$should_dispatch" = true ]; then
+            if [ "$should_dispatch" = true ] && [ "$dispatch_allowed" = true ]; then
               echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
               if gh workflow enable "$workflow" >/dev/null 2>&1; then
                 echo "${workflow} enable check completed."
