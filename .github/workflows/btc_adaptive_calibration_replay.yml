@@ -52,7 +52,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           from src.state_archive import restore_db
+          from src.db import init_db
           restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          init_db()
           PY
 
       - name: Compile and test
