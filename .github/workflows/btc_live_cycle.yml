@@ -178,6 +178,8 @@ jobs:
         run: python src/calibration.py
       - name: Recalibrate BTC live structural blend after model adoption
         run: python src/blend_calibration.py
+      - name: Recalibrate source-native Coinbase fallback after settlement
+        run: python src/fallback_calibration.py
       - name: Audit BTC production artifact provenance
         run: python src/production_artifact_audit.py
       - name: Refresh latest Binance WebSocket cache immediately before prediction

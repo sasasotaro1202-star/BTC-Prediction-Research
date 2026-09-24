@@ -168,6 +168,57 @@ def _fit_model(model, X, y):
     return model
 
 
+def candidate_factories():
+    """Return the deterministic production candidate set.
+
+    Candidates are evaluated chronologically; adding a candidate never bypasses
+    the development gate or the frozen descriptive holdout.
+    """
+    from ensemble_model import SoftVotingEnsemble
+    return [
+        (
+            "logreg",
+            Pipeline([
+                ("scale", StandardScaler()),
+                ("model", LogisticRegression(C=0.5, max_iter=3000)),
+            ]),
+        ),
+        (
+            "rf",
+            RandomForestClassifier(
+                n_estimators=300,
+                max_depth=7,
+                min_samples_leaf=12,
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
+            "extra_trees",
+            __import__("sklearn.ensemble", fromlist=["ExtraTreesClassifier"]).ExtraTreesClassifier(
+                n_estimators=350,
+                max_depth=10,
+                min_samples_leaf=10,
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
+            "hgb",
+            HistGradientBoostingClassifier(
+                max_iter=220,
+                max_leaf_nodes=15,
+                learning_rate=0.04,
+                l2_regularization=1.5,
+                random_state=42,
+            ),
+        ),
+        ("soft_ensemble", SoftVotingEnsemble(learn_weights=True)),
+    ]
+
+
 def train_one(X, y, purge_gap=0):
     """Nested chronological development selection with a frozen descriptive holdout.
 
@@ -204,38 +255,7 @@ def train_one(X, y, purge_gap=0):
         ),
     )
 
-    candidates = [
-        (
-            "logreg",
-            Pipeline(
-                [
-                    ("scale", StandardScaler()),
-                    ("model", LogisticRegression(C=0.5, max_iter=3000)),
-                ]
-            ),
-        ),
-        (
-            "rf",
-            RandomForestClassifier(
-                n_estimators=300,
-                max_depth=7,
-                min_samples_leaf=12,
-                max_features="sqrt",
-                random_state=42,
-                n_jobs=-1,
-            ),
-        ),
-        (
-            "hgb",
-            HistGradientBoostingClassifier(
-                max_iter=220,
-                max_leaf_nodes=15,
-                learning_rate=0.04,
-                l2_regularization=1.5,
-                random_state=42,
-            ),
-        ),
-    ]
+    candidates = candidate_factories()
 
     validation_results = []
     for name, model in candidates:
@@ -313,7 +333,7 @@ def publish(horizon, result):
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, MODEL_DIR / f"{horizon}.joblib")
-    version = f"bootstrap.{name}.v5.3"
+    version = f"bootstrap.{name}.v5.4"
     meta = {
         "model_version": version,
         "horizon": horizon,

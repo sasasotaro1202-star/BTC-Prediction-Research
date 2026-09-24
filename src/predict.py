@@ -168,6 +168,54 @@ def load_blend_weight(h):
         if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.0
         return w
     except Exception:return 0.0
+def load_fallback_calibration(source, h):
+    """Load source-native fallback calibration only when it matches the model generation."""
+    if source not in {"bybit", "coinbase"} or h not in {"5m", "10m"}:
+        return {"temperature": 1.0, "blend_weight": 0.0, "status": "invalid_request", "n": 0}
+    path = MODEL_DIR / f"{source}_{h}.calibration.json"
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        meta = json.loads((MODEL_DIR / f"{source}_{h}.json").read_text(encoding="utf-8"))
+        if obj.get("model_version") != meta.get("model_version"):
+            return {"temperature": 1.0, "blend_weight": 0.0, "status": "stale_model_version", "n": 0}
+        n = int(obj.get("n", 0))
+        status = str(obj.get("status", ""))
+        t = float(obj.get("temperature", 1.0))
+        w = float(obj.get("blend_weight", 0.0))
+        if n < 80 or status != "accepted":
+            return {"temperature": 1.0, "blend_weight": 0.0, "status": "not_accepted", "n": n}
+        if not (0.5 <= t <= 3.0) or not (0.0 <= w <= 0.45):
+            return {"temperature": 1.0, "blend_weight": 0.0, "status": "invalid_bounds", "n": n}
+        return {"temperature": t, "blend_weight": w, "status": status, "n": n}
+    except Exception:
+        return {"temperature": 1.0, "blend_weight": 0.0, "status": "unavailable", "n": 0}
+
+
+def calibrate_fallback_probs(probs, source, h):
+    c = load_fallback_calibration(source, h)
+    t = c["temperature"]
+    if t == 1.0:
+        return probs
+    p = np.clip(np.asarray([probs["DOWN"], probs["FLAT"], probs["UP"]], float), 1e-6, 1-1e-6)
+    p /= p.sum()
+    z = np.log(p) / t
+    z -= z.max()
+    q = np.exp(z)
+    q /= q.sum()
+    return {"DOWN": float(q[0]), "FLAT": float(q[1]), "UP": float(q[2])}
+
+
+def apply_structural_weight(base, structural, weight):
+    w = max(0.0, min(0.45, float(weight)))
+    if w <= 0.0:
+        return base
+    p = np.asarray([base["DOWN"], base["FLAT"], base["UP"]], dtype=float)
+    q = np.asarray([structural["DOWN"], structural["FLAT"], structural["UP"]], dtype=float)
+    out = np.clip((1.0 - w) * p + w * q, 1e-6, 1.0)
+    out /= out.sum()
+    return {"DOWN": float(out[0]), "FLAT": float(out[1]), "UP": float(out[2])}
+
+
 def calibrate_probs(probs,h):
     t=load_temperature(h)
     if t==1.0:return probs
@@ -517,15 +565,17 @@ def main():
         and status.get('bybit_depth') == 'ok'
     )
     if use_fallback:
-        raw5,raw10=base5,base10; w5=w10=0.0
+        prefix = 'bybit' if use_bybit_fallback else 'coinbase'
+        fallback5 = load_fallback_calibration(prefix, '5m')
+        fallback10 = load_fallback_calibration(prefix, '10m')
+        w5 = float(fallback5.get('blend_weight', 0.0))
+        w10 = float(fallback10.get('blend_weight', 0.0))
+        raw5 = calibrate_fallback_probs(base5, prefix, '5m')
+        raw10 = calibrate_fallback_probs(base10, prefix, '10m')
+        p5 = apply_structural_weight(raw5, s5, w5)
+        p10 = apply_structural_weight(raw10, s10, w10)
     else:
         raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m')
-    # Fallback artifacts are deliberately uncalibrated until their own
-    # chronological calibration is independently validated. Never apply the
-    # primary Binance model's calibration to a different-source artifact.
-    if use_fallback:
-        p5,p10=raw5,raw10
-    else:
         p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
@@ -635,7 +685,7 @@ def main():
             'prediction_cutoff':retrieved,
             'status':'ok',
         }
-    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model_only_uncalibrated' if use_bybit_fallback else ('coinbase_fallback_model_only_uncalibrated' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
+    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model+fallback_oos_calibration' if use_bybit_fallback else ('coinbase_fallback_model+fallback_oos_calibration' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
     if use_bybit_fallback or use_coinbase_fallback:
         prefix='bybit' if use_bybit_fallback else 'coinbase'
         by5=json.loads((MODEL_DIR/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']

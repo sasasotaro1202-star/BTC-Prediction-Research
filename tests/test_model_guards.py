@@ -11,6 +11,15 @@ from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provena
 
 
 class TestModelGuards(unittest.TestCase):
+    def test_bootstrap_candidate_set_contains_diverse_safe_models(self):
+        from bootstrap_train import candidate_factories
+        names = [name for name, _ in candidate_factories()]
+        self.assertEqual(
+            names,
+            ["logreg", "rf", "extra_trees", "hgb", "soft_ensemble"],
+        )
+
+
     def test_research_class_order_matches_db_storage_conversion(self):
         self.assertEqual(CLASSES, ['DOWN', 'FLAT', 'UP'])
         stored_up_down_flat = [0.70, 0.10, 0.20]
