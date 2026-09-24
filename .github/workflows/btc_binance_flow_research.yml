@@ -118,11 +118,14 @@ jobs:
           assert obj.get("schema_version") == 1
           assert obj.get("research_only") is True
           assert obj.get("production_changed") is False
+          assert set(obj.get("horizons", {})) == {"5m", "10m"}
           for horizon, result in obj["horizons"].items():
               assert horizon in {"5m","10m"}
-              assert result.get("research_only") is True
-              assert result.get("production_changed") is False
+              assert result.get("status") in {"OK", "DEFERRED"}
               assert result.get("promotion_allowed", False) is False
+              if result.get("status") == "OK":
+                  assert result.get("research_only") is True
+                  assert result.get("production_changed") is False
           print("flow OOS evidence contract verified")
           PY
       - name: Upload flow OOS evidence
