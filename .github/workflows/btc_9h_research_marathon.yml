@@ -398,6 +398,8 @@ jobs:
       needs.model_zoo_regime.result == 'success' &&
       needs.recency_weighted.result == 'success' &&
       needs.situation_meta.result == 'success'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -590,28 +592,39 @@ jobs:
           remote_main=$(git rev-parse origin/main)
 
           if [ "${remote_main}" != "${GITHUB_SHA}" ]; then
-            echo "published=false"
-            echo "reason=main_advanced_during_research"
-            echo "Research evidence remains available in this run's artifact; no stale commit is published."
+            echo 'published=false'
+            echo 'reason=main_advanced_during_research'
+            echo 'Research evidence remains in this run artifact; no stale commit is published.'
             exit 0
           fi
 
           git add "${ledger}"
           if git diff --cached --quiet; then
-            echo "published=false"
-            echo "reason=no_ledger_change"
+            echo 'published=false'
+            echo 'reason=no_ledger_change'
             exit 0
           fi
 
           git commit -m 'chore: persist 9h research ledger'
-          if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main; then
-            echo "published=true"
-          else
-            echo "published=false"
-            echo "reason=main_advanced_or_push_rejected"
-            echo "Research evidence remains in this run's artifact; production/main was not overwritten."
-          fi
-
+          for attempt in 1 2 3 4 5; do
+            if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main; then
+              echo 'published=true'
+              exit 0
+            fi
+            git fetch --no-tags origin main
+            remote_main=$(git rev-parse origin/main)
+            if [ "${remote_main}" != "${GITHUB_SHA}" ]; then
+              echo 'published=false'
+              echo 'reason=main_advanced_during_publish'
+              echo 'Research evidence remains in this run artifact; stale evidence was not published.'
+              exit 0
+            fi
+            echo "WARN: ledger push attempt ${attempt}/5 rejected; retrying."
+            sleep $((attempt * 2))
+          done
+          echo 'published=false'
+          echo 'reason=push_retry_exhausted'
+          echo 'Research evidence remains in this run artifact; production/main was not overwritten.'
       - name: Upload complete 9h evidence
         if: always()
         uses: actions/upload-artifact@v6
