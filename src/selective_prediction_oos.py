@@ -99,7 +99,7 @@ def _metrics(y, probs):
 def _adaptive_threshold(previous_confidence, target_coverage):
     prev = np.asarray(previous_confidence, dtype=float)
     prev = prev[np.isfinite(prev)]
-    if len(prev) < 20:
+    if len(prev) < 4:
         return 0.60
     q = float(1.0 - target_coverage)
     # Higher threshold = fewer accepted predictions; derived solely from

@@ -20,6 +20,49 @@ class TestModelGuards(unittest.TestCase):
         )
 
 
+    def test_fallback_calibration_is_source_and_version_bound(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from src import predict
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "coinbase_5m.json").write_text(
+                json.dumps({"model_version": "coinbase_fallback.rf.v1"}), encoding="utf-8"
+            )
+            (root / "coinbase_5m.calibration.json").write_text(
+                json.dumps({
+                    "model_version": "coinbase_fallback.rf.v1",
+                    "n": 100,
+                    "status": "accepted",
+                    "temperature": 1.2,
+                    "blend_weight": 0.15,
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(predict, "MODEL_DIR", root):
+                loaded = predict.load_fallback_calibration("coinbase", "5m")
+                self.assertEqual(loaded["status"], "accepted")
+                self.assertAlmostEqual(loaded["temperature"], 1.2)
+                self.assertAlmostEqual(loaded["blend_weight"], 0.15)
+
+                (root / "coinbase_5m.calibration.json").write_text(
+                    json.dumps({
+                        "model_version": "coinbase_fallback.rf.v2",
+                        "n": 100,
+                        "status": "accepted",
+                        "temperature": 1.2,
+                        "blend_weight": 0.15,
+                    }),
+                    encoding="utf-8",
+                )
+                rejected = predict.load_fallback_calibration("coinbase", "5m")
+                self.assertEqual(rejected["status"], "stale_model_version")
+                self.assertEqual(rejected["blend_weight"], 0.0)
+
+
     def test_research_class_order_matches_db_storage_conversion(self):
         self.assertEqual(CLASSES, ['DOWN', 'FLAT', 'UP'])
         stored_up_down_flat = [0.70, 0.10, 0.20]
