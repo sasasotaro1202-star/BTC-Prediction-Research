@@ -8,3 +8,8 @@ def test_compact_preserves_gate_boundary():
     out=compact({"status":"OK","promotion_evidence_eligible":False,"production_changed":False})
     assert out["production_changed"] is False
     assert out["promotion_evidence_eligible"] is False
+
+
+def test_ledger_defines_situation_meta_lane():
+    from src.research_ledger import LANES
+    assert LANES["situation_meta"] == "situation_meta_oos.json"
