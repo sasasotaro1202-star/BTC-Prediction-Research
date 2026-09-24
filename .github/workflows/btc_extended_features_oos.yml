@@ -1,0 +1,95 @@
+name: BTC Extended Features OOS
+
+on:
+  pull_request:
+    paths:
+      - 'src/extended_features_oos.py'
+      - 'src/feature_schema.py'
+      - 'src/model_compare.py'
+      - 'src/label_policy.py'
+      - 'tests/test_extended_features_oos.py'
+      - '.github/workflows/btc_extended_features_oos.yml'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-extended-oos-\${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  extended_oos:
+    name: Extended feature chronological OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+          test -s data/predictions.db
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and unit test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m unittest tests.test_extended_features_oos
+
+      - name: Run extended chronological OOS
+        run: |
+          set -euo pipefail
+          python src/extended_features_oos.py
+          test -s data/historical_research/extended_features_oos.json
+
+      - name: Verify evidence contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("data/historical_research/extended_features_oos.json")
+          obj = json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("research_only contract failed")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("production_changed contract failed")
+          for horizon, result in obj.get("horizons", {}).items():
+              if result.get("status") == "OK" and result.get("data_source") == "live_binance_primary":
+                  if result.get("promotion_evidence_eligible") is not True:
+                      raise SystemExit(f"{horizon}: live evidence eligibility contract failed")
+              elif result.get("status") == "OK":
+                  if result.get("promotion_evidence_eligible") is not False:
+                      raise SystemExit(f"{horizon}: archive replay must never be promotion eligible")
+          print("VERIFIED extended_features_oos evidence contract")
+          PY
+
+      - name: Upload OOS evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-extended-oos-evidence-\${{ github.run_id }}
+          path: data/historical_research/extended_features_oos.json
+          if-no-files-found: error
+          retention-days: 7
