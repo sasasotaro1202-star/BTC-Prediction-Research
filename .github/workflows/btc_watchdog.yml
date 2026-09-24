@@ -88,8 +88,15 @@ jobs:
             status_head=$(jq -r '.head_sha // ""' "$live_status_file" 2>/dev/null || echo "")
             status_epoch=$(date -d "$status_completed" +%s 2>/dev/null || echo 0)
             status_age=$((now - status_epoch))
-            if [ "$status_epoch" -gt 0 ] && [ "$status_age" -ge 300 ] && [ "$status_head" != "$main_sha" ]; then
+            if [ "$status_epoch" -gt 0 ] && [ "$status_age" -ge 300 ] && [ -n "$status_head" ] && [ "$status_head" != "$main_sha" ]; then
               live_status_stale=1
+              compare=$(gh api "/repos/\${REPO}/compare/\${status_head}...\${main_sha}" 2>/dev/null || true)
+              if [ -n "$compare" ] && jq -e '.too_large == false' <<<"$compare" >/dev/null 2>&1; then
+                changed_files=$(jq -r '[.files[]?.filename? | select(startswith("src/") or startswith("scripts/") or startswith("tests/") or . == "requirements.txt" or . == ".github/workflows/btc_live_cycle.yml" or . == ".github/workflows/btc_watchdog.yml")] | length' <<<"$compare" 2>/dev/null || echo 1)
+                if [[ "$changed_files" =~ ^[0-9]+$ ]] && [ "$changed_files" -eq 0 ]; then
+                  live_status_stale=0
+                fi
+              fi
             fi
             echo "Live status heartbeat: completed=${status_completed:-none} head=${status_head:-unknown} age=${status_age}s stale=${live_status_stale}"
           else
