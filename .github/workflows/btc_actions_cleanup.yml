@@ -1,0 +1,97 @@
+name: BTC Actions Cleanup
+
+on:
+  schedule:
+    - cron: '9-59/10 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_actions_cleanup.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-actions-cleanup
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cancel stale research duplicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          now=$(date -u +%s)
+
+          # Research lanes may safely be rebuilt from current main once they are
+          # stale. Keep exactly one active run per lane and never touch live/WS
+          # production heartbeat here.
+          workflows=(
+            btc_9h_research_marathon.yml
+            btc_rolling_challenger.yml
+            btc_historical_research.yml
+            btc_recency_research.yml
+            btc_archive_refresh.yml
+            btc_selective_research.yml
+            btc_microstructure_research.yml
+            btc_hierarchical_research.yml
+            btc_dual_memory_oos.yml
+            btc_exogenous_research.yml
+            btc_interaction_research.yml
+            btc_time_regime_research.yml
+            btc_calibration_frozen_replay.yml
+            btc_adaptive_calibration_replay.yml
+            btc_multiscale_frozen_replay.yml
+            btc_archive_primary_bridge.yml
+            btc_canonical_state_compaction.yml
+            btc_frozen_archive_replay.yml
+            btc_selective_prediction_oos.yml
+          )
+
+          for workflow in "${workflows[@]}"; do
+            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=50" 2>/dev/null)" || {
+              echo "WARN: cannot inspect ${workflow}; continue"
+              continue
+            }
+
+            active_ids="$(jq -r --arg main_sha "${main_sha}" '.workflow_runs[]? |
+              select(.status=="queued" or .status=="pending" or .status=="in_progress") |
+              [.id,.head_sha,.created_at,.run_attempt] | @tsv' <<<"${response}")"
+
+            keep=0
+            while IFS=$'\t' read -r run_id head created attempt; do
+              [ -n "${run_id}" ] || continue
+              created_epoch=$(date -d "${created}" +%s 2>/dev/null || echo 0)
+              age=$((now-created_epoch))
+
+              # A running research job older than 30m is considered stale when
+              # it is not based on the current main lineage. Multiple active
+              # runs are collapsed to the newest surviving run.
+              stale=0
+              if [ "${age}" -ge 1800 ] && [ "${head}" != "${main_sha}" ]; then
+                stale=1
+              elif [ "${keep}" -eq 1 ]; then
+                stale=1
+              fi
+
+              if [ "${stale}" -eq 1 ]; then
+                echo "${workflow}: cancelling stale/duplicate run ${run_id} head=${head} age=${age}s"
+                if gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/cancel" >/dev/null 2>&1; then
+                  echo "${workflow}: cancel requested for ${run_id}"
+                else
+                  echo "WARN: cancel failed for ${workflow} run ${run_id}"
+                fi
+              else
+                keep=1
+              fi
+            done <<<"${active_ids}"
+          done
