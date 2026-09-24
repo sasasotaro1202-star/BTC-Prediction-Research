@@ -103,8 +103,9 @@ jobs:
             # below also uses the same short window, independently of this retry-history scan.
             response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?per_page=20" 2>/dev/null) || { echo "ERROR: unable to inspect ${workflow}; watchdog recovery degraded." >&2; watchdog_degraded=1; continue; }
             recent_runs_json=$(jq -c '.workflow_runs[]? | {id,status,conclusion,run_attempt,head_sha,updated_at}' <<<"$response") || {
-              echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted." >&2
-              exit 1
+              echo "ERROR: unable to parse ${workflow} run history; watchdog recovery cannot be trusted; continuing to next workflow." >&2
+              watchdog_degraded=1
+              continue
             }
             while IFS= read -r run; do
               [ -n "$run" ] || continue
@@ -352,7 +353,6 @@ jobs:
           # scheduled runs are delayed or dropped, without cancelling a healthy run.
           recover_if_stale btc_binance_ws_collector.yml 600 3900 300
           if [ "$watchdog_degraded" -ne 0 ]; then
-            echo 'ERROR: BTC workflow watchdog completed in DEGRADED state; at least one recovery/inspection action failed.' >&2
-            exit 1
+            echo '::warning::BTC workflow watchdog completed in DEGRADED state; at least one recovery/inspection action failed. The next 5-minute watchdog tick remains the recovery path.'
           fi
-          echo 'BTC workflow watchdog completed without masking core workflow results.'
+          echo 'BTC workflow watchdog completed; degraded recovery state was recorded without failing the watchdog job.'
