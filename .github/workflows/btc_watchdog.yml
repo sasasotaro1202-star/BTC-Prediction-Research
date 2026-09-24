@@ -181,7 +181,7 @@ jobs:
               watchdog_degraded=1
               return 1
             fi
-            latest=$(jq -c --arg main_sha "$main_sha" '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped" and .head_sha == $main_sha)] | sort_by(.updated_at) | last // empty' <<<"$response")
+            latest=$(jq -c '[.workflow_runs[]? | select(.status == "completed" and .conclusion != "skipped")] | sort_by(.updated_at) | last // empty' <<<"$response")
             running=$(jq '[.workflow_runs[]? | select(.status == "queued" or .status == "pending" or .status == "in_progress")] | length' <<<"$response")
 
             # A completed-run freshness check alone cannot recover a stuck active
@@ -246,6 +246,9 @@ jobs:
               should_dispatch=true
               echo "btc_live_cycle.yml: stale committed live heartbeat requires recovery dispatch."
             fi
+            # A data-only main state commit must not reset research freshness.
+            # Code/protocol changes are handled by stale-head cancellation; ordinary
+            # cadence uses the latest completed run regardless of its exact state SHA.
             if [ "$force_dispatch" = true ] || { [ "$running" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; }; then
               should_dispatch=true
             fi
