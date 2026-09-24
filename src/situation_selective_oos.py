@@ -14,7 +14,7 @@ from typing import Iterable
 
 import numpy as np
 
-from model_compare import HORIZONS, load_primary_production_strict_rows
+from model_compare import HORIZONS, load_primary_production_strict_rows, load_archive_research_rows, aligned
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "situation_selective_oos.json"
@@ -119,11 +119,45 @@ def _choose_thresholds(dev: list[dict]) -> dict[str, dict]:
 
 def _run(horizon: str) -> dict:
     rows = load_primary_production_strict_rows(horizon)
+    source = "live_binance_primary"
+    promotion_evidence_eligible = True
+    if len(rows) < 1500:
+        # Descriptive-only fallback: freeze the current Champion on closed archive
+        # candles. These rows accelerate research but can never become promotion evidence.
+        try:
+            import joblib
+            meta = json.loads((ROOT / "models" / f"{horizon}.json").read_text(encoding="utf-8"))
+            model = joblib.load(ROOT / "models" / f"{horizon}.joblib")
+            trained_raw = meta.get("trained_at_utc")
+            trained_at = None
+            if trained_raw:
+                from datetime import datetime, timezone
+                trained_at = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00"))
+            archive = load_archive_research_rows(horizon, max(12000, 1500))
+            frozen = []
+            for row in archive:
+                try:
+                    created = datetime.fromisoformat(str(row["created"]).replace("Z", "+00:00"))
+                    if trained_at is not None and created <= trained_at:
+                        continue
+                    x = np.asarray([row["x"]], dtype=float)
+                    if x.shape != (1, 15) or not np.isfinite(x).all():
+                        continue
+                    p = aligned(model, x)[0].tolist()
+                    frozen.append({**row, "production": p})
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+            if len(frozen) > len(rows):
+                rows = frozen
+                source = "binance_archive_frozen_champion"
+                promotion_evidence_eligible = False
+        except (OSError, ValueError, TypeError, ImportError, json.JSONDecodeError):
+            pass
     if len(rows) < 1500:
         return {
             "status": "DEFERRED",
             "n": len(rows),
-            "reason": "insufficient_strict_primary_rows",
+            "reason": "insufficient_chronological_rows",
         }
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
     dev, holdout = rows[:split], rows[split:]
@@ -181,7 +215,9 @@ def _run(horizon: str) -> dict:
         "production_changed": False,
         "final_holdout_protected": True,
         "final_holdout_used_for_selection": False,
-        "selection_source": "development_strict_primary_chronological_oos_only",
+        "selection_source": "development_chronological_oos_only",
+        "data_source": source,
+        "promotion_evidence_eligible": promotion_evidence_eligible,
         "score_definition": "confidence+margin+trend_strength+ema_agreement-entropy",
         "n": len(rows),
         "development_n": len(dev),
