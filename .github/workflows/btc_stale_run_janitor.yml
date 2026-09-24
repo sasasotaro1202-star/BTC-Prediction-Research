@@ -1,0 +1,83 @@
+name: BTC Stale Run Janitor
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '2,12,22,32,42,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-stale-run-janitor
+  cancel-in-progress: true
+
+jobs:
+  janitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: \${{ github.token }}
+      REPO: \${{ github.repository }}
+    steps:
+      - name: Cancel stale main-head runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "/repos/\${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          now="$(date -u +%s)"
+          echo "Current main SHA: \${main_sha}"
+
+          declare -A THRESHOLD=(
+            [btc_continuous_supervisor.yml]=300
+            [btc_live_cycle.yml]=600
+            [btc_binance_ws_collector.yml]=600
+            [btc_9h_research_marathon.yml]=900
+            [btc_rolling_challenger.yml]=900
+            [btc_historical_research.yml]=900
+            [btc_recency_research.yml]=900
+            [btc_interaction_research.yml]=900
+            [btc_selective_prediction_oos.yml]=900
+            [btc_adaptive_calibration_replay.yml]=900
+            [btc_time_regime_research.yml]=900
+            [btc_dual_memory_oos.yml]=900
+            [btc_hierarchical_research.yml]=900
+            [btc_nested_selective_research.yml]=900
+            [btc_archive_refresh.yml]=900
+            [btc_microstructure_research.yml]=900
+            [btc_frozen_archive_replay.yml]=900
+            [btc_multiscale_frozen_replay.yml]=900
+            [btc_canonical_state_compaction.yml]=900
+          )
+
+          for workflow in "\${!THRESHOLD[@]}"; do
+            threshold="\${THRESHOLD[$workflow]}"
+            response="$(gh api "/repos/\${REPO}/actions/workflows/\${workflow}/runs?branch=main&per_page=100")"
+            jq -c '.workflow_runs[]? | {id,status,head_sha,updated_at,run_number}' <<<"$response" |
+            while IFS= read -r run; do
+              [ -n "$run" ] || continue
+              id="$(jq -r '.id' <<<"$run")"
+              status="$(jq -r '.status' <<<"$run")"
+              head="$(jq -r '.head_sha' <<<"$run")"
+              updated="$(jq -r '.updated_at' <<<"$run")"
+              updated_epoch="$(date -d "$updated" +%s 2>/dev/null || echo 0)"
+              age=$((now - updated_epoch))
+
+              if [ "$id" -eq "\${GITHUB_RUN_ID}" ]; then
+                continue
+              fi
+              if [[ "$status" != "queued" && "$status" != "pending" && "$status" != "in_progress" ]]; then
+                continue
+              fi
+
+              if [ "$head" != "$main_sha" ] && [ "$age" -ge "$threshold" ]; then
+                echo "CANCEL stale \${workflow} run=\${id} run_number=$(jq -r '.run_number' <<<"$run") age=\${age}s head=\${head}"
+                gh api --method POST "/repos/\${REPO}/actions/runs/\${id}/cancel" >/dev/null
+              fi
+            done
+          done
+
+          echo "Stale-run janitor completed."
