@@ -432,7 +432,8 @@ jobs:
       needs.extended_features.result == 'success' &&
       needs.model_zoo_regime.result == 'success' &&
       needs.recency_weighted.result == 'success' &&
-      needs.situation_meta.result == 'success'
+      needs.situation_meta.result == 'success' &&
+      needs.online_expert.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
