@@ -122,6 +122,7 @@ jobs:
               assert horizon in {"5m","10m"}
               assert result.get("research_only") is True
               assert result.get("production_changed") is False
+              assert result.get("promotion_allowed", False) is False
           print("flow OOS evidence contract verified")
           PY
       - name: Upload flow OOS evidence
