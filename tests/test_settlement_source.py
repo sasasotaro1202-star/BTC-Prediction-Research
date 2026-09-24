@@ -132,7 +132,7 @@ class TestSettlementSource(unittest.TestCase):
         class Response:
             def __enter__(self): return self
             def __exit__(self, *args): return False
-            def read(self): return b'{"result":{"list":[[1726394760000,"100","103","99","102.5","12"]]}}'
+            def read(self): return b'{"result":{"list":[[1726394700000,"100","103","99","102.5","12"]]}}'
         with patch.object(ss, 'urlopen', return_value=Response()) as opener:
             price, source = ss._target_bybit_linear('2024-09-15T10:06:00+00:00')
         self.assertEqual(price, 102.5)
