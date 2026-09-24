@@ -13,7 +13,8 @@ on:
 
 concurrency:
   group: btc-continuous-supervisor
-  cancel-in-progress: false
+  # A stuck generation must never block its successor forever.
+  cancel-in-progress: true
 
 permissions:
   actions: write
