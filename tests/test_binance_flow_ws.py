@@ -51,3 +51,23 @@ def test_features_reject_unavailable_bins():
 def test_feature_output_is_finite():
     feat=derive_flow_features([],10000)
     assert np.isfinite(np.asarray(list(feat.values()),dtype=float)).all()
+
+
+def test_cache_roundtrip_is_valid_json(tmp_path):
+    import json
+    from src.binance_flow_ws import write_cache, load_cache
+
+    bins = {0: {
+        "start_time_ms": 0, "end_time_ms": 5000, "available_at_ms": 6000,
+        "last_event_time_ms": 4000, "trade_count": 1,
+        "buy_qty": 1.0, "sell_qty": 0.0, "buy_notional": 100.0,
+        "sell_notional": 0.0, "max_trade_notional": 100.0,
+        "liquidation_count": 0, "liquidation_buy_notional": 0.0,
+        "liquidation_sell_notional": 0.0,
+    }}
+    path = tmp_path / "flow.json"
+    write_cache(bins, path)
+    json.loads(path.read_text(encoding="utf-8"))
+    restored = load_cache(path)
+    assert 0 in restored
+    assert restored[0]["buy_notional"] == 100.0
