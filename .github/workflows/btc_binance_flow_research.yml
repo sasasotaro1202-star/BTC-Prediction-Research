@@ -130,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: btc-flow-meta-oos-\${{ github.run_id }}
+          name: btc-flow-meta-oos-${{ github.run_id }}
           path: data/historical_research/flow_meta_oos.json
           if-no-files-found: error
           retention-days: 7
