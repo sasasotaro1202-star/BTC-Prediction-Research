@@ -578,61 +578,43 @@ jobs:
           python src/research_ledger.py
           test -s data/historical_research/9h_latest_summary.json
 
-      - name: Persist durable research ledger only on current main head
+      - name: Persist durable research ledger with compare-and-swap push
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           ledger='data/historical_research/9h_latest_summary.json'
-          current_main=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/tmp/ledger-head-error.log)
-          status=$?
-          set -e
-          if [ "${status}" -ne 0 ] || [ -z "${current_main}" ]; then
-            echo 'ERROR: unable to resolve current main head; refusing to publish stale research evidence.' >&2
-            cat /tmp/ledger-head-error.log >&2 || true
-            exit 1
-          fi
-          if [ "${current_main}" != "${GITHUB_SHA}" ]; then
-            echo "ERROR: research run head ${GITHUB_SHA} is no longer current main (${current_main}); evidence remains in run artifacts only." >&2
+          test -s "${ledger}"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin main
+
+          remote_main=$(git rev-parse origin/main)
+          if [ "${remote_main}" != "${GITHUB_SHA}" ]; then
+            echo "STALE_RESEARCH_HEAD: research=${GITHUB_SHA} current_main=${remote_main}; ledger stays in run artifacts."
             exit 1
           fi
 
-          content_b64=$(base64 -w0 "${ledger}") || {
-            echo 'ERROR: failed to encode research ledger' >&2
+          work_branch="research-ledger-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "${work_branch}"
+          git add "${ledger}"
+          git diff --cached --quiet && {
+            echo 'ERROR: research ledger produced no git diff.'
             exit 1
           }
+          git commit -m 'chore: persist 9h research ledger'
 
-          for attempt in 1 2 3 4 5; do
-            set +e
-            existing_sha=$(gh api "/repos/${REPO}/contents/${ledger}?ref=main" --jq '.sha' 2>/dev/null)
-            get_status=$?
-            set -e
-            request=/tmp/research-ledger-request.json
-            if [ "${get_status}" -eq 0 ] && [ -n "${existing_sha}" ]; then
-              python - "${request}" "${content_b64}" "${existing_sha}" <<'PY'
-          import json,sys
-          path,content,sha=sys.argv[1:4]
-          json.dump({"message":"chore: persist 9h research ledger","content":content,"branch":"main","sha":sha},open(path,"w",encoding="utf-8"))
-          PY
-            else
-              python - "${request}" "${content_b64}" <<'PY'
-          import json,sys
-          path,content=sys.argv[1:3]
-          json.dump({"message":"chore: persist 9h research ledger","content":content,"branch":"main"},open(path,"w",encoding="utf-8"))
-          PY
-            fi
-            if gh api --method PUT "/repos/${REPO}/contents/${ledger}" --input "${request}" >/tmp/research-ledger-response.json 2>/tmp/research-ledger-error.log; then
-              echo "Research ledger persisted on attempt ${attempt}."
-              exit 0
-            fi
-            echo "WARN: research ledger persistence failed on attempt ${attempt}/5." >&2
-            sed -n '1,8p' /tmp/research-ledger-error.log >&2 || true
-            if [ "${attempt}" -lt 5 ]; then sleep $((attempt * 5)); fi
-          done
-          echo 'ERROR: research ledger persistence exhausted retries.' >&2
-          exit 1
+          # Non-forced push is compare-and-swap at the branch tip: if main moved
+          # after the pre-check, Git rejects the fast-forward and stale evidence
+          # cannot overwrite current main.
+          if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main; then
+            echo 'Research ledger persisted atomically on current main head.'
+          else
+            echo 'ERROR: main advanced or ledger push failed; stale evidence was not published.'
+            exit 1
+          fi
 
       - name: Upload complete 9h evidence
         if: always()
