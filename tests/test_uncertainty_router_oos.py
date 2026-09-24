@@ -46,3 +46,11 @@ def test_route_probabilities_normalize():
     X=_router_features(probs,rows,include_context=False)
     out,chosen=_route(X,probs,{},rows)
     assert np.allclose(out.sum(axis=1),1.0)
+
+
+def test_metrics_reports_sample_count_without_upstream_n():
+    rows = _rows(12)
+    probs = _probs(12)
+    from src.uncertainty_router_oos import _metrics
+    result = _metrics([r["y"] for r in rows], probs["soft_equal"])
+    assert result["n"] == 12
