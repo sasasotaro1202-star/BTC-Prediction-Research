@@ -84,6 +84,10 @@ jobs:
             echo "=== BTC supervisor tick ${tick} ==="
             dispatch_if_stale btc_live_cycle.yml 300 live
             dispatch_if_stale btc_binance_ws_collector.yml 1800 ws
+            # Keep the long-running research heartbeat alive as well as the
+            # market-data/prediction heartbeat. Active runs are never duplicated.
+            dispatch_if_stale btc_rolling_challenger.yml 21600 rolling
+            dispatch_if_stale btc_9h_research_marathon.yml 28800 marathon
             sleep 300
           done
 
