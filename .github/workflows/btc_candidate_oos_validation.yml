@@ -101,7 +101,7 @@ jobs:
           PY
 
       - name: Upload candidate evidence
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
           name: btc-candidate-oos-\${{ github.run_id }}
