@@ -26,7 +26,8 @@ def init_db():
           actual_price_5m REAL, actual_price_10m REAL,
           actual_direction_5m TEXT, actual_direction_10m TEXT,
           correct_5m INTEGER, correct_10m INTEGER,
-          settled_5m_at_utc TEXT, settled_10m_at_utc TEXT
+          settled_5m_at_utc TEXT, settled_10m_at_utc TEXT,
+          settlement_source_5m TEXT, settlement_source_10m TEXT
         );
         CREATE TABLE IF NOT EXISTS model_metrics (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +46,10 @@ def init_db():
           updated_at_utc TEXT NOT NULL
         );
         ''')
+        columns = {str(row[1]) for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
+        for name in ('settlement_source_5m', 'settlement_source_10m'):
+            if name not in columns:
+                con.execute(f'ALTER TABLE predictions ADD COLUMN {name} TEXT')
 
 if __name__ == '__main__':
     init_db()

@@ -34,3 +34,14 @@ class TestSettle(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_scenario_source_uses_source_native_fallback(self):
+        coinbase = {"production_mode":"coinbase_fallback","data_quality":{"price_feature_fallback":"coinbase"}}
+        bybit = {"production_mode":"bybit_fallback","data_quality":{"price_feature_fallback":"bybit"}}
+        self.assertEqual(settle.scenario_source(__import__("json").dumps(coinbase)), "coinbase_exchange")
+        self.assertEqual(settle.scenario_source(__import__("json").dumps(bybit)), "bybit_linear")
+
+    def test_known_fallback_never_silently_becomes_binance(self):
+        row = {"production_mode":"coinbase_fallback","data_quality":{"price_feature_fallback":"coinbase"}}
+        self.assertNotEqual(settle.scenario_source(__import__("json").dumps(row)), "binance_futures")

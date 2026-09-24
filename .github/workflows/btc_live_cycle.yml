@@ -168,6 +168,11 @@ jobs:
           echo "WARN: gated Coinbase fallback training unavailable; live prediction may defer safely if Binance is unavailable." >&2
           echo "BTC_FALLBACK_MODEL_UNAVAILABLE=1" >> "$GITHUB_ENV"
           exit 0
+      - name: Reconcile legacy fallback settlement venue
+        run: |
+          set -euo pipefail
+          python src/reconcile_fallback_settlements.py
+
       - name: Settle due BTC predictions
         run: python src/settle.py
       # Model adoption must precede both calibration layers so a newly

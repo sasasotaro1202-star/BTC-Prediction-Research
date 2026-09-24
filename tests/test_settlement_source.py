@@ -100,3 +100,20 @@ class TestSettlementSource(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_coinbase_target_dispatches_to_native_resolver(self):
+        with patch.object(ss, "_target_coinbase_exchange", return_value=(101.5, "coinbase_exchange")) as fn:
+            self.assertEqual(
+                ss.target_close_preferred("2026-09-15T10:05:00+00:00", "coinbase_exchange"),
+                (101.5, "coinbase_exchange"),
+            )
+            fn.assert_called_once()
+
+    def test_bybit_target_dispatches_to_native_resolver(self):
+        with patch.object(ss, "_target_bybit_linear", return_value=(102.5, "bybit_linear")) as fn:
+            self.assertEqual(
+                ss.target_close_preferred("2026-09-15T10:05:00+00:00", "bybit_linear"),
+                (102.5, "bybit_linear"),
+            )
+            fn.assert_called_once()

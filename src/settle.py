@@ -16,9 +16,22 @@ def direction(base: float, actual: float) -> str:
 
 def scenario_source(raw: str) -> str:
     try:
-        return preferred_source_from_scenario(json.loads(raw or '{}'))
-    except Exception:
+        scenario = json.loads(raw or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
         return 'binance_futures'
+    quality = scenario.get('data_quality') or {}
+    mode = str(scenario.get('production_mode', ''))
+    fallback = str(quality.get('price_feature_fallback', ''))
+    if mode == 'coinbase_fallback' or fallback == 'coinbase':
+        return 'coinbase_exchange'
+    if mode == 'bybit_fallback' or fallback == 'bybit':
+        return 'bybit_linear'
+    try:
+        return preferred_source_from_scenario(scenario)
+    except Exception:
+        if mode in {'', 'binance_primary'} and fallback in {'', 'none'}:
+            return 'binance_futures'
+        return 'invalid_settlement_source'
 
 
 def resolve_targets(targets: list[tuple[str, str]], max_workers: int = MAX_TARGET_WORKERS) -> dict[tuple[str, str], tuple[float | None, str]]:
@@ -47,7 +60,8 @@ def settle():
             SELECT prediction_id, target_5m, target_10m, base_price,
                    p_up_5m, p_down_5m, p_flat_5m,
                    p_up_10m, p_down_10m, p_flat_10m,
-                   actual_price_5m, actual_price_10m, model_version, scenario_json
+                   actual_price_5m, actual_price_10m, model_version, scenario_json,
+                   settlement_source_5m, settlement_source_10m
             FROM predictions
             WHERE (actual_price_5m IS NULL AND target_5m <= ?)
                OR (actual_price_10m IS NULL AND target_10m <= ?)
@@ -67,7 +81,7 @@ def settle():
         resolved = resolve_targets(targets)
 
         for r in rows:
-            prediction_id, target5, target10, base, up5, down5, flat5, up10, down10, flat10, actual5, actual10, model_version, scenario_json = r
+            prediction_id, target5, target10, base, up5, down5, flat5, up10, down10, flat10, actual5, actual10, model_version, scenario_json, source5_recorded, source10_recorded = r
             if model_version == 'DEGRADED_NO_FRESH_DATA':
                 continue
             if not isinstance(base, (int, float)) or base <= 0:
@@ -79,7 +93,7 @@ def settle():
                 if px is not None:
                     actual_dir = direction_from_prices(base, px)
                     pred_dir = max((('UP', up5), ('DOWN', down5), ('FLAT', flat5)), key=lambda x: x[1])[0]
-                    con.execute('''UPDATE predictions SET actual_price_5m=?, actual_direction_5m=?, correct_5m=?, settled_5m_at_utc=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), prediction_id))
+                    con.execute('''UPDATE predictions SET actual_price_5m=?, actual_direction_5m=?, correct_5m=?, settled_5m_at_utc=?, settlement_source_5m=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), source, prediction_id))
                     settled += 1
                 else:
                     unavailable += 1
@@ -88,7 +102,7 @@ def settle():
                 if px is not None:
                     actual_dir = direction_from_prices(base, px)
                     pred_dir = max((('UP', up10), ('DOWN', down10), ('FLAT', flat10)), key=lambda x: x[1])[0]
-                    con.execute('''UPDATE predictions SET actual_price_10m=?, actual_direction_10m=?, correct_10m=?, settled_10m_at_utc=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), prediction_id))
+                    con.execute('''UPDATE predictions SET actual_price_10m=?, actual_direction_10m=?, correct_10m=?, settled_10m_at_utc=?, settlement_source_10m=? WHERE prediction_id=?''', (px, actual_dir, int(actual_dir == pred_dir), now.isoformat(), source, prediction_id))
                     settled += 1
                 else:
                     unavailable += 1
