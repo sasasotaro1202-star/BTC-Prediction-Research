@@ -40,11 +40,22 @@ def _brier(y, p):
     return float(np.mean(np.sum((_norm(p) - one) ** 2, axis=1)))
 
 
+def _horizon_model_version(model_version, source, horizon):
+    """Extract the horizon-specific source-native model version from a combined binding."""
+    marker = f"{horizon}:{source}_fallback."
+    for part in str(model_version or "").split("|"):
+        if part.startswith(marker):
+            return part
+    return None
+
+
 def _rows(source, horizon):
     actual = f"actual_direction_{horizon}"
-    prefix = f"{horizon}:{source}_fallback.%|%"
     rows = []
     with sqlite3.connect(DB) as con:
+        # A persisted production prediction stores both horizon bindings in one
+        # pipe-delimited model_version. Query broadly, then extract the exact
+        # horizon/source binding; this is essential for 10m fallback calibration.
         raw = con.execute(
             f"""SELECT created_at_utc,model_version,scenario_json,{actual}
                 FROM predictions
@@ -52,10 +63,11 @@ def _rows(source, horizon):
                   AND model_version LIKE ?
                   AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
                 ORDER BY created_at_utc""",
-            (prefix,),
+            (f"%{source}_fallback.%",),
         ).fetchall()
     for created, model_version, scenario_text, y in raw:
-        if y not in CLASSES:
+        horizon_version = _horizon_model_version(model_version, source, horizon)
+        if horizon_version is None or y not in CLASSES:
             continue
         try:
             comp = json.loads(scenario_text or "{}").get("components", {})
@@ -69,7 +81,7 @@ def _rows(source, horizon):
                 continue
             rows.append({
                 "created": str(created),
-                "model_version": str(model_version),
+                "model_version": str(horizon_version),
                 "model": _norm(mp),
                 "structural": _norm(sp),
                 "y": str(y),
