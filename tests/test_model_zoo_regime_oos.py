@@ -15,3 +15,4 @@ class ModelZooRegimeTests(unittest.TestCase):
     def test_range_regime(self):
         rows=[{"x":[0,0,0.000001,0,0,0,0.00005,0,0,0,0,0,0,0,0]} for _ in range(10)]
         t=_regime_thresholds(rows); self.assertEqual(regime_key(rows[0],t),"RANGE|LOW_VOL")
+\n    def test_uncertainty_guard_uses_prior_history_only(self):\n        from src.model_zoo_regime_oos import _uncertainty_guard\n        stable=np.asarray([[0.34,0.32,0.34],[0.90,0.05,0.05]],dtype=float)\n        routed=np.asarray([[0.34,0.32,0.34],[0.34,0.32,0.34]],dtype=float)\n        hist=[0.20]*400+[0.95]*10\n        out,threshold,fraction=_uncertainty_guard(routed,stable,hist,quantile=0.80,min_history=300)\n        self.assertIsNotNone(threshold)\n        self.assertGreaterEqual(fraction,0.0)\n        self.assertTrue(np.allclose(out[0],routed[0]))\n

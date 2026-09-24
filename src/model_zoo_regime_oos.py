@@ -111,6 +111,35 @@ def _history_weights(history,keys,model_names):
         else:routed[key]=(0.55*calc(local)+0.45*global_w); routed[key]/=routed[key].sum()
     return global_w,routed
 
+def _normalized_entropy(probs):
+    """Return row-wise normalized entropy in [0, 1] without future labels."""
+    p=np.clip(np.asarray(probs,dtype=float),1e-7,1.0)
+    p=p/p.sum(axis=1,keepdims=True)
+    return -np.sum(p*np.log(p),axis=1)/np.log(3.0)
+
+
+def _uncertainty_guard(routed, stable, prior_entropies, quantile=0.80, min_history=300):
+    """Fallback to the stable ensemble only in high-uncertainty rows.
+
+    The threshold is derived exclusively from completed prior OOS rows, so the
+    current test block and final holdout never influence routing.
+    """
+    routed=np.asarray(routed,dtype=float)
+    stable=np.asarray(stable,dtype=float)
+    if routed.shape != stable.shape or routed.ndim != 2 or routed.shape[1] != 3:
+        raise ValueError("uncertainty guard probability shapes are incompatible")
+    hist=np.asarray(prior_entropies,dtype=float)
+    hist=hist[np.isfinite(hist)]
+    if len(hist) < int(min_history):
+        return routed.copy(), None, 0.0
+    q=float(np.clip(quantile,0.50,0.95))
+    threshold=float(np.quantile(hist[-6000:],q))
+    mask=_normalized_entropy(routed) > threshold
+    out=routed.copy()
+    out[mask]=stable[mask]
+    return out, threshold, float(np.mean(mask))
+
+
 def _mix(parts,weights):
     out=np.zeros_like(parts[0],dtype=float)
     for p,w in zip(parts,weights): out+=float(w)*p
@@ -190,7 +219,7 @@ def evaluate(horizon):
     if len(rows)<MIN_TRAIN+TEST_BLOCK+200:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_rows"}
     split=int(len(rows)*0.80); development=rows[:split]; holdout=rows[split:]
     if len(development)<MIN_TRAIN+TEST_BLOCK or len(holdout)<100:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_split"}
-    mf=factories(); names=list(mf); history=[]; meta_history=[]; blocks=[]
+    mf=factories(); names=list(mf); history=[]; meta_history=[]; uncertainty_history=[]; blocks=[]
     all_endpoints=list(range(MIN_TRAIN,len(development),TEST_BLOCK))
     if len(all_endpoints)>MAX_OOS_BLOCKS:
         endpoints=sorted(set(int(v) for v in np.linspace(all_endpoints[0],all_endpoints[-1],MAX_OOS_BLOCKS)))
@@ -209,11 +238,16 @@ def evaluate(horizon):
         global_w,regime_w=_history_weights(history,sorted(set(keys)),names)
         routed=np.asarray([_mix([p[i:i+1] for p in parts],regime_w.get(keys[i],global_w))[0] for i in range(len(test))])
         equal=_mix(parts,np.full(len(parts),1.0/len(parts)))
+        guarded, uncertainty_threshold, guarded_fraction = _uncertainty_guard(
+            routed, equal, uncertainty_history
+        )
         meta_pred=_meta_predict(meta_history,parts,keys)
         y=[r["y"] for r in test]
         em=metrics(y,equal)
         rm=metrics(y,routed)
+        gm=metrics(y,guarded)
         meta_metrics=metrics(y,meta_pred) if meta_pred is not None else None
+        uncertainty_history.extend(_normalized_entropy(routed).tolist())
         mm=None if meta_metrics is None else {
             **meta_metrics,
             "delta_vs_routed": {
@@ -251,6 +285,14 @@ def evaluate(horizon):
                 "logloss": rm["logloss"] - em["logloss"],
                 "brier": rm["brier"] - em["brier"],
             },
+            "uncertainty_guarded": gm,
+            "uncertainty_guard_delta": {
+                "accuracy": gm["accuracy"] - em["accuracy"],
+                "logloss": gm["logloss"] - em["logloss"],
+                "brier": gm["brier"] - em["brier"],
+            },
+            "uncertainty_threshold_before_block": uncertainty_threshold,
+            "uncertainty_guarded_fraction": guarded_fraction,
             "global_weights_before": global_w.tolist(),
             "regime_weights_before": {
                 k: regime_w[k].tolist()
@@ -259,21 +301,36 @@ def evaluate(horizon):
         })
     if len(blocks)<8:return {"status":"DEFERRED","n":len(rows),"reason":"insufficient_valid_oos_blocks"}
     ll=np.asarray([b["delta"]["logloss"] for b in blocks]); br=np.asarray([b["delta"]["brier"] for b in blocks]); ac=np.asarray([b["delta"]["accuracy"] for b in blocks])
+    guarded_ll=np.asarray([b["uncertainty_guard_delta"]["logloss"] for b in blocks],dtype=float)
+    guarded_br=np.asarray([b["uncertainty_guard_delta"]["brier"] for b in blocks],dtype=float)
+    guarded_ac=np.asarray([b["uncertainty_guard_delta"]["accuracy"] for b in blocks],dtype=float)
     meta_blocks=[b for b in blocks if isinstance(b.get("meta"),dict) and "delta_vs_routed" in b["meta"]]
     mll=np.asarray([b["meta"]["delta_vs_routed"]["logloss"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
     mbr=np.asarray([b["meta"]["delta_vs_routed"]["brier"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
     mac=np.asarray([b["meta"]["delta_vs_routed"]["accuracy"] for b in meta_blocks],dtype=float) if meta_blocks else np.asarray([])
-    summary={"blocks":len(blocks),"meta_blocks":len(meta_blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),"meta_comparison_baseline":"routed_regime_ensemble","meta_mean_accuracy_delta_vs_routed":float(mac.mean()) if len(mac) else None,"meta_mean_logloss_delta_vs_routed":float(mll.mean()) if len(mll) else None,"meta_mean_brier_delta_vs_routed":float(mbr.mean()) if len(mbr) else None,"meta_improved_logloss_ratio_vs_routed":float(np.mean(mll<0)) if len(mll) else None,"meta_improved_brier_ratio_vs_routed":float(np.mean(mbr<0)) if len(mbr) else None,"meta_non_worse_accuracy_ratio_vs_routed":float(np.mean(mac>=-0.005)) if len(mac) else None}
+    summary={"blocks":len(blocks),"meta_blocks":len(meta_blocks),"samples":int(sum(b["n"] for b in blocks)),"max_oos_blocks":MAX_OOS_BLOCKS,"history_source":"Binance Vision closed archives","mean_accuracy_delta":float(ac.mean()),"mean_logloss_delta":float(ll.mean()),"mean_brier_delta":float(br.mean()),"improved_logloss_ratio":float(np.mean(ll<0)),"improved_brier_ratio":float(np.mean(br<0)),"non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),"meta_comparison_baseline":"routed_regime_ensemble","meta_mean_accuracy_delta_vs_routed":float(mac.mean()) if len(mac) else None,"meta_mean_logloss_delta_vs_routed":float(mll.mean()) if len(mll) else None,"meta_mean_brier_delta_vs_routed":float(mbr.mean()) if len(mbr) else None,"meta_improved_logloss_ratio_vs_routed":float(np.mean(mll<0)) if len(mll) else None,"meta_improved_brier_ratio_vs_routed":float(np.mean(mbr<0)) if len(mbr) else None,"meta_non_worse_accuracy_ratio_vs_routed":float(np.mean(mac>=-0.005)) if len(mac) else None,
+        "guarded_mean_accuracy_delta_vs_equal":float(guarded_ac.mean()),
+        "guarded_mean_logloss_delta_vs_equal":float(guarded_ll.mean()),
+        "guarded_mean_brier_delta_vs_equal":float(guarded_br.mean()),
+        "guarded_improved_logloss_ratio_vs_equal":float(np.mean(guarded_ll<0)),
+        "guarded_improved_brier_ratio_vs_equal":float(np.mean(guarded_br<0)),
+        "guarded_non_worse_accuracy_ratio_vs_equal":float(np.mean(guarded_ac>=-0.005))}
     thresholds=_regime_thresholds(development); hold_keys=[regime_key(r,thresholds) for r in holdout]
     hold_parts=[_fit_calibrated(development,holdout,mf[name]) for name in names]
     if any(p is None for p in hold_parts):return {"status":"DEFERRED","n":len(rows),"reason":"holdout_prediction_failed"}
     global_w,regime_w=_history_weights(history,sorted(set(hold_keys)),names)
     equal_hold=_mix(hold_parts,np.full(len(hold_parts),1.0/len(hold_parts)))
     routed_hold=np.asarray([_mix([p[i:i+1] for p in hold_parts],regime_w.get(hold_keys[i],global_w))[0] for i in range(len(holdout))])
+    guarded_hold, hold_uncertainty_threshold, hold_guarded_fraction = _uncertainty_guard(
+        routed_hold, equal_hold, uncertainty_history
+    )
     meta_hold=_meta_predict(meta_history,hold_parts,hold_keys)
     y_hold=[r["y"] for r in holdout]
     final_meta={"status":"DEFERRED","reason":"insufficient_prior_oos_meta_rows"} if meta_hold is None else metrics(y_hold,meta_hold)
-    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"runtime_15_feature_causal_prior_oos_regime_loss_weighting_plus_causal_meta_router","final_holdout_protected":True,"final_holdout_used_for_selection":False,"feature_schema":"bootstrap_train.FEATURES_compatible_runtime_15","model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":metrics(y_hold,equal_hold),"routed":metrics(y_hold,routed_hold),"meta_router":final_meta,"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
+    eq_hold_m=metrics(y_hold,equal_hold)
+    routed_hold_m=metrics(y_hold,routed_hold)
+    guarded_hold_m=metrics(y_hold,guarded_hold)
+    return {"status":"OK","schema_version":1,"research_only":True,"production_changed":False,"policy":"runtime_15_feature_causal_prior_oos_regime_loss_weighting_plus_uncertainty_guard_plus_causal_meta_router","final_holdout_protected":True,"final_holdout_used_for_selection":False,"feature_schema":"bootstrap_train.FEATURES_compatible_runtime_15","model_zoo":names,"summary":summary,"development_n":len(development),"final_holdout_n":len(holdout),"final_holdout":{"equal":eq_hold_m,"routed":routed_hold_m,"uncertainty_guarded":guarded_hold_m,"uncertainty_guard_delta_vs_equal":{"accuracy":guarded_hold_m["accuracy"]-eq_hold_m["accuracy"],"logloss":guarded_hold_m["logloss"]-eq_hold_m["logloss"],"brier":guarded_hold_m["brier"]-eq_hold_m["brier"]},"uncertainty_threshold":hold_uncertainty_threshold,"guarded_fraction":hold_guarded_fraction,"meta_router":final_meta,"weights":{"global":global_w.tolist(),"regime":{k:regime_w[k].tolist() for k in sorted(regime_w)}}},"blocks":blocks}
 
 def main():
     payload={"schema_version":1,"research_only":True,"production_changed":False,"horizons":{h:evaluate(h) for h in HORIZONS}}
