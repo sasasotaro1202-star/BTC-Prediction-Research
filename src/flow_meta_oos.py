@@ -368,10 +368,20 @@ def _evaluate_model(rows: list[dict[str, Any]], factory, horizon: str) -> dict[s
         "ece": float(np.mean([b["baseline"]["ece"] for b in blocks])),
     }
 
+    holdout_train = _causal_train(development, holdout[0]["created"], horizon)
+    if len(holdout_train) < MIN_TRAIN:
+        return {
+            "status": "DEFERRED",
+            "reason": "insufficient_purged_holdout_training_rows",
+            "blocks": len(blocks),
+            "holdout_n": len(holdout),
+            "n": len(rows),
+        }
+
     model = factory()
     model.fit(
-        np.stack([_vector(r) for r in development]),
-        np.asarray([r["y"] for r in development]),
+        np.stack([_vector(r) for r in holdout_train]),
+        np.asarray([r["y"] for r in holdout_train]),
     )
     hp = model.predict_proba(np.stack([_vector(r) for r in holdout]))
     aligned_hp = np.full((len(holdout), 3), EPS, dtype=float)
@@ -445,6 +455,10 @@ def evaluate(horizon: str, flow_rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {
             "status": "DEFERRED",
+            "research_only": True,
+            "production_changed": False,
+            "promotion_allowed": False,
+            "strict_pit": True,
             "reason": "no_strict_pit_predictions_with_flow_coverage",
             "n": 0,
         }
