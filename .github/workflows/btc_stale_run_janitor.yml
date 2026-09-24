@@ -31,51 +31,44 @@ jobs:
           now="$(date -u +%s)"
           echo "Current main SHA: ${main_sha}"
 
+          # Keep janitor bounded: inspect only the production/research spine.
+          # The 5-minute watchdog owns broader recovery; this job only handles clearly
+          # stale main-branch runs that can block the spine.
           declare -A THRESHOLD=(
-            [btc_continuous_supervisor.yml]=300
-            [btc_live_cycle.yml]=600
-            [btc_binance_ws_collector.yml]=600
-            [btc_9h_research_marathon.yml]=900
-            [btc_rolling_challenger.yml]=900
-            [btc_historical_research.yml]=900
-            [btc_recency_research.yml]=900
-            [btc_interaction_research.yml]=900
-            [btc_selective_prediction_oos.yml]=900
-            [btc_adaptive_calibration_replay.yml]=900
-            [btc_time_regime_research.yml]=900
-            [btc_dual_memory_oos.yml]=900
-            [btc_hierarchical_research.yml]=900
-            [btc_nested_selective_research.yml]=900
-            [btc_archive_refresh.yml]=900
-            [btc_microstructure_research.yml]=900
-            [btc_frozen_archive_replay.yml]=900
-            [btc_multiscale_frozen_replay.yml]=900
-            [btc_canonical_state_compaction.yml]=900
+            [btc_continuous_supervisor.yml]=21600
+            [btc_live_cycle.yml]=1800
+            [btc_binance_ws_collector.yml]=3900
+            [btc_9h_research_marathon.yml]=36000
+            [btc_rolling_challenger.yml]=28800
           )
 
           for workflow in "${!THRESHOLD[@]}"; do
             threshold="${THRESHOLD[$workflow]}"
-            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=100")"
+            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=30")" || {
+              echo "WARN: unable to inspect ${workflow}; skipping."
+              continue
+            }
             jq -c '.workflow_runs[]? | {id,status,head_sha,updated_at,run_number}' <<<"$response" |
             while IFS= read -r run; do
               [ -n "$run" ] || continue
-              id="$(jq -r '.id' <<<"$run")"
-              status="$(jq -r '.status' <<<"$run")"
-              head="$(jq -r '.head_sha' <<<"$run")"
-              updated="$(jq -r '.updated_at' <<<"$run")"
+              id="$(jq -r '.id // 0' <<<"$run")"
+              status="$(jq -r '.status // ""' <<<"$run")"
+              head="$(jq -r '.head_sha // ""' <<<"$run")"
+              updated="$(jq -r '.updated_at // ""' <<<"$run")"
               updated_epoch="$(date -d "$updated" +%s 2>/dev/null || echo 0)"
               age=$((now - updated_epoch))
 
-              if [ "$id" -eq "${GITHUB_RUN_ID}" ]; then
-                continue
-              fi
-              if [[ "$status" != "queued" && "$status" != "pending" && "$status" != "in_progress" ]]; then
-                continue
-              fi
+              [ "$id" -gt 0 ] || continue
+              [ "$id" -ne "${GITHUB_RUN_ID}" ] || continue
+              case "$status" in queued|pending|in_progress) ;; *) continue ;; esac
 
               if [ "$head" != "$main_sha" ] && [ "$age" -ge "$threshold" ]; then
-                echo "CANCEL stale ${workflow} run=${id} run_number=$(jq -r '.run_number' <<<"$run") age=${age}s head=${head}"
-                gh api --method POST "/repos/${REPO}/actions/runs/${id}/cancel" >/dev/null
+                echo "CANCEL stale ${workflow} run=${id} run_number=$(jq -r '.run_number // 0' <<<"$run") age=${age}s head=${head}"
+                if gh api --method POST "/repos/${REPO}/actions/runs/${id}/cancel" >/dev/null 2>&1; then
+                  echo "CANCEL requested successfully: ${workflow} run=${id}"
+                else
+                  echo "WARN: cancel request failed: ${workflow} run=${id}"
+                fi
               fi
             done
           done
