@@ -3,7 +3,7 @@ import sqlite3
 import unittest
 
 from src.feature_schema import FEATURES
-from src.research_input_audit import audit_horizon
+from src.research_input_audit import audit_horizon, recent_pit_stats
 
 
 def feature_json():
@@ -172,6 +172,41 @@ class ResearchInputAuditTests(unittest.TestCase):
         self._insert(con, [self._row(p=(0.2, 0.7, 0.1)), self._row(p=(0.3, 0.6, 0.1))])
         result = audit_horizon(con, "5m")
         self.assertEqual(result["duplicate_exact_key_row_excess"], 0)
+
+
+    def test_recent_pit_stats_detects_missing_provenance(self):
+        con = self._db()
+        row = list(self._row("model-v3"))
+        scenario = {
+            "production_mode": "binance_primary",
+            "decision_time_utc": "2026-09-22T00:00:00+00:00",
+            "provenance": {
+                "available_at": "2026-09-21T23:59:50+00:00",
+                "retrieved_at": "2026-09-21T23:59:55+00:00",
+                "prediction_cutoff": "2026-09-22T00:00:00+00:00",
+                "sources": {
+                    name: {
+                        "status": "ok",
+                        "event_time": "2026-09-21T23:59:40+00:00",
+                        "available_at": "2026-09-21T23:59:50+00:00",
+                        "retrieved_at": "2026-09-21T23:59:55+00:00",
+                        "prediction_cutoff": "2026-09-22T00:00:00+00:00",
+                    }
+                    for name in ("binance_futures", "binance_depth", "binance_taker", "binance_premium")
+                },
+            },
+        }
+        row[13] = json.dumps(scenario)
+        self._insert(con, [tuple(row)])
+        result = recent_pit_stats(con, "5m", limit=20)
+        self.assertTrue(result["all_strict"])
+        self.assertEqual(result["rate"], 1.0)
+
+        row2 = list(self._row("model-v4"))
+        self._insert(con, [tuple(row2)])
+        result2 = recent_pit_stats(con, "5m", limit=20)
+        self.assertFalse(result2["all_strict"])
+        self.assertLess(result2["rate"], 1.0)
 
 
 if __name__ == "__main__":
