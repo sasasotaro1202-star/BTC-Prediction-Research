@@ -5,14 +5,17 @@ import unittest
 from pathlib import Path
 
 import src.reconcile_fallback_settlements as reconcile
+import src.db as db_module
 
 class TestReconcileFallbackSettlements(unittest.TestCase):
     def test_reopens_only_unknown_or_wrong_fallback_rows(self):
         with tempfile.TemporaryDirectory() as td:
             db=Path(td)/'predictions.db'
             old=reconcile.DB
+            old_db_module=db_module.DB
             try:
                 reconcile.DB=db
+                db_module.DB=db
                 reconcile.init_db()
                 base=('2026-09-24T00:00:00+00:00','2026-09-24T00:05:00+00:00','2026-09-24T00:10:00+00:00',100,.4,.3,.3,.4,.3,.3,'v','{}')
                 def ins(s,src):
@@ -27,6 +30,7 @@ class TestReconcileFallbackSettlements(unittest.TestCase):
                 self.assertEqual(rows[1],(101.0,'bybit_linear'))
             finally:
                 reconcile.DB=old
+                db_module.DB=old_db_module
 
 if __name__ == '__main__':
     unittest.main()
