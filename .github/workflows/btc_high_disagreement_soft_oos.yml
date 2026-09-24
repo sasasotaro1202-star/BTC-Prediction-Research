@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-high-disagreement-soft-\${{ github.head_ref || github.ref_name }}
+  group: btc-high-disagreement-soft-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -54,10 +54,10 @@ jobs:
           print("high-disagreement soft OOS evidence contract verified")
           PY
       - name: Upload evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-high-disagreement-soft-\${{ github.run_id }}
+          name: btc-high-disagreement-soft-${{ github.run_id }}
           path: data/historical_research/high_disagreement_soft_oos.json
           if-no-files-found: error
           retention-days: 7
