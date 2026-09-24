@@ -406,6 +406,8 @@ jobs:
           PY
       - name: Run non-fatal BTC research health audit
         run: python src/research_health.py
+      - name: Run strict research input audit
+        run: python src/research_input_audit.py
       - name: Audit Coinbase Binance Bybit venue distribution drift
         run: python src/venue_drift.py
       - name: Diagnose FLAT disappearance by prediction pipeline stage
