@@ -50,10 +50,10 @@ jobs:
           print("VERIFIED")
           PY
       - name: Upload evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-archive-online-hedge-\${{ github.run_id }}
+          name: btc-archive-online-hedge-${{ github.run_id }}
           path: data/historical_research/archive_online_hedge_oos.json
           if-no-files-found: error
           retention-days: 7
