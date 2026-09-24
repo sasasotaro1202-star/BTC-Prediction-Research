@@ -115,6 +115,31 @@ class TestSettlementSource(unittest.TestCase):
                 (102.5, "bybit_linear"),
             )
             fn.assert_called_once()
+    def test_coinbase_native_resolver_constructs_request_without_name_error(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'[[1726394700,100,103,99,102.5,12]]'
+        with patch.object(ss, 'urlopen', return_value=Response()) as opener:
+            price, source = ss._target_coinbase_exchange('2024-09-15T10:06:00+00:00')
+        self.assertEqual(price, 102.5)
+        self.assertEqual(source, 'coinbase_exchange')
+        opener.assert_called_once()
+        request = opener.call_args.args[0]
+        self.assertIn('granularity=60', request.full_url)
+
+    def test_bybit_native_resolver_constructs_request_without_name_error(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"result":{"list":[[1726394760000,"100","103","99","102.5","12"]]}}'
+        with patch.object(ss, 'urlopen', return_value=Response()) as opener:
+            price, source = ss._target_bybit_linear('2024-09-15T10:06:00+00:00')
+        self.assertEqual(price, 102.5)
+        self.assertEqual(source, 'bybit_linear')
+        opener.assert_called_once()
+        request = opener.call_args.args[0]
+        self.assertIn('category=linear', request.full_url)
 if __name__ == '__main__':
     unittest.main()
 

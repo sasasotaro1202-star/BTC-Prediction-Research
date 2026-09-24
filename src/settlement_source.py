@@ -8,6 +8,7 @@ import zipfile
 from datetime import datetime, timezone
 from functools import lru_cache
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 from market_data import _binance, BINANCE_WS_CACHE
 from binance_ws import load_cache as load_binance_ws_cache
