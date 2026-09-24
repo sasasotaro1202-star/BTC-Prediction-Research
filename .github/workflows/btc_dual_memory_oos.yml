@@ -1,6 +1,12 @@
 name: BTC Dual Memory OOS Research
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/dual_memory_oos.py'
+      - 'tests/test_dual_memory_oos.py'
+      - '.github/workflows/btc_dual_memory_oos.yml'
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:

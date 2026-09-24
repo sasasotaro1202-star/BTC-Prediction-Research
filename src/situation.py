@@ -87,6 +87,17 @@ def summarize_situation(features: Mapping[str, float], market: Mapping[str, floa
                 quality_errors += 1
     data_state = "DEGRADED" if quality_errors >= 2 else "PARTIAL" if quality_errors == 1 else "HEALTHY"
 
+    # Situation quality is allowed to degrade when the two horizons conflict
+    # or the underlying live inputs are incomplete. This changes descriptive
+    # situation metadata only; prediction probabilities remain untouched.
+    quality_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+    if horizon_alignment == "CONFLICT" and signal_quality == "HIGH":
+        signal_quality = "MEDIUM"
+    if data_state == "PARTIAL" and quality_rank[signal_quality] > quality_rank["MEDIUM"]:
+        signal_quality = "MEDIUM"
+    elif data_state == "DEGRADED":
+        signal_quality = "LOW"
+
     state = "|".join((trend_state, volatility_state, horizon_alignment, signal_quality))
     return {
         "market_state": state,
