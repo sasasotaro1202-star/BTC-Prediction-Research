@@ -65,6 +65,7 @@ CAT_KEYS = (
     ("horizon_alignment", ("AGREE", "CONFLICT")),
     ("direction_5m", CLASSES),
     ("direction_10m", CLASSES),
+    ("data_state", ("HEALTHY", "PARTIAL", "DEGRADED")),
 )
 
 
@@ -169,7 +170,9 @@ def _load_rows(horizon: str) -> list[dict[str, Any]]:
 
 
 def meta_feature_names() -> list[str]:
-    names = ["prod_down", "prod_flat", "prod_up", *MICRO_KEYS, "situation_entropy", "situation_margin"]
+    names = ["prod_down", "prod_flat", "prod_up", *MICRO_KEYS]
+    names.extend(f"missing={key}" for key in MICRO_KEYS)
+    names.extend(["situation_entropy", "situation_margin"])
     for key, values in CAT_KEYS:
         names.extend(f"{key}={value}" for value in values)
     return names
@@ -181,9 +184,13 @@ def build_meta_vector(row: dict[str, Any]) -> np.ndarray:
     micro = row.get("microstructure") or {}
     for key in MICRO_KEYS:
         # Missing remains an explicit neutral value rather than borrowing a
-        # future observation. A paired missingness flag is not added because
-        # source availability is separately checked by the PIT audit.
-        values.append(_finite(micro.get(key), 0.0))
+        # future observation. Missingness is also encoded explicitly so the
+        # model can learn that degraded market-data states are informative.
+        raw = micro.get(key)
+        values.append(_finite(raw, 0.0))
+    for key in MICRO_KEYS:
+        raw = micro.get(key)
+        values.append(1.0 if raw is None or not math.isfinite(_finite(raw, float("nan"))) else 0.0)
     situation = row.get("situation") or {}
     values.extend([
         _finite(situation.get("normalized_entropy"), 0.5),
