@@ -19,6 +19,10 @@ concurrency:
   # evidence rather than allowing overlapping long runs.
   cancel-in-progress: true
 
+concurrency:
+  group: btc-aux-research-admission
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
