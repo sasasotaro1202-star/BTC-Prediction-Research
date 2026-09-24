@@ -63,7 +63,7 @@ def summarize_situation(features: Mapping[str, float], market: Mapping[str, floa
     entropy = (e5 + e10) / 2.0
     margin = (_margin(p5) + _margin(p10)) / 2.0
     signal_quality = (
-        "HIGH" if entropy <= 0.72 and margin >= 0.12
+        "HIGH" if entropy <= 0.78 and margin >= 0.15
         else "MEDIUM" if entropy <= 0.88 and margin >= 0.05
         else "LOW"
     )
