@@ -120,6 +120,8 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: btc-adaptive-calibration-replay
-          path: data/historical_research/adaptive_calibration_replay_oos.json
+          path: |
+            data/historical_research/adaptive_calibration_replay_oos.json
+            data/historical_research/fallback_prequential_calibration_oos.json
           if-no-files-found: error
           retention-days: 3
