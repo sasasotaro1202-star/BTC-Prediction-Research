@@ -24,7 +24,6 @@ from model_compare import (
     HORIZONS,
     CLASSES,
     DB,
-    dedupe_exact_prediction_events,
     prediction_precedes_target,
     strict_pit_provenance_reason,
 )
@@ -64,6 +63,8 @@ CAT_KEYS = (
     ("orderflow_state", ("BALANCED", "BUY_PRESSURE", "SELL_PRESSURE")),
     ("signal_quality", ("LOW", "MEDIUM", "HIGH")),
     ("horizon_alignment", ("AGREE", "CONFLICT")),
+    ("direction_5m", CLASSES),
+    ("direction_10m", CLASSES),
 )
 
 
@@ -89,6 +90,10 @@ def _parse_utc(value: Any) -> datetime | None:
     except (TypeError, ValueError):
         return None
     return dt.astimezone(timezone.utc) if dt.tzinfo else None
+
+
+def primary_live_scenario(scenario: dict[str, Any]) -> bool:
+    return isinstance(scenario, dict) and scenario.get("production_mode") == "binance_primary"
 
 
 def _row_key(row: dict[str, Any]) -> tuple:
@@ -119,6 +124,8 @@ def _load_rows(horizon: str) -> list[dict[str, Any]]:
         if not prediction_precedes_target(r[1], r[2]):
             continue
         scenario = _safe_json(r[9])
+        if not primary_live_scenario(scenario):
+            continue
         if strict_pit_provenance_reason(scenario, r[1]) is not None:
             continue
         features = _safe_json(r[3])
@@ -260,14 +267,19 @@ def _metrics(y: list[str], probs: np.ndarray) -> dict[str, float]:
     return {"logloss": ll, "brier": brier, "accuracy": acc, "n": int(len(yi))}
 
 
-def _select_model(train: list[dict[str, Any]]) -> tuple[str, object] | None:
+def _select_model(train: list[dict[str, Any]], horizon: str) -> tuple[str, object] | None:
     if len(train) < MIN_TRAIN:
         return None
     split = max(int(len(train) * 0.70), len(train) - 500)
     if split < 500 or len(train) - split < 100:
         return None
-    fit_rows = train[:split]
     valid_rows = train[split:]
+    # Inner selection is causal too: labels used to fit a candidate must have
+    # settled before the first validation prediction, with the same 60m embargo.
+    valid_start = valid_rows[0].get("created", "")
+    fit_rows = causal_train_rows(train[:split], valid_start, horizon)
+    if len(fit_rows) < 500:
+        return None
     y_fit = np.asarray([r["y"] for r in fit_rows])
     if len(set(y_fit.tolist())) < 3:
         return None
@@ -359,7 +371,7 @@ def evaluate_horizon(horizon: str) -> dict[str, Any]:
             continue
         test_start = test[0].get("created", "")
         train = causal_train_rows(development[:end], test_start, horizon)
-        selected = _select_model(train)
+        selected = _select_model(train, horizon)
         if selected is None:
             continue
         name, model = selected
@@ -406,7 +418,7 @@ def evaluate_horizon(horizon: str) -> dict[str, Any]:
     }
 
     # Frozen holdout: no selection, threshold, or model-family tuning is based on it.
-    selected_final = _select_model(development)
+    selected_final = _select_model(development, horizon)
     if selected_final is None:
         return {
             "status": "DEFERRED",
