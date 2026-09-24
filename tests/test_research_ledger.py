@@ -14,3 +14,7 @@ def test_compact_excludes_internal_blobs():
 
 def test_ledger_defines_situation_meta_lane():
     assert LANES["situation_meta"] == "situation_meta_oos.json"
+
+
+def test_ledger_defines_online_expert_lane():
+    assert LANES["online_expert"] == "online_expert_oos.json"
