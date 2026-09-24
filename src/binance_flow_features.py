@@ -29,6 +29,23 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
                 out[f"{prefix}_{key}"]=0.0
             out[f"{prefix}_missing"]=1.0
             continue
+        expected_bins=max(1,width//5000)
+        complete_short_window = len(suffix) >= expected_bins and all(
+            int(suffix[i]["end_time_ms"]) - int(suffix[i-1]["end_time_ms"]) == 5000
+            for i in range(1,len(suffix))
+        )
+        if width == 15000 and not complete_short_window:
+            # The shortest flow signal is only emitted when its full 15s
+            # observation window is PIT-complete. Longer windows may still
+            # aggregate available history, but expose their coverage via
+            # the corresponding missing flag.
+            for key in ("signed_qty","signed_notional","buy_share","trade_count",
+                        "avg_trade_notional","max_trade_notional","liquidation_count",
+                        "liquidation_signed_notional","liquidation_notional",
+                        "liquidation_to_trade_notional"):
+                out[f"{prefix}_{key}"]=0.0
+            out[f"{prefix}_missing"]=1.0
+            continue
         buy_qty=sum(float(r.get("buy_qty",0)) for r in suffix)
         sell_qty=sum(float(r.get("sell_qty",0)) for r in suffix)
         buy_notional=sum(float(r.get("buy_notional",0)) for r in suffix)
@@ -50,7 +67,7 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
         out[f"{prefix}_liquidation_signed_notional"]=liq_buy-liq_sell
         out[f"{prefix}_liquidation_notional"]=liq_notional
         out[f"{prefix}_liquidation_to_trade_notional"]=liq_notional/total_notional if total_notional>0 else 0.0
-        out[f"{prefix}_missing"]=0.0
+        out[f"{prefix}_missing"]=0.0 if complete_short_window or width != 15000 else 1.0
     out["flow_30s_vs_5m_signed_notional"]=out["flow_30s_signed_notional"]-0.10*out["flow_300s_signed_notional"]
     out["flow_60s_liquidation_shock"]=out["flow_60s_liquidation_to_trade_notional"]*math.log1p(out["flow_60s_liquidation_notional"])
     out["flow_any_available"]=1.0 if all_rows else 0.0
