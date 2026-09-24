@@ -96,6 +96,20 @@ def _identity_token(identity: tuple[Any, ...]) -> str:
     return json.dumps(identity, sort_keys=False, separators=(",", ":"), allow_nan=False)
 
 
+def compacted_identity_digest(con: sqlite3.Connection) -> tuple[int, str]:
+    """Digest the unique immutable prediction-event identities retained after compaction."""
+    cols = [r[1] for r in con.execute("PRAGMA table_info(predictions)").fetchall()]
+    if not cols:
+        return 0, hashlib.sha256(b"").hexdigest()
+    quoted = ",".join('"' + c.replace('"', '""') + '"' for c in cols)
+    rows = con.execute(f"SELECT {quoted} FROM predictions").fetchall()
+    identities = {
+        _identity_token(prediction_identity(dict(zip(cols, row))))
+        for row in rows
+    }
+    return len(identities), _digest_tokens(identities)
+
+
 def canonical_settlement_timestamp(values: Iterable[Any]) -> str:
     """Return the earliest valid timezone-aware settlement timestamp in UTC.
 
