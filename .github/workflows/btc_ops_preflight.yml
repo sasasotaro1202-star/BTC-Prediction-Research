@@ -86,6 +86,22 @@ jobs:
           if "actions: write" not in watchdog:
               raise SystemExit("watchdog must retain Actions write permission for recovery")
           print(f"watchdog inventory verified: {len(names)} recovery workflows")
+
+          supervisor = (root / "btc_continuous_supervisor.yml").read_text(encoding="utf-8")
+          required_supervisor_calls = {
+              "dispatch_if_stale btc_live_cycle.yml 300 live",
+              "dispatch_if_stale btc_binance_ws_collector.yml 1800 ws",
+              "dispatch_if_stale btc_rolling_challenger.yml 21600 rolling",
+              "dispatch_if_stale btc_9h_research_marathon.yml 28800 marathon",
+          }
+          missing_supervisor = sorted(required_supervisor_calls - set(
+              line.strip() for line in supervisor.splitlines()
+          ))
+          if missing_supervisor:
+              raise SystemExit("continuous supervisor coverage missing: " + ", ".join(missing_supervisor))
+          if "successor supervisor dispatch failed" not in supervisor:
+              raise SystemExit("continuous supervisor successor failure handling missing")
+          print("continuous supervisor heartbeat coverage: VERIFIED")
           PY
 
       - name: Compile BTC source and test modules
