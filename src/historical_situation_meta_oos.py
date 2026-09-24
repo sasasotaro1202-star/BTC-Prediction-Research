@@ -216,12 +216,14 @@ def _build_rows(max_rows: int) -> list[dict[str, Any]]:
             continue
 
         future_return = float(raw[i + 5][4]) / float(raw[i][4]) - 1.0
+        future_return10 = float(raw[i + 10][4]) / float(raw[i][4]) - 1.0
         out.append(
             {
                 "created": created.isoformat(),
                 "target": target5.isoformat(),
                 "target10": target10.isoformat(),
                 "y": direction_from_return(future_return),
+                "y10": direction_from_return(future_return10),
                 "p5": p5,
                 "p10": p10,
                 "situation": situation,
@@ -433,19 +435,6 @@ def _evaluate_rows(rows: list[dict[str, Any]], horizon: str) -> dict[str, Any]:
 
 def main() -> None:
     rows = _build_rows(MAX_ROWS)
-    # Build the true 10m labels separately from the same closed archive.
-    # Recompute only the labels; feature/probability snapshots remain identical.
-    raw = _contiguous_suffix(binance_archive_rows(MAX_ROWS + 40))
-    by_created = {int(r[0]): r for r in raw}
-    for row in rows:
-        ts = int(_parse_utc(row["created"]).timestamp() * 1000)
-        target = by_created.get(ts + 600000)
-        current = by_created.get(ts)
-        if target is None or current is None:
-            row["y10"] = row["y"]
-        else:
-            row["y10"] = direction_from_return(float(target[4]) / float(current[4]) - 1.0)
-
     payload = {
         "schema_version": 1,
         "research_only": True,
