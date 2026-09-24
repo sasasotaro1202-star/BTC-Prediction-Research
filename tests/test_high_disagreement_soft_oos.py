@@ -20,7 +20,7 @@ def test_soft_correction_only_activates_on_disagreement():
     assert active.tolist() == [False]
     assert np.allclose(candidate, base)
     assert disagreement.tolist() == [0.0]
-    assert np.isclose(weights.sum(), float(len(rows) * len(EXPERTS))) is False
+    assert np.isclose(weights.sum(), 1.0)
 
 
 def test_temperature_and_threshold_are_fixed():
