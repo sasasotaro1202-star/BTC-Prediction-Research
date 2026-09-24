@@ -142,11 +142,6 @@ def _loss(p: np.ndarray, y: str) -> float:
     return float(-math.log(max(float(p[index]), EPS)))
 
 
-def _brier(p: np.ndarray, y: str) -> float:
-    target = np.zeros(3, dtype=float)
-    target[CLASSES.index(y)] = 1.0
-    return float(np.sum((p - target) ** 2))
-
 
 def _metrics(rows: list[dict[str, Any]], probs: np.ndarray) -> dict[str, float]:
     if not rows or probs.shape != (len(rows), 3):
@@ -189,26 +184,39 @@ def _weights(global_ema: dict[str, float], state_ema: dict[str, float], state_co
     return w
 
 
-def run_strategy(rows: list[dict[str, Any]], strategy: str) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    global_ema = {expert: 0.0 for expert in EXPERTS}
-    state_ema: dict[str, dict[str, float]] = defaultdict(
-        lambda: {expert: 0.0 for expert in EXPERTS}
-    )
-    state_counts: dict[str, int] = defaultdict(int)
-    history_loss = {expert: [] for expert in EXPERTS}
+def _new_state() -> dict[str, Any]:
+    return {
+        "global_ema": {expert: 0.0 for expert in EXPERTS},
+        "state_ema": defaultdict(lambda: {expert: 0.0 for expert in EXPERTS}),
+        "state_counts": defaultdict(int),
+        "seen": 0,
+    }
+
+
+def run_strategy(
+    rows: list[dict[str, Any]],
+    strategy: str,
+    state: dict[str, Any] | None = None,
+) -> tuple[np.ndarray, list[dict[str, Any]], dict[str, Any]]:
+    state = _new_state() if state is None else state
     predictions: list[np.ndarray] = []
     trace: list[dict[str, Any]] = []
 
-    for index, row in enumerate(rows):
-        if index < WARMUP:
+    for row in rows:
+        seen = int(state["seen"])
+        global_ema = state["global_ema"]
+        state_ema = state["state_ema"]
+        state_counts = state["state_counts"]
+
+        if seen < WARMUP:
             weights = np.full(len(EXPERTS), 1.0 / len(EXPERTS))
         elif strategy == "static_equal":
             weights = np.full(len(EXPERTS), 1.0 / len(EXPERTS))
         elif strategy == "online_ewma":
             weights = _weights(global_ema, global_ema, 0)
         elif strategy == "online_context":
-            state = row["context"]
-            weights = _weights(global_ema, state_ema[state], state_counts[state])
+            context = row["context"]
+            weights = _weights(global_ema, state_ema[context], state_counts[context])
         else:
             raise ValueError(f"unknown_strategy:{strategy}")
 
@@ -217,18 +225,26 @@ def run_strategy(rows: list[dict[str, Any]], strategy: str) -> tuple[np.ndarray,
         p = np.clip(p, EPS, 1.0)
         p /= p.sum()
         predictions.append(p)
-        trace.append({"created": row["created"], "weights": {e: float(w) for e, w in zip(EXPERTS, weights)}})
+        trace.append(
+            {
+                "created": row["created"],
+                "weights": {expert: float(weight) for expert, weight in zip(EXPERTS, weights)},
+            }
+        )
 
-        # Outcome is incorporated only after the current prediction is fixed.
+        # Realized outcome is incorporated only after the current prediction
+        # is fixed, then the state is carried forward to the next observation.
+        context = row["context"]
         for expert in EXPERTS:
             loss = _loss(row["experts"][expert], row["y"])
-            history_loss[expert].append(loss)
             global_ema[expert] = (1.0 - ALPHA) * global_ema[expert] + ALPHA * loss
-            state = row["context"]
-            state_ema[state][expert] = (1.0 - ALPHA) * state_ema[state][expert] + ALPHA * loss
-        state_counts[row["context"]] += 1
+            state_ema[context][expert] = (
+                (1.0 - ALPHA) * state_ema[context][expert] + ALPHA * loss
+            )
+        state_counts[context] += 1
+        state["seen"] = seen + 1
 
-    return np.stack(predictions), trace
+    return np.stack(predictions), trace, state
 
 
 def _split(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -254,8 +270,8 @@ def evaluate(horizon: str) -> dict[str, Any]:
     traces = {}
 
     for strategy in strategies:
-        dev_probs, dev_trace = run_strategy(development, strategy)
-        hold_probs, _ = run_strategy(holdout, strategy)
+        dev_probs, dev_trace, state = run_strategy(development, strategy)
+        hold_probs, _, _ = run_strategy(holdout, strategy, state=state)
         dev_results[strategy] = _metrics(development, dev_probs)
         holdout_results[strategy] = _metrics(holdout, hold_probs)
         traces[strategy] = dev_trace[-1]
