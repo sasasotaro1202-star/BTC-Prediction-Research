@@ -86,3 +86,33 @@ def test_daily_archive_never_accepts_current_open_candle():
             pass
         else:
             raise AssertionError("insufficient historical rows must defer")
+
+
+def test_resilient_series_uses_archive_before_cross_venue_fallback():
+    rows = [
+        [1_700_000_000_000 + i * 60_000, 100.0, 101.0, 99.0, 100.5, 10.0]
+        for i in range(120)
+    ]
+    network_error = RuntimeError("simulated_transport_failure")
+
+    with patch.object(market_data, "load_binance_ws_cache", return_value=[]), \
+         patch.object(market_data, "_capture_ws_suffix", return_value=[]), \
+         patch.object(
+             market_data,
+             "_parallel_result_calls",
+             return_value={
+                 "bybit": network_error,
+                 "binance_spot": network_error,
+                 "binance_futures": network_error,
+             },
+         ), \
+         patch.object(market_data, "binance_archive_daily_rows", return_value=rows):
+        fut, spot, bybit, status = market_data.resilient_1m_series(120)
+
+    assert len(fut) == 120
+    assert spot == []
+    assert bybit == []
+    assert status["binance_futures"] == "ok"
+    assert status["binance_futures_transport"] == "binance_vision_daily_archive"
+    assert status["price_feature_fallback"] == "none"
+    assert "binance_futures_archive_retrieved_at_ms" in status
