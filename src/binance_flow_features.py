@@ -67,7 +67,7 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
         out[f"{prefix}_liquidation_signed_notional"]=liq_buy-liq_sell
         out[f"{prefix}_liquidation_notional"]=liq_notional
         out[f"{prefix}_liquidation_to_trade_notional"]=liq_notional/total_notional if total_notional>0 else 0.0
-        out[f"{prefix}_missing"]=0.0 if complete_short_window or width != 15000 else 1.0
+        out[f"{prefix}_missing"]=0.0 if complete_short_window else 1.0
     out["flow_30s_vs_5m_signed_notional"]=out["flow_30s_signed_notional"]-0.10*out["flow_300s_signed_notional"]
     out["flow_60s_liquidation_shock"]=out["flow_60s_liquidation_to_trade_notional"]*math.log1p(out["flow_60s_liquidation_notional"])
     out["flow_any_available"]=1.0 if all_rows else 0.0
