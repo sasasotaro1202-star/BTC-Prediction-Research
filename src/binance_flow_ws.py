@@ -18,7 +18,7 @@ FORCE_ORDER_URL="wss://fstream.binance.com/market/ws/btcusdt@forceOrder"
 SCHEMA_VERSION=1
 BIN_MS=5000
 FINALIZATION_LAG_MS=10000
-MAX_BINS=720
+MAX_BINS=8640  # ~12h of 5-second bins for short-horizon OOS research
 
 
 def _data(message: Any) -> dict[str, Any]:
