@@ -96,9 +96,9 @@ def summarize_situation(features: Mapping[str, float], market: Mapping[str, floa
     if data_state == "PARTIAL" and quality_rank[signal_quality] > quality_rank["MEDIUM"]:
         signal_quality = "MEDIUM"
     elif data_state == "DEGRADED":
-        # Preserve the established MEDIUM classification for conflicting
-        # horizons when data is degraded; only a high-confidence, horizon-
-        # aligned signal is forced to LOW. This is descriptive metadata only.
+        # Preserve the established conflict-aware semantics: degraded inputs
+        # cannot report HIGH. A conflicting 5m/10m signal remains MEDIUM,
+        # while an aligned high-confidence signal is downgraded to LOW.
         if signal_quality == "HIGH":
             signal_quality = "MEDIUM" if horizon_alignment == "CONFLICT" else "LOW"
 
