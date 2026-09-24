@@ -396,7 +396,8 @@ jobs:
       needs.rolling_challenger.result == 'success' &&
       needs.extended_features.result == 'success' &&
       needs.model_zoo_regime.result == 'success' &&
-      needs.recency_weighted.result == 'success' &&\n      needs.situation_meta.result == 'success'
+      needs.recency_weighted.result == 'success' &&
+      needs.situation_meta.result == 'success'
     permissions:
       contents: write
     runs-on: ubuntu-latest
