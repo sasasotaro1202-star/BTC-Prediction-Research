@@ -22,7 +22,7 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
     all_rows=_eligible(rows,int(prediction_cutoff_ms))
     out={}
     for width in WINDOWS:
-        suffix=[r for r in all_rows if int(prediction_cutoff_ms-width)<int(r["end_time_ms"])<=int(prediction_cutoff_ms)]
+        suffix=[r for r in all_rows if int(prediction_cutoff_ms-width)<=int(r["end_time_ms"])<=int(prediction_cutoff_ms)]
         prefix=f"flow_{width//1000}s"
         if not suffix:
             for key in ("signed_qty","signed_notional","buy_share","trade_count","avg_trade_notional","max_trade_notional","liquidation_count","liquidation_signed_notional","liquidation_notional","liquidation_to_trade_notional"):
