@@ -64,6 +64,14 @@ jobs:
           python src/situation_meta_oos.py
           test -s data/historical_research/situation_meta_oos.json
 
+
+
+      - name: Run online expert aggregation OOS
+        run: |
+          set -euo pipefail
+          python src/online_expert_oos.py
+          test -s data/historical_research/online_expert_oos.json
+
       - name: Validate candidate evidence
         shell: bash
         run: |
@@ -75,6 +83,7 @@ jobs:
           expected = {
               "recency_weighted_oos.json",
               "situation_meta_oos.json",
+              "online_expert_oos.json",
           }
           root = Path("data/historical_research")
           for name in expected:
