@@ -18,25 +18,9 @@ on:
       - 'src/live_data_policy.py'
       - 'src/live_data_fail_closed.py'
   workflow_dispatch:
-  # Completion of frequent BTC workflows provides a second recovery heartbeat
-  # when GitHub delays or drops schedule events. The watchdog itself is still
-  # lightweight and collapses bursts through its concurrency group.
-  workflow_run:
-    workflows:
-      - BTC Live Cycle
-      - BTC Binance WS Collector
-      - BTC PIT OOS Audit
-      - BTC Research
-      - BTC Nested Selective Research
-      - BTC Microstructure Research
-      - BTC Exogenous Research
-      - BTC Time-Regime OOS Research
-      - BTC Frozen Archive Replay Research
-      - BTC Unit Tests
-      - BTC Ops Preflight
-      - BTC Selective Prediction OOS
-    types: [completed]
-
+  # The 5-minute scheduled heartbeat is the authoritative recovery loop.
+  # Do not start a watchdog run for every workflow completion; that creates
+  # avoidable queued/cancelled bursts while the scheduler already runs frequently.
 permissions:
   actions: write
   contents: read

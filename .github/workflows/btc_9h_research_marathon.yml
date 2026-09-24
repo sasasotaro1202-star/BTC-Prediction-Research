@@ -13,24 +13,13 @@ on:
   schedule:
     - cron: '37 0,9,18 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    # A source/protocol change invalidates research running on the previous
-    # codebase. Start a fresh current-main marathon instead of mixing evidence
-    # across revisions. Data-only state commits do not trigger this.
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - '.github/workflows/btc_9h_research_marathon.yml'
-
+  # Keep long OOS runs uninterrupted. Source changes are picked up by the next
+  # scheduled/manual run instead of cancelling an in-progress evidence build.
 concurrency:
   group: btc-9h-research-marathon-main
-  # Scheduled/manual runs must be allowed to finish. A source/protocol push,
-  # however, invalidates evidence from the previous codebase and should
-  # preempt that stale run immediately; only that event type is cancelable.
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  # Keep one marathon running to completion; never discard long OOS evidence
+  # because a maintenance commit landed on main.
+  cancel-in-progress: false
 
 permissions:
   contents: read
