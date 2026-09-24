@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 SETTLEMENT_COLUMNS = (
@@ -21,6 +22,19 @@ SETTLEMENT_COLUMNS = (
     "actual_direction_10m",
     "correct_10m",
     "settled_10m_at_utc",
+)
+
+# Settlement timestamps describe when a known outcome was recorded, not the
+# outcome itself. Multiple state replicas may therefore contain different
+# observation timestamps for the same immutable event. They are reconciled
+# deterministically instead of being treated as contradictory outcomes.
+SETTLEMENT_TIMESTAMP_COLUMNS = (
+    "settled_5m_at_utc",
+    "settled_10m_at_utc",
+)
+
+SETTLEMENT_STATE_COLUMNS = tuple(
+    c for c in SETTLEMENT_COLUMNS if c not in SETTLEMENT_TIMESTAMP_COLUMNS
 )
 
 
@@ -82,22 +96,36 @@ def _identity_token(identity: tuple[Any, ...]) -> str:
     return json.dumps(identity, sort_keys=False, separators=(",", ":"), allow_nan=False)
 
 
-def compacted_identity_digest(con: sqlite3.Connection) -> tuple[int, str]:
-    """Digest the unique immutable event identities that compaction must retain."""
-    cols = [r[1] for r in con.execute("PRAGMA table_info(predictions)").fetchall()]
-    if not cols:
-        return 0, hashlib.sha256(b"").hexdigest()
-    quoted = ",".join('"' + c.replace('"', '""') + '"' for c in cols)
-    rows = con.execute(f"SELECT {quoted} FROM predictions").fetchall()
-    identities = {_identity_token(prediction_identity(dict(zip(cols, row)))) for row in rows}
-    return len(identities), _digest_tokens(identities)
+def canonical_settlement_timestamp(values: Iterable[Any]) -> str:
+    """Return the earliest valid timezone-aware settlement timestamp in UTC.
+
+    The settlement timestamp is operational metadata. When replicated rows
+    recorded the same outcome at different times, the earliest valid timestamp
+    is the deterministic canonical representation. Invalid timestamps fail
+    closed rather than being guessed.
+    """
+    parsed = []
+    for value in values:
+        if value is None:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid_settlement_timestamp:{value!r}") from exc
+        if dt.tzinfo is None:
+            raise ValueError(f"settlement_timestamp_timezone_required:{value!r}")
+        parsed.append(dt.astimezone(timezone.utc))
+    if not parsed:
+        raise ValueError("no_settlement_timestamp_values")
+    return min(parsed).isoformat()
 
 
 def settlement_state_digest(con: sqlite3.Connection) -> tuple[int, str, tuple[str, ...]]:
     """Digest the merged settlement state expected for each immutable event.
 
-    When duplicates disagree on a non-null settlement value, the function
-    returns a conflict rather than silently choosing one side.
+    Outcome fields must agree across duplicate replicas. Settlement timestamps
+    are not outcome state; they are canonicalized to the earliest valid UTC
+    timestamp so repeated settlement/recovery passes remain idempotent.
     """
     cols = [r[1] for r in con.execute("PRAGMA table_info(predictions)").fetchall()]
     if not cols:
@@ -121,9 +149,17 @@ def settlement_state_digest(con: sqlite3.Connection) -> tuple[int, str, tuple[st
     for identity, settlements in groups.items():
         clean: dict[str, Any] = {}
         for col, values in settlements.items():
+            if not values:
+                continue
+            if col in SETTLEMENT_TIMESTAMP_COLUMNS:
+                try:
+                    clean[col] = canonical_settlement_timestamp(values)
+                except ValueError as exc:
+                    conflicts.append(f"{col}:invalid:{exc}")
+                continue
             if len(values) > 1:
                 conflicts.append(f"{col}:{sorted(map(str, values))}")
-            elif values:
+            else:
                 clean[col] = next(iter(values))
         tokens.append(
             json.dumps(
