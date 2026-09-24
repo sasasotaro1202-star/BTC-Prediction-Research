@@ -64,10 +64,14 @@ jobs:
 
               if [ "$head" != "$main_sha" ] && [ "$age" -ge "$threshold" ]; then
                 echo "CANCEL stale ${workflow} run=${id} run_number=$(jq -r '.run_number // 0' <<<"$run") age=${age}s head=${head}"
-                if gh api --method POST "/repos/${REPO}/actions/runs/${id}/cancel" >/dev/null 2>&1; then
+                cancel_response="$(gh api --method POST "/repos/${REPO}/actions/runs/${id}/cancel" 2>&1)" || cancel_rc=$?
+                cancel_rc="${cancel_rc:-0}"
+                if [ "${cancel_rc}" -eq 0 ]; then
                   echo "CANCEL requested successfully: ${workflow} run=${id}"
+                elif grep -qiE '404|Not Found' <<<"${cancel_response}"; then
+                  echo "WARN: stale run ${workflow} run=${id} disappeared before cancellation (race; treating as already handled)."
                 else
-                  echo "WARN: cancel request failed: ${workflow} run=${id}"
+                  echo "WARN: cancel request failed: ${workflow} run=${id} rc=${cancel_rc} response=${cancel_response}"
                 fi
               fi
             done
