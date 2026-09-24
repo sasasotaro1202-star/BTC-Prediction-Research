@@ -30,7 +30,7 @@ concurrency:
   # recovery decision alive instead of cancelling it mid-run; the job re-checks
   # current-main state before mutating anything.
   group: btc-workflow-watchdog
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   watchdog:
