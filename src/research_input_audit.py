@@ -179,6 +179,39 @@ def audit_horizon(con, horizon: str) -> dict:
         "majority_accuracy": majority,
     }
 
+def recent_pit_stats(con, horizon: str, limit: int = 20) -> dict:
+    target_col = TARGETS[horizon]
+    actual_col = HORIZONS[horizon]
+    rows = con.execute(
+        f"""SELECT prediction_id, created_at_utc, {target_col}, model_version, scenario_json, {actual_col}
+            FROM predictions
+            WHERE model_version != 'DEGRADED_NO_FRESH_DATA'
+            ORDER BY created_at_utc DESC, prediction_id DESC
+            LIMIT ?""",
+        (int(limit),),
+    ).fetchall()
+    total = len(rows)
+    strict = 0
+    failures = Counter()
+    for prediction_id, created_at, target_at, model_version, scenario_json, actual in rows:
+        if not prediction_precedes_target(created_at, target_at):
+            failures["prediction_time_not_before_target"] += 1
+            continue
+        reason = strict_pit_provenance_reason(_safe_json(scenario_json), created_at)
+        if reason is None:
+            strict += 1
+        else:
+            failures[reason] += 1
+    return {
+        "window_size": int(limit),
+        "observed": total,
+        "strict_pit": strict,
+        "rate": (strict / total) if total else None,
+        "failure_reasons": dict(failures),
+        "all_strict": bool(total > 0 and strict == total),
+    }
+
+
 def main() -> int:
     if not DB.exists() or DB.stat().st_size <= 0:
         raise SystemExit("research input audit: prediction database missing or empty")
@@ -186,6 +219,15 @@ def main() -> int:
         horizons = {h: audit_horizon(con, h) for h in HORIZONS}
 
     failures = []
+    recent = {}
+    with sqlite3.connect(DB) as con:
+        for h in HORIZONS:
+            recent[h] = recent_pit_stats(con, h, limit=20)
+            if recent[h]["observed"] > 0 and not recent[h]["all_strict"]:
+                failures.append(
+                    f"{h}:recent_strict_pit_rate={recent[h]['rate']}:"
+                    f"{recent[h]['failure_reasons']}"
+                )
     for h, item in horizons.items():
         if item["invalid_timestamp_rows"]:
             failures.append(f"{h}:invalid_timestamp_rows={item['invalid_timestamp_rows']}")
@@ -205,6 +247,7 @@ def main() -> int:
         "status": "PASS" if not failures else "HOLD",
         "policy": "all_prediction_event_chronology_identity_and_strict_pit_audit",
         "failure_reasons": failures,
+        "recent_pit_window": recent,
         "horizons": horizons,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
