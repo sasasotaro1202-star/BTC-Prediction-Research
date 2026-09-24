@@ -1,6 +1,12 @@
 name: BTC Uncertainty Router OOS
 
 on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/btc_uncertainty_router_oos.yml'
   schedule:
     - cron: '37 0,12 * * *'
   workflow_dispatch:
