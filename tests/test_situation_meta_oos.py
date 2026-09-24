@@ -1,7 +1,7 @@
 import numpy as np
 from datetime import datetime, timezone, timedelta
 
-from src.situation_meta_oos import build_meta_vector, causal_train_rows, meta_feature_names
+from src.situation_meta_oos import build_meta_vector, causal_train_rows, meta_feature_names, primary_live_scenario
 
 
 def _row(created, target):
@@ -61,3 +61,9 @@ def test_causal_train_rows_rejects_created_at_or_after_target():
         start.isoformat(),
     )
     assert causal_train_rows([row], start.isoformat(), "5m") == []
+
+
+def test_primary_live_scenario_is_fail_closed_for_fallback_modes():
+    assert primary_live_scenario({"production_mode": "binance_primary"}) is True
+    assert primary_live_scenario({"production_mode": "bybit_fallback"}) is False
+    assert primary_live_scenario({}) is False
