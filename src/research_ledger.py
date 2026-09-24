@@ -17,6 +17,7 @@ LANES={
 "risk_aware_dynamic":"risk_aware_dynamic_oos.json","rolling_challenger":"rolling_challenger_oos.json",
 "extended_features":"extended_features_oos.json","model_zoo_regime":"model_zoo_regime_oos.json",
 "recency_weighted":"recency_weighted_oos.json",
+"situation_meta":"situation_meta_oos.json",
 }
 def load(name:str)->dict[str,Any]:
     p=E/name
