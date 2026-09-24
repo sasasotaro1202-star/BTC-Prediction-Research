@@ -91,6 +91,28 @@ jobs:
       - name: Compile BTC source and test modules
         run: python -m compileall -q src tests scripts
 
+      - name: Smoke-test rolling challenger factory registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from src.rolling_challenger_oos import factories
+          registry = factories()
+          expected = {
+              "logreg_c0.1",
+              "extra_trees_500",
+              "rf_replay",
+              "hgb",
+              "gaussian_nb",
+              "adaptive_soft_ensemble",
+          }
+          if set(registry) != expected:
+              raise SystemExit(f"rolling challenger factory registry drift: {sorted(registry)}")
+          for name, factory in registry.items():
+              factory()
+              print(f"rolling challenger factory OK: {name}")
+          PY
+
       - name: Verify production registry, metadata, and artifact bindings
         shell: bash
         run: |
