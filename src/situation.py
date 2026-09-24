@@ -68,16 +68,30 @@ def summarize_situation(features: Mapping[str, float], market: Mapping[str, floa
         else "LOW"
     )
 
-    book = _finite(market.get("book_imbalance"), 0.0)
-    taker = _finite(market.get("taker_imbalance"), 0.0)
-    funding = _finite(market.get("funding_binance"), 0.0)
-    gap = _finite(market.get("cross_exchange_gap"), 0.0) if market.get("cross_exchange_gap") is not None else 0.0
-    flow = (
-        "BUY_PRESSURE" if book >= 0.20 or taker >= 0.35
-        else "SELL_PRESSURE" if book <= -0.20 or taker <= -0.35
-        else "BALANCED"
-    )
-    divergence = "HIGH" if abs(gap) >= 0.0005 else "NORMAL"
+    book_raw = market.get("book_imbalance")
+    taker_raw = market.get("taker_imbalance")
+    funding_raw = market.get("funding_binance")
+    gap_raw = market.get("cross_exchange_gap")
+
+    book = _finite(book_raw, 0.0)
+    taker = _finite(taker_raw, 0.0)
+    funding = _finite(funding_raw, 0.0)
+    gap = _finite(gap_raw, 0.0) if gap_raw is not None else None
+
+    # Missing is not neutral. Keep numeric compatibility in the output fields,
+    # but explicitly classify unavailable signals so the situation layer cannot
+    # report a falsely balanced market.
+    flow_available = book_raw is not None or taker_raw is not None
+    if not flow_available:
+        flow = "UNKNOWN"
+    else:
+        flow = (
+            "BUY_PRESSURE" if book >= 0.20 or taker >= 0.35
+            else "SELL_PRESSURE" if book <= -0.20 or taker <= -0.35
+            else "BALANCED"
+        )
+    divergence = "UNKNOWN" if gap is None else ("HIGH" if abs(gap) >= 0.0005 else "NORMAL")
+    unknown_signals = int(not flow_available) + int(gap is None) + int(funding_raw is None)
 
     quality_errors = 0
     if isinstance(data_quality, Mapping):
@@ -122,5 +136,8 @@ def summarize_situation(features: Mapping[str, float], market: Mapping[str, floa
         "taker_imbalance": taker,
         "funding_binance": funding,
         "cross_exchange_divergence": divergence,
+        "funding_available": funding_raw is not None and math.isfinite(_finite(funding_raw, float("nan"))),
+        "microstructure_flow_available": flow_available,
+        "unknown_signal_count": unknown_signals,
         "data_state": data_state,
     }
