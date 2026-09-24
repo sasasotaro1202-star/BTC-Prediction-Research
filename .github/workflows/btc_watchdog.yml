@@ -155,6 +155,11 @@ jobs:
             return 1
           }
 
+          # Bound secondary research fan-out: a watchdog tick may start at most
+          # three non-critical research/maintenance lanes. Production-critical
+          # Live/WS/Supervisor paths are exempt so cadence is never sacrificed.
+          secondary_dispatch_budget=3
+
           recover_if_stale() {
             workflow="$1"
             threshold="$2"
@@ -263,7 +268,19 @@ jobs:
               should_dispatch=true
               echo "btc_binance_ws_collector.yml: starting staggered overlap collector after 30 minutes."
             fi
+            secondary_dispatch=false
+            case "$workflow" in
+              btc_live_cycle.yml|btc_binance_ws_collector.yml|btc_continuous_supervisor.yml|btc_integrity.yml|btc_pit_oos_audit.yml)
+                ;;
+              *)
+                secondary_dispatch=true
+                ;;
+            esac
             if [ "$should_dispatch" = true ] && [ "$dispatch_allowed" = true ]; then
+              if [ "$secondary_dispatch" = true ] && [ "$secondary_dispatch_budget" -le 0 ]; then
+                echo "${workflow}: secondary dispatch budget exhausted for this watchdog tick; queued work remains for the next heartbeat."
+                return 0
+              fi
               echo "${workflow} appears stale; ensuring the workflow is enabled before recovery."
               if gh workflow enable "$workflow" >/dev/null 2>&1; then
                 echo "${workflow} enable check completed."
@@ -275,8 +292,10 @@ jobs:
               # must never mutate prediction state or be reported as successful.
               if gh workflow run "$workflow" --ref main >/dev/null 2>&1; then
                 echo "${workflow} recovery dispatch succeeded via gh workflow run."
+                if [ "$secondary_dispatch" = true ]; then secondary_dispatch_budget=$((secondary_dispatch_budget - 1)); fi
               elif gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
                 echo "${workflow} recovery dispatch succeeded via workflow_dispatch API."
+                if [ "$secondary_dispatch" = true ]; then secondary_dispatch_budget=$((secondary_dispatch_budget - 1)); fi
               else
                 echo "ERROR: ${workflow} recovery dispatch failed through both supported paths; watchdog recovery degraded." >&2
                 watchdog_degraded=1
