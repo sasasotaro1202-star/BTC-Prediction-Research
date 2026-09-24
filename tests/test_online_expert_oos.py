@@ -1,3 +1,4 @@
+# Explicit target timestamp keeps the PIT replay fixture settlement-aware.
 import numpy as np
 from src.online_expert_oos import _metrics, _weights, run_strategy, EXPERTS
 
