@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   PYTHONUNBUFFERED: '1'
@@ -310,9 +310,44 @@ jobs:
           path: data/historical_research/robustness_oos_report.json
           retention-days: 3
 
+  recency_weighted:
+    name: Recency-weighted concept-drift OOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and run recency-weighted OOS
+        run: |
+          set -euo pipefail
+          python -m compileall -q src scripts tests
+          python src/recency_weighted_oos.py
+          test -s data/historical_research/recency_weighted_oos.json
+      - name: Upload recency-weighted evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-9h-recency-weighted
+          path: data/historical_research/recency_weighted_oos.json
+          retention-days: 3
+
   historical_and_integrity:
     name: Incremental historical research + integrity
-    needs: [context_router, interaction, robustness, adaptive_ensemble, risk_aware_dynamic, rolling_challenger, extended_features, model_zoo_regime]
+    needs: [context_router, interaction, robustness, adaptive_ensemble, risk_aware_dynamic, rolling_challenger, extended_features, model_zoo_regime, recency_weighted]
     # Integrate evidence only when every parallel research lane completed
     # successfully. Cancelled/failed lanes remain visible and are retried by the
     # watchdog; the final integrator must not consume another long runner on
@@ -325,7 +360,8 @@ jobs:
       needs.risk_aware_dynamic.result == 'success' &&
       needs.rolling_challenger.result == 'success' &&
       needs.extended_features.result == 'success' &&
-      needs.model_zoo_regime.result == 'success'
+      needs.model_zoo_regime.result == 'success' &&
+      needs.recency_weighted.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -406,6 +442,7 @@ jobs:
               "btc-9h-rolling-challenger": "rolling_challenger_oos.json",
               "btc-9h-extended-features": "extended_features_oos.json",
               "btc-9h-model-zoo-regime": "model_zoo_regime_oos.json",
+              "btc-9h-recency-weighted": "recency_weighted_oos.json",
           }
           for directory, filename in expected.items():
               path = root / directory / filename
