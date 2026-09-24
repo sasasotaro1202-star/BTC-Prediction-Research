@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from model_compare import strict_pit_provenance_reason
+from model_compare import strict_pit_provenance_reason, prediction_precedes_target
 from prediction_identity import model_prediction_event_key
 from feature_schema import FEATURES
 
