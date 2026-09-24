@@ -23,9 +23,9 @@ class TestSettlementSource(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing_binance_futures'):
             ss.preferred_source_from_scenario(row)
 
-    def test_target_requires_binance_benchmark(self):
-        with self.assertRaisesRegex(ValueError, 'only_binance_futures'):
-            ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'coinbase')
+    def test_target_rejects_unknown_source(self):
+        with self.assertRaisesRegex(ValueError, 'unsupported_settlement_source'):
+            ss.target_close_preferred('2026-09-15T10:05:00+00:00', 'unsupported_source')
 
     def test_websocket_cache_target_is_used_before_rest(self):
         rows = [{
