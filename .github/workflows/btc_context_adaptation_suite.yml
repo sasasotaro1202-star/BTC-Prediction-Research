@@ -114,10 +114,10 @@ jobs:
           PY
 
       - name: Upload context adaptation evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-context-adaptation-suite-\${{ github.run_id }}
+          name: btc-context-adaptation-suite-${{ github.run_id }}
           path: |
             data/historical_research/recency_weighted_oos.json
             data/historical_research/situation_meta_oos.json
