@@ -15,6 +15,8 @@ OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
 MIN_PREDICTIONS = 1
 MIN_STRICT_PIT_ROWS = 300
+SITUATION_META_MIN_ROWS = 3000
+ONLINE_EXPERT_MIN_ROWS = 140
 AVAILABLE_STATUSES = {"ok", "ok_current_only"}
 # a4d43aa added per-source prediction_cutoff to live Coinbase provenance.
 # Rows created before that contract existed are quarantined, not upgraded retroactively.
@@ -102,8 +104,12 @@ def audit() -> dict:
     verified_fallback_count = 0
 
     with sqlite3.connect(DB) as con:
+        columns = table_columns(con, "predictions")
+        actual5 = "actual_direction_5m" if "actual_direction_5m" in columns else "NULL AS actual_direction_5m"
+        actual10 = "actual_direction_10m" if "actual_direction_10m" in columns else "NULL AS actual_direction_10m"
         rows = con.execute(
-            "SELECT prediction_id, created_at_utc, target_5m, target_10m, model_version, scenario_json "
+            "SELECT prediction_id, created_at_utc, target_5m, target_10m, model_version, "
+            f"{actual5}, {actual10}, scenario_json "
             "FROM predictions ORDER BY created_at_utc, prediction_id"
         ).fetchall()
 
@@ -111,8 +117,31 @@ def audit() -> dict:
         violations.append("prediction_database_has_no_predictions")
 
     now = datetime.now(timezone.utc)
+    coverage = {
+        "5m": {
+            "settled_predictions": 0,
+            "strict_primary_settled": 0,
+            "situation_meta_ready": 0,
+            "online_expert_ready": 0,
+        },
+        "10m": {
+            "settled_predictions": 0,
+            "strict_primary_settled": 0,
+            "situation_meta_ready": 0,
+            "online_expert_ready": 0,
+        },
+    }
 
-    for prediction_id, created_raw, target5_raw, target10_raw, model_version, scenario_raw in rows:
+    for (
+        prediction_id,
+        created_raw,
+        target5_raw,
+        target10_raw,
+        model_version,
+        actual5,
+        actual10,
+        scenario_raw,
+    ) in rows:
         checked += 1
         row_prefix = f"{prediction_id}:"
         try:
@@ -216,20 +245,42 @@ def audit() -> dict:
         elif not is_legacy:
             scoped.append(f"{prediction_id}:missing_top_level_provenance")
 
+        situation_obj = scenario.get("situation") if isinstance(scenario, dict) else None
+        micro_obj = scenario.get("microstructure") if isinstance(scenario, dict) else None
+        components_obj = scenario.get("components") if isinstance(scenario, dict) else None
+
+        if actual5 not in (None, ""):
+            coverage["5m"]["settled_predictions"] += 1
+        if actual10 not in (None, ""):
+            coverage["10m"]["settled_predictions"] += 1
+
         if model_version == "DEGRADED_NO_FRESH_DATA":
             if scenario.get("policy") != "safe_degraded_no_directional_claim":
                 violations.append(f"{prediction_id}:degraded_policy_mismatch")
 
+        row_has_active_violation = any(v.startswith(row_prefix) for v in violations)
         if is_legacy:
             legacy_unverified_count += 1
         elif legacy_coinbase_contract:
             legacy_unverified_count += 1
-        elif not any(v.startswith(row_prefix) for v in violations):
+        elif not row_has_active_violation:
             verified_count += 1
             if primary_source_valid:
                 verified_primary_count += 1
             elif fallback_source_valid:
                 verified_fallback_count += 1
+
+        if not row_has_active_violation and primary_source_valid:
+            if actual5 not in (None, ""):
+                coverage["5m"]["strict_primary_settled"] += 1
+                if isinstance(situation_obj, dict) and isinstance(micro_obj, dict) and isinstance(components_obj, dict):
+                    coverage["5m"]["situation_meta_ready"] += 1
+                    coverage["5m"]["online_expert_ready"] += 1
+            if actual10 not in (None, ""):
+                coverage["10m"]["strict_primary_settled"] += 1
+                if isinstance(situation_obj, dict) and isinstance(micro_obj, dict) and isinstance(components_obj, dict):
+                    coverage["10m"]["situation_meta_ready"] += 1
+                    coverage["10m"]["online_expert_ready"] += 1
 
     # Promotion evidence is tied to the production benchmark venue. Fallback
     # observations remain useful research data but cannot satisfy the primary
@@ -238,6 +289,13 @@ def audit() -> dict:
         not violations
         and verified_primary_count >= MIN_STRICT_PIT_ROWS
     )
+    for horizon in ("5m", "10m"):
+        item = coverage[horizon]
+        item["situation_meta_rows_needed"] = max(0, SITUATION_META_MIN_ROWS - item["situation_meta_ready"])
+        item["online_expert_rows_needed"] = max(0, ONLINE_EXPERT_MIN_ROWS - item["online_expert_ready"])
+        item["estimated_5m_cycles_lower_bound"] = int(item["situation_meta_rows_needed"])
+        item["estimated_days_lower_bound"] = float(item["estimated_5m_cycles_lower_bound"] * 5 / (60 * 24))
+
     result = {
         "ok": not violations,
         "status": (
@@ -256,6 +314,12 @@ def audit() -> dict:
         "verified_primary_predictions": verified_primary_count,
         "verified_fallback_predictions": verified_fallback_count,
         "min_strict_pit_rows": MIN_STRICT_PIT_ROWS,
+        "coverage": coverage,
+        "coverage_policy": (
+            "strict_primary_settled requires actual outcome + valid primary PIT; "
+            "situation_meta_ready additionally requires persisted situation, microstructure, and components; "
+            "estimated_days is a lower bound assuming one qualifying prediction every 5 minutes"
+        ),
         "legacy_unverified_count": legacy_unverified_count,
         "legacy_violation_count": len(legacy_violations),
         "legacy_violations": legacy_violations[:50],
