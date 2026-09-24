@@ -387,7 +387,7 @@ def evaluate(horizon):
         "development_n": len(development),
         "final_holdout_n": len(holdout),
         "base_experts": list(EXPERTS),
-        "gap_bars": gap,
+        "gap_bars": int(PURGE_BARS[horizon] + EMBARGO_BARS[horizon]),
         "modes": results,
         "policy": (
             "prequential_router_from_prior_meta_block_only; "
