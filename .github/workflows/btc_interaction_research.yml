@@ -19,6 +19,10 @@ on:
 # Research is intentionally read-only. Results are retained as workflow
 # artifacts instead of being pushed to main, preventing state-writer races
 # with the 5-minute production cycle.
+concurrency:
+  group: btc-aux-research-admission
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
