@@ -221,3 +221,46 @@ class TestPredictBlendSafety(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+import pytest
+
+from src.situation import summarize_situation
+
+
+def _features():
+    return {
+        "volatility_5m": 0.001,
+        "volatility_10m": 0.0022,
+        "trend_alignment": 0.005,
+    }
+
+
+def test_situation_detects_trend_and_horizon_agreement():
+    out = summarize_situation(
+        _features(),
+        {"book_imbalance": 0.3, "taker_imbalance": 0.4, "funding_binance": 0.0, "cross_exchange_gap": 0.0},
+        {"DOWN": 0.1, "FLAT": 0.2, "UP": 0.7},
+        {"DOWN": 0.1, "FLAT": 0.2, "UP": 0.7},
+        data_quality={"binance_futures": "ok", "binance_depth": "ok", "binance_taker": "ok", "binance_premium": "ok"},
+    )
+    assert out["trend_state"] == "TREND_UP"
+    assert out["horizon_alignment"] == "AGREE"
+    assert out["signal_quality"] == "HIGH"
+    assert out["orderflow_state"] == "BUY_PRESSURE"
+    assert out["data_state"] == "HEALTHY"
+
+
+def test_situation_detects_conflict_and_degraded_inputs():
+    out = summarize_situation(
+        {"volatility_5m": 0.002, "volatility_10m": 0.002, "trend_alignment": 0.0},
+        {"book_imbalance": -0.3, "taker_imbalance": -0.4, "cross_exchange_gap": 0.001},
+        {"DOWN": 0.65, "FLAT": 0.2, "UP": 0.15},
+        {"DOWN": 0.2, "FLAT": 0.2, "UP": 0.6},
+        data_quality={"binance_futures": "error:HTTPError:451", "binance_depth": "ok", "binance_taker": "error:RuntimeError", "binance_premium": "ok"},
+    )
+    assert out["trend_state"] == "RANGE"
+    assert out["horizon_alignment"] == "CONFLICT"
+    assert out["signal_quality"] == "MEDIUM"
+    assert out["orderflow_state"] == "SELL_PRESSURE"
+    assert out["cross_exchange_divergence"] == "HIGH"
+    assert out["data_state"] == "DEGRADED"

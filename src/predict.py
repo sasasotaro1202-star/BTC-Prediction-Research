@@ -12,6 +12,7 @@ from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, by
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
 from microstructure_features import derive_market_flow_features
 from runtime_production_model import resolve_production_model
+from situation import summarize_situation
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
@@ -578,6 +579,7 @@ def main():
         raw5,w5=fuse(base5,s5,m,data_complete,'5m'); raw10,w10=fuse(base10,s10,m,data_complete,'10m')
         p5=calibrate_probs(raw5,'5m'); p10=calibrate_probs(raw10,'10m')
     target5=next_grid(now,1); target10=next_grid(now,2); direction=max(p5,key=p5.get); regime='TREND' if abs(f['trend_alignment'])>max(.0007,1.5*f['volatility_10m']) else 'RANGE'; warnings=[]
+    situation = summarize_situation(f, m, p5, p10, data_quality=status)
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
     if abs(m.get('taker_imbalance',0.0))>.55:warnings.append('taker-flow imbalance')
@@ -685,7 +687,7 @@ def main():
             'prediction_cutoff':retrieved,
             'status':'ok',
         }
-    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'policy':('bybit_fallback_model+fallback_oos_calibration' if use_bybit_fallback else ('coinbase_fallback_model+fallback_oos_calibration' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
+    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10},'situation':situation,'policy':('bybit_fallback_model+fallback_oos_calibration' if use_bybit_fallback else ('coinbase_fallback_model+fallback_oos_calibration' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
     if use_bybit_fallback or use_coinbase_fallback:
         prefix='bybit' if use_bybit_fallback else 'coinbase'
         by5=json.loads((MODEL_DIR/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']
@@ -694,5 +696,5 @@ def main():
     else:
         model_version=f'5m:{regver("5m")}|10m:{regver("10m")}'
     insert_prediction(now,target5,target10,price,p5,p10,model_version,f,scenario)
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((MODEL_DIR/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((MODEL_DIR/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'situation':situation,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((MODEL_DIR/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((MODEL_DIR/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()

@@ -1,0 +1,124 @@
+name: BTC Continuous Supervisor
+
+on:
+  # The push trigger is intentionally scoped to this workflow only. It bootstraps
+  # the self-sustaining chain without restarting it on ordinary source commits.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_continuous_supervisor.yml'
+  schedule:
+    - cron: '13 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-continuous-supervisor
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  supervise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - name: Verify supervisor prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "main"
+          gh api "/repos/${REPO}" --jq '.default_branch' | grep -qx main
+
+      - name: Sustain BTC production and research heartbeat
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -u
+          heartbeat_degraded=0
+          end_epoch=$(( $(date +%s) + 330 * 60 ))
+          tick=0
+
+          dispatch_if_stale() {
+            workflow="$1"
+            threshold="$2"
+            mode="$3"
+            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null) || {
+              echo "ERROR: cannot inspect ${workflow}" >&2
+              heartbeat_degraded=1
+              return 0
+            }
+            active=$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$response") || {
+              echo "ERROR: cannot parse active state for ${workflow}" >&2
+              heartbeat_degraded=1
+              return 0
+            }
+            latest=$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.id,.updated_at,.head_sha] | @tsv' <<<"$response") || {
+              echo "ERROR: cannot parse latest state for ${workflow}" >&2
+              heartbeat_degraded=1
+              return 0
+            }
+            latest_updated=$(cut -f2 <<<"$latest")
+            latest_epoch=$(date -d "${latest_updated:-1970-01-01T00:00:00Z}" +%s 2>/dev/null || echo 0)
+            now=$(date +%s)
+            age=$((now-latest_epoch))
+            echo "${workflow}: active=${active} latest_age=${age}s mode=${mode}"
+            if [ "$active" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
+              echo "Dispatching stale ${workflow}"
+              if gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
+                echo "Dispatch succeeded: ${workflow}"
+              else
+                echo "ERROR: dispatch failed: ${workflow}" >&2
+                heartbeat_degraded=1
+              fi
+            fi
+          }
+
+          while [ "$(date +%s)" -lt "$end_epoch" ]; do
+            tick=$((tick+1))
+            echo "=== BTC supervisor tick ${tick} ==="
+            dispatch_if_stale btc_live_cycle.yml 300 live
+            dispatch_if_stale btc_binance_ws_collector.yml 1800 ws
+            sleep 300
+          done
+
+          self_dispatch_ok=0
+          for attempt in 1 2 3; do
+            if gh workflow run btc_continuous_supervisor.yml --ref main >/dev/null 2>&1; then
+              self_dispatch_ok=1
+              echo "Next BTC supervisor generation queued successfully on attempt ${attempt}."
+              break
+            fi
+            echo "ERROR: successor supervisor dispatch failed on attempt ${attempt}." >&2
+            sleep $((attempt * 5))
+          done
+          if [ "$self_dispatch_ok" -ne 1 ]; then
+            heartbeat_degraded=1
+            echo "ERROR: supervisor successor was not queued; daily schedule/watchdog remain the fallback recovery path." >&2
+          fi
+
+          cat > supervisor_status.json <<EOF
+          {
+            "schema_version": 1,
+            "workflow_run_id": ${GITHUB_RUN_ID},
+            "head_sha": "${GITHUB_SHA}",
+            "completed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "heartbeat_degraded": ${heartbeat_degraded},
+            "successor_queued": ${self_dispatch_ok}
+          }
+          EOF
+          cat supervisor_status.json
+
+      - name: Upload supervisor status
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-continuous-supervisor-status
+          path: supervisor_status.json
+          if-no-files-found: error
+          retention-days: 3
