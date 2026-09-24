@@ -219,7 +219,7 @@ def write_cache(bins:dict[int,dict[str,Any]], path:Path=DEFAULT_CACHE)->None:
         "updated_at_utc":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
     }
     temp=path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temp.write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\\n",encoding="utf-8")
+    temp.write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
     temp.replace(path)
 
 
