@@ -193,16 +193,51 @@ def _new_state() -> dict[str, Any]:
     }
 
 
+def _apply_outcome(state: dict[str, Any], row: dict[str, Any]) -> None:
+    context = row["context"]
+    state["state_ema"][context]  # initialize lazily
+    for expert in EXPERTS:
+        loss = _loss(row["experts"][expert], row["y"])
+        state["global_ema"][expert] = (
+            (1.0 - ALPHA) * state["global_ema"][expert] + ALPHA * loss
+        )
+        state["state_ema"][context][expert] = (
+            (1.0 - ALPHA) * state["state_ema"][context][expert] + ALPHA * loss
+        )
+    state["state_counts"][context] += 1
+
+
 def run_strategy(
     rows: list[dict[str, Any]],
     strategy: str,
     state: dict[str, Any] | None = None,
-) -> tuple[np.ndarray, list[dict[str, Any]], dict[str, Any]]:
+    pending: list[dict[str, Any]] | None = None,
+) -> tuple[np.ndarray, list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     state = _new_state() if state is None else state
+    pending = [] if pending is None else list(pending)
     predictions: list[np.ndarray] = []
     trace: list[dict[str, Any]] = []
 
     for row in rows:
+        created = _utc(row["created"])
+        if created is None:
+            raise ValueError("row_created_timestamp_invalid")
+
+        # Release only outcomes whose targets were strictly before the
+        # current prediction timestamp. This prevents overlap leakage, e.g.
+        # a 10m prediction made at t+5m cannot learn from the t prediction's
+        # target at t+10m because that result is not settled yet.
+        still_pending = []
+        for previous in pending:
+            target = _utc(previous["target"])
+            if target is None:
+                continue
+            if target < created:
+                _apply_outcome(state, previous)
+            else:
+                still_pending.append(previous)
+        pending = still_pending
+
         seen = int(state["seen"])
         global_ema = state["global_ema"]
         state_ema = state["state_ema"]
@@ -232,19 +267,12 @@ def run_strategy(
             }
         )
 
-        # Realized outcome is incorporated only after the current prediction
-        # is fixed, then the state is carried forward to the next observation.
-        context = row["context"]
-        for expert in EXPERTS:
-            loss = _loss(row["experts"][expert], row["y"])
-            global_ema[expert] = (1.0 - ALPHA) * global_ema[expert] + ALPHA * loss
-            state_ema[context][expert] = (
-                (1.0 - ALPHA) * state_ema[context][expert] + ALPHA * loss
-            )
-        state_counts[context] += 1
+        # Current outcome is not incorporated now. It becomes eligible only
+        # when its target timestamp is strictly earlier than a later prediction.
+        pending.append(row)
         state["seen"] = seen + 1
 
-    return np.stack(predictions), trace, state
+    return np.stack(predictions), trace, state, pending
 
 
 def _split(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -270,8 +298,10 @@ def evaluate(horizon: str) -> dict[str, Any]:
     traces = {}
 
     for strategy in strategies:
-        dev_probs, dev_trace, state = run_strategy(development, strategy)
-        hold_probs, _, _ = run_strategy(holdout, strategy, state=state)
+        dev_probs, dev_trace, state, pending = run_strategy(development, strategy)
+        hold_probs, _, _, _ = run_strategy(
+            holdout, strategy, state=state, pending=pending
+        )
         dev_results[strategy] = _metrics(development, dev_probs)
         holdout_results[strategy] = _metrics(holdout, hold_probs)
         traces[strategy] = dev_trace[-1]
