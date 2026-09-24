@@ -24,6 +24,7 @@ LANES = {
     "rolling_challenger": "rolling_challenger_oos.json",
     "extended_features": "extended_features_oos.json",
     "model_zoo_regime": "model_zoo_regime_oos.json",
+    "situation_selective": "situation_selective_oos.json",
 }
 
 def _load(name: str) -> dict[str, Any]:
