@@ -97,6 +97,43 @@ class TestPredictionIdentityDigest(unittest.TestCase):
                 after["immutable_identity_sha256"],
             )
 
+    def test_different_settlement_timestamps_are_reconciled_not_conflicted(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            early = (101.0, "UP", 1, "2026-09-22T00:05:01+00:00", 102.0, "UP", 1, "2026-09-22T00:10:01+00:00")
+            late = (101.0, "UP", 1, "2026-09-22T00:05:02+00:00", 102.0, "UP", 1, "2026-09-22T00:10:02+00:00")
+            make_db(
+                db,
+                [
+                    row("2026-09-22T00:00:00+00:00", settlement=early),
+                    row("2026-09-22T00:00:00+00:00", settlement=late),
+                ],
+            )
+            with sqlite3.connect(db) as con:
+                before = canonical_compaction_snapshot(con)
+                self.assertFalse(before["settlement_conflicts"])
+                result = compact_predictions(con)
+                con.commit()
+                after = canonical_compaction_snapshot(con)
+                settled = con.execute(
+                    "SELECT settled_5m_at_utc, settled_10m_at_utc FROM predictions"
+                ).fetchone()
+            self.assertEqual(result["total_events"], 1)
+            self.assertEqual(settled, (early[3], early[7]))
+            self.assertEqual(
+                before["settlement_state_sha256"],
+                after["settlement_state_sha256"],
+            )
+
+    def test_invalid_settlement_timestamp_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            bad = (101.0, "UP", 1, "not-a-timestamp", None, None, None, None)
+            make_db(db, [row("2026-09-22T00:00:00+00:00", settlement=bad)])
+            with sqlite3.connect(db) as con:
+                snapshot = canonical_compaction_snapshot(con)
+            self.assertTrue(snapshot["settlement_conflicts"])
+
     def test_conflicting_non_null_settlement_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "predictions.db"
