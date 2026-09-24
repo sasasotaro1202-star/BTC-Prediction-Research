@@ -96,11 +96,11 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import gzip
           import json
           import sqlite3
           from pathlib import Path
           from src.feature_schema import FEATURES
+          from src.state_archive import restore_db
 
           root = Path(".")
           db_gz = root / "data" / "predictions.db.gz"
@@ -108,10 +108,14 @@ jobs:
               raise SystemExit("production prediction DB archive missing")
 
           db_path = Path("/tmp/predictions.db")
-          with gzip.open(db_gz, "rb") as src, db_path.open("wb") as dst:
-              dst.write(src.read())
-
+          try:
+              restore_db(db_gz, db_path)
+          except Exception as exc:
+              raise SystemExit(f"production prediction DB archive invalid: {exc}") from exc
           with sqlite3.connect(db_path) as con:
+              integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
+              if integrity != "ok":
+                  raise SystemExit(f"production prediction DB integrity check failed: {integrity}")
               rows = con.execute(
                   "SELECT horizon, production_version FROM model_registry ORDER BY horizon"
               ).fetchall()

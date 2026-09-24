@@ -16,7 +16,7 @@ class TestLiveDataFailClosed(unittest.TestCase):
     def test_accepts_explicit_coinbase_fallback_with_provenance_and_model_binding(self):
         scenario = {
             "production_mode": "coinbase_fallback",
-            "policy": "coinbase_fallback_model_only_uncalibrated",
+            "policy": "coinbase_fallback_model+fallback_oos_calibration",
             "data_quality": {
                 "binance_futures": "error:HTTPError:451",
                 "binance_depth": "error:HTTPError",

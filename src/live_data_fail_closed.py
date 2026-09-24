@@ -33,8 +33,9 @@ def _validate_explicit_fallback(prediction_id: int, scenario: dict, model_versio
     if source is None:
         return None
 
-    expected_policy = f"{source}_fallback_model_only_uncalibrated"
-    if policy != expected_policy:
+    accepted_policy = f"{source}_fallback_model+fallback_oos_calibration"
+    legacy_policy = f"{source}_fallback_model_only_uncalibrated"
+    if policy not in {accepted_policy, legacy_policy}:
         raise SystemExit(
             f"live_data_fail_closed: fallback policy mismatch for {mode}: {policy!r}"
         )
