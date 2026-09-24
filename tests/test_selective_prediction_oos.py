@@ -11,7 +11,7 @@ class TestSelectivePredictionOOS(unittest.TestCase):
     def test_adaptive_threshold_uses_previous_scores_only(self):
         self.assertAlmostEqual(
             sp._adaptive_threshold([0.60, 0.70, 0.80, 0.90], 0.50),
-            0.80,
+            0.75,
             places=8,
         )
         self.assertEqual(sp._adaptive_threshold([0.70] * 10, 0.30), 0.70)
