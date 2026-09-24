@@ -22,7 +22,7 @@ class FallbackCalibrationBindingTests(unittest.TestCase):
     def test_probability_normalization_accepts_single_vector(self):
         import numpy as np
         from src.fallback_calibration import _norm
-        got = _norm(np.array([2.0, 1.0, 1.0]))
+        got = _norm(np.array([0.8, 0.4, 0.4]))
         self.assertEqual(got.shape, (3,))
         self.assertTrue(np.allclose(got.sum(), 1.0))
         self.assertTrue(np.allclose(got, [0.5, 0.25, 0.25]))
@@ -30,7 +30,7 @@ class FallbackCalibrationBindingTests(unittest.TestCase):
     def test_probability_normalization_still_accepts_matrix(self):
         import numpy as np
         from src.fallback_calibration import _norm
-        got = _norm(np.array([[2.0, 1.0, 1.0], [1.0, 1.0, 2.0]]))
+        got = _norm(np.array([[0.8, 0.4, 0.4], [0.4, 0.4, 0.8]]))
         self.assertEqual(got.shape, (2, 3))
         self.assertTrue(np.allclose(got.sum(axis=1), [1.0, 1.0]))
 
