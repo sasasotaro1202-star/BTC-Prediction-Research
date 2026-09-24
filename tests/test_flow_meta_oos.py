@@ -41,8 +41,10 @@ def test_vector_is_finite():
 
 
 def test_deferred_output_contract():
+    from unittest.mock import patch
     from src.flow_meta_oos import evaluate
-    result = evaluate("5m", [])
+    with patch("src.flow_meta_oos._load_predictions", return_value=[]):
+        result = evaluate("5m", [])
     assert result["status"] == "DEFERRED"
     assert result["research_only"] is True
     assert result["production_changed"] is False
