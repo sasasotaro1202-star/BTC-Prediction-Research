@@ -4,16 +4,9 @@ on:
   # minutes would repeatedly cancel this longer audit and reduce coverage.
   schedule:
     - cron: '23 * * * *'
-  # Run immediately after code/protocol changes as a read-only verification.
-  # Routine data/state commits do not trigger this expensive integrity audit.
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - '.github/workflows/btc_integrity.yml'
+  # Unit Tests + Ops Preflight provide immediate push-time verification.
+  # Keep this expensive full audit hourly so stale runs cannot queue behind every
+  # maintenance commit; it remains manually triggerable for immediate audits.
   workflow_dispatch:
 
 concurrency:
@@ -26,8 +19,8 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  # Code pushes validate repository/model integrity without being blocked by an
-  # intentionally stale prediction state. Manual integrity runs prove freshness.
+  # The hourly audit is the repository-wide integrity backstop; push-time checks
+  # are handled by Unit Tests and Ops Preflight to avoid expensive queue buildup.
   BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
   BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '900'
 
