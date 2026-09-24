@@ -1,19 +1,13 @@
 name: BTC Continuous Supervisor
 
 on:
-  # The push trigger is intentionally scoped to this workflow only. It bootstraps
-  # the self-sustaining chain without restarting it on ordinary source commits.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/btc_continuous_supervisor.yml'
+  # Short, stateless heartbeat jobs are more recoverable than a multi-hour runner.
   schedule:
-    - cron: '13 1 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 concurrency:
   group: btc-continuous-supervisor
-  # A stuck generation must never block its successor forever.
   cancel-in-progress: true
 
 permissions:
@@ -23,7 +17,7 @@ permissions:
 jobs:
   supervise:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 8
     steps:
       - name: Verify supervisor prerequisites
         env:
@@ -34,96 +28,92 @@ jobs:
           test "${GITHUB_REF_NAME}" = "main"
           gh api "/repos/${REPO}" --jq '.default_branch' | grep -qx main
 
-      - name: Sustain BTC production and research heartbeat
+      - name: Dispatch only stale production/research workflows
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -u
-          heartbeat_degraded=0
-          end_epoch=$(( $(date +%s) + 330 * 60 ))
-          tick=0
+          degraded=0
 
           dispatch_if_stale() {
             workflow="$1"
             threshold="$2"
-            mode="$3"
-            response=$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null) || {
+
+            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null)" || {
               echo "ERROR: cannot inspect ${workflow}" >&2
-              heartbeat_degraded=1
+              degraded=1
               return 0
             }
-            active=$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$response") || {
+
+            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$response" 2>/dev/null)" || {
               echo "ERROR: cannot parse active state for ${workflow}" >&2
-              heartbeat_degraded=1
+              degraded=1
               return 0
             }
-            latest=$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.id,.updated_at,.head_sha] | @tsv' <<<"$response") || {
+
+            latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"$response" 2>/dev/null)" || {
               echo "ERROR: cannot parse latest state for ${workflow}" >&2
-              heartbeat_degraded=1
+              degraded=1
               return 0
             }
-            latest_updated=$(cut -f2 <<<"$latest")
-            latest_epoch=$(date -d "${latest_updated:-1970-01-01T00:00:00Z}" +%s 2>/dev/null || echo 0)
-            now=$(date +%s)
+
+            latest_updated="$(cut -f1 <<<"$latest")"
+            if [ -z "${latest_updated}" ]; then
+              latest_epoch=0
+            else
+              latest_epoch="$(date -d "${latest_updated}" +%s 2>/dev/null)" || {
+                echo "ERROR: invalid latest timestamp for ${workflow}: ${latest_updated}" >&2
+                degraded=1
+                return 0
+              }
+            fi
+
+            now="$(date +%s)"
             age=$((now-latest_epoch))
-            echo "${workflow}: active=${active} latest_age=${age}s mode=${mode}"
-            if [ "$active" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
+            echo "${workflow}: active=${active} latest_age=${age}s threshold=${threshold}s"
+
+            if [ "${active}" -eq 0 ] && { [ "${latest_epoch}" -eq 0 ] || [ "${age}" -ge "${threshold}" ]; }; then
               echo "Dispatching stale ${workflow}"
               if gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
                 echo "Dispatch succeeded: ${workflow}"
               else
                 echo "ERROR: dispatch failed: ${workflow}" >&2
-                heartbeat_degraded=1
+                degraded=1
               fi
             fi
           }
 
-          while [ "$(date +%s)" -lt "$end_epoch" ]; do
-            tick=$((tick+1))
-            echo "=== BTC supervisor tick ${tick} ==="
-            dispatch_if_stale btc_live_cycle.yml 300 live
-            dispatch_if_stale btc_binance_ws_collector.yml 1800 ws
-            # Keep the long-running research heartbeat alive as well as the
-            # market-data/prediction heartbeat. Active runs are never duplicated.
-            dispatch_if_stale btc_rolling_challenger.yml 21600 rolling
-            dispatch_if_stale btc_9h_research_marathon.yml 28800 marathon
-            sleep 300
-          done
+          # Production freshness is the fastest recovery path.
+          dispatch_if_stale btc_live_cycle.yml 300
+          dispatch_if_stale btc_binance_ws_collector.yml 900
 
-          self_dispatch_ok=0
-          for attempt in 1 2 3; do
-            if gh workflow run btc_continuous_supervisor.yml --ref main >/dev/null 2>&1; then
-              self_dispatch_ok=1
-              echo "Next BTC supervisor generation queued successfully on attempt ${attempt}."
-              break
-            fi
-            echo "ERROR: successor supervisor dispatch failed on attempt ${attempt}." >&2
-            sleep $((attempt * 5))
-          done
-          if [ "$self_dispatch_ok" -ne 1 ]; then
-            heartbeat_degraded=1
-            echo "ERROR: supervisor successor was not queued; daily schedule/watchdog remain the fallback recovery path." >&2
-          fi
+          # Research remains bounded by its own active-run guard.
+          dispatch_if_stale btc_rolling_challenger.yml 21600
+          dispatch_if_stale btc_9h_research_marathon.yml 28800
 
           cat > supervisor_status.json <<EOF
           {
-            "schema_version": 1,
+            "schema_version": 2,
             "workflow_run_id": ${GITHUB_RUN_ID},
             "head_sha": "${GITHUB_SHA}",
             "completed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "heartbeat_degraded": ${heartbeat_degraded},
-            "successor_queued": ${self_dispatch_ok}
+            "degraded": ${degraded},
+            "design": "stateless_5m_scheduler_no_self_dispatch_no_multi_hour_runner"
           }
           EOF
           cat supervisor_status.json
+
+          if [ "${degraded}" -ne 0 ]; then
+            echo "::warning::BTC supervisor heartbeat completed with degraded inspection/dispatch state; Watchdog remains the independent recovery path."
+          fi
 
       - name: Upload supervisor status
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: btc-continuous-supervisor-status
+          name: btc-continuous-supervisor-status-${{ github.run_id }}
           path: supervisor_status.json
           if-no-files-found: error
           retention-days: 3
