@@ -186,7 +186,7 @@ def _metrics(y, probs):
     result = metrics(y, probs)
     result["accuracy"] = float(result["accuracy"])
     return {
-        "n": int(result["n"]),
+        "n": int(len(y)),
         "accuracy": float(result["accuracy"]),
         "logloss": float(result["logloss"]),
         "brier": float(result["brier"]),
