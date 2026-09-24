@@ -38,3 +38,12 @@ def test_vector_is_finite():
     assert x.ndim == 1
     assert len(x) == 52
     assert np.isfinite(x).all()
+
+
+def test_deferred_output_contract():
+    from src.flow_meta_oos import evaluate
+    result = evaluate("5m", [])
+    assert result["status"] == "DEFERRED"
+    assert result["research_only"] is True
+    assert result["production_changed"] is False
+    assert result["promotion_allowed"] is False
