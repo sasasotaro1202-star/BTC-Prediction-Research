@@ -11,7 +11,9 @@ if str(ROOT) not in sys.path:
 
 from src.prediction_identity import (
     SETTLEMENT_COLUMNS,
+    SETTLEMENT_TIMESTAMP_COLUMNS,
     canonical_compaction_snapshot,
+    canonical_settlement_timestamp,
     prediction_identity,
 )
 
@@ -85,6 +87,13 @@ def compact_predictions(con):
                 if survivor.get(c) is None and candidate.get(c) is not None:
                     survivor[c] = candidate[c]
 
+        # Canonicalize replicated settlement timestamps deterministically. A
+        # later retry may write a newer observation timestamp for the same
+        # immutable event; that is not a contradictory market outcome.
+        for c in SETTLEMENT_TIMESTAMP_COLUMNS:
+            values = [r.get(c) for r in group if r.get(c) is not None]
+            if values:
+                survivor[c] = canonical_settlement_timestamp(values)
         updates = {c: survivor.get(c) for c in SETTLEMENT_COLUMNS if survivor.get(c) is not None}
         if updates:
             set_clause = ','.join(f'"{c}"=?' for c in updates)
