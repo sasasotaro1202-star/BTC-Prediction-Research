@@ -19,6 +19,21 @@ class FallbackCalibrationBindingTests(unittest.TestCase):
         self.assertIsNone(_horizon_model_version(value, "bybit", "5m"))
         self.assertIsNone(_horizon_model_version(value, "coinbase", "1h"))
 
+    def test_probability_normalization_accepts_single_vector(self):
+        import numpy as np
+        from src.fallback_calibration import _norm
+        got = _norm(np.array([2.0, 1.0, 1.0]))
+        self.assertEqual(got.shape, (3,))
+        self.assertTrue(np.allclose(got.sum(), 1.0))
+        self.assertTrue(np.allclose(got, [0.5, 0.25, 0.25]))
+
+    def test_probability_normalization_still_accepts_matrix(self):
+        import numpy as np
+        from src.fallback_calibration import _norm
+        got = _norm(np.array([[2.0, 1.0, 1.0], [1.0, 1.0, 2.0]]))
+        self.assertEqual(got.shape, (2, 3))
+        self.assertTrue(np.allclose(got.sum(axis=1), [1.0, 1.0]))
+
 
 if __name__ == "__main__":
     unittest.main()

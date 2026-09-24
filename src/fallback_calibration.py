@@ -30,8 +30,17 @@ MIN_BRIER_GAIN = 0.0005
 
 
 def _norm(p):
-    p = np.clip(np.asarray(p, dtype=float), 1e-8, 1.0)
-    return p / p.sum(axis=1, keepdims=True)
+    """Normalize either one 3-class probability vector or a matrix."""
+    arr = np.clip(np.asarray(p, dtype=float), 1e-8, 1.0)
+    one_dim = arr.ndim == 1
+    if one_dim:
+        if arr.shape != (3,):
+            raise ValueError("probability vector must have exactly 3 classes")
+        arr = arr[None, :]
+    if arr.ndim != 2 or arr.shape[1] != 3:
+        raise ValueError("probabilities must have shape (3,) or (n, 3)")
+    out = arr / arr.sum(axis=1, keepdims=True)
+    return out[0] if one_dim else out
 
 
 def _brier(y, p):
