@@ -12,6 +12,8 @@ on:
       - 'src/adaptive_calibration_replay_oos.py'
       - 'tests/test_adaptive_calibration_replay_oos.py'
       - '.github/workflows/btc_adaptive_calibration_replay.yml'
+      - 'src/fallback_prequential_calibration_oos.py'
+      - 'tests/test_fallback_prequential_calibration_oos.py'
 
 concurrency:
   group: btc-adaptive-calibration-replay
@@ -36,6 +38,17 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Restore settled BTC prediction state for fallback replay
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+
       - name: Compile and test
         run: |
           set -euo pipefail
@@ -72,6 +85,36 @@ jobs:
                   raise SystemExit(f'{h}: unexpected status {item.get("status")}')
           print('adaptive calibration replay contract: VERIFIED')
           PY
+      - name: Run fallback prequential calibration replay
+        run: |
+          set -euo pipefail
+          python src/fallback_prequential_calibration_oos.py
+          test -s data/historical_research/fallback_prequential_calibration_oos.json
+
+      - name: Validate fallback prequential calibration contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/fallback_prequential_calibration_oos.json').read_text())
+          if obj.get('research_only') is not True:
+              raise SystemExit('fallback prequential calibration must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('fallback prequential calibration changed production state')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('fallback prequential archive/live evidence must not bypass the primary gate')
+          horizons=obj.get('horizons')
+          if not isinstance(horizons,dict) or set(horizons) != {'5m','10m'}:
+              raise SystemExit('fallback prequential horizons incomplete')
+          for h,item in horizons.items():
+              if item.get('status') == 'OK' and item.get('final_holdout_protected') is not True:
+                  raise SystemExit(f'{h}: fallback prequential holdout not protected')
+              if item.get('status') not in {'OK','DEFERRED'}:
+                  raise SystemExit(f'{h}: unexpected fallback prequential status {item.get("status")}')
+          print('fallback prequential calibration contract: VERIFIED')
+          PY
+
       - name: Upload adaptive calibration evidence
         if: success()
         uses: actions/upload-artifact@v6

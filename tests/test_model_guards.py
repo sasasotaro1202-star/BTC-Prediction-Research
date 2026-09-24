@@ -184,3 +184,7 @@ class TestModelGuards(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_rolling_challenger_contains_replay_rf(self):
+        from rolling_challenger_oos import factories
+        self.assertIn("rf_replay", factories())

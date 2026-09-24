@@ -114,6 +114,13 @@ def factories():
             n_estimators=500, max_depth=7, min_samples_leaf=8,
             max_features="sqrt", random_state=42, n_jobs=-1,
         ),
+        # Same replay-backed RF family tested by bootstrap, now compared
+        # directly against the incumbent Champion under the production
+        # chronological/purged challenger protocol.
+        "rf_replay": lambda: RandomForestClassifier(
+            n_estimators=500, max_depth=10, min_samples_leaf=10,
+            max_features="sqrt", random_state=42, n_jobs=-1,
+        ),
         "hgb": lambda: HistGradientBoostingClassifier(
             max_iter=250, max_leaf_nodes=15, learning_rate=0.04,
             l2_regularization=1.0, random_state=42,
