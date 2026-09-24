@@ -1,10 +1,8 @@
 name: BTC Stale Run Janitor
 
 on:
-  push:
-    branches: [main]
   schedule:
-    - cron: '2,12,22,32,42,52 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -77,4 +75,42 @@ jobs:
             done
           done
 
+
+          dispatch_if_stale() {
+            workflow="$1"
+            threshold="$2"
+
+            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20" 2>/dev/null)" || {
+              echo "WARN: unable to inspect ${workflow} for redundant freshness recovery."
+              return 0
+            }
+
+            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$response")"
+            latest="$(jq -r --arg main "$main_sha" '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped" and .head_sha==$main)] | sort_by(.updated_at) | last // empty | [.updated_at,.id] | @tsv' <<<"$response")"
+            latest_updated="$(cut -f1 <<<"$latest")"
+            latest_id="$(cut -f2 <<<"$latest")"
+
+            if [ -z "$latest_updated" ]; then
+              latest_epoch=0
+            else
+              latest_epoch="$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)"
+            fi
+            now="$(date -u +%s)"
+            age=$((now-latest_epoch))
+            echo "Recovery ${workflow}: active=${active} latest_current_main_age=${age}s threshold=${threshold}s"
+
+            if [ "$active" -eq 0 ] && { [ "$latest_epoch" -eq 0 ] || [ "$age" -ge "$threshold" ]; }; then
+              echo "Redundant dispatch for stale ${workflow} (latest_current_main_run=${latest_id:-none})"
+              if gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
+                echo "Redundant recovery dispatch succeeded: ${workflow}"
+              else
+                echo "WARN: redundant recovery dispatch failed: ${workflow}"
+              fi
+            fi
+          }
+
+          # Redundant recovery only; dedicated workflows remain the primary executor.
+          dispatch_if_stale btc_continuous_supervisor.yml 300
+          dispatch_if_stale btc_live_cycle.yml 300
+          dispatch_if_stale btc_binance_ws_collector.yml 900
           echo "Stale-run janitor completed."
