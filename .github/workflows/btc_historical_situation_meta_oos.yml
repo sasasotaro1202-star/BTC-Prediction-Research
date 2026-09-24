@@ -65,5 +65,5 @@ jobs:
         with:
           name: btc-historical-situation-meta-\${{ github.run_id }}
           path: data/historical_research/historical_situation_meta_oos.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
