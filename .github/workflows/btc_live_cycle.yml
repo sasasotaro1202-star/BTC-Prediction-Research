@@ -185,6 +185,27 @@ jobs:
         run: python src/blend_calibration.py
       - name: Recalibrate source-native Coinbase fallback after settlement
         run: python src/fallback_calibration.py
+      - name: Verify source-native fallback settlement bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          db=Path('data/predictions.db')
+          with sqlite3.connect(db) as con:
+              rows=con.execute("SELECT scenario_json, actual_price_5m, settlement_source_5m, actual_price_10m, settlement_source_10m FROM predictions WHERE actual_price_5m IS NOT NULL OR actual_price_10m IS NOT NULL").fetchall()
+          expected={'coinbase_fallback':'coinbase_exchange','bybit_fallback':'bybit_linear'}
+          for scenario_text, actual5, source5, actual10, source10 in rows:
+              try: mode=str(json.loads(scenario_text or '{}').get('production_mode',''))
+              except Exception: continue
+              native=expected.get(mode)
+              if not native: continue
+              if actual5 is not None and source5 != native: raise SystemExit(f'fallback 5m source mismatch: {source5!r} != {native!r}')
+              if actual10 is not None and source10 != native: raise SystemExit(f'fallback 10m source mismatch: {source10!r} != {native!r}')
+          print('source-native fallback settlement bindings: VERIFIED')
+          PY
+
       - name: Audit BTC production artifact provenance
         run: python src/production_artifact_audit.py
       - name: Refresh latest Binance WebSocket cache immediately before prediction
