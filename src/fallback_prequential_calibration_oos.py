@@ -42,17 +42,18 @@ def _rows(horizon: str):
     rows = []
     with sqlite3.connect(DB) as con:
         raw = con.execute(
-            f"""SELECT created_at_utc, model_version, scenario_json, {actual}
+            f"""SELECT created_at_utc, model_version, scenario_json, {actual}, settlement_source_{horizon}
                 FROM predictions
                 WHERE {actual} IS NOT NULL
+                  AND settlement_source_{horizon} = 'coinbase_exchange'
                   AND model_version LIKE ?
                   AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
                 ORDER BY created_at_utc""",
             (f"%{SOURCE}_fallback.%",),
         ).fetchall()
-    for created, version, scenario_text, y in raw:
+    for created, version, scenario_text, y, settlement_source in raw:
         hv = _horizon_model_version(version, SOURCE, horizon)
-        if hv is None or y not in CLASSES:
+        if hv is None or y not in CLASSES or settlement_source != 'coinbase_exchange':
             continue
         try:
             obj = json.loads(scenario_text or "{}")
