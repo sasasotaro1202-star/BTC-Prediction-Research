@@ -1,0 +1,64 @@
+name: BTC Dual Memory OOS Research
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-dual-memory-oos
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dual-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+      - name: Run dual-memory OOS
+        run: |
+          set -euo pipefail
+          python src/dual_memory_oos.py
+          test -s data/historical_research/dual_memory_oos.json
+      - name: Validate research-only contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/dual_memory_oos.json')
+          obj=json.loads(p.read_text())
+          if obj.get('research_only') is not True:
+              raise SystemExit('dual-memory must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('dual-memory changed production state')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('dual-memory cannot bypass promotion gate')
+          horizons=obj.get('horizons')
+          if not isinstance(horizons,dict) or set(horizons) != {'5m','10m'}:
+              raise SystemExit('dual-memory horizon contract incomplete')
+          for h,r in horizons.items():
+              if r.get('status') not in {'OK','DEFERRED'}:
+                  raise SystemExit(f'{h}: invalid status')
+              if r.get('status') == 'OK' and r.get('final_holdout_protected') is not True:
+                  raise SystemExit(f'{h}: holdout protection missing')
+          print('dual-memory research contract: VERIFIED')
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: btc-dual-memory-oos
+          path: data/historical_research/dual_memory_oos.json
+          if-no-files-found: error
+          retention-days: 14

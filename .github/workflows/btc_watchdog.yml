@@ -58,6 +58,7 @@ jobs:
             btc_microstructure_research.yml
             btc_hierarchical_research.yml
             btc_rolling_challenger.yml
+            btc_dual_memory_oos.yml
             btc_exogenous_research.yml
             btc_interaction_research.yml
             btc_time_regime_research.yml
@@ -333,6 +334,7 @@ jobs:
           # Research-only model/feature and maintenance lanes are recoverable
           # independently. They never mutate production probabilities directly.
           recover_if_stale btc_rolling_challenger.yml 28800 43200 900
+          recover_if_stale btc_dual_memory_oos.yml 21600 32400 900
           recover_if_stale btc_archive_primary_bridge.yml 21600 32400 900
           recover_if_stale btc_canonical_state_compaction.yml 21600 32400 900
           recover_if_stale btc_time_regime_research.yml 21600 32400 900
