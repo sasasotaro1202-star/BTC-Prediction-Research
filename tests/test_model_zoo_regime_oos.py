@@ -19,7 +19,7 @@ class ModelZooRegimeTests(unittest.TestCase):
         from src.model_zoo_regime_oos import _uncertainty_guard
         stable=np.asarray([[0.34,0.32,0.34],[0.90,0.05,0.05]],dtype=float)
         routed=np.asarray([[0.80,0.10,0.10],[0.34,0.32,0.34]],dtype=float)
-        hist=[0.20]*400+[0.95]*10
+        hist=[0.95]*400+[0.20]*10
         out,threshold,fraction=_uncertainty_guard(routed,stable,hist,quantile=0.80,min_history=300)
         self.assertIsNotNone(threshold)
         self.assertGreaterEqual(fraction,0.0)
