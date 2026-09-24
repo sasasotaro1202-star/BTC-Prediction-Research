@@ -25,6 +25,7 @@ LANES = {
     "model_zoo_regime": "model_zoo_regime_oos.json",
     "recency_weighted": "recency_weighted_oos.json",
     "situation_meta": "situation_meta_oos.json",
+    "online_expert": "online_expert_oos.json",
 }
 
 
