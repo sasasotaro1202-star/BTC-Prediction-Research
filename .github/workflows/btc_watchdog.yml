@@ -315,6 +315,8 @@ jobs:
           # when no Live run is active, so a dropped schedule cannot create a
           # long gap while the active-run guard prevents overlap.
           recover_if_stale btc_live_cycle.yml 300 1800 600
+          # Emergency recovery: prevent a stale self-supervisor from blocking successor generations.
+          recover_if_stale btc_continuous_supervisor.yml 21600 25200 900
           recover_if_stale btc_pit_oos_audit.yml 7200 10800 7200
           # Keep the daily research lanes alive without dispatching duplicates
           # while an existing run is queued or in progress.
