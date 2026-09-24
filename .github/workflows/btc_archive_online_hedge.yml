@@ -1,0 +1,59 @@
+name: BTC Archived OOS Online Hedge
+
+on:
+  pull_request:
+    paths:
+      - 'data/historical_research/oos_5m_*.csv'
+      - 'data/historical_research/oos_10m_*.csv'
+      - 'src/archive_online_hedge_oos.py'
+      - '.github/workflows/btc_archive_online_hedge.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-archive-online-hedge
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install minimal dependencies
+        run: python -m pip install numpy
+      - name: Run chronological online hedge
+        run: |
+          set -euo pipefail
+          python src/archive_online_hedge_oos.py
+          test -s data/historical_research/archive_online_hedge_oos.json
+      - name: Verify research contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/archive_online_hedge_oos.json")
+          x=json.loads(p.read_text())
+          assert x.get("research_only") is True
+          assert x.get("production_changed") is False
+          for h,r in x["horizons"].items():
+              if r.get("status")=="OK":
+                  assert r.get("final_holdout_protected") is True
+                  assert r.get("final_holdout_used_for_selection") is False
+                  assert r.get("promotion_evidence_eligible") is False
+          print("VERIFIED")
+          PY
+      - name: Upload evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-archive-online-hedge-\${{ github.run_id }}
+          path: data/historical_research/archive_online_hedge_oos.json
+          if-no-files-found: error
+          retention-days: 7
