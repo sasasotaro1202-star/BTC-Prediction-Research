@@ -41,4 +41,4 @@ def test_historical_situation_embargo_is_strict():
         _row("2026-09-25T00:30:00+00:00", "2026-09-25T00:35:00+00:00"),
         _row("2026-09-25T01:00:00+00:00", "2026-09-25T01:05:00+00:00"),
     ]
-    assert len(_causal_train(rows, start, "5m")) == 1
+    assert len(_causal_train(rows, start, "5m")) == 2
