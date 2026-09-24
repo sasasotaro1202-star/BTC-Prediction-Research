@@ -155,11 +155,20 @@ def fit_temperature(probs, y):
     return best_t if log_loss(yi[split:], q, labels=[0, 1, 2]) < log_loss(yi[split:], normalize(p[split:]), labels=[0, 1, 2]) - 0.001 else 1.0
 
 def development_gate_passes(gate_score, baseline_gate):
-    """Return promotion eligibility using only the pre-holdout development gate."""
+    """Require meaningful relative gains on an independent development gate.
+
+    This function never sees the frozen holdout. It intentionally requires
+    both proper-scoring improvements before a candidate can be published.
+    """
+    base_ll = max(abs(float(baseline_gate["logloss"])), 1e-12)
+    base_br = max(abs(float(baseline_gate["brier"])), 1e-12)
+    ll_rel_gain = (float(baseline_gate["logloss"]) - float(gate_score["logloss"])) / base_ll
+    br_rel_gain = (float(baseline_gate["brier"]) - float(gate_score["brier"])) / base_br
+    acc_delta = float(gate_score["accuracy"]) - float(baseline_gate["accuracy"])
     return bool(
-        gate_score["logloss"] < baseline_gate["logloss"] - 0.01
-        and gate_score["brier"] < baseline_gate["brier"] - 0.005
-        and gate_score["accuracy"] >= baseline_gate["accuracy"] - 0.005
+        ll_rel_gain >= 0.03
+        and br_rel_gain >= 0.01
+        and acc_delta >= -0.005
     )
 
 
