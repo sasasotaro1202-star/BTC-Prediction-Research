@@ -22,7 +22,8 @@ for p in (ROOT, SRC):
         sys.path.insert(0, str(p))
 
 from fallback_calibration import _horizon_model_version, _temperature_mix, _norm
-from model_compare import metrics, _temperature
+from model_compare import metrics
+from sklearn.metrics import log_loss
 
 OUT = ROOT / "data" / "historical_research" / "fallback_prequential_calibration_oos.json"
 DB = ROOT / "data" / "predictions.db"
@@ -83,18 +84,36 @@ def _metrics(y, probs):
     return metrics(canonical_y, canonical_p)
 
 
+def _to_canonical_probability_matrix(probs):
+    """Convert source-native UP/DOWN/FLAT order to canonical DOWN/FLAT/UP."""
+    p = np.asarray(probs, dtype=float)
+    if p.ndim != 2 or p.shape[1] != 3:
+        raise ValueError("probability matrix must have shape (n, 3)")
+    p = _norm(p)
+    return p[:, [1, 2, 0]]
+
+
 def _adaptive_temperature(history):
     if len(history) < MIN_HISTORY:
         return 1.0
-    p = np.asarray([r["p"] for r in history], dtype=float)
+    p = _to_canonical_probability_matrix([r["p"] for r in history])
     y = [r["y"] for r in history]
-    try:
-        t = float(_temperature(p, y))
-    except (TypeError, ValueError, RuntimeError):
-        return 1.0
-    if not np.isfinite(t):
-        return 1.0
-    return float(np.clip(t, 0.5, 3.0))
+    y_idx = np.asarray(["DOWN", "FLAT", "UP"])
+    labels = {v: i for i, v in enumerate(y_idx)}
+    yi = np.asarray([labels[v] for v in y], dtype=int)
+    logits = np.log(np.clip(p, 1e-6, 1.0))
+    best_loss = float("inf")
+    best_t = 1.0
+    for t in np.linspace(0.7, 2.5, 73):
+        z = logits / float(t)
+        z -= z.max(axis=1, keepdims=True)
+        q = np.exp(z)
+        q /= q.sum(axis=1, keepdims=True)
+        loss = float(log_loss(yi, q, labels=[0, 1, 2]))
+        if loss < best_loss:
+            best_loss = loss
+            best_t = float(t)
+    return float(np.clip(best_t, 0.5, 3.0))
 
 
 def evaluate(horizon: str):

@@ -1,6 +1,12 @@
 name: BTC Adaptive Calibration Replay Research
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/fallback_prequential_calibration_oos.py'
+      - 'tests/test_fallback_prequential_calibration_oos.py'
+      - '.github/workflows/btc_adaptive_calibration_replay.yml'
   schedule:
     - cron: '47 */8 * * *'
   workflow_run:

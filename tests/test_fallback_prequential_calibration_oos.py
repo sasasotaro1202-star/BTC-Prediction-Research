@@ -22,3 +22,9 @@ class FallbackPrequentialCalibrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_source_probability_order_is_converted_to_canonical(self):
+        import numpy as np
+        from src.fallback_prequential_calibration_oos import _to_canonical_probability_matrix
+        got = _to_canonical_probability_matrix([[0.70, 0.20, 0.10]])
+        self.assertTrue(np.allclose(got, [[0.20, 0.10, 0.70]]))
