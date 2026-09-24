@@ -79,7 +79,11 @@ jobs:
           set -euo pipefail
           rm -f data/binance_flow_5s.json
           if git fetch --no-tags --depth=1 origin binance-flow-cache; then
-            git show origin/binance-flow-cache:data/binance_flow_5s.json > data/binance_flow_5s.json 2>/dev/null || true
+            if git show origin/binance-flow-cache:data/binance_flow_5s.json > data/binance_flow_5s.json 2>/dev/null; then
+              echo 'Loaded prior flow cache.'
+            else
+              echo 'No prior flow cache in dedicated branch; starting empty.'
+            fi
           fi
       - name: Capture rolling flow/liquidation window
         run: |
