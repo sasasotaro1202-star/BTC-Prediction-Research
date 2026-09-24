@@ -67,3 +67,15 @@ def test_primary_live_scenario_is_fail_closed_for_fallback_modes():
     assert primary_live_scenario({"production_mode": "binance_primary"}) is True
     assert primary_live_scenario({"production_mode": "bybit_fallback"}) is False
     assert primary_live_scenario({}) is False
+
+
+def test_missingness_is_explicit():
+    row = _row(
+        "2026-09-25T00:00:00+00:00",
+        "2026-09-25T00:05:00+00:00",
+    )
+    row["microstructure"] = {}
+    v = build_meta_vector(row)
+    names = meta_feature_names()
+    idx = names.index("missing=book_imbalance")
+    assert v[idx] == 1.0
