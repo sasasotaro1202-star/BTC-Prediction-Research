@@ -28,3 +28,9 @@ if __name__ == "__main__":
         from src.fallback_prequential_calibration_oos import _to_canonical_probability_matrix
         got = _to_canonical_probability_matrix([[0.70, 0.20, 0.10]])
         self.assertTrue(np.allclose(got, [[0.20, 0.10, 0.70]]))
+
+    def test_loaded_probability_vectors_are_normalized(self):
+        import numpy as np
+        from src.fallback_prequential_calibration_oos import _norm_vector
+        got = _norm_vector([7.0, 2.0, 1.0])
+        self.assertTrue(np.allclose(got, [0.7, 0.2, 0.1]))

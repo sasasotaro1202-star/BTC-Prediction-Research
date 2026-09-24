@@ -37,6 +37,13 @@ FINAL_HOLDOUT_FRAC = 0.20
 MIN_BLOCKS = 3
 
 
+def _norm_vector(p):
+    p = np.asarray(p, dtype=float)
+    if p.shape != (3,) or not np.isfinite(p).all() or p.sum() <= 0:
+        raise ValueError("invalid probability vector")
+    p = np.clip(p, 1e-8, 1.0)
+    return p / p.sum()
+
 def _rows(horizon: str):
     actual = f"actual_direction_{horizon}"
     rows = []
@@ -61,9 +68,10 @@ def _rows(horizon: str):
             raw_p = comp.get(f"model_raw_{horizon}")
             if not isinstance(raw_p, dict):
                 continue
-            p = _norm(np.asarray([float(raw_p[c]) for c in CLASSES], dtype=float))
-            if p.shape != (3,) or not np.isfinite(p).all():
+            p = np.asarray([float(raw_p[c]) for c in CLASSES], dtype=float)
+            if p.shape != (3,) or not np.isfinite(p).all() or p.sum() <= 0:
                 continue
+            p = _norm_vector(p)
             rows.append({
                 "created": str(created),
                 "model_version": str(hv),
