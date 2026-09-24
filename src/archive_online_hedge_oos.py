@@ -114,6 +114,16 @@ def _hedge_weights(losses:np.ndarray)->np.ndarray:
     return weights
 
 
+def bootstrap_ci(values:np.ndarray, seed:int=0, reps:int=2000)->list[float]:
+    values=np.asarray(values,dtype=float)
+    if len(values)<10 or not np.isfinite(values).all():
+        return [float("nan"),float("nan")]
+    rng=np.random.default_rng(seed)
+    sample=rng.integers(0,len(values),size=(reps,len(values)))
+    means=values[sample].mean(axis=1)
+    return [float(np.quantile(means,0.025)),float(np.quantile(means,0.975))]
+
+
 def block_deltas(rows,a,b):
     vals=[]
     for start in range(0,len(rows),BLOCK):
@@ -149,10 +159,23 @@ def evaluate(h: str)->dict[str,Any]:
     ll=np.asarray([b["logloss_delta"] for b in blocks],float)
     br=np.asarray([b["brier_delta"] for b in blocks],float)
     ac=np.asarray([b["accuracy_delta"] for b in blocks],float)
+    ll_ci=bootstrap_ci(ll,seed=17)
+    br_ci=bootstrap_ci(br,seed=23)
+    midpoint=len(blocks)//2
+    first=blocks[:midpoint] if midpoint else blocks
+    second=blocks[midpoint:] if midpoint else blocks
+    first_ll=np.mean(np.asarray([b["logloss_delta"] for b in first])<0)
+    second_ll=np.mean(np.asarray([b["logloss_delta"] for b in second])<0)
+    first_br=np.mean(np.asarray([b["brier_delta"] for b in first])<0)
+    second_br=np.mean(np.asarray([b["brier_delta"] for b in second])<0)
     # Fixed strategy, not tuned on the frozen holdout.
     eligible=bool(
         float(np.mean(ll<0))>=0.70 and
         float(np.mean(br<0))>=0.70 and
+        ll_ci[1] < 0.0 and
+        br_ci[1] < 0.0 and
+        first_ll>=0.60 and second_ll>=0.60 and
+        first_br>=0.60 and second_br>=0.60 and
         dev_m_h["logloss"] <= dev_m_eq["logloss"]*0.97 and
         dev_m_h["brier"] <= dev_m_eq["brier"]*0.99 and
         dev_m_h["accuracy"] >= dev_m_eq["accuracy"]-0.005
@@ -176,7 +199,13 @@ def evaluate(h: str)->dict[str,Any]:
         "block_stability":{"blocks":len(blocks),
             "improved_logloss_ratio":float(np.mean(ll<0)),
             "improved_brier_ratio":float(np.mean(br<0)),
-            "non_worse_accuracy_ratio":float(np.mean(ac>=-0.005))},
+            "non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)),
+            "logloss_block_bootstrap_ci95":ll_ci,
+            "brier_block_bootstrap_ci95":br_ci,
+            "first_half_improved_logloss_ratio":float(first_ll),
+            "second_half_improved_logloss_ratio":float(second_ll),
+            "first_half_improved_brier_ratio":float(first_br),
+            "second_half_improved_brier_ratio":float(second_br)},
         "final_holdout":{"equal_weight":hold_m_eq,"online_hedge":hold_m_h,
                          "delta":{"accuracy":hold_m_h["accuracy"]-hold_m_eq["accuracy"],
                                   "logloss":hold_m_h["logloss"]-hold_m_eq["logloss"],
