@@ -184,18 +184,13 @@ jobs:
             workflow="$1"
             threshold="$2"
 
-            # Burst-safe policy: only production Live/WS gets event-driven recovery.
-            # Research/audit/maintenance lanes remain covered by the 5-minute scheduled heartbeat.
-            case "${GITHUB_EVENT_NAME:-schedule}" in
-              push|workflow_run)
-                case "$workflow" in
-                  btc_live_cycle.yml|btc_binance_ws_collector.yml) ;;
-                  *) echo "${workflow}: event-driven watchdog recovery skipped; scheduled heartbeat remains authoritative."; return 0 ;;
-                esac
-                ;;
-              schedule|workflow_dispatch) ;;
-              *) echo "${workflow}: unknown watchdog event; no recovery dispatch."; return 0 ;;
-            esac
+            # Main pushes are valid recovery opportunities for every listed lane.
+          # Active-run/source-change guards prevent duplicate dispatches; stale research
+          # runs are cancelled and rebuilt from the current main before new evidence is used.
+          case "${GITHUB_EVENT_NAME:-schedule}" in
+            push|workflow_run|schedule|workflow_dispatch) ;;
+            *) echo "${workflow}: unknown watchdog event; no recovery dispatch."; return 0 ;;
+          esac
 
             active_grace="$3"
             stale_head_grace="$4"
