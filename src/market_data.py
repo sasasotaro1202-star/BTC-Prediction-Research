@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "historical_research" / "btc_bootstrap_1m.json"
 CACHE_MAX_AGE_MS = 15 * 60 * 1000
 BINANCE_WS_CACHE = ROOT / "data" / "binance_ws_1m.json"
-BINANCE_WS_MAX_AGE_MS = 180 * 1000
+PRIMARY_SERIES_MAX_EVENT_AGE_MS = 180 * 1000
+BINANCE_WS_MAX_AGE_MS = PRIMARY_SERIES_MAX_EVENT_AGE_MS
 
 
 def http_json(url: str, timeout: int = 12):
@@ -304,6 +305,25 @@ def _latest_row(rows):
     return max(rows, key=lambda r: int(r[0])) if rows else None
 
 
+def _fresh_primary_suffix(rows, minimum: int = 40):
+    """Return a contiguous primary 1m suffix whose newest candle is recent.
+
+    Cache/retrieval time is not sufficient freshness evidence: a state writer
+    can republish an old snapshot after a transport outage. The live predictor
+    independently enforces the same 180s boundary, so stale event times are
+    rejected before rows reach downstream prediction.
+    """
+    suffix = _latest_contiguous_suffix(rows, minimum)
+    if not suffix:
+        return []
+    now_ms = int(time.time() * 1000)
+    latest_open_ms = int(suffix[-1][0])
+    event_age_ms = now_ms - latest_open_ms
+    if event_age_ms < 0 or event_age_ms > PRIMARY_SERIES_MAX_EVENT_AGE_MS:
+        return []
+    return suffix
+
+
 def cache_rows(limit=120):
     try:
         obj = json.loads(CACHE.read_text(encoding="utf-8"))
@@ -315,9 +335,14 @@ def cache_rows(limit=120):
         created_ms = None
         if created_raw:
             created_ms = int(datetime.fromisoformat(created_raw.replace("Z", "+00:00")).timestamp() * 1000)
-        age_ms = None if created_ms is None else max(0, now - created_ms)
-        fresh = age_ms is not None and age_ms <= CACHE_MAX_AGE_MS
-        return _latest_contiguous_suffix(rows, min(limit, len(rows))), created_raw, age_ms, fresh
+        age_ms = None if created_ms is None else now - created_ms
+        contiguous = _fresh_primary_suffix(rows, 40)
+        fresh = (
+            age_ms is not None
+            and 0 <= age_ms <= CACHE_MAX_AGE_MS
+            and len(contiguous) >= 40
+        )
+        return contiguous[-min(limit, len(contiguous)):], created_raw, age_ms, fresh
     except Exception:
         return [], "", None, False
 
@@ -346,7 +371,14 @@ def _fresh_ws_suffix(rows, minimum: int = 40):
     now_ms = int(time.time() * 1000)
     latest = suffix[-1]
     retrieved = int(latest.get("retrieved_at_ms", latest["open_time_ms"]))
-    return suffix if now_ms - retrieved <= BINANCE_WS_MAX_AGE_MS else []
+    event_ms = int(latest.get("event_time_ms", latest["open_time_ms"]))
+    retrieved_age = now_ms - retrieved
+    event_age = now_ms - event_ms
+    if retrieved_age < 0 or retrieved_age > BINANCE_WS_MAX_AGE_MS:
+        return []
+    if event_age < 0 or event_age > PRIMARY_SERIES_MAX_EVENT_AGE_MS:
+        return []
+    return suffix
 
 
 def _capture_ws_suffix(existing, timeout_seconds: float = 62.0):
@@ -452,8 +484,12 @@ def resilient_1m_series(limit: int = 120):
         if isinstance(fut_error, Exception):
             status["binance_futures"] = f"error:{_error_label(fut_error)}"
         elif fut_error is not None:
-            fut = _latest_contiguous_suffix(fut_error, 40)
-            status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
+            candidate = _latest_contiguous_suffix(fut_error, 40)
+            fut = _fresh_primary_suffix(candidate, 40)
+            if candidate and not fut:
+                status["binance_futures"] = "stale_event_rejected"
+            else:
+                status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
             if fut:
                 status["binance_futures_transport"] = "rest"
 
@@ -488,13 +524,16 @@ def resilient_1m_series(limit: int = 120):
     if len(fut) < 40:
         try:
             archive_rows = binance_archive_daily_rows(max(120, limit))
-            if len(archive_rows) >= 40:
-                fut = archive_rows[-limit:]
+            archive_suffix = _fresh_primary_suffix(archive_rows, 40)
+            if len(archive_suffix) >= 40:
+                fut = archive_suffix[-limit:]
                 status["binance_futures"] = "ok"
                 status["binance_futures_transport"] = "binance_vision_daily_archive"
                 status["binance_futures_archive_retrieved_at_ms"] = int(
                     time.time() * 1000
                 )
+            elif archive_rows:
+                status["binance_futures_archive"] = "stale_event_rejected"
             else:
                 status["binance_futures_archive_contiguous_rows"] = len(archive_rows)
         except Exception as exc:
