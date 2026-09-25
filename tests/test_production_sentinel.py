@@ -26,3 +26,15 @@ def test_production_sentinel_retries_control_plane_reads_and_fails_closed():
     assert "ERROR: Live Cycle recovery dispatch failed." in text
     assert "ERROR: next sentinel generation dispatch failed." in text
     assert "set -euo pipefail" in text
+
+
+
+def test_production_sentinel_cancels_only_old_obsolete_active_runs():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert 'stale_ids=' in text
+    assert '[ "$active" -eq 0 ]' in text
+    assert 'select(.head_sha != $main_sha)' in text
+    assert '>= 720' in text
+    assert 'gh run cancel "$run_id" --repo "$REPO"' in text
+    assert 'ERROR: failed to cancel stale obsolete Live Cycle run_id=' in text
+    assert 'Production heartbeat stale; dispatching one Live Cycle from current main.' in text
