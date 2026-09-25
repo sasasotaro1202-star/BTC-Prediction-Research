@@ -14,7 +14,7 @@ class TestModelGuards(unittest.TestCase):
     def test_bootstrap_candidate_set_contains_diverse_safe_models(self):
         from bootstrap_train import candidate_factories
         names = [name for name, _ in candidate_factories()]
-        expected = ["logreg", "rf", "rf_replay", "extra_trees"]
+        expected = ["logreg", "rf", "rf_replay", "rf_balanced", "extra_trees", "extra_balanced"]
         from bootstrap_train import LGBMClassifier, XGBClassifier
         if LGBMClassifier is not None:
             expected.append("lightgbm")
