@@ -452,11 +452,7 @@ jobs:
           # overwriting a newly REST-healed remote cache.
           PY
 
-          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); suffix=1 if ordered else 0;\nfor i in range(len(ordered)-1, 0, -1):\n    if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000: break\n    suffix += 1\nprint(suffix)' "$local_file")
-          if [ "$contiguous_tail" -lt 40 ]; then
-            echo "WARN: refusing to publish gappy Binance WS checkpoint; contiguous_tail=$contiguous_tail." >&2
-            return 0
-          fi
+
           # Concurrent staggered collectors frequently observe the same newest
           # closed bars. Skip a semantic no-op publish so overlapping runs do not
           # create needless cache-branch commits or ref contention.
@@ -481,6 +477,11 @@ jobs:
           )
           temp.replace(local_path)
           PY
+          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); suffix=1 if ordered else 0;\nfor i in range(len(ordered)-1, 0, -1):\n    if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000: break\n    suffix += 1\nprint(suffix)' "$local_file")
+          if [ "$contiguous_tail" -lt 40 ]; then
+            echo "WARN: refusing to publish gappy Binance WS checkpoint; contiguous_tail=$contiguous_tail." >&2
+            return 0
+          fi
             fi
 
             for attempt in 1 2 3 4; do
