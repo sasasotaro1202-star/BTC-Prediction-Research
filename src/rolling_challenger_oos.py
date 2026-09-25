@@ -121,6 +121,16 @@ def factories():
             n_estimators=500, max_depth=10, min_samples_leaf=10,
             max_features="sqrt", random_state=42, n_jobs=-1,
         ),
+        "rf_balanced": lambda: RandomForestClassifier(
+            n_estimators=500, max_depth=10, min_samples_leaf=10,
+            max_features="sqrt", class_weight="balanced_subsample",
+            random_state=42, n_jobs=-1,
+        ),
+        "extra_trees_balanced": lambda: ExtraTreesClassifier(
+            n_estimators=500, max_depth=10, min_samples_leaf=10,
+            max_features="sqrt", class_weight="balanced",
+            random_state=42, n_jobs=-1,
+        ),
         "hgb": lambda: HistGradientBoostingClassifier(
             max_iter=250, max_leaf_nodes=15, learning_rate=0.04,
             l2_regularization=1.0, random_state=42,
