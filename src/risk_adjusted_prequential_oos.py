@@ -204,7 +204,7 @@ def _reliability_probs(
             out[expert] = fallback.copy()
         else:
             pred = np.asarray(
-                model.predict_proba(_expert_feature_matrix(probs, rows))[:, 1],
+                model.predict_proba(_expert_feature_matrix(probs, rows, expert))[:, 1],
                 dtype=float,
             )
             if not np.isfinite(pred).all():
@@ -392,14 +392,16 @@ def _evaluate_holdout(rows: list[dict[str, Any]], horizon: str) -> dict[str, Any
     meta_probs = _expert_probs(meta_models, meta)
     reliability_models = _fit_reliability_models(meta_probs, meta)
 
+    # The complete development period is available before the holdout starts.
+    # Carry its settled-loss state forward, while fitting reliability models only
+    # on the earlier meta block. No holdout outcome is used before routing.
     hold_models = _fit_experts(development)
     hold_probs = _expert_probs(hold_models, holdout)
     hold_reliability = _reliability_probs(hold_probs, holdout, reliability_models)
 
-    # Carry the prequential loss state through development. No holdout outcome
-    # is incorporated into the holdout routing state before predictions.
+    development_probs = _expert_probs(hold_models, development)
     state = _new_state()
-    _update_state(meta_probs, meta, state)
+    _update_state(development_probs, development, state)
     baseline = hold_probs["soft_equal"]
     candidate, weights = _route(hold_probs, hold_reliability, state)
     y = [r["y"] for r in holdout]
