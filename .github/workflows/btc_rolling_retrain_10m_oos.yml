@@ -1,0 +1,70 @@
+name: BTC Rolling Retrain 10m Future OOS
+
+on:
+  pull_request:
+    paths:
+      - 'src/rolling_retrain_10m_oos.py'
+      - 'tests/test_rolling_retrain_10m_oos.py'
+      - 'src/bootstrap_train.py'
+      - 'src/binance_history.py'
+      - 'src/feature_schema.py'
+      - 'src/label_policy.py'
+      - 'models/10m.joblib'
+      - 'models/10m.json'
+      - '.github/workflows/btc_rolling_retrain_10m_oos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-rolling-retrain-10m-\${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m pytest -q tests/test_rolling_retrain_10m_oos.py
+      - name: Run rolling future OOS
+        run: |
+          set -euo pipefail
+          python src/rolling_retrain_10m_oos.py
+          test -s data/historical_research/rolling_retrain_10m_oos.json
+      - name: Validate evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/rolling_retrain_10m_oos.json')
+          o=json.loads(p.read_text(encoding='utf-8'))
+          v=o['horizons']['10m']
+          assert o['research_only'] is True
+          assert o['production_changed'] is False
+          assert o['strict_pit'] is False
+          assert o['promotion_evidence_eligible'] is False
+          assert v.get('final_holdout',{}).get('protected') is True
+          print('rolling retrain evidence contract verified')
+          PY
+      - name: Upload evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-rolling-retrain-10m-oos
+          path: data/historical_research/rolling_retrain_10m_oos.json
+          if-no-files-found: error
+          retention-days: 7
