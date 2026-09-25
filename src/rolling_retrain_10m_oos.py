@@ -33,14 +33,14 @@ OUT = ROOT / "data" / "historical_research" / "rolling_retrain_10m_oos.json"
 HORIZON = "10m"
 HORIZON_STEPS = 10
 TARGET_ROWS = 50_000
-TRAIN_WINDOW = 20_000
-TEST_BLOCK = 750
+TRAIN_WINDOW = 8_000
+TEST_BLOCK = 500
 GAP_BARS = HORIZON_STEPS
 FINAL_HOLDOUT_FRAC = 0.20
 MIN_DEVELOPMENT = 10_000
-MIN_BLOCKS = 10
+MIN_BLOCKS = 8
 MIN_TEST_BLOCK = 500
-RF_TREES = 250
+RF_TREES = 200
 EPS = 1e-8
 
 
@@ -189,7 +189,7 @@ def evaluate() -> dict:
 
     # Fixed preregistered schedule: each rolling model trains on the immediately
     # preceding TRAIN_WINDOW rows, ending GAP_BARS before the test start.
-    first_test = max(MIN_DEVELOPMENT, TRAIN_WINDOW + GAP_BARS)
+    first_test = max(TRAIN_WINDOW + GAP_BARS, 8_500)
     for test_start in range(first_test, development_end, TEST_BLOCK):
         test_end = min(test_start + TEST_BLOCK, development_end)
         if test_end - test_start < MIN_TEST_BLOCK:
@@ -322,6 +322,7 @@ def evaluate() -> dict:
             "rf_min_samples_leaf": 10,
             "random_state": 42,
             "final_holdout_fraction": FINAL_HOLDOUT_FRAC,
+            "min_oos_blocks": MIN_BLOCKS,
         },
         "n": int(len(y)),
         "development_n": int(development_end),
