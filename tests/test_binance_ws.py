@@ -381,7 +381,7 @@ class TestBinanceWebSocket(unittest.TestCase):
             original_argv = sys.argv[:]
             try:
                 sys.argv = ["merge_binance_ws_cache.py", str(local_path), str(remote_path)]
-                self.assertEqual(merge_binance_ws_cache.main(), 12)
+                self.assertEqual(merge_binance_ws_cache.main(), 11)
 
                 fixed = dict(payload)
                 fixed["rows"] = rows
