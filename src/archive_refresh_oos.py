@@ -251,9 +251,18 @@ def evaluate_horizon(dataset, horizon):
     hold_cand = metrics(y_hold.tolist(), hold_p)
     gate_champ = metrics(y_gate.tolist(), champion_gate)
     gate_cand = selected["gate"]
+    # Candidate adoption evidence is intentionally dual-gated: require both
+    # absolute and relative proper-score gains. This prevents a tiny numerical
+    # improvement on a recent slice from becoming promotion evidence.
+    champion_ll = max(abs(float(gate_champ["logloss"])), 1e-12)
+    champion_br = max(abs(float(gate_champ["brier"])), 1e-12)
+    ll_relative_gain = (float(gate_champ["logloss"]) - float(gate_cand["logloss"])) / champion_ll
+    br_relative_gain = (float(gate_champ["brier"]) - float(gate_cand["brier"])) / champion_br
     eligible = bool(
         gate_cand["logloss"] <= gate_champ["logloss"] - 0.005
         and gate_cand["brier"] <= gate_champ["brier"] - 0.002
+        and ll_relative_gain >= 0.03
+        and br_relative_gain >= 0.01
         and gate_cand["accuracy"] >= gate_champ["accuracy"] - 0.01
         and len(y_gate) >= MIN_GATE
     )
@@ -279,6 +288,8 @@ def evaluate_horizon(dataset, horizon):
                 "accuracy": gate_cand["accuracy"] - gate_champ["accuracy"],
                 "logloss": gate_cand["logloss"] - gate_champ["logloss"],
                 "brier": gate_cand["brier"] - gate_champ["brier"],
+                "logloss_relative_gain": ll_relative_gain,
+                "brier_relative_gain": br_relative_gain,
             },
             "eligible_pending_frozen_holdout_confirmation": eligible,
         },
