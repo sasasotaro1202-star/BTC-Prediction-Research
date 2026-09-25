@@ -97,6 +97,15 @@ jobs:
           dispatch_if_stale btc_rolling_challenger.yml 21600
           dispatch_if_stale btc_9h_research_marathon.yml 28800
 
+          # High-value case-adaptation research must also recover when its own
+          # schedule/trigger is delayed. These lanes are research-only and have
+          # independent concurrency guards, so stale dispatch does not alter production.
+          dispatch_if_stale btc_uncertainty_layer_oos.yml 21600
+          dispatch_if_stale btc_multiscale_frozen_replay.yml 21600
+          dispatch_if_stale btc_time_regime_research.yml 28800
+          dispatch_if_stale btc_adaptive_calibration_replay.yml 28800
+          dispatch_if_stale btc_selective_prediction_oos.yml 43200
+
           cat > supervisor_status.json <<EOF
           {
             "schema_version": 2,
