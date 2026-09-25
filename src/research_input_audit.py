@@ -192,16 +192,19 @@ def recent_pit_stats(con, horizon: str, limit: int = 20) -> dict:
         (int(limit),),
     ).fetchall()
     total = len(rows)
+    observed = 0
     strict = 0
     failures = Counter()
+    pre_contract_quarantined = 0
     for prediction_id, created_at, target_at, model_version, scenario_json, actual in rows:
         created_dt = _dt(created_at)
         # Predictions emitted before the strict-PIT contract deployment are
-        # immutable historical evidence. Keep them in the ledger, but do not
-        # let a known pre-contract observation contaminate the post-fix window.
+        # immutable historical evidence. Keep them in the ledger, but exclude
+        # them from the post-fix recent-window denominator.
         if created_dt is not None and created_dt < PIT_CONTRACT_CUTOFF_UTC:
-            failures["pre_contract_prediction_quarantined"] += 1
+            pre_contract_quarantined += 1
             continue
+        observed += 1
         if not prediction_precedes_target(created_at, target_at):
             failures["prediction_time_not_before_target"] += 1
             continue
@@ -212,11 +215,12 @@ def recent_pit_stats(con, horizon: str, limit: int = 20) -> dict:
             failures[reason] += 1
     return {
         "window_size": int(limit),
-        "observed": total,
+        "observed": observed,
         "strict_pit": strict,
-        "rate": (strict / total) if total else None,
+        "rate": (strict / observed) if observed else None,
         "failure_reasons": dict(failures),
-        "all_strict": bool(total > 0 and strict == total),
+        "pre_contract_quarantined": pre_contract_quarantined,
+        "all_strict": bool(observed > 0 and strict == observed),
     }
 
 
