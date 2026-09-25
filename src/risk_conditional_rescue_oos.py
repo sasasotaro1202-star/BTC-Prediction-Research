@@ -241,6 +241,8 @@ def _evaluate(horizon):
         and stable["improved_logloss_ratio"]>=0.70
         and stable["improved_brier_ratio"]>=0.70
     )
+    hold_delta={k:float(hc[k]-hb[k]) for k in ("accuracy","logloss","brier")}
+    hold_delta["ece"]=float(hc["calibration_error"]-hb["calibration_error"])
     return {
         "status":"OK","schema_version":1,"research_only":True,"production_changed":False,
         "strict_point_in_time_archive_replay":False,"promotion_evidence_eligible":False,
@@ -251,7 +253,7 @@ def _evaluate(horizon):
                    "mean_route_coverage":float(np.mean([b["route_coverage"] for b in blocks])),
                    "mean_high_risk_coverage":float(np.mean([b["risk_coverage"] for b in blocks]))},
         "final_holdout":{"protected":True,"used_for_selection":False,"baseline":hb,"candidate":hc,
-                         "delta":{k:float(hc[k]-hb[k]) for k in ("accuracy","logloss","brier","ece")},
+                         "delta":hold_delta,
                          "route_coverage":float(use.mean()),"high_risk_coverage":float(high.mean()),
                          "high_risk_n":int(high.sum()),"risk_quantile":risk_q},
         "blocks":blocks,"eligibility":eligible,
