@@ -371,5 +371,12 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn("Existing Binance WS cache requires REST healing", workflow)
 
 
+    def test_collector_push_does_not_trigger_on_test_only_changes(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        self.assertNotIn("      - 'tests/test_binance_ws.py'", workflow)
+        self.assertIn("  cancel-in-progress: false", workflow)
+        self.assertIn("github.event_name == 'schedule' && github.run_id || github.sha", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
