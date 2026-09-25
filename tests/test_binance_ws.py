@@ -8,8 +8,10 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 import binance_ws
+import merge_binance_ws_cache
 
 
 class TestBinanceWebSocket(unittest.TestCase):
@@ -351,6 +353,56 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertEqual(workflow.count("          publisher_loop() {"), 1)
         self.assertIn('publisher_loop > /tmp/btc_ws_publisher.log 2>&1 &', workflow)
 
+
+    def test_cache_merge_helper_rejects_gappy_and_accepts_contiguous(self):
+        with TemporaryDirectory() as td:
+            local_path = Path(td) / "local.json"
+            remote_path = Path(td) / "remote.json"
+            rows = [
+                {
+                    "open_time_ms": i * 60_000,
+                    "event_time_ms": i * 60_000,
+                    "retrieved_at_ms": 2_000 + i,
+                }
+                for i in range(40)
+            ]
+            payload = {
+                "schema_version": 1,
+                "source": "Binance USD-M Futures WebSocket",
+                "stream": "btcusdt@kline_1m",
+                "rows": rows,
+            }
+            remote_path.write_text(json.dumps(payload), encoding="utf-8")
+            broken = dict(payload)
+            broken["rows"] = rows[:-1] + [{"open_time_ms": rows[-1]["open_time_ms"] + 120_000, "event_time_ms": 2_400_000, "retrieved_at_ms": 3_000}]
+            local_path.write_text(json.dumps(broken), encoding="utf-8")
+            self.assertEqual(merge_binance_ws_cache.main.__module__, "merge_binance_ws_cache")
+
+            original_argv = sys.argv[:]
+            try:
+                sys.argv = ["merge_binance_ws_cache.py", str(local_path), str(remote_path)]
+                self.assertEqual(merge_binance_ws_cache.main(), 12)
+
+                fixed = dict(payload)
+                fixed["rows"] = rows
+                local_path.write_text(json.dumps(fixed), encoding="utf-8")
+                remote2 = dict(payload)
+                remote2["rows"] = rows[:-1]
+                remote_path.write_text(json.dumps(remote2), encoding="utf-8")
+                self.assertEqual(merge_binance_ws_cache.main(), 0)
+                merged = json.loads(local_path.read_text(encoding="utf-8"))
+                self.assertEqual(len(merged["rows"]), 40)
+            finally:
+                sys.argv = original_argv
+
+    def test_collector_publish_cache_uses_merge_helper_without_inline_python_block(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("          publish_cache() {")
+        end = workflow.index("          publish_depth_cache() {", start)
+        block = workflow[start:end]
+        self.assertIn('python scripts/merge_binance_ws_cache.py "$local_file" "$remote_file"', block)
+        self.assertNotIn("<<'PY'", block)
+        self.assertIn('merge_status=$?', block)
 
     def test_collector_refuses_gappy_checkpoint_publication(self):
         workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
