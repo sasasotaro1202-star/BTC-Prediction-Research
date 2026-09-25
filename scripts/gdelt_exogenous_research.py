@@ -22,6 +22,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# GKG rows can contain very large embedded fields; raise the stdlib CSV parser
+# limit explicitly rather than failing a whole 15-minute slice at 128 KiB.
+csv.field_size_limit(8 * 1024 * 1024)
+
 BASE = "https://data.gdeltproject.org/gdeltv2"
 
 # GDELT GKG can contain very large tab-delimited fields (for example XML-ish
