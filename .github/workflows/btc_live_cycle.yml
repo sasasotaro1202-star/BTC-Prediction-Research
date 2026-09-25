@@ -394,6 +394,7 @@ jobs:
             python - "$tmp_cache" <<'PY'
           import json
           import time
+          import sys
           from pathlib import Path
           from src.market_data import binance_klines
 
@@ -451,6 +452,17 @@ jobs:
           }, sort_keys=True))
           PY
           }
+
+          if rest_seed; then
+            if validate_boundary_cache; then
+              cache_loaded=true
+              echo 'Loaded fresh Binance Futures cache directly via same-product REST failover.'
+            else
+              echo 'WARN: Binance Futures REST recovery produced an invalid/stale cache; continuing to verified cache polling.' >&2
+            fi
+          else
+            echo 'WARN: direct Binance Futures REST recovery unavailable; continuing to verified cache polling.' >&2
+          fi
 
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_cache"
