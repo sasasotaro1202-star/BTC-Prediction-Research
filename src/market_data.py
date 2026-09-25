@@ -571,21 +571,27 @@ def resilient_1m_series(limit: int = 120):
             status["price_feature_fallback"] = "none"
     elif len(fut) < 40:
         try:
-            cb = _latest_contiguous_suffix(coinbase_rows(min(300, max(120, limit))), 40)
+            cb = _fresh_closed_candle_suffix(
+                coinbase_rows(min(300, max(120, limit))), 40
+            )
             if len(cb) >= 40:
                 fut = cb
                 status["price_feature_fallback"] = "coinbase"
+                status["coinbase_futures"] = "ok_closed"
             else:
-                raise RuntimeError("insufficient contiguous Coinbase candles")
+                raise RuntimeError("insufficient contiguous closed Coinbase candles")
         except Exception as e:
             status["coinbase_futures"] = f"error:{_error_label(e)}"
             try:
-                kr = _latest_contiguous_suffix(kraken_rows(max(120, limit)), 40)
+                kr = _fresh_closed_candle_suffix(
+                    kraken_rows(max(120, limit)), 40
+                )
                 if len(kr) >= 40:
                     fut = kr
                     status["price_feature_fallback"] = "kraken"
+                    status["kraken_futures"] = "ok_closed"
                 else:
-                    raise RuntimeError("insufficient contiguous Kraken candles")
+                    raise RuntimeError("insufficient contiguous closed Kraken candles")
             except Exception as e2:
                 status["kraken_futures"] = f"error:{_error_label(e2)}"
                 cached, created, age_ms, fresh = cache_rows(limit)
