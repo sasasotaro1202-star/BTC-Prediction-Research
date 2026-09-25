@@ -121,13 +121,21 @@ def _blocks(x,y,ts,champion,start,end,window):
         model=_rf(); model.fit(x[train_start:train_end],train_y)
         recent=_align(model,x[test_start:test_end])
         frozen=_align(champion,x[test_start:test_end])
+        block_y=y[test_start:test_end]
+        candidate=_norm((frozen+recent)/2.0)
+        baseline_metrics=_metrics(block_y,frozen)
+        candidate_metrics=_metrics(block_y,candidate)
         out.append({
             "start":timestamps(ts[test_start]),
             "end":timestamps(ts[test_end-1]),
             "n":test_end-test_start,
-            "y":y[test_start:test_end],
+            "y":block_y,
             "frozen":frozen,
-            "recent":recent
+            "recent":recent,
+            "delta":{
+                k:float(candidate_metrics[k]-baseline_metrics[k])
+                for k in ("accuracy","logloss","brier","ece")
+            }
         })
     return out
 
