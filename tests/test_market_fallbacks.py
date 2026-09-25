@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 import market_data  # noqa: E402
 import predict  # noqa: E402
+from binance_ws import load_depth_cache  # noqa: E402
 
 
 class TestMarketFallbacks(unittest.TestCase):
@@ -160,7 +161,7 @@ class TestMarketFallbacks(unittest.TestCase):
             market_data.time.time = lambda: now / 1000
             rows = []
             for i in range(40):
-                event = now - (59 - i) * 60_000
+                event = now - (39 - i) * 60_000
                 rows.append({
                     "open_time_ms": event,
                     "event_time_ms": event,
@@ -198,7 +199,7 @@ class TestMarketFallbacks(unittest.TestCase):
             with tempfile.TemporaryDirectory() as td:
                 path = Path(td) / 'depth.json'
                 path.write_text(json.dumps(payload), encoding='utf-8')
-                self.assertIsNone(market_data.load_depth_cache(path))
+                self.assertIsNone(load_depth_cache(path))
         finally:
             market_data.time.time = original
     def test_parallel_result_calls_preserve_success_and_failure(self):
