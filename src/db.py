@@ -45,6 +45,35 @@ def init_db():
           production_version TEXT NOT NULL,
           updated_at_utc TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS experience_ledger (
+          experience_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          prediction_id INTEGER NOT NULL,
+          horizon TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          target_at_utc TEXT NOT NULL,
+          model_version TEXT NOT NULL,
+          production_mode TEXT NOT NULL,
+          regime TEXT,
+          predicted_direction TEXT NOT NULL,
+          actual_direction TEXT NOT NULL,
+          correct INTEGER NOT NULL,
+          confidence REAL,
+          entropy REAL,
+          margin REAL,
+          warning_flags TEXT NOT NULL,
+          data_quality_flags TEXT NOT NULL,
+          source TEXT,
+          base_price REAL,
+          actual_price REAL,
+          probability_json TEXT NOT NULL,
+          feature_hash TEXT,
+          settled_at_utc TEXT NOT NULL,
+          UNIQUE(prediction_id, horizon)
+        );
+        CREATE INDEX IF NOT EXISTS idx_experience_horizon_settled
+          ON experience_ledger(horizon, settled_at_utc);
+        CREATE INDEX IF NOT EXISTS idx_experience_case
+          ON experience_ledger(horizon, regime, predicted_direction, correct);
         ''')
         columns = {str(row[1]) for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
         for name in ('settlement_source_5m', 'settlement_source_10m'):
