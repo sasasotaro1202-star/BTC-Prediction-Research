@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
 
 env:
@@ -65,6 +66,65 @@ jobs:
           if [ "$cache_loaded" = false ]; then
             echo 'Binance WebSocket cache: unavailable/invalid; primary REST/inline WebSocket path remains authoritative.'
           fi
+
+      - name: Self-heal stale Binance WS collector
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cache='data/binance_ws_1m.json'
+          stale=false
+          if [ -s "$cache" ]; then
+            latest_retrieved="$(python - "$cache" <<'PY'
+          import json, sys
+          from pathlib import Path
+          obj=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          rows=obj.get('rows', [])
+          if not isinstance(rows, list) or not rows:
+              raise SystemExit(0)
+          latest=max(int(row['retrieved_at_ms']) for row in rows if isinstance(row, dict) and 'retrieved_at_ms' in row)
+          print(latest)
+          PY
+            )"
+            now_ms="$(date +%s000)"
+            age_ms=$((now_ms - latest_retrieved))
+            echo "Binance WS cache age before self-heal=${age_ms}ms"
+            if [ "$age_ms" -gt 180000 ]; then stale=true; fi
+          else
+            echo 'Binance WS cache is absent before self-heal.' >&2
+            stale=true
+          fi
+
+          if [ "$stale" != true ]; then
+            echo 'Binance WS collector heartbeat is fresh; no self-heal dispatch needed.'
+            exit 0
+          fi
+
+          set +e
+          active="$(gh run list --repo "$GITHUB_REPOSITORY"             --workflow btc_binance_ws_collector.yml             --limit 20             --json status             --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length' 2>/tmp/btc_ws_gh_list.err)"
+          list_status=$?
+          set -e
+          if [ "$list_status" -ne 0 ]; then
+            cat /tmp/btc_ws_gh_list.err >&2 || true
+            echo 'WARN: could not inspect Binance WS collector runs; leaving live prediction policy unchanged.' >&2
+            exit 0
+          fi
+
+          if [ "${active:-0}" -gt 0 ]; then
+            echo "Binance WS collector already has ${active} queued/in-progress run(s); self-heal dispatch skipped."
+            exit 0
+          fi
+
+          set +e
+          gh workflow run btc_binance_ws_collector.yml --repo "$GITHUB_REPOSITORY" --ref main
+          dispatch_status=$?
+          set -e
+          if [ "$dispatch_status" -ne 0 ]; then
+            echo "WARN: Binance WS collector self-heal dispatch failed with status ${dispatch_status}. Live prediction remains fail-closed on stale data." >&2
+            exit 0
+          fi
+          echo 'Dispatched a Binance WS collector self-heal run because the persisted cache was stale.'
 
       - name: Load latest Binance depth cache from dedicated state branch
         shell: bash
