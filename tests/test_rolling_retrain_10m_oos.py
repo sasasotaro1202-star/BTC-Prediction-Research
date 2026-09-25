@@ -14,7 +14,7 @@ def test_probabilities_and_metrics_contract():
 
 def test_rf_configuration_is_fixed():
     model = _rf()
-    assert model.n_estimators == 250
+    assert model.n_estimators == 200
     assert model.max_depth == 10
     assert model.min_samples_leaf == 10
     assert model.random_state == 42
