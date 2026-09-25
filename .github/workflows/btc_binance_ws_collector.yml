@@ -71,6 +71,138 @@ jobs:
             echo 'Dedicated cache branch unavailable; starting fresh caches.'
           fi
 
+
+      - name: Seed stale Binance Futures cache from closed REST klines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          path = Path("data/binance_ws_1m.json")
+          now_ms = int(time.time() * 1000)
+
+          def fresh_contiguous_suffix(obj):
+              rows = obj.get("rows", []) if isinstance(obj, dict) else []
+              if not isinstance(rows, list) or not rows:
+                  return 0, None
+              ordered = sorted(
+                  (r for r in rows if isinstance(r, dict)),
+                  key=lambda r: int(r.get("open_time_ms", 0)),
+              )
+              if not ordered:
+                  return 0, None
+              suffix = 1
+              for i in range(len(ordered) - 1, 0, -1):
+                  if int(ordered[i]["open_time_ms"]) - int(ordered[i - 1]["open_time_ms"]) != 60_000:
+                      break
+                  suffix += 1
+              age = now_ms - int(ordered[-1].get("retrieved_at_ms", 0))
+              return suffix, age
+
+          existing = None
+          if path.is_file():
+              try:
+                  existing = json.loads(path.read_text(encoding="utf-8"))
+              except Exception:
+                  existing = None
+
+          suffix, age = fresh_contiguous_suffix(existing)
+          if suffix >= 40 and age is not None and 0 <= age <= 180_000:
+              print(f"Existing Binance WS cache is fresh: contiguous_rows={suffix} age_ms={age}")
+              raise SystemExit(0)
+
+          url = (
+              "https://fapi.binance.com/fapi/v1/klines?"
+              + urlencode({"symbol": "BTCUSDT", "interval": "1m", "limit": 720})
+          )
+          last_error = None
+          raw = None
+          for attempt in range(1, 5):
+              try:
+                  req = Request(
+                      url,
+                      headers={
+                          "User-Agent": "BTC-Prediction-Research/binance-cache-seed/1.0",
+                          "Accept": "application/json",
+                      },
+                  )
+                  with urlopen(req, timeout=20) as response:
+                      raw = json.loads(response.read())
+                  break
+              except Exception as exc:
+                  last_error = exc
+                  if attempt < 4:
+                      time.sleep(2 * attempt)
+
+          if not isinstance(raw, list):
+              print(
+                  "WARN: Binance REST cache seed unavailable; "
+                  f"keeping existing cache and continuing to WebSocket capture. "
+                  f"error={type(last_error).__name__ if last_error else 'unknown'}"
+              )
+              raise SystemExit(0)
+
+          rows = []
+          retrieved_ms = int(time.time() * 1000)
+          for row in raw:
+              if not isinstance(row, list) or len(row) < 11:
+                  continue
+              try:
+                  open_ms = int(row[0])
+                  close_ms = int(row[6])
+                  if close_ms > retrieved_ms:
+                      continue
+                  rows.append(
+                      {
+                          "open_time_ms": open_ms,
+                          "open": float(row[1]),
+                          "high": float(row[2]),
+                          "low": float(row[3]),
+                          "close": float(row[4]),
+                          "volume": float(row[5]),
+                          "taker_buy_base": float(row[9]),
+                          "event_time_ms": close_ms,
+                          "retrieved_at_ms": retrieved_ms,
+                      }
+                  )
+              except (TypeError, ValueError):
+                  continue
+
+          rows = sorted({int(r["open_time_ms"]): r for r in rows}.values(), key=lambda r: r["open_time_ms"])
+          suffix = 1 if rows else 0
+          for i in range(len(rows) - 1, 0, -1):
+              if int(rows[i]["open_time_ms"]) - int(rows[i - 1]["open_time_ms"]) != 60_000:
+                  break
+              suffix += 1
+
+          if suffix < 40:
+              print(
+                  "WARN: Binance REST cache seed returned insufficient contiguous closed bars; "
+                  f"contiguous_rows={suffix}. Continuing to WebSocket capture."
+              )
+              raise SystemExit(0)
+
+          payload = {
+              "schema_version": 1,
+              "source": "Binance USD-M Futures WebSocket",
+              "stream": "btcusdt@kline_1m",
+              "rows": rows[-720:],
+              "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(retrieved_ms / 1000)),
+          }
+          temp = path.with_name(".binance_ws_1m.rest_seed.tmp")
+          temp.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          temp.replace(path)
+          print(
+              "Seeded Binance WS cache from closed Binance Futures REST klines: "
+              f"rows={len(rows)} contiguous_rows={suffix} retrieved_at_ms={retrieved_ms}"
+          )
+          PY
+
       - name: Record fixed collector base SHA
         shell: bash
         run: |
