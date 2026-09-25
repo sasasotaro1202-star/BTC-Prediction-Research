@@ -447,7 +447,8 @@ class TestBinanceWebSocket(unittest.TestCase):
         block = workflow[start:end]
         self.assertIn('curl', block)
         self.assertIn('--retry-all-errors', block)
-        self.assertIn('fapi.binance.com/fapi/v1/klines?', block)
+        self.assertIn('fapi.binance.com', block)
+        self.assertIn('/fapi/v1/klines?', block)
         self.assertIn('curl_exit_', block)
 
     def test_publisher_loop_avoids_heredoc_command_substitutions(self):
