@@ -29,24 +29,62 @@ jobs:
       - name: Dispatch only when Live heartbeat is stale
         shell: bash
         run: |
-          set -u
-          degraded=0
+          set -euo pipefail
 
           now="$(date -u +%s)"
-          if ! status="$(gh api "/repos/${REPO}/contents/data/live_cycle_status.json?ref=main" --jq '.content' | base64 -d 2>/dev/null)"; then
-            echo "ERROR: unable to read live heartbeat state." >&2
-            degraded=1
-            exit 0
-          fi
-          completed="$(jq -r '.completed_at_utc // ""' <<<"$status" 2>/dev/null || echo "")"
-          completed_epoch="$(date -d "$completed" +%s 2>/dev/null || echo 0)"
-          age=$((now - completed_epoch))
+          read_heartbeat() {
+            for attempt in 1 2 3; do
+              if status="$(gh api "/repos/${REPO}/contents/data/live_cycle_status.json?ref=main" --jq '.content' | base64 -d 2>/dev/null)"; then
+                printf '%s\n' "$status"
+                return 0
+              fi
+              echo "WARN: unable to read Live heartbeat state (attempt ${attempt}/3)." >&2
+              [ "${attempt}" -lt 3 ] && sleep $((5 * attempt))
+            done
+            return 1
+          }
 
-          if ! active="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=30" --jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' 2>/dev/null)"; then
-            echo "ERROR: unable to inspect active Live runs." >&2
-            degraded=1
-            exit 0
+          if ! status="$(read_heartbeat)"; then
+            echo "ERROR: unable to read Live heartbeat state after 3 attempts; no recovery dispatch." >&2
+            exit 1
           fi
+
+          completed="$(jq -er '.completed_at_utc // empty' <<<"$status" 2>/dev/null)" || {
+            echo "ERROR: Live heartbeat state is missing completed_at_utc; no recovery dispatch." >&2
+            exit 1
+          }
+          completed_epoch="$(date -d "$completed" +%s 2>/dev/null)" || {
+            echo "ERROR: Live heartbeat completed_at_utc is invalid; no recovery dispatch." >&2
+            exit 1
+          }
+          age=$((now - completed_epoch))
+          [ "$age" -ge 0 ] || {
+            echo "ERROR: Live heartbeat completed_at_utc is in the future; no recovery dispatch." >&2
+            exit 1
+          }
+
+          read_active_runs() {
+            for attempt in 1 2 3; do
+              if active="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=30" --jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' 2>/dev/null)"; then
+                printf '%s\n' "$active"
+                return 0
+              fi
+              echo "WARN: unable to inspect active Live runs (attempt ${attempt}/3)." >&2
+              [ "${attempt}" -lt 3 ] && sleep $((5 * attempt))
+            done
+            return 1
+          }
+
+          if ! active="$(read_active_runs)"; then
+            echo "ERROR: unable to inspect active Live runs after 3 attempts; no recovery dispatch." >&2
+            exit 1
+          fi
+          case "$active" in
+            ''|*[!0-9]*)
+              echo "ERROR: active Live run count is invalid: $active" >&2
+              exit 1
+              ;;
+          esac
 
           echo "live_status_age=${age}s active=${active}"
 
@@ -69,20 +107,15 @@ jobs:
             done
             if [ "$dispatched" -eq 0 ]; then
               echo "ERROR: Live recovery dispatch failed after 3 REST attempts." >&2
-              degraded=1
-              # Last-resort CLI path; keep the failure explicit.
               if gh workflow run btc_live_cycle.yml --ref main >/dev/null 2>&1; then
                 echo "Live recovery dispatch succeeded via gh CLI fallback."
-                degraded=0
+                dispatched=1
               else
                 echo "ERROR: Live recovery dispatch failed through REST and CLI." >&2
-                degraded=1
+                exit 1
               fi
             fi
           else
             echo "Live heartbeat fresh; no dispatch."
           fi
 
-          if [ "$degraded" -ne 0 ]; then
-            echo "::warning::BTC redundant live heartbeat completed in DEGRADED state."
-          fi
