@@ -18,7 +18,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, load_archive_research_rows, metrics
+from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, load_archive_research_rows, metrics as core_metrics
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data/historical_research/targeted_uncertainty_routing_oos.json"
@@ -33,6 +33,11 @@ MAX_ROWS = 12000
 FINAL_HOLDOUT_FRAC = 0.20
 UNCERTAINTY_QUANTILE = 0.75
 EPS = 1e-7
+
+
+def metrics(y, probs):
+    raw = core_metrics(y, probs)
+    return {**raw, "ece": float(raw["calibration_error"])}
 
 
 def _align(model: Any, rows: list[dict[str, Any]]) -> np.ndarray:
