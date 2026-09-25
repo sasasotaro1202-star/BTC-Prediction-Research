@@ -67,7 +67,7 @@ jobs:
           PY
 
       - name: Upload evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() && hashFiles('data/historical_research/prequential_reliability_routing_oos.json') != '' }}
         uses: actions/upload-artifact@v6
         with:
           name: btc-prequential-routing-\${{ github.run_id }}
