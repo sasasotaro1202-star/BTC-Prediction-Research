@@ -1,0 +1,61 @@
+name: BTC Uncertainty Layer OOS
+
+on:
+  push:
+    paths:
+      - 'src/uncertainty_layer_oos.py'
+      - 'tests/test_uncertainty_layer_oos.py'
+      - '.github/workflows/btc_uncertainty_layer_oos.yml'
+      - 'data/historical_research/oos_5m_*.csv'
+      - 'data/historical_research/oos_10m_*.csv'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-uncertainty-oos
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  uncertainty_oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Run uncertainty OOS
+        run: |
+          set -euo pipefail
+          python src/uncertainty_layer_oos.py
+          test -s data/historical_research/uncertainty_layer_oos.json
+      - name: Validate evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/uncertainty_layer_oos.json")
+          o=json.loads(p.read_text(encoding="utf-8"))
+          assert o["research_only"] is True
+          assert o["production_changed"] is False
+          assert all(v["final_holdout_protected"] for v in o["horizons"].values())
+          for h,v in o["horizons"].items():
+              assert v["final_holdout"]["risk_detection"]["holdout_high_uncertainty_n"] >= 100
+              print(h, v["final_holdout"]["relative_logloss_improvement"], v["final_holdout"]["relative_brier_improvement"], v["eligibility"])
+          PY
+      - name: Upload evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-uncertainty-oos-\${{ github.run_id }}
+          path: data/historical_research/uncertainty_layer_oos.json
+          if-no-files-found: error
+          retention-days: 7
