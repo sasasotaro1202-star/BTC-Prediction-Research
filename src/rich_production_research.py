@@ -36,6 +36,12 @@ except ModuleNotFoundError:
     from src import historical_research_runner as _research_runner
 import historical_research as _historical_module
 _historical_module.req_json = _research_runner.resilient_req_json
+# Patch the Spot endpoint too: the archive fallback handles /api/v3/klines,
+# while the runner above handles Binance Futures HTTP 451/5xx responses.
+try:
+    import scripts.historical_research_spot_fallback as _spot_fallback  # noqa: F401
+except ModuleNotFoundError:
+    from src import historical_research_spot_fallback as _spot_fallback  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
