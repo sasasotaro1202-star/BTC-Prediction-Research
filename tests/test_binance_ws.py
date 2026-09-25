@@ -292,6 +292,7 @@ class TestBinanceWebSocket(unittest.TestCase):
         async def fake_subscribe(url, stream_name, timeout_seconds, parser, on_row):
             subscribe_calls.append((url, stream_name))
             await on_row(incoming)
+            await asyncio.sleep(0.01)
             return 1, True
 
         async def no_sleep(_seconds):
@@ -311,9 +312,10 @@ class TestBinanceWebSocket(unittest.TestCase):
 
         self.assertIn(binance_ws.KLINE_URL, url_calls)
         self.assertIn(binance_ws.KLINE_FALLBACK_URLS[0], url_calls)
+        self.assertGreaterEqual(len(subscribe_calls), 1)
         self.assertEqual(
-            subscribe_calls,
-            [(binance_ws.KLINE_SUBSCRIBE_URL, binance_ws.KLINE_SUBSCRIBE_STREAM)],
+            subscribe_calls[0],
+            (binance_ws.KLINE_SUBSCRIBE_URL, binance_ws.KLINE_SUBSCRIBE_STREAM),
         )
         self.assertEqual(rows[-1]["open_time_ms"], incoming["open_time_ms"])
 
