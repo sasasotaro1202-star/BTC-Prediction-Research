@@ -387,6 +387,71 @@ jobs:
           PY
           }
 
+          # Direct same-product REST recovery is attempted before waiting for the
+          # background collector. This keeps the live boundary independent of a
+          # delayed/stuck collector while preserving Binance Futures provenance.
+          rest_seed() {
+            python - "$tmp_cache" <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          from src.market_data import binance_klines
+
+          path = Path(sys.argv[1])
+          retrieved_ms = int(time.time() * 1000)
+          raw = binance_klines(False, 720)
+          rows = []
+          for row in raw:
+              if not isinstance(row, list) or len(row) < 11:
+                  continue
+              try:
+                  open_ms = int(row[0])
+                  close_ms = int(row[6])
+                  if open_ms <= 0 or close_ms > retrieved_ms:
+                      continue
+                  rows.append({
+                      "open_time_ms": open_ms,
+                      "open": float(row[1]),
+                      "high": float(row[2]),
+                      "low": float(row[3]),
+                      "close": float(row[4]),
+                      "volume": float(row[5]),
+                      "taker_buy_base": float(row[9]),
+                      "event_time_ms": close_ms,
+                      "retrieved_at_ms": retrieved_ms,
+                  })
+              except (TypeError, ValueError, IndexError):
+                  continue
+
+          rows = list(sorted({int(r["open_time_ms"]): r for r in rows}.values(),
+                             key=lambda r: int(r["open_time_ms"])))
+          suffix = 1 if rows else 0
+          for i in range(len(rows) - 1, 0, -1):
+              if int(rows[i]["open_time_ms"]) - int(rows[i - 1]["open_time_ms"]) != 60_000:
+                  break
+              suffix += 1
+          if suffix < 40:
+              raise SystemExit(f"Binance Futures REST recovery insufficient contiguous rows: {suffix}")
+          payload = {
+              "schema_version": 1,
+              "source": "Binance USD-M Futures WebSocket",
+              "stream": "btcusdt@kline_1m",
+              "rows": rows[-720:],
+              "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(retrieved_ms / 1000)),
+          }
+          temp = path.with_name(".btc_live_rest_seed.tmp")
+          temp.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          temp.replace(path)
+          print(json.dumps({
+              "transport": "binance_futures_rest",
+              "rows": len(rows),
+              "contiguous_rows": suffix,
+              "retrieved_at_ms": retrieved_ms,
+              "latest_open_time_ms": rows[-1]["open_time_ms"],
+          }, sort_keys=True))
+          PY
+          }
+
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_cache"
             if git fetch --no-tags --depth=1 origin binance-ws-cache \
