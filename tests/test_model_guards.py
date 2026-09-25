@@ -11,6 +11,12 @@ from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provena
 
 
 class TestModelGuards(unittest.TestCase):
+    def test_bootstrap_status_contract_lists_explicit_defer_states(self):
+        source = Path("src/bootstrap_train.py").read_text(encoding="utf-8")
+        self.assertIn("deferred_history_failed", source)
+        self.assertIn("deferred_insufficient_history", source)
+        self.assertIn("complete_partial_or_rejected", source)
+
     def test_bootstrap_validation_selection_uses_proper_scores_first(self):
         from bootstrap_train import validation_selection_key
         better = {"logloss": 0.95, "brier": 0.58, "accuracy": 0.47}
