@@ -148,7 +148,7 @@ def _shrink(ensemble: np.ndarray, uncertainty: np.ndarray, alpha: float) -> np.n
 def _block_metrics(y: list[str], p: np.ndarray) -> dict[str, Any]:
     n = len(y)
     if n < HOLDOUT_BLOCKS * 25:
-        return {"blocks": 0, "non_worse_logloss_ratio": 0.0, "non_worse_brier_ratio": 0.0}
+        return {"blocks": 0, "logloss_mean": None, "brier_mean": None}
     edges = np.linspace(0, n, HOLDOUT_BLOCKS + 1, dtype=int)
     ll, br = [], []
     for i in range(HOLDOUT_BLOCKS):
@@ -160,8 +160,8 @@ def _block_metrics(y: list[str], p: np.ndarray) -> dict[str, Any]:
         br.append(float(m["brier"]))
     return {
         "blocks": len(ll),
-        "non_worse_logloss_ratio": float(np.mean(np.asarray(ll) <= np.inf)) if not ll else 0.0,
-        "non_worse_brier_ratio": float(np.mean(np.asarray(br) <= np.inf)) if not br else 0.0,
+        "logloss_mean": float(np.mean(ll)) if ll else None,
+        "brier_mean": float(np.mean(br)) if br else None,
     }
 
 
