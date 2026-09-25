@@ -25,8 +25,8 @@ def test_no_route_when_alternative_does_not_disagree():
 def test_route_only_after_causal_history_advantage():
     state=_new_state()
     state["seen"]=1000
-    for expert in ("production","logreg"):
-        state["global"][expert]=[115,120]
+    state["global"]["production"]=[100,120]
+    state["global"]["logreg"]=[115,120]
     probs={
       "production":np.array([0.6,0.2,0.2]),
       "logreg":np.array([0.1,0.2,0.7]),
