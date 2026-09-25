@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import joblib
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -257,6 +258,28 @@ def _predict_alternatives(models: dict[str, Any], rows: list[dict[str, Any]]) ->
     return out
 
 
+def _load_frozen_production(horizon: str):
+    path = ROOT / "models" / f"{horizon}.joblib"
+    if not path.is_file():
+        raise ValueError(f"production_artifact_missing:{horizon}")
+    return joblib.load(path)
+
+
+def _attach_production(rows: list[dict[str, Any]], horizon: str) -> list[dict[str, Any]]:
+    """Attach frozen Champion probabilities to archive rows before routing."""
+    if not rows:
+        return []
+    model = _load_frozen_production(horizon)
+    X = np.asarray([row["x"] for row in rows], dtype=float)
+    production = aligned(model, X)
+    out: list[dict[str, Any]] = []
+    for row, p in zip(rows, production):
+        item = dict(row)
+        item["production"] = np.asarray(p, dtype=float)
+        out.append(item)
+    return out
+
+
 def _prepare_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for row in raw_rows:
@@ -475,7 +498,7 @@ def evaluate(horizon: str) -> dict[str, Any]:
             "reason": "insufficient_archive_rows",
         }
 
-    rows = _prepare_rows(raw)
+    rows = _prepare_rows(_attach_production(raw, horizon))
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
     development, holdout = rows[:split], rows[split:]
     if len(development) < MIN_TRAIN + MIN_OOS:
