@@ -427,5 +427,16 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('if not ordered:', block)
         self.assertEqual(block.count('return 0, 0, None'), 2)
 
+    def test_collector_rest_seed_skips_malformed_open_time_rows(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("      - name: Seed stale Binance Futures cache from closed REST klines")
+        end = workflow.index("      - name: Record fixed collector base SHA", start)
+        block = workflow[start:end]
+        self.assertIn('valid_rows = []', block)
+        self.assertIn('open_ms = int(row["open_time_ms"])', block)
+        self.assertIn('except (KeyError, TypeError, ValueError):', block)
+        self.assertIn('ordered = [row for _, row in sorted(valid_rows, key=lambda item: item[0])]', block)
+        self.assertIn('return 0, 0, None', block)
+
 if __name__ == "__main__":
     unittest.main()
