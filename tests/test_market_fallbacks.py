@@ -43,6 +43,28 @@ class TestMarketFallbacks(unittest.TestCase):
             self.assertEqual(len(rows[0]), 6)
             self.assertTrue(all(len(r) == 6 for r in rows))
 
+    def test_binance_futures_rest_failover_keeps_same_product(self):
+        original = market_data._get
+        seen = []
+        try:
+            def fake_get(url):
+                seen.append(url)
+                if "fapi.binance.com/" in url:
+                    raise RuntimeError("primary_transport_failure")
+                return {"ok": True}
+            market_data._get = fake_get
+            result = market_data._binance_futures(
+                "fapi/v1/klines",
+                {"symbol": "BTCUSDT", "interval": "1m", "limit": 40},
+            )
+            self.assertEqual(result, {"ok": True})
+            self.assertEqual(len(seen), 2)
+            self.assertIn("https://fapi.binance.com/fapi/v1/klines?", seen[0])
+            self.assertIn("https://fapi1.binance.com/fapi/v1/klines?", seen[1])
+            self.assertTrue(all("/fapi/v1/klines?" in url for url in seen))
+        finally:
+            market_data._get = original
+
     def test_binance_taker_uses_futures_api_host(self):
         original = market_data._get
         seen = []
