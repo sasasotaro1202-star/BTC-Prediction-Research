@@ -20,3 +20,15 @@ def test_meta_features_shape():
     x=_meta_features(rows,p)
     assert x.shape==(3,7)
     assert np.isfinite(x).all()
+
+
+def test_delta_aggregation_uses_named_metric_order():
+    blocks = [
+        {"delta": {"brier": -0.2, "calibration_error": -0.4, "accuracy": 0.1, "logloss": -0.3}},
+        {"delta": {"accuracy": -0.1, "logloss": 0.2, "brier": -0.05, "calibration_error": 0.03}},
+    ]
+    deltas = np.asarray(
+        [[float(block["delta"][k]) for k in ("accuracy", "logloss", "brier", "calibration_error")] for block in blocks],
+        dtype=float,
+    )
+    assert deltas.tolist() == [[0.1, -0.3, -0.2, -0.4], [-0.1, 0.2, -0.05, 0.03]]
