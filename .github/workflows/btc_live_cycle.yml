@@ -126,6 +126,53 @@ jobs:
           fi
           echo 'Dispatched a Binance WS collector self-heal run because the persisted cache was stale.'
 
+          # Give the collector a bounded opportunity to publish the same-product
+          # REST-seeded/WebSocket cache so this live cycle can recover immediately.
+          # Failure to refresh remains fail-closed; the next scheduled cycle can retry.
+          refreshed=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            sleep 10
+            fetch_status=0
+            git fetch --no-tags --depth=1 origin binance-ws-cache >/tmp/btc_ws_heal_fetch.err 2>&1 || fetch_status=$?
+            if [ "$fetch_status" -ne 0 ]; then
+              echo "WARN: cache refresh fetch failed on self-heal poll attempt "${attempt}"." >&2
+              continue
+            fi
+            tmp_cache="/tmp/btc_ws_healed_1m.json"
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
+              if python - "$tmp_cache" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          obj=json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('schema_version') != 1 or obj.get('source') != 'Binance USD-M Futures WebSocket':
+              raise SystemExit(1)
+          rows=obj.get('rows')
+          if not isinstance(rows,list) or not rows:
+              raise SystemExit(1)
+          required={'open_time_ms','event_time_ms','retrieved_at_ms','close'}
+          if any(not isinstance(row,dict) or not required.issubset(row) for row in rows):
+              raise SystemExit(1)
+          latest=max(int(row['retrieved_at_ms']) for row in rows)
+          age_ms=int(time.time()*1000)-latest
+          if age_ms > 180000:
+              raise SystemExit(2)
+          print(f'Fresh Binance WS cache recovered on self-heal poll: age_ms={age_ms}')
+          PY
+              then
+                cp "$tmp_cache" data/binance_ws_1m.json
+                refreshed=true
+                echo "Binance WebSocket cache refreshed in the current live cycle."
+                break
+              else
+                echo "Binance WS cache not fresh/valid on self-heal poll attempt "${attempt}"."
+              fi
+            fi
+          done
+          if [ "$refreshed" != true ]; then
+            echo 'WARN: Binance WS cache was not refreshed within the bounded self-heal window; live prediction remains fail-closed.' >&2
+          fi
+
       - name: Load latest Binance depth cache from dedicated state branch
         shell: bash
         run: |
