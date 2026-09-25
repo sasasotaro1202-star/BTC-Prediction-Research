@@ -147,6 +147,8 @@ def compact_predictions(con):
                 continue
             duplicate_ids.append(candidate['rowid'])
             for c in SETTLEMENT_COLUMNS:
+                if c in clear_columns:
+                    continue
                 if survivor.get(c) is None and candidate.get(c) is not None:
                     survivor[c] = candidate[c]
 
