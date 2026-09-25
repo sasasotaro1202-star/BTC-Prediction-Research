@@ -45,7 +45,7 @@ class FrozenArchiveReplayTests(unittest.TestCase):
 
         dataset = [
             {"ts": i * 60000, "x": [0.0] * 15, "y": {"5m": "FLAT", "10m": "FLAT"}}
-            for i in range(10000)
+            for i in range(20000)
         ]
 
         def factory():
