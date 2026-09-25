@@ -70,11 +70,14 @@ def _probabilities(model, X):
     return aligned(model, np.asarray(X, dtype=float))
 
 
-def _fit_temperature(model, X, y):
+def _fit_temperature(model, X, y, horizon):
     split = int(len(y) * 0.80)
-    if split < 300 or len(y) - split < 100:
+    gap = PURGE[horizon]
+    cal_train_end = max(0, split - gap)
+    if cal_train_end < 300 or len(y) - split < 100:
         return 1.0
-    model.fit(X[:split], y[:split])
+    # Purge the final horizon rows of the calibration-training slice.
+    model.fit(X[:cal_train_end], y[:cal_train_end])
     p = _probabilities(model, X[split:])
     return float(_temperature(p, y[split:].tolist()))
 
@@ -135,17 +138,21 @@ def _candidate_gate(dataset, horizon):
     selection_rows = []
     for name, factory in factories().items():
         calibration_model = factory()
-        temperature = _fit_temperature(calibration_model, X_train, y_train)
+        temperature = _fit_temperature(calibration_model, X_train, y_train, horizon)
 
-        model = factory()
-        model.fit(
+        # Selection is strictly out-of-sample: selection labels are not passed
+        # to fit before the selection prediction is produced.
+        selection_model = factory()
+        selection_model.fit(X_train, y_train)
+        sel_p = apply_temperature(_probabilities(selection_model, X_sel), temperature)
+
+        # Gate is a later independent validation slice.
+        gate_model = factory()
+        gate_model.fit(
             np.concatenate([X_train, X_sel]),
             np.concatenate([y_train, y_sel]),
         )
-        sel_p = _probabilities(model, X_sel)
-        sel_p = apply_temperature(sel_p, temperature)
-        gate_p = _probabilities(model, X_gate)
-        gate_p = apply_temperature(gate_p, temperature)
+        gate_p = apply_temperature(_probabilities(gate_model, X_gate), temperature)
 
         sm = metrics(y_sel.tolist(), sel_p)
         gm = metrics(y_gate.tolist(), gate_p)
@@ -159,7 +166,6 @@ def _candidate_gate(dataset, horizon):
                 "logloss": gm["logloss"] - champion_gate_metrics["logloss"],
                 "brier": gm["brier"] - champion_gate_metrics["brier"],
             },
-            "_model": model,
         })
 
     valid = [
@@ -170,8 +176,6 @@ def _candidate_gate(dataset, horizon):
         and x["gate"]["accuracy"] >= champion_gate_metrics["accuracy"] - 0.01
     ]
     if not valid:
-        # Still choose a diagnostic candidate for the replay artifact, but it
-        # cannot be marked as selection-gate eligible.
         selected = min(
             selection_rows,
             key=lambda x: (x["gate"]["logloss"], x["gate"]["brier"], -x["gate"]["accuracy"]),
@@ -194,15 +198,21 @@ def _candidate_gate(dataset, horizon):
         "champion_gate_metrics": champion_gate_metrics,
     }
 
-
 def evaluate_horizon(dataset, horizon):
     n = len(dataset)
     prep = _candidate_gate(dataset, horizon)
     selected = prep["selected"]
-    model = selected["_model"]
     temperature = float(selected["temperature"])
     gate_end = prep["gate_end"]
     replay = dataset[gate_end:]
+
+    # Refit only on observations strictly before replay.
+    model = factories()[selected["name"]]()
+    development = dataset[:gate_end]
+    model.fit(
+        np.asarray([r["x"] for r in development], dtype=float),
+        np.asarray([r["y"][horizon] for r in development]),
+    )
     if len(replay) < REPLAY_WINDOWS * MIN_WINDOW:
         return {
             "status": "DEFERRED",
@@ -284,6 +294,7 @@ def evaluate_horizon(dataset, horizon):
         "n": n,
         "selected_candidate": selected["name"],
         "selected_temperature": temperature,
+        "selection_protocol": "train_only_selection; train_plus_selection_gate; pre_replay_refit; replay_never_used_for_selection",
         "development": {
             "train_n": prep["train_end"],
             "selection_n": prep["selection_end"] - prep["train_end"],
