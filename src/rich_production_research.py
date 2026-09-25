@@ -143,7 +143,7 @@ def _factories() -> dict[str, callable]:
         ),
     }
 
-def build_panel() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     end = (datetime.now(timezone.utc) - timedelta(days=3)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -258,17 +258,7 @@ def build_panel() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     rows.sort(key=lambda z: z[0])
     # Exact elapsed-time labels. No row-offset stretch across missing minutes.
-    by_ts = {r[0]: r for r in rows}
-    times, xs, ys = [], [], []
-    for t, x, base in rows:
-        for horizon in (None,):
-            pass
-        times.append(t)
-        xs.append(x)
-        # target placeholder; built separately below
-        ys.append(base)
-
-    return _label_panel(rows, 5), _label_panel(rows, 10), np.asarray(times, dtype=np.int64)
+    return _label_panel(rows, 5), _label_panel(rows, 10), np.asarray([r[0] for r in rows], dtype=np.int64)
 
 def _label_panel(rows: list[tuple[int,list[float],float]], horizon: int) -> tuple[np.ndarray,np.ndarray,np.ndarray]:
     by_ts = {int(r[0]): r for r in rows}
@@ -485,8 +475,7 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    X5, y5, t5 = build_panel()
-    X10, y10, t10 = build_panel()
+    (X5, y5, t5), (X10, y10, t10), _ = build_panel()
     # build_panel repeats the cached market-panel construction, so use the
     # already-built 5m panel timestamps only when labels align; otherwise each
     # horizon is evaluated on its own exact target-compatible sample.
