@@ -76,10 +76,14 @@ jobs:
 
             if [ "${active}" -eq 0 ] && { [ "${latest_epoch}" -eq 0 ] || [ "${age}" -ge "${threshold}" ]; }; then
               echo "Dispatching stale ${workflow}"
-              if gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
-                echo "Dispatch succeeded: ${workflow}"
+              # Use explicit REST workflow_dispatch first. This is the path proven
+              # by the independent Watchdog and avoids gh CLI discovery variance.
+              if gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
+                echo "Dispatch succeeded via workflow_dispatch API: ${workflow}"
+              elif gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
+                echo "Dispatch succeeded via gh workflow run: ${workflow}"
               else
-                echo "ERROR: dispatch failed: ${workflow}" >&2
+                echo "ERROR: dispatch failed through both REST and gh CLI: ${workflow}" >&2
                 degraded=1
               fi
             fi
