@@ -15,3 +15,18 @@ def test_metrics_contract():
     assert m["logloss"] >= 0
     assert m["brier"] >= 0
     assert m["ece"] >= 0
+
+
+def test_window_grid_source_preserves_block_count_contract():
+    from src.rolling_window_grid_10m_oos import _evaluate_blocks
+    blocks = [
+        {
+            "y": ["UP"],
+            "frozen": np.asarray([[1.0, 0.0, 0.0]]),
+            "recent": np.asarray([[0.0, 0.0, 1.0]]),
+        }
+    ]
+    result = _evaluate_blocks(blocks)
+    assert result["baseline"]["n"] == 1
+    assert result["candidate"]["n"] == 1
+    assert "delta" in result
