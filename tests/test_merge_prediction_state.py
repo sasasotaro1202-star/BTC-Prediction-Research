@@ -156,6 +156,32 @@ class TestMergePredictionState(unittest.TestCase):
             con.close()
             self.assertEqual(rows, (1, 101.0, 102.0))
 
+    def test_compact_conflicting_settlement_quarantines_horizon_without_guessing(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            immutable = ('2026-09-15T10:03:00+00:00', '2026-09-15T10:08:00+00:00',
+                         '2026-09-15T10:13:00+00:00', 100.0, .4, .3, .3, .4, .3, .3,
+                         'v1', '{"ret_1m":0.1}', '{}')
+            settled_up = immutable + (101.0, 'UP', 1, '2026-09-15T10:08:01+00:00', None, None, None, None)
+            settled_flat = immutable + (100.02, 'FLAT', 0, '2026-09-15T10:08:02+00:00', None, None, None, None)
+            make_db(target, [settled_up, settled_flat])
+
+            subprocess.run([sys.executable, str(SCRIPT), '--compact', str(target)], check=True)
+
+            con = sqlite3.connect(target)
+            row = con.execute('''SELECT COUNT(*), actual_price_5m, actual_direction_5m, correct_5m,
+                                      actual_price_10m, actual_direction_10m, correct_10m
+                               FROM predictions''').fetchone()
+            conflict = con.execute('''SELECT identity_sha256, resolution, conflicts_json
+                                      FROM prediction_settlement_conflicts''').fetchone()
+            con.close()
+
+            self.assertEqual(row, (1, None, None, None, None, None, None))
+            self.assertIsNotNone(conflict)
+            self.assertEqual(conflict[1], 'QUARANTINED_CONFLICTING_SETTLEMENT')
+            self.assertIn('actual_direction_5m', conflict[2])
+            self.assertIn('actual_price_5m', conflict[2])
+
     def test_compact_keeps_distinct_model_versions_and_probabilities(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'
