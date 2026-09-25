@@ -254,6 +254,9 @@ def evaluate(horizon: str) -> dict[str, Any]:
         return {"status": "DEFERRED", "reason": "insufficient_rows", "n": n}
 
     blocks = []
+    aggregate_y: list[str] = []
+    aggregate_baseline: list[list[float]] = []
+    aggregate_candidate: list[list[float]] = []
     dev_start = META_BLOCK + GAP_BARS[horizon] + TEST_BLOCK
     for test_start in range(dev_start, holdout_start, TEST_BLOCK):
         test_end = min(test_start + TEST_BLOCK, holdout_start)
@@ -296,7 +299,13 @@ def evaluate(horizon: str) -> dict[str, Any]:
         low_m = _metrics([y_test[i] for i in np.flatnonzero(low)], candidate_test[low]) if low.any() else {"n": 0}
         low_b = _metrics([y_test[i] for i in np.flatnonzero(low)], baseline_test[low]) if low.any() else {"n": 0}
 
+        aggregate_y.extend(y_test)
+        aggregate_baseline.extend(baseline_test.tolist())
+        aggregate_candidate.extend(candidate_test.tolist())
+
         blocks.append({
+            "start_index": int(test_start),
+            "end_index": int(test_end),
             "start_timestamp": timestamps[test_start],
             "end_timestamp": timestamps[test_end - 1],
             "n": len(test_idx),
@@ -333,19 +342,10 @@ def evaluate(horizon: str) -> dict[str, Any]:
         return {"status": "DEFERRED", "reason": "insufficient_oos_blocks", "n": n, "blocks": len(blocks)}
 
     def aggregate(key: str) -> dict[str, Any]:
-        ys, bp, cp = [], [], []
-        for b in blocks:
-            start = timestamps.index(b["start_timestamp"])
-            end = timestamps.index(b["end_timestamp"]) + 1
-            ys.extend(y[start:end])
-            bp.extend(probs["ensemble"][start:end].tolist())
-            cp.extend(_apply_gate(
-                probs["ensemble"][start:end],
-                probs[b["expert"]][start:end],
-                np.full(end - start, b["threshold"], dtype=float),
-                b["threshold"],
-            ).tolist())
-        return _metrics(ys, np.asarray(cp if key == "candidate" else bp))
+        if key == "candidate":
+            return _metrics(aggregate_y, np.asarray(aggregate_candidate, dtype=float))
+        return _metrics(aggregate_y, np.asarray(aggregate_baseline, dtype=float))
+
 
     baseline_dev = aggregate("baseline")
     candidate_dev = aggregate("candidate")
