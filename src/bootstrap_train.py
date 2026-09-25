@@ -481,8 +481,20 @@ def main():
     MODEL_DIR.mkdir(parents=True, exist_ok=True); DATA_DIR.mkdir(parents=True, exist_ok=True); init_db()
     try:
         rows, source = fetch_history(TARGET_ROWS); write_status({"status": "history_ok", "source": source, "rows": len(rows), "oldest_utc": datetime.fromtimestamp(rows[0][0] / 1000, timezone.utc).isoformat(), "newest_utc": datetime.fromtimestamp(rows[-1][0] / 1000, timezone.utc).isoformat()})
-    except Exception as exc: write_status({"status": "history_failed", "error": f"{type(exc).__name__}: {exc}"}); return 0
-    if len(rows) < MIN_BOOTSTRAP_ROWS: write_status({"status": "insufficient_history", "rows": len(rows), "minimum": MIN_BOOTSTRAP_ROWS, "source": source}); return 0
+    except Exception as exc:
+        write_status({
+            "status": "deferred_history_failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        })
+        return 0
+    if len(rows) < MIN_BOOTSTRAP_ROWS:
+        write_status({
+            "status": "deferred_insufficient_history",
+            "rows": len(rows),
+            "minimum": MIN_BOOTSTRAP_ROWS,
+            "source": source,
+        })
+        return 0
     CACHE.write_text(json.dumps({"created_at_utc": datetime.now(timezone.utc).isoformat(), "source": source, "rows": rows}, separators=(",", ":")), encoding="utf-8"); published = []
     for horizon in ("5m", "10m"):
         X, y = build_dataset(rows, int(horizon[:-1]))
@@ -497,7 +509,17 @@ def main():
             "holdout_used_for_selection": False,
             "holdout_is_descriptive_only": True,
         })
-    write_status({"status": "complete", "source": source, "rows": len(rows), "published": published}); return 0
+    publication_count = sum(1 for item in published if item.get("published") is True)
+    status = "complete" if publication_count == len(published) else "complete_partial_or_rejected"
+    write_status({
+        "status": status,
+        "source": source,
+        "rows": len(rows),
+        "published": published,
+        "publication_count": publication_count,
+        "horizons_attempted": len(published),
+    })
+    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
