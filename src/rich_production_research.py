@@ -264,6 +264,43 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
             if recent_oi and np.isfinite(oi_v) else 0.0
         )
 
+        # Causal multi-scale microstructure/context features. All use data
+        # available at t; no future lookup or imputation is introduced.
+        minute_ret = np.diff(b) / np.maximum(1e-12, b[:-1])
+        rv60 = float(np.std(minute_ret[-60:])) if len(minute_ret) >= 60 else 0.0
+        vol5 = float(np.mean(bv[-5:]))
+        vol60 = float(np.mean(bv[-60:])) if len(bv) >= 60 else vol5
+        volume_intensity = vol5 / max(1e-12, vol60)
+        tr5 = float(np.mean(bt[-5:]))
+        tr60 = float(np.mean(bt[-60:])) if len(bt) >= 60 else tr5
+        trade_intensity = tr5 / max(1e-12, tr60)
+
+        def flow_window(n: int) -> tuple[float, float]:
+            vv = float(np.sum(bv[-n:]))
+            buy = float(np.sum(tb[-n:]))
+            if vv <= 0.0:
+                return 0.0, 0.0
+            signed = 2.0 * buy / vv - 1.0
+            return signed, abs(signed)
+
+        flow30, tox30 = flow_window(30)
+        flow60, tox60 = flow_window(60)
+
+        def amihud_window(n: int) -> float:
+            if len(b) < n + 1:
+                return 0.0
+            rets = np.abs(np.diff(b[-(n + 1):]) / np.maximum(
+                1e-12, b[-(n + 1):-1]
+            ))
+            dollar = b[-n:] * np.maximum(bv[-n:], 1e-12)
+            return float(np.mean(rets / np.maximum(dollar, 1e-12)) * 1e8)
+
+        amihud15 = amihud_window(15)
+        amihud30 = amihud_window(30)
+        range_intensity = float(
+            np.mean((bh[-10:] - bl[-10:]) / np.maximum(b[-10:], 1e-12))
+        )
+
         dt = datetime.fromtimestamp(t / 1000.0, timezone.utc)
         hour = dt.hour + dt.minute / 60.0
         hs, hc = math.sin(2*math.pi*hour/24.0), math.cos(2*math.pi*hour/24.0)
@@ -276,7 +313,9 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
             r1,r3,r5,r10,r15,r30,accel,rv5,rv10,rv30,rp10,rp30,body,upper,lower,
             vr,vt,tr,flow,basis,bd,mg,pr,er5,sr5,er10,sr10,erbtc5,srb5,
             r5*rv10,r10*rv10,flow*rv5,rp10*flow,hs,hc,ds,dc,
-            funding_v,funding_delta,oi_change,oi_z,ema5,ema10
+            funding_v,funding_delta,oi_change,oi_z,ema5,ema10,
+            rv60,volume_intensity,trade_intensity,
+            flow30,flow60,tox30,tox60,amihud15,amihud30,range_intensity,
         ]
         if all(math.isfinite(float(v)) for v in x):
             rows.append((int(t), [float(v) for v in x], p))
