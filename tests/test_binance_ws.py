@@ -462,5 +462,27 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('"symbol": "BTCUSDT"', block)
         self.assertIn('"interval": "1m"', block)
 
+    def test_write_cache_preserves_recovery_epoch(self):
+        with TemporaryDirectory() as td:
+            path = Path(td) / "cache.json"
+            path.write_text(json.dumps({"recovery_epoch_ms": 12345}), encoding="utf-8")
+            row = {
+                "open_time_ms": 1, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+                "volume": 10.0, "taker_buy_base": 4.0, "event_time_ms": 60000,
+                "retrieved_at_ms": 70000,
+            }
+            binance_ws.write_cache([row], path)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload.get("recovery_epoch_ms"), 12345)
+
+    def test_collect_forever_window_carries_recovery_epoch_into_checkpoint_writes(self):
+        source = Path(binance_ws.__file__).read_text(encoding="utf-8")
+        start = source.index("async def collect_forever_window(")
+        end = source.index("async def capture_depth_snapshot", start)
+        block = source[start:end]
+        self.assertIn('recovery_epoch_ms = 0', block)
+        self.assertIn('write_cache(rows, path, recovery_epoch_ms=recovery_epoch_ms)', block)
+        self.assertIn('write_cache(merged, path, recovery_epoch_ms=recovery_epoch_ms)', block)
+
 if __name__ == "__main__":
     unittest.main()
