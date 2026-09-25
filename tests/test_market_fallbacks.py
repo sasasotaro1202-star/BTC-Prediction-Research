@@ -175,6 +175,32 @@ class TestMarketFallbacks(unittest.TestCase):
         finally:
             market_data.time.time = original
 
+    def test_depth_cache_rejects_stale_event_with_fresh_retrieval(self):
+        import json
+        import tempfile
+        now = 1_800_000_000_000
+        original = market_data.time.time
+        try:
+            market_data.time.time = lambda: now / 1000
+            payload = {
+                'schema_version': 1,
+                'source': 'Binance USD-M Futures WebSocket',
+                'stream': 'btcusdt@depth20@100ms',
+                'snapshot': {
+                    'e': 'depthUpdate',
+                    'E': now - 181_000,
+                    'u': 1,
+                    'b': [[100, 2] for _ in range(20)],
+                    'a': [[101, 2] for _ in range(20)],
+                    'retrieved_at_ms': now,
+                },
+            }
+            with tempfile.TemporaryDirectory() as td:
+                path = Path(td) / 'depth.json'
+                path.write_text(json.dumps(payload), encoding='utf-8')
+                self.assertIsNone(market_data.load_depth_cache(path))
+        finally:
+            market_data.time.time = original
     def test_parallel_result_calls_preserve_success_and_failure(self):
         calls = {
             "ok": lambda: {"value": 1},
