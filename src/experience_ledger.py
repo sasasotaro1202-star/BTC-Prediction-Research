@@ -247,8 +247,7 @@ def build():
         }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    SUMMARY.write_text(json.dumps(payload, indent=2, sort_keys=True) + "
-", encoding="utf-8")
+    SUMMARY.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False))
     if parse_errors:
         raise SystemExit(f"experience ledger parse errors: {parse_errors}")
