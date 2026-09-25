@@ -32,6 +32,12 @@ KLINE_URL = "wss://fstream.binance.com/market/ws/btcusdt@kline_1m"
 KLINE_FALLBACK_URLS = (
     "wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m",
 )
+# Current Binance documentation also supports connecting to the combined market
+# stream and subscribing after the socket is established. Keep this as a
+# transport-distinct recovery path for runners where URL-based subscriptions
+# connect but do not deliver a usable closed-bar stream.
+KLINE_SUBSCRIBE_URL = "wss://fstream.binance.com/market/stream"
+KLINE_SUBSCRIBE_STREAM = "btcusdt@kline_1m"
 DEPTH_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms"
 DEPTH_FALLBACK_URLS = (
     "wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms",
@@ -384,6 +390,62 @@ async def _collect_with_fallback(urls, timeout_seconds: float, parser) -> tuple[
     return [], None
 
 
+async def _stream_subscribed_url(
+    url: str,
+    stream_name: str,
+    timeout_seconds: float,
+    parser,
+    on_row,
+) -> tuple[int, bool]:
+    """Capture via a post-connect SUBSCRIBE request on Binance's combined stream."""
+    deadline = time.monotonic() + float(timeout_seconds)
+    parsed_count = 0
+    connection_started = False
+    try:
+        async with websockets.connect(
+            url,
+            ping_interval=20,
+            ping_timeout=10,
+            open_timeout=10,
+            close_timeout=5,
+            max_size=2_000_000,
+        ) as ws:
+            connection_started = True
+            await ws.send(json.dumps({
+                "method": "SUBSCRIBE",
+                "params": [stream_name],
+                "id": int(time.time() * 1000) & 0xFFFFFFFF,
+            }, separators=(",", ":")))
+            last_accepted_row_at = time.monotonic()
+            while time.monotonic() < deadline:
+                remaining = max(0.25, deadline - time.monotonic())
+                if time.monotonic() - last_accepted_row_at >= 150.0:
+                    break
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 45.0))
+                except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+                    break
+                received_ms = int(time.time() * 1000)
+                try:
+                    msg = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                parsed = parser(msg, received_ms)
+                if parsed is None:
+                    continue
+                parsed_count += 1
+                last_accepted_row_at = time.monotonic()
+                await on_row(parsed)
+    except Exception as exc:
+        print(
+            f"Binance WS subscribed transport error url={url} type={type(exc).__name__} "
+            f"detail={str(exc)[:240]!r}",
+            flush=True,
+        )
+        return parsed_count, connection_started
+    return parsed_count, connection_started
+
+
 async def _stream_url(
     url: str,
     timeout_seconds: float,
@@ -488,25 +550,43 @@ async def capture_closed_klines_stream(
     urls = (KLINE_URL, *KLINE_FALLBACK_URLS)
     url_index = 0
     reconnect_backoff_seconds = 0.5
+    subscribe_attempted = False
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
-        url = urls[url_index % len(urls)]
-        count, started = await _stream_url(
-            url,
-            remaining,
-            parse_kline_message,
-            on_row,
-        )
+        url = urls[url_index % len(urls)] if not subscribe_attempted else KLINE_SUBSCRIBE_URL
+        if subscribe_attempted:
+            count, started = await _stream_subscribed_url(
+                url,
+                KLINE_SUBSCRIBE_STREAM,
+                remaining,
+                parse_kline_message,
+                on_row,
+            )
+        else:
+            count, started = await _stream_url(
+                url,
+                remaining,
+                parse_kline_message,
+                on_row,
+            )
         if time.monotonic() >= deadline:
             break
-        # A dropped socket must not end the capture window. Reconnect the
-        # primary transport first, then its fallback, until the bounded window
-        # expires. A stable connection still consumes the full remaining budget.
+        # A dropped or silent URL-based socket must not end the capture window.
+        # After both documented URL forms fail to yield closed bars, use the
+        # documented post-connect SUBSCRIBE transport before cycling again.
         if started and count > 0:
             url_index = 0
+            subscribe_attempted = False
             reconnect_backoff_seconds = 0.5
         else:
-            url_index += 1
+            if not subscribe_attempted:
+                if url_index + 1 < len(urls):
+                    url_index += 1
+                else:
+                    subscribe_attempted = True
+            else:
+                subscribe_attempted = False
+                url_index = 0
             reconnect_backoff_seconds = min(5.0, reconnect_backoff_seconds * 2.0)
         sleep_for = min(
             reconnect_backoff_seconds,
@@ -525,7 +605,26 @@ async def capture_closed_klines_stream(
 
 async def capture_closed_klines(timeout_seconds: float = 62.0) -> list[dict[str, Any]]:
     rows, _ = await _collect_with_fallback((KLINE_URL, *KLINE_FALLBACK_URLS), timeout_seconds, parse_kline_message)
-    return rows
+    if rows:
+        return rows
+
+    async def on_row(_row: dict[str, Any]) -> None:
+        return None
+
+    captured: list[dict[str, Any]] = []
+    async def collect_row(row: dict[str, Any]) -> None:
+        captured.append(row)
+
+    count, _ = await _stream_subscribed_url(
+        KLINE_SUBSCRIBE_URL,
+        KLINE_SUBSCRIBE_STREAM,
+        timeout_seconds,
+        parse_kline_message,
+        collect_row,
+    )
+    if count > 0:
+        return captured
+    return []
 
 
 async def capture_depth_snapshot_stream(
