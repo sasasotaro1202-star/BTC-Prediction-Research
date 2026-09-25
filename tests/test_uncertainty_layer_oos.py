@@ -37,3 +37,15 @@ def test_uncertainty_is_higher_for_ambiguous_prediction():
                          ambiguous, np.asarray([[0.34,0.35,0.31]])], dtype=float)
     f = uncertainty_features(models, np.vstack([clear, ambiguous]))
     assert f["uncertainty"][1] > f["uncertainty"][0]
+
+
+def test_learned_risk_probability_is_bounded():
+    from src.uncertainty_layer_oos import _fit_error_model, _risk_probability
+    y = ["UP", "DOWN"] * 200
+    ensemble = np.asarray([[0.7, 0.2, 0.1], [0.7, 0.2, 0.1]] * 200, dtype=float)
+    models = np.asarray([ensemble, ensemble * 0.98, ensemble * 1.01, ensemble], dtype=float)
+    feats = uncertainty_features(models, ensemble)
+    model = _fit_error_model(feats, ensemble, y, list(range(400)))
+    p = _risk_probability(model, feats, list(range(20)))
+    assert np.isfinite(p).all()
+    assert np.all((p >= 0.0) & (p <= 1.0))
