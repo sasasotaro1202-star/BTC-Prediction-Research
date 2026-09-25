@@ -352,5 +352,16 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('publisher_loop > /tmp/btc_ws_publisher.log 2>&1 &', workflow)
 
 
+    def test_collector_refuses_gappy_checkpoint_publication(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("          publish_cache() {")
+        end = workflow.index("          publish_depth_cache() {", start)
+        block = workflow[start:end]
+        self.assertIn('contiguous_tail="$(python - "$local_file"', block)
+        self.assertIn('if [ "$contiguous_tail" -lt 40 ]; then', block)
+        self.assertIn('refusing to publish gappy Binance WS checkpoint', block)
+        self.assertIn('return 0', block)
+
+
 if __name__ == "__main__":
     unittest.main()
