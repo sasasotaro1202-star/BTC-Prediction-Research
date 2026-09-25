@@ -41,7 +41,8 @@ ARCHIVE_ROWS=60000
 ARCHIVE_MIN=12000
 FINAL_ARCHIVE_HOLDOUT_FRAC=0.15
 GATE_FRAC=0.10
-MIN_PRIMARY_ROWS=500
+MIN_PRIMARY_ROWS=50
+LIVE_BLOCK=25
 
 def _archive_dataset(horizon, cutoff=None):
     steps=int(horizon[:-1])
@@ -137,11 +138,11 @@ def evaluate(horizon):
     cm=metrics(y_live,live_p)
     pm=metrics(y_live,prod_p)
     block=[]
-    for start in range(0,len(y_live),250):
-        ys=y_live[start:start+250]
-        if len(ys)<125: continue
-        ca=metrics(ys,live_p[start:start+250])
-        ba=metrics(ys,prod_p[start:start+250])
+    for start in range(0,len(y_live),LIVE_BLOCK):
+        ys=y_live[start:start+LIVE_BLOCK]
+        if len(ys)<max(10, LIVE_BLOCK//2): continue
+        ca=metrics(ys,live_p[start:start+LIVE_BLOCK])
+        ba=metrics(ys,prod_p[start:start+LIVE_BLOCK])
         block.append({
             "n":len(ys),
             "accuracy_delta":ca["accuracy"]-ba["accuracy"],
@@ -171,6 +172,8 @@ def evaluate(horizon):
         "horizon":horizon,
         "archive_n":len(archive),
         "primary_n":len(live_rows),
+        "pilot_external_test": len(live_rows) < 500,
+
         "primary_earliest_created":primary[0]["created"],
         "archive_latest_created":archive[-1]["created"],
         "archive_selection":{
@@ -200,6 +203,8 @@ def evaluate(horizon):
                 "non_worse_accuracy_ratio":float(np.mean(ac>=-0.005)) if len(ac) else 0.0,
             },
             "eligible_pending_frozen_holdout_confirmation":eligible,
+            "minimum_primary_rows_for_full_evaluation":500,
+            "pilot_minimum_primary_rows":MIN_PRIMARY_ROWS,
         },
     }
 
