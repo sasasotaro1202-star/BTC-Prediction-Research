@@ -331,5 +331,19 @@ class TestBinanceWebSocket(unittest.TestCase):
             self.assertEqual(loaded[0]["open_time_ms"], row["open_time_ms"])
 
 
+    def test_collector_has_same_product_rest_cache_seed_for_stale_ws(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Seed stale Binance Futures cache from closed REST klines", workflow)
+        self.assertIn("https://fapi.binance.com/fapi/v1/klines?", workflow)
+        self.assertIn('"symbol": "BTCUSDT"', workflow)
+        self.assertIn('"interval": "1m"', workflow)
+        self.assertIn('"event_time_ms": close_ms', workflow)
+        self.assertIn('"retrieved_at_ms": retrieved_ms', workflow)
+        self.assertIn("if suffix < 40:", workflow)
+        self.assertIn("Continuing to WebSocket capture.", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
