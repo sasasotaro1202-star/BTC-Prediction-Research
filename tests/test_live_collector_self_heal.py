@@ -35,5 +35,16 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertNotIn('fallback_not_allowed', block)
 
 
+    def test_self_heal_checks_event_age_and_contiguous_suffix(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Self-heal stale Binance WS collector')
+        end = workflow.index('      - name: Load latest Binance depth cache', start)
+        block = workflow[start:end]
+        self.assertIn('contiguous_suffix=', block)
+        self.assertIn('event_age_ms=', block)
+        self.assertIn('if [ "$cache_health_status" -ne 0 ]; then stale=true; fi', block)
+        self.assertIn('if suffix < 40', block)
+        self.assertIn('event_age > 180000', block)
+
 if __name__ == '__main__':
     unittest.main()
