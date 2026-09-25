@@ -268,6 +268,9 @@ def evaluate(horizon: str) -> dict[str, Any]:
         and high_dev_n >= 100
     )
 
+    hold_block = _block_metrics(hold_y, hold_candidate_p)
+    hold_baseline_block = _block_metrics(hold_y, hold_base_p)
+
     return {
         "status": "OK",
         "schema_version": 1,
@@ -293,7 +296,8 @@ def evaluate(horizon: str) -> dict[str, Any]:
             "candidate": hold_candidate,
             "relative_logloss_improvement": float(ll_rel),
             "relative_brier_improvement": float(br_rel),
-            "block_stability": block,
+            "block_stability": hold_block,
+            "baseline_block_stability": hold_baseline_block,
             "risk_detection": risk_stats,
         },
         "feature_policy": {
