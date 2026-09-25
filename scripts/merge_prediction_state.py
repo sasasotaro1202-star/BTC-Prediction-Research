@@ -227,6 +227,42 @@ def main():
     con.execute('ATTACH DATABASE ? AS local', (local_path,))
 
     try:
+        # Settlement conflict records are operational evidence; preserve them
+        # across state merges so recovery cannot erase a quarantined incident.
+        con.execute('''
+            CREATE TABLE IF NOT EXISTS prediction_settlement_conflicts (
+              identity_sha256 TEXT PRIMARY KEY,
+              detected_at_utc TEXT NOT NULL,
+              identity_json TEXT NOT NULL,
+              conflicts_json TEXT NOT NULL,
+              resolution TEXT NOT NULL
+            )
+        ''')
+        local_has_conflicts = bool(
+            con.execute(
+                "SELECT 1 FROM local.sqlite_master WHERE type='table' AND name='prediction_settlement_conflicts'"
+            ).fetchone()
+        )
+        if local_has_conflicts:
+            conflict_rows = con.execute(
+                '''SELECT identity_sha256, detected_at_utc, identity_json, conflicts_json, resolution
+                   FROM local.prediction_settlement_conflicts'''
+            ).fetchall()
+            for row in conflict_rows:
+                con.execute(
+                    '''
+                    INSERT INTO prediction_settlement_conflicts
+                      (identity_sha256, detected_at_utc, identity_json, conflicts_json, resolution)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(identity_sha256) DO UPDATE SET
+                      detected_at_utc=excluded.detected_at_utc,
+                      conflicts_json=excluded.conflicts_json,
+                      resolution=excluded.resolution
+                    ''',
+                    row,
+                )
+            print(f'prediction_settlement_conflicts: merged={len(conflict_rows)}')
+
         for table in ('predictions', 'model_metrics', 'model_registry'):
             target_info = con.execute(f'PRAGMA table_info({table})').fetchall()
             local_info = con.execute(f'PRAGMA local.table_info({table})').fetchall()
