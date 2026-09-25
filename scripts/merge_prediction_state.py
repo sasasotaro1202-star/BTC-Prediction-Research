@@ -126,6 +126,7 @@ def compact_predictions(con):
         survivor = max(group, key=settlement_score)
         conflicts = []
         conflict_horizons = _conflicting_horizons(group)
+        clear_columns = set()
         if conflict_horizons:
             for horizon in sorted(conflict_horizons):
                 for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
@@ -138,6 +139,7 @@ def compact_predictions(con):
             for horizon in conflict_horizons:
                 for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
                     survivor[column] = None
+                    clear_columns.add(column)
             conflict_count += 1
         duplicate_ids = []
         for candidate in group:
@@ -155,12 +157,22 @@ def compact_predictions(con):
             values = [r.get(c) for r in group if r.get(c) is not None]
             if values:
                 survivor[c] = canonical_settlement_timestamp(values)
-        updates = {c: survivor.get(c) for c in SETTLEMENT_COLUMNS if survivor.get(c) is not None}
+        updates = {
+            c: survivor.get(c)
+            for c in SETTLEMENT_COLUMNS
+            if c not in clear_columns and survivor.get(c) is not None
+        }
         if updates:
             set_clause = ','.join(f'"{c}"=?' for c in updates)
             con.execute(
                 f'UPDATE predictions SET {set_clause} WHERE rowid=?',
                 [updates[c] for c in updates] + [survivor['rowid']],
+            )
+        if clear_columns:
+            clear_clause = ','.join(f'"{c}"=NULL' for c in sorted(clear_columns))
+            con.execute(
+                f'UPDATE predictions SET {clear_clause} WHERE rowid=?',
+                [survivor['rowid']],
             )
         if duplicate_ids:
             placeholders = ','.join('?' for _ in duplicate_ids)
