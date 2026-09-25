@@ -363,5 +363,13 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('return 0', block)
 
 
+    def test_collector_rest_seed_repairs_internal_cache_gaps(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        self.assertIn("return len(ordered), suffix, age", workflow)
+        self.assertIn("row_count, suffix, age = fresh_contiguous_suffix(existing)", workflow)
+        self.assertIn("suffix == row_count", workflow)
+        self.assertIn("Existing Binance WS cache requires REST healing", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
