@@ -23,8 +23,9 @@ RESEARCH = ROOT / "data" / "historical_research"
 OUT = RESEARCH / "gain_aware_routing_oos.json"
 
 CLASSES = ("DOWN", "FLAT", "UP")
-EXPERTS = ("production", "logreg", "extra", "rf", "hgb", "ensemble")
-ALTERNATIVES = ("logreg", "extra", "rf", "hgb", "ensemble")
+SOURCE_EXPERTS = ("logreg", "extra", "rf", "hgb", "ensemble")
+ALTERNATIVES = ("logreg", "extra", "hgb", "ensemble")
+EXPERTS = ("production",) + ALTERNATIVES
 HORIZONS = ("5m", "10m")
 
 GAP_BARS = {"5m": 65, "10m": 70}
@@ -105,7 +106,7 @@ def _read(path: Path) -> dict[int, tuple[str, np.ndarray]]:
 def load_horizon(horizon: str) -> tuple[list[int], list[str], dict[str, np.ndarray]]:
     data = {
         name: _read(RESEARCH / f"oos_{horizon}_{name}.csv")
-        for name in EXPERTS
+        for name in SOURCE_EXPERTS
     }
     common = sorted(set.intersection(*(set(v) for v in data.values())))
     if len(common) < MIN_ROWS:
@@ -113,11 +114,12 @@ def load_horizon(horizon: str) -> tuple[list[int], list[str], dict[str, np.ndarr
     ys: list[str] = []
     probs: dict[str, list[np.ndarray]] = {name: [] for name in EXPERTS}
     for ts in common:
-        labels = {data[name][ts][0] for name in EXPERTS}
+        labels = {data[name][ts][0] for name in SOURCE_EXPERTS}
         if len(labels) != 1:
             raise ValueError(f"label_mismatch:{horizon}:{ts}")
         ys.append(next(iter(labels)))
-        for name in EXPERTS:
+        probs["production"].append(data["rf"][ts][1])
+        for name in ALTERNATIVES:
             probs[name].append(data[name][ts][1])
     arrays = {name: np.asarray(value, dtype=float) for name, value in probs.items()}
     if not np.all(np.diff(np.asarray(common, dtype=np.int64)) > 0):
