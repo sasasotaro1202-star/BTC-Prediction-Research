@@ -34,6 +34,16 @@ def validate_latest_event_time(event_ms, *, now=None):
     if age < -60:
         raise ValueError(f"future_live_market_event:{age:.0f}s")
     return event
+def latest_market_event_ms(fut, status):
+    if not fut:
+        raise ValueError('missing_live_market_rows')
+    latest_open_ms = int(fut[-1][0])
+    if status.get('binance_futures_transport') == 'websocket':
+        return int(status.get('binance_futures_ws_event_time_ms', latest_open_ms + 60_000 - 1))
+    # Closed 1m REST/archive rows expose candle-open time. Use the scheduled
+    # close boundary rather than the older open time to avoid false stale rejects.
+    return latest_open_ms + 60_000 - 1
+
 def _ema(v,span):
     a=2/(span+1); e=float(v[0])
     for x in v[1:]: e=a*float(x)+(1-a)*e
@@ -597,16 +607,7 @@ def main():
     )
     prediction_cutoff=utcnow()
     now=prediction_cutoff
-    latest_open_ms=int(fut[-1][0])
-    # REST/archival candle rows expose the candle open time but not the transport
-    # event timestamp. A closed 1m candle cannot predate its own scheduled close;
-    # using that close boundary avoids rejecting otherwise-fresh REST data merely
-    # because the candle started up to one minute earlier. WebSocket transport,
-    # when present, uses the exchange event timestamp captured by the adapter.
-    if status.get('binance_futures_transport') == 'websocket':
-        latest_event_ms=int(status.get('binance_futures_ws_event_time_ms', latest_open_ms + 60_000 - 1))
-    else:
-        latest_event_ms=latest_open_ms + 60_000 - 1
+    latest_event_ms=latest_market_event_ms(fut, status)
     latest_event=validate_latest_event_time(latest_event_ms, now=prediction_cutoff)
     s5=structural(f,m)
     gap=m.get('cross_exchange_gap')
