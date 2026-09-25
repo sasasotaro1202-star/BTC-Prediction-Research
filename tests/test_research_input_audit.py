@@ -174,6 +174,34 @@ class ResearchInputAuditTests(unittest.TestCase):
         self.assertEqual(result["duplicate_exact_key_row_excess"], 0)
 
 
+    def test_recent_pit_stats_excludes_pre_contract_rows_from_post_fix_window(self):
+        con = self._db()
+        row = list(self._row("model-old"))
+        row[0] = "2026-09-25T19:50:00+00:00"
+        row[1] = "2026-09-25T19:55:00+00:00"
+        row[13] = json.dumps({
+            "production_mode": "coinbase_fallback",
+            "provenance": {
+                "available_at": "2026-09-25T19:49:59+00:00",
+                "retrieved_at": "2026-09-25T19:50:00+00:00",
+                "prediction_cutoff": "2026-09-25T19:50:00+00:00",
+                "sources": {
+                    "coinbase_futures": {
+                        "status": "ok",
+                        "event_time": "2026-09-25T19:50:01+00:00",
+                        "available_at": "2026-09-25T19:50:00+00:00",
+                        "retrieved_at": "2026-09-25T19:50:00+00:00",
+                        "prediction_cutoff": "2026-09-25T19:50:00+00:00",
+                    }
+                },
+            },
+        })
+        self._insert(con, [tuple(row)])
+        result = recent_pit_stats(con, "5m", limit=20)
+        self.assertEqual(result["strict_pit"], 0)
+        self.assertEqual(result["failure_reasons"], {"pre_contract_prediction_quarantined": 1})
+
+
     def test_recent_pit_stats_detects_missing_provenance(self):
         con = self._db()
         row = list(self._row("model-v3"))
