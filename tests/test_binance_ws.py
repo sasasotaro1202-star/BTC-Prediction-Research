@@ -378,5 +378,15 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn("github.event_name == 'schedule' && github.run_id || github.sha", workflow)
 
 
+    def test_collector_publishes_initial_cache_before_checkpoint_loop(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("          publisher_loop() {")
+        end = workflow.index("          while kill -0", start)
+        block = workflow[start:end]
+        self.assertIn('if [ -s data/binance_ws_1m.json ]; then', block)
+        self.assertIn('if publish_cache; then', block)
+        self.assertIn('Initial Binance WS cache checkpoint published', block)
+        self.assertIn('initial Binance WS cache checkpoint publication failed', block)
+
 if __name__ == "__main__":
     unittest.main()
