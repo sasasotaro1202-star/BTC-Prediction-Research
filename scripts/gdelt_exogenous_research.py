@@ -186,10 +186,16 @@ def collect(start: datetime, end: datetime, output: Path) -> dict:
     attempted = 0
     missing = 0
     while cur <= end:
+        stamp = _stamp(cur)
+        # Incremental collection: never redownload a successfully verified
+        # slice. Missing/failed slices remain retryable on the next run.
+        if stamp in coverage:
+            cur += timedelta(minutes=15)
+            continue
         attempted += 1
         try:
             batch = parse_slice(_download_slice(cur), cur)
-            coverage.add(_stamp(cur))
+            coverage.add(stamp)
         except Exception as exc:
             # A missing slice is not a data point; record it for audit and continue.
             missing += 1
