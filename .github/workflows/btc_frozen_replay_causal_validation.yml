@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-frozen-replay-causal-\${{ github.head_ref || github.ref_name }}
+  group: btc-frozen-replay-causal-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -54,15 +54,16 @@ jobs:
           assert obj.get('replay_holdout_protected') is True
           for horizon,item in obj.get('horizons',{}).items():
               assert item.get('promotion_evidence_eligible') is False
-              assert item.get('causal_protocol_verified') is True
+              assert str(item.get('selection_protocol','')).startswith('train_only_selection;')
+              assert item.get('replay_holdout_used_for_selection') is False
           print('CORRECTED_FROZEN_REPLAY_VERIFIED')
           PY
 
       - name: Upload corrected replay evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-frozen-replay-causal-\${{ github.run_id }}
+          name: btc-frozen-replay-causal-${{ github.run_id }}
           path: data/historical_research/frozen_archive_replay_oos.json
           if-no-files-found: error
           retention-days: 7
