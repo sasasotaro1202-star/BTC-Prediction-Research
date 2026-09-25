@@ -38,6 +38,14 @@ class TestBlendCalibration(unittest.TestCase):
     def test_rejected_or_unvalidated_blend_fails_closed(self):
         self.assertEqual(blend_calibration.FALLBACK_WEIGHT, 0.0)
 
+    def test_block_stability_requires_multiple_consistent_blocks(self):
+        y = ['UP', 'DOWN', 'FLAT'] * 10
+        model = [[0.34, 0.33, 0.33]] * len(y)
+        structural = [[0.90, 0.05, 0.05] if label == 'UP' else [0.05, 0.90, 0.05] if label == 'DOWN' else [0.05, 0.05, 0.90] for label in y]
+        stable = blend_calibration._block_stability(y, model, structural, 0.20, block_size=15)
+        self.assertEqual(stable['blocks'], 2)
+        self.assertFalse(stable['stable'])
+
     def test_grid_is_bounded(self):
         self.assertGreaterEqual(float(blend_calibration.GRID.min()), 0.0)
         self.assertLessEqual(float(blend_calibration.GRID.max()), 0.45)
