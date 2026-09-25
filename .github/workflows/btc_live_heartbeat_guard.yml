@@ -1,0 +1,77 @@
+name: BTC Live Heartbeat Guard
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-live-heartbeat-guard
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: \${{ github.token }}
+      REPO: \${{ github.repository }}
+    steps:
+      - name: Check and recover stale Live cycle
+        shell: bash
+        run: |
+          set -u
+          degraded=0
+          now="$(date -u +%s)"
+
+          if ! status_b64="$(gh api "/repos/\${REPO}/contents/data/live_cycle_status.json?ref=main" --jq '.content' 2>/dev/null)"; then
+            echo "::error::unable to read live_cycle_status.json"
+            exit 0
+          fi
+          if ! status="$(printf '%s' "$status_b64" | base64 -d 2>/dev/null)"; then
+            echo "::error::unable to decode live_cycle_status.json"
+            exit 0
+          fi
+
+          completed="$(jq -r '.completed_at_utc // ""' <<<"$status" 2>/dev/null || echo "")"
+          completed_epoch="$(date -d "$completed" +%s 2>/dev/null || echo 0)"
+          age=$((now - completed_epoch))
+
+          if ! active="$(gh api "/repos/\${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=30" --jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' 2>/dev/null)"; then
+            echo "::error::unable to inspect active BTC Live runs"
+            exit 0
+          fi
+
+          echo "live_status_age=\${age}s active=\${active} completed=\${completed:-none}"
+
+          if [ "$active" -gt 0 ]; then
+            echo "Live already active/queued; no dispatch."
+            exit 0
+          fi
+
+          if [ "$completed_epoch" -eq 0 ] || [ "$age" -ge 300 ]; then
+            dispatched=0
+            for attempt in 1 2 3; do
+              if gh api --method POST "/repos/\${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null 2>&1; then
+                echo "Live recovery dispatch succeeded via REST (attempt \${attempt})."
+                dispatched=1
+                break
+              fi
+              echo "WARN: Live REST dispatch failed (attempt \${attempt})." >&2
+              sleep \$((5 * attempt))
+            done
+            if [ "$dispatched" -eq 0 ]; then
+              echo "::error::Live REST dispatch failed after 3 attempts"
+              degraded=1
+            fi
+          else
+            echo "Live heartbeat fresh; no dispatch."
+          fi
+
+          if [ "$degraded" -ne 0 ]; then
+            echo "::warning::BTC Live Heartbeat Guard completed in DEGRADED state."
+          fi
