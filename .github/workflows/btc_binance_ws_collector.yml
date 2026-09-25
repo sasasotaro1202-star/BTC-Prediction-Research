@@ -90,10 +90,16 @@ jobs:
               rows = obj.get("rows", []) if isinstance(obj, dict) else []
               if not isinstance(rows, list) or not rows:
                   return 0, 0, None
-              ordered = sorted(
-                  (r for r in rows if isinstance(r, dict)),
-                  key=lambda r: int(r.get("open_time_ms", 0)),
-              )
+              valid_rows = []
+              for row in rows:
+                  if not isinstance(row, dict):
+                      continue
+                  try:
+                      open_ms = int(row["open_time_ms"])
+                  except (KeyError, TypeError, ValueError):
+                      continue
+                  valid_rows.append((open_ms, row))
+              ordered = [row for _, row in sorted(valid_rows, key=lambda item: item[0])]
               if not ordered:
                   return 0, 0, None
               suffix = 1
