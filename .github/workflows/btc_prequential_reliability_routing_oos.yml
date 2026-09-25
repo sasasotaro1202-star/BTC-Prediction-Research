@@ -70,7 +70,7 @@ jobs:
         if: ${{ !cancelled() && hashFiles('data/historical_research/prequential_reliability_routing_oos.json') != '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-prequential-routing-\${{ github.run_id }}
+          name: btc-prequential-routing-${{ github.run_id }}
           path: data/historical_research/prequential_reliability_routing_oos.json
           if-no-files-found: error
           retention-days: 7
