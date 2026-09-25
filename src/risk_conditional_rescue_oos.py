@@ -127,12 +127,12 @@ def _fit_rescue(meta_rows, meta_probs, meta_risk):
         models[expert]=m
     return models
 
-def _route(test_rows, test_probs, rescue_models, threshold):
+def _route(test_rows, test_probs, rescue_models, threshold, risk_threshold):
     names=tuple(test_probs)
     ensemble=np.mean(np.stack([test_probs[n] for n in names],axis=0),axis=0)
     x=_risk_features(test_probs,test_rows)
     risk=-np.sum(ensemble*np.log(np.clip(ensemble,EPS,1.0)),axis=1)/math.log(3.0)
-    risk_q=float(np.quantile(risk, HIGH_RISK_QUANTILE))
+    risk_q=float(risk_threshold)
     high=risk>=risk_q
     scores=np.full((len(test_rows),len(names)),-np.inf,dtype=float)
     for j,name in enumerate(names):
@@ -172,10 +172,14 @@ def _evaluate(horizon):
             continue
         base_models=_fit_experts(train)
         meta_probs=_probs(base_models,meta)
-        rescue_models=_fit_rescue(meta,meta_probs,_risk_features(meta_probs,meta))
+        meta_features=_risk_features(meta_probs,meta)
+        meta_ensemble=np.mean(np.stack(list(meta_probs.values()),axis=0),axis=0)
+        meta_risk=-np.sum(meta_ensemble*np.log(np.clip(meta_ensemble,EPS,1.0)),axis=1)/math.log(3.0)
+        risk_threshold=float(np.quantile(meta_risk,HIGH_RISK_QUANTILE))
+        rescue_models=_fit_rescue(meta,meta_probs,meta_features)
         test_models=_fit_experts(development[:test_start])
         test_probs=_probs(test_models,test)
-        routed,use,chosen,high,risk_q,scores=_route(test,test_probs,rescue_models,RESCUE_THRESHOLD)
+        routed,use,chosen,high,risk_q,scores=_route(test,test_probs,rescue_models,RESCUE_THRESHOLD,risk_threshold)
         ensemble=np.mean(np.stack(list(test_probs.values()),axis=0),axis=0)
         y=[r["y"] for r in test]
         base_m=metrics(y,ensemble); cand_m=metrics(y,routed)
@@ -217,10 +221,15 @@ def _evaluate(horizon):
     if len(prior_meta)>=1:
         # Use only the immediately prior meta block, not holdout labels.
         meta_rows,meta_probs=prior_meta[-1]
-        hold_rescue=_fit_rescue(meta_rows,meta_probs,_risk_features(meta_probs,meta_rows))
+        meta_features=_risk_features(meta_probs,meta_rows)
+        meta_ensemble=np.mean(np.stack(list(meta_probs.values()),axis=0),axis=0)
+        meta_risk=-np.sum(meta_ensemble*np.log(np.clip(meta_ensemble,EPS,1.0)),axis=1)/math.log(3.0)
+        hold_risk_threshold=float(np.quantile(meta_risk,HIGH_RISK_QUANTILE))
+        hold_rescue=_fit_rescue(meta_rows,meta_probs,meta_features)
     else:
         hold_rescue={}
-    routed,use,chosen,high,risk_q,scores=_route(holdout,hold_probs,hold_rescue,RESCUE_THRESHOLD)
+        hold_risk_threshold=1.0
+    routed,use,chosen,high,risk_q,scores=_route(holdout,hold_probs,hold_rescue,RESCUE_THRESHOLD,hold_risk_threshold)
     yh=[r["y"] for r in holdout]
     hb=metrics(yh,np.mean(np.stack(list(hold_probs.values()),axis=0),axis=0))
     hc=metrics(yh,routed)
@@ -235,7 +244,7 @@ def _evaluate(horizon):
         "status":"OK","schema_version":1,"research_only":True,"production_changed":False,
         "strict_point_in_time_archive_replay":False,"promotion_evidence_eligible":False,
         "horizon":horizon,"n":len(rows),"development_n":len(development),"final_holdout_n":len(holdout),
-        "policy":"high_risk_q75_from_current_prediction_distribution; rescue_labels_from_prior_meta_block; fixed_threshold_0.60",
+        "policy":"high_risk_q75_from_prior_meta_prediction_distribution; rescue_labels_from_prior_meta_block; fixed_threshold_0.60",
         "development":{"blocks":len(blocks),"baseline":base,"candidate":cand,"delta":deltas,"stability":stable},
         "routing":{"high_risk_quantile":HIGH_RISK_QUANTILE,"rescue_threshold":RESCUE_THRESHOLD,
                    "mean_route_coverage":float(np.mean([b["route_coverage"] for b in blocks])),
