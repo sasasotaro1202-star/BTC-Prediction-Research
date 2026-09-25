@@ -1,6 +1,8 @@
 import math
 import numpy as np
 
+import src.prequential_reliability_routing_oos
+
 from src.prequential_reliability_routing_oos import (
     EXPERTS,
     _feature_context,
@@ -46,3 +48,19 @@ def test_current_outcome_cannot_change_current_prediction():
 
 def test_loss_is_finite():
     assert math.isfinite(_loss(np.asarray([0.2, 0.3, 0.5]), "UP"))
+
+
+def test_archive_rows_get_frozen_production_probabilities():
+    from unittest.mock import patch
+
+    class FrozenModel:
+        classes_ = np.asarray(["DOWN", "FLAT", "UP"])
+
+        def predict_proba(self, X):
+            return np.tile(np.asarray([[0.2, 0.3, 0.5]]), (len(X), 1))
+
+    rows = [{"x": [0.0] * 15, "y": "UP", "id": "x"}]
+    with patch("src.prequential_reliability_routing_oos._load_frozen_production", return_value=FrozenModel()):
+        out = src.prequential_reliability_routing_oos._attach_production(rows, "5m")
+    assert len(out) == 1
+    assert np.allclose(out[0]["production"], [0.2, 0.3, 0.5])
