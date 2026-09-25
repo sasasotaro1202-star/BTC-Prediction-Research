@@ -586,8 +586,18 @@ async def capture_mark_price(timeout_seconds: float = 6.0) -> dict[str, Any] | N
     return rows[-1] if rows else None
 
 
-def write_cache(rows: list[dict[str, Any]], path: Path = DEFAULT_CACHE) -> None:
+def write_cache(
+    rows: list[dict[str, Any]],
+    path: Path = DEFAULT_CACHE,
+    recovery_epoch_ms: int | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if recovery_epoch_ms is None:
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            recovery_epoch_ms = int(existing.get("recovery_epoch_ms", 0) or 0)
+        except (FileNotFoundError, OSError, ValueError, TypeError, AttributeError):
+            recovery_epoch_ms = 0
     payload = {
         "schema_version": SCHEMA_VERSION,
         "source": "Binance USD-M Futures WebSocket",
@@ -595,6 +605,8 @@ def write_cache(rows: list[dict[str, Any]], path: Path = DEFAULT_CACHE) -> None:
         "rows": rows[-MAX_CACHE_ROWS:],
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
+    if int(recovery_epoch_ms or 0) > 0:
+        payload["recovery_epoch_ms"] = int(recovery_epoch_ms)
     temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temp.write_text(
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
@@ -609,9 +621,15 @@ async def collect_forever_window(
     checkpoint_seconds: float = 60.0,
 ) -> dict[str, Any]:
     existing = load_cache(path)
+    recovery_epoch_ms = 0
+    try:
+        existing_obj = json.loads(path.read_text(encoding="utf-8"))
+        recovery_epoch_ms = int(existing_obj.get("recovery_epoch_ms", 0) or 0)
+    except (FileNotFoundError, OSError, ValueError, TypeError, AttributeError):
+        recovery_epoch_ms = 0
 
     async def checkpoint(rows: list[dict[str, Any]]) -> None:
-        write_cache(rows, path)
+        write_cache(rows, path, recovery_epoch_ms=recovery_epoch_ms)
 
     merged = await capture_closed_klines_stream(
         timeout_seconds,
@@ -619,7 +637,7 @@ async def collect_forever_window(
         initial_rows=existing,
         on_checkpoint=checkpoint,
     )
-    write_cache(merged, path)
+    write_cache(merged, path, recovery_epoch_ms=recovery_epoch_ms)
     suffix = contiguous_suffix(merged, minimum=40)
     latest = merged[-1] if merged else None
     return {
