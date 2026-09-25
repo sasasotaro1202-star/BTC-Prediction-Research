@@ -156,6 +156,26 @@ def _champion_probs(model, X):
     return out
 
 
+def candidate_gate_eligible(candidate: dict, champion: dict, n: int) -> bool:
+    """Apply the conservative archive-refresh promotion evidence gate."""
+    champion_ll = max(abs(float(champion["logloss"])), 1e-12)
+    champion_br = max(abs(float(champion["brier"])), 1e-12)
+    ll_relative_gain = (
+        float(champion["logloss"]) - float(candidate["logloss"])
+    ) / champion_ll
+    br_relative_gain = (
+        float(champion["brier"]) - float(candidate["brier"])
+    ) / champion_br
+    return bool(
+        float(candidate["logloss"]) <= float(champion["logloss"]) - 0.005
+        and float(candidate["brier"]) <= float(champion["brier"]) - 0.002
+        and ll_relative_gain >= 0.03
+        and br_relative_gain >= 0.01
+        and float(candidate["accuracy"]) >= float(champion["accuracy"]) - 0.01
+        and int(n) >= MIN_GATE
+    )
+
+
 def _choose_candidate(results):
     valid = [r for r in results if r["gate_n"] >= MIN_GATE]
     if not valid:
@@ -252,20 +272,12 @@ def evaluate_horizon(dataset, horizon):
     gate_champ = metrics(y_gate.tolist(), champion_gate)
     gate_cand = selected["gate"]
     # Candidate adoption evidence is intentionally dual-gated: require both
-    # absolute and relative proper-score gains. This prevents a tiny numerical
-    # improvement on a recent slice from becoming promotion evidence.
+    # absolute and relative proper-score gains.
     champion_ll = max(abs(float(gate_champ["logloss"])), 1e-12)
     champion_br = max(abs(float(gate_champ["brier"])), 1e-12)
     ll_relative_gain = (float(gate_champ["logloss"]) - float(gate_cand["logloss"])) / champion_ll
     br_relative_gain = (float(gate_champ["brier"]) - float(gate_cand["brier"])) / champion_br
-    eligible = bool(
-        gate_cand["logloss"] <= gate_champ["logloss"] - 0.005
-        and gate_cand["brier"] <= gate_champ["brier"] - 0.002
-        and ll_relative_gain >= 0.03
-        and br_relative_gain >= 0.01
-        and gate_cand["accuracy"] >= gate_champ["accuracy"] - 0.01
-        and len(y_gate) >= MIN_GATE
-    )
+    eligible = candidate_gate_eligible(gate_cand, gate_champ, len(y_gate))
 
     return {
         "status": "OK",
