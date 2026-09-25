@@ -22,23 +22,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     env:
-      GH_TOKEN: \${{ github.token }}
-      REPO: \${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - name: Enforce current-main execution
         shell: bash
         run: |
           set -euo pipefail
-          test "\${GITHUB_REF_NAME}" = "main"
+          test "${GITHUB_REF_NAME}" = "main"
 
       - name: Check and recover production heartbeat
         shell: bash
         run: |
           set -euo pipefail
           now="$(date -u +%s)"
-          main_sha="$(gh api "/repos/\${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
 
-          live_json="$(gh api "/repos/\${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")"
+          live_json="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")"
           active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"\$live_json")"
           latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"\$live_json")"
 
@@ -51,11 +51,11 @@ jobs:
             age=\$((now-epoch))
           fi
 
-          echo "main_sha=\$main_sha active_live=\$active latest_live_head=\${head:-none} age=\${age}s"
+          echo "main_sha=\$main_sha active_live=\$active latest_live_head=${head:-none} age=${age}s"
 
           if [ "\$active" -eq 0 ] && { [ "\$age" -ge 300 ] || [ "\$head" != "\$main_sha" ]; }; then
             echo "Production heartbeat stale; dispatching one Live Cycle from current main."
-            if gh api --method POST "/repos/\${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null; then
+            if gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null; then
               echo "Live Cycle recovery dispatch accepted."
             else
               echo "ERROR: Live Cycle recovery dispatch failed." >&2
@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           echo "Sleeping briefly before spawning next sentinel generation."
           sleep 240
-          if gh api --method POST "/repos/\${REPO}/actions/workflows/btc_production_sentinel.yml/dispatches" -f ref=main >/dev/null; then
+          if gh api --method POST "/repos/${REPO}/actions/workflows/btc_production_sentinel.yml/dispatches" -f ref=main >/dev/null; then
             echo "Next sentinel generation dispatch accepted."
           else
             echo "ERROR: next sentinel generation dispatch failed." >&2
