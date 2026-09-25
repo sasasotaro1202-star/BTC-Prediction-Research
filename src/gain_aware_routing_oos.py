@@ -206,7 +206,7 @@ def build_features(
 def _fit_gain_model(x: np.ndarray, target: np.ndarray) -> HistGradientBoostingRegressor:
     y = np.clip(np.asarray(target, dtype=float), -2.0, 2.0)
     model = HistGradientBoostingRegressor(
-        loss="huber",
+        loss="absolute_error",
         max_iter=180,
         max_leaf_nodes=15,
         learning_rate=0.04,
