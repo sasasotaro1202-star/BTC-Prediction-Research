@@ -61,7 +61,7 @@ jobs:
           print('rolling window-grid evidence verified')
           PY
       - name: Upload evidence
-        if: \${{ !cancelled() && hashFiles('data/historical_research/rolling_window_grid_10m_oos.json') != '' }}
+        if: ${{ !cancelled() && hashFiles('data/historical_research/rolling_window_grid_10m_oos.json') != '' }}
         uses: actions/upload-artifact@v6
         with:
           name: btc-rolling-window-grid-10m-oos
