@@ -303,6 +303,61 @@ def _bootstrap_ci(values: np.ndarray, seed: int = 42, n_boot: int = 1000) -> dic
     return {"lower": float(q[0]), "mean": float(values.mean()), "upper": float(q[1])}
 
 
+def _run_frozen_holdout(
+    development: list[dict[str, Any]],
+    holdout: list[dict[str, Any]],
+    horizon: str,
+    strategy: str,
+    initial_state: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if len(development) < MIN_TRAIN + CAL_BLOCK or not holdout:
+        return {"status": "DEFERRED"}, []
+
+    gap = PURGE_BARS[horizon] + EMBARGO_BARS[horizon]
+    cal_end = len(development) - gap
+    cal_start = cal_end - CAL_BLOCK
+    train = development[:cal_start]
+    cal = development[cal_start:cal_end]
+    if len(train) < MIN_TRAIN or len(cal) < 100:
+        return {"status": "DEFERRED"}, []
+
+    models = _fit_alternatives(train, cal)
+    hold_copy = [dict(r) for r in holdout]
+    _augment_with_models(holdout[:], hold_copy, models)
+
+    probs, labels, _, trace = _route_rows(
+        hold_copy,
+        strategy,
+        initial_state=initial_state,
+    )
+    baseline = np.stack([r["production"] for r in hold_copy], axis=0)
+    baseline_metrics = _metrics_from_labels(labels, baseline)
+    candidate_metrics = _metrics_from_labels(labels, probs)
+    return (
+        {
+            "status": "OK",
+            "candidate": candidate_metrics,
+            "baseline": baseline_metrics,
+            "delta": {
+                metric: float(candidate_metrics[metric] - baseline_metrics[metric])
+                for metric in ("accuracy", "logloss", "brier", "ece")
+            },
+            "mean_production_weight": float(np.mean([t["weights"][0] for t in trace])),
+        },
+        [
+            {
+                "n": int(len(hold_copy)),
+                "baseline": baseline_metrics,
+                "candidate": candidate_metrics,
+                "delta": {
+                    metric: float(candidate_metrics[metric] - baseline_metrics[metric])
+                    for metric in ("accuracy", "logloss", "brier", "ece")
+                },
+            }
+        ],
+    )
+
+
 def _run_prequential(
     development: list[dict[str, Any]],
     horizon: str,
@@ -439,17 +494,14 @@ def evaluate(horizon: str) -> dict[str, Any]:
         initial_state=_fresh_state(),
     )
 
-    # Frozen holdout starts from the final development state. No holdout outcome
-    # influences any holdout prediction until after that prediction is fixed.
-    hold_result, hold_blocks, _ = _run_prequential(
+    # Frozen holdout uses one final expert fit frozen on development data.
+    # Holdout outcomes affect routing only after each current prediction is fixed.
+    hold_result, hold_blocks = _run_frozen_holdout(
+        development,
         holdout,
         horizon,
         "online_context",
         initial_state=dev_state,
-    ) if len(holdout) >= MIN_TRAIN + MIN_OOS + CAL_BLOCK else (
-        {"status": "DEFERRED"},
-        [],
-        dev_state,
     )
 
     def eligible(result: dict[str, Any]) -> bool:
