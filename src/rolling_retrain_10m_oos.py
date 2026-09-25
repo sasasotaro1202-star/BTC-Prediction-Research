@@ -1,6 +1,6 @@
 """Research-only rolling-retrain RF for BTC 10m direction.
 
-Purpose: test whether model staleness, rather than model family alone, explains
+Validation revision: identical algorithm/configuration, no production changes. Purpose: test whether model staleness, rather than model family alone, explains
 the recent future-OOS advantage of retrained RF. Hyperparameters are fixed
 before evaluation. Each test block uses only a trailing causal training window
 ending before the test target window. A final 20% future holdout is descriptive
