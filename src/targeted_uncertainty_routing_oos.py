@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data/historical_research/targeted_uncertainty_routing_oos.json"
 
 HORIZONS = ("5m", "10m")
-EXPERTS = ("logreg", "extra_trees", "hgb")
+EXPERTS = ("production", "logreg", "extra_trees", "hgb")
 MIN_TRAIN = 3000
 META_BLOCK = 500
 TEST_BLOCK = 500
@@ -79,13 +79,17 @@ def _fit(train):
 
 def _probs(models, rows):
     p = {name: _align(model, rows) for name, model in models.items()}
-    p["soft_equal"] = np.mean(np.stack([p[e] for e in EXPERTS], axis=0), axis=0)
-    p["soft_equal"] /= p["soft_equal"].sum(axis=1, keepdims=True)
+    production = np.asarray([r["production"] for r in rows], dtype=float)
+    if production.ndim != 2 or production.shape[1] != 3:
+        raise ValueError("production_probability_shape_invalid")
+    production = np.clip(production, EPS, 1.0)
+    production /= production.sum(axis=1, keepdims=True)
+    p["production"] = production
     return p
 
 
 def _uncertainty(p):
-    soft = p["soft_equal"]
+    soft = p["production"]
     entropy = -np.sum(soft * np.log(np.clip(soft, EPS, 1.0)), axis=1) / math.log(3.0)
     ordered = np.sort(soft, axis=1)[:, ::-1]
     margin = ordered[:, 0] - ordered[:, 1]
@@ -186,7 +190,7 @@ def _eval_dev(rows, horizon):
         routed = _risk_router(meta_probs, meta, test_probs, test)
 
         gate = test_unc >= threshold
-        baseline = test_probs["soft_equal"]
+        baseline = test_probs["production"]
         final = baseline.copy()
         final[gate] = routed[gate]
 
@@ -257,7 +261,7 @@ def _holdout(rows, horizon):
     threshold=_uncertainty_gate(_uncertainty(meta_probs))
     routed=_risk_router(meta_probs,meta,hold_probs,hold)
     gate=_uncertainty(hold_probs)>=threshold
-    final=hold_probs["soft_equal"].copy(); final[gate]=routed[gate]
+    final=hold_probs["production"].copy(); final[gate]=routed[gate]
     y=[r["y"] for r in hold]
     base=metrics(y,hold_probs["soft_equal"]); cand=metrics(y,final)
     return {
@@ -282,7 +286,7 @@ def evaluate(horizon):
         "final_holdout_protected":True,"final_holdout_used_for_selection":False,
         "strict_point_in_time_archive_replay":False,"horizon":horizon,"n":len(rows),
         "development":dev,"final_holdout":hold,
-        "policy":"prior_meta_prequential_reliability_router + prior-block uncertainty gate; low-uncertainty retains baseline; no production promotion"
+        "policy":"current-production-champion baseline + alternative-expert prequential reliability router activated only on prior-block high-uncertainty cases; low-uncertainty retains champion; no production promotion"
     }
 
 
