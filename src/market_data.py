@@ -340,15 +340,23 @@ def _ws_series_rows(rows):
 
 
 def _fresh_ws_suffix(rows, minimum: int = 40):
+    """Return a contiguous WS suffix only when retrieval and exchange event times are fresh."""
     suffix = ws_contiguous_suffix(rows, minimum=minimum)
     if not suffix:
         return []
     now_ms = int(time.time() * 1000)
     latest = suffix[-1]
     retrieved = int(latest.get("retrieved_at_ms", latest["open_time_ms"]))
-    return suffix if now_ms - retrieved <= BINANCE_WS_MAX_AGE_MS else []
-
-
+    event_time = int(latest.get("event_time_ms", latest["open_time_ms"]))
+    retrieved_age = now_ms - retrieved
+    event_age = now_ms - event_time
+    # A post-retrieval delay must not make an old market event look fresh.
+    # Reject future timestamps conservatively as well.
+    if retrieved_age < 0 or retrieved_age > BINANCE_WS_MAX_AGE_MS:
+        return []
+    if event_age < -60_000 or event_age > BINANCE_WS_MAX_AGE_MS:
+        return []
+    return suffix
 def _capture_ws_suffix(existing, timeout_seconds: float = 62.0):
     incoming = []
     try:
