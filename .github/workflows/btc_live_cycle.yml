@@ -106,7 +106,7 @@ jobs:
           list_status=$?
           set -e
           if [ "$list_status" -ne 0 ]; then
-            cat /tmp/btc_ws_gh_list.err >&2 || true
+            cat /tmp/btc_ws_gh_list.err >&2
             echo 'WARN: could not inspect Binance WS collector runs; leaving live prediction policy unchanged.' >&2
             exit 0
           fi
