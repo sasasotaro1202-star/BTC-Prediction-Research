@@ -343,6 +343,8 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('"retrieved_at_ms": retrieved_ms', workflow)
         self.assertIn("if suffix < 40:", workflow)
         self.assertIn("Continuing to WebSocket capture.", workflow)
+        self.assertIn("local last_published=0", workflow)
+        self.assertIn("semantic no-op publish", workflow)
 
 
 if __name__ == "__main__":

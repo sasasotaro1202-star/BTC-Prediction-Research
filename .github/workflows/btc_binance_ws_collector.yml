@@ -537,17 +537,12 @@ jobs:
            depth_pid="$!"
 
           publisher_loop() {
+          publisher_loop() {
+            # Always allow the first checkpoint to publish a freshly REST-seeded cache.
+            # The semantic no-op guard inside publish_cache prevents needless commits
+            # when the remote checkpoint already contains the same rows.
             local last_published=0
             local last_depth_published=0
-            if [ -s data/binance_ws_1m.json ]; then
-              last_published="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
-          print(int(rows[-1]['open_time_ms']) if rows else 0)
-          PY
-              )"
-            fi
             if [ -s data/binance_ws_depth.json ]; then
               last_depth_published="$(python - <<'PY'
           import json
