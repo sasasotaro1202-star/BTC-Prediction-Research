@@ -451,5 +451,16 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('remote_epoch" -gt "$local_epoch', block)
         self.assertIn('preserving repaired remote cache', block)
 
+    def test_collector_rest_seed_tries_same_product_mirrors(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("      - name: Seed stale Binance Futures cache from closed REST klines")
+        end = workflow.index("      - name: Record fixed collector base SHA", start)
+        block = workflow[start:end]
+        for host in ("fapi.binance.com", "fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com"):
+            self.assertIn(host, block)
+        self.assertIn('Binance Futures REST seed succeeded via', block)
+        self.assertIn('"symbol": "BTCUSDT"', block)
+        self.assertIn('"interval": "1m"', block)
+
 if __name__ == "__main__":
     unittest.main()
