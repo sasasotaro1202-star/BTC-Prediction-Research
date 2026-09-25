@@ -35,6 +35,7 @@ class FrozenArchiveReplayTests(unittest.TestCase):
     def test_selection_prediction_precedes_selection_containing_fit(self):
         class SpyModel:
             events = []
+            classes_ = np.asarray(["DOWN", "FLAT", "UP"])
             def fit(self, X, y):
                 self.classes_ = np.asarray(["DOWN", "FLAT", "UP"])
                 type(self).events.append(("fit", len(X)))
