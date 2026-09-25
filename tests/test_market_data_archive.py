@@ -141,10 +141,11 @@ def test_daily_archive_exposes_closed_taker_buy_volume_with_pit_timestamps():
 
     with patch.object(market_data, "urlopen", return_value=Response()):
         out = market_data.binance_archive_daily_taker_rows(5)
+    after_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     assert len(out) == 5
     assert all(row["taker_buy_base"] == 7.0 for row in out)
     assert all(row["open_time_ms"] + 60_000 <= now_ms for row in out)
     assert all(row["event_time_ms"] <= now_ms for row in out)
-    assert all(row["retrieved_at_ms"] <= now_ms for row in out)
+    assert all(now_ms <= row["retrieved_at_ms"] <= after_ms for row in out)
     assert all(out[i]["open_time_ms"] - out[i - 1]["open_time_ms"] == 60_000 for i in range(1, len(out)))
