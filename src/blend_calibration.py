@@ -35,6 +35,12 @@ MAX_WEIGHT = 0.45
 GRID = np.linspace(0.0, MAX_WEIGHT, 19)
 MIN_LOGLOSS_GAIN = 0.001
 MIN_BRIER_GAIN = 0.0005
+# A candidate blend must improve across most chronological holdout blocks,
+# not merely on one aggregate slice. This prevents a transient regime from
+# activating the structural overlay for all future predictions.
+BLOCK_SIZE = 25
+MIN_BLOCKS = 4
+MIN_IMPROVED_BLOCK_RATIO = 0.70
 
 
 def _norm(p):
@@ -106,6 +112,54 @@ def _rows(horizon: str):
     return rows
 
 
+
+def _block_stability(y, model_probs, structural_probs, weight, block_size=BLOCK_SIZE):
+    """Measure chronological holdout stability of a fixed blend weight."""
+    y_idx = [CLASSES.index(v) for v in y]
+    model = _norm(model_probs)
+    structural = _norm(structural_probs)
+    blended = _norm((1.0 - float(weight)) * model + float(weight) * structural)
+    blocks = []
+    for start in range(0, len(y), int(block_size)):
+        stop = min(start + int(block_size), len(y))
+        if stop - start < max(10, int(block_size) // 2):
+            continue
+        yi = y_idx[start:stop]
+        base_p = model[start:stop]
+        cand_p = blended[start:stop]
+        base_ll = float(log_loss(yi, base_p, labels=[0, 1, 2]))
+        cand_ll = float(log_loss(yi, cand_p, labels=[0, 1, 2]))
+        base_br = float(_brier(y[start:stop], base_p))
+        cand_br = float(_brier(y[start:stop], cand_p))
+        blocks.append({
+            "start": start,
+            "stop": stop,
+            "logloss_delta": cand_ll - base_ll,
+            "brier_delta": cand_br - base_br,
+        })
+    if not blocks:
+        return {
+            "blocks": 0,
+            "improved_logloss_ratio": 0.0,
+            "improved_brier_ratio": 0.0,
+            "stable": False,
+            "deltas": [],
+        }
+    ll_ratio = float(np.mean([x["logloss_delta"] < 0.0 for x in blocks]))
+    br_ratio = float(np.mean([x["brier_delta"] < 0.0 for x in blocks]))
+    stable = (
+        len(blocks) >= MIN_BLOCKS
+        and ll_ratio >= MIN_IMPROVED_BLOCK_RATIO
+        and br_ratio >= MIN_IMPROVED_BLOCK_RATIO
+    )
+    return {
+        "blocks": len(blocks),
+        "improved_logloss_ratio": ll_ratio,
+        "improved_brier_ratio": br_ratio,
+        "stable": stable,
+        "deltas": blocks,
+    }
+
 def calibrate(horizon: str):
     rows = _rows(horizon)
     with sqlite3.connect(DB) as con:
@@ -129,6 +183,8 @@ def calibrate(horizon: str):
     structural_h = _norm([r[2] for r in holdout])
     baseline_ll = float(log_loss([CLASSES.index(v) for v in y], model_h, labels=[0, 1, 2]))
     baseline_br = _brier(y, model_h)
+    structural_ll = float(log_loss([CLASSES.index(v) for v in y], structural_h, labels=[0, 1, 2]))
+    structural_br = _brier(y, structural_h)
 
     train_y = [r[3] for r in train]
     train_model = _norm([r[1] for r in train])
@@ -145,9 +201,11 @@ def calibrate(horizon: str):
     candidate = _norm((1.0 - best_w) * model_h + best_w * structural_h)
     cand_ll = float(log_loss([CLASSES.index(v) for v in y], candidate, labels=[0, 1, 2]))
     cand_br = _brier(y, candidate)
+    stability = _block_stability(y, model_h, structural_h, best_w)
     accepted = (
         cand_ll <= baseline_ll - MIN_LOGLOSS_GAIN
         and cand_br <= baseline_br - MIN_BRIER_GAIN
+        and stability["stable"]
     )
     final_w = best_w if accepted else FALLBACK_WEIGHT
     return {
@@ -162,7 +220,10 @@ def calibrate(horizon: str):
         "candidate_logloss": cand_ll,
         "baseline_brier": baseline_br,
         "candidate_brier": cand_br,
+        "structural_logloss": structural_ll,
+        "structural_brier": structural_br,
         "candidate_weight": float(best_w),
+        "stability": stability,
         "status": "accepted" if accepted else "rejected",
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
