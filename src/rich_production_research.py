@@ -87,6 +87,9 @@ RICH_FEATURES = (
     "ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","hour_sin","hour_cos",
     "dow_sin","dow_cos","funding","funding_delta","oi_change","oi_z",
     "ema_gap_5m","ema_gap_10m",
+    "rv60","volume_intensity_5m_60m","trade_intensity_5m_60m",
+    "flow_30m","flow_60m","flow_toxicity_30m","flow_toxicity_60m",
+    "amihud_15m","amihud_30m","range_intensity_10m",
 )
 
 # Exact current production feature order.
