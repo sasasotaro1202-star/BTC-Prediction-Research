@@ -27,3 +27,9 @@ def test_routing_is_probability_contract():
     routed, sizes, _ = route_block(cal_parts, cal, parts)
     assert routed.shape == (1, 3)
     assert np.isfinite(routed).all()
+
+
+def test_frozen_holdout_protocol_constants():
+    from src import conformal_expert_set_oos as m
+    assert m.FINAL_HOLDOUT_FRAC == 0.20
+    assert m.CAL_BLOCK == 600
