@@ -43,6 +43,13 @@ class TestMarketFallbacks(unittest.TestCase):
             self.assertEqual(len(rows[0]), 6)
             self.assertTrue(all(len(r) == 6 for r in rows))
 
+    def test_binance_futures_settlement_path_uses_same_product_helper(self):
+        source = Path(market_data.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            '_binance_futures("fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1m", "startTime": start',
+            source,
+        )
+
     def test_binance_futures_rest_failover_keeps_same_product(self):
         original = market_data._get
         seen = []
