@@ -61,6 +61,24 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('event_age>180000', block)
         self.assertIn('stale_or_insufficient_at_prediction_boundary', block)
 
+    def test_self_heal_allows_one_additional_collector_but_caps_at_two(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Self-heal stale Binance WS collector')
+        end = workflow.index('      - name: Load latest Binance depth cache', start)
+        block = workflow[start:end]
+        self.assertIn('if [ "${active:-0}" -ge 2 ]; then', block)
+        self.assertIn('self-heal dispatch capped to avoid a recovery storm', block)
+        self.assertNotIn('if [ "${active:-0}" -gt 0 ]; then', block)
+
+    def test_prediction_boundary_checks_depth_event_age(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Refresh latest Binance depth cache immediately before prediction')
+        end = workflow.index('      - name: Generate next BTC prediction', start)
+        block = workflow[start:end]
+        self.assertIn('binance_depth_event_age_ms=', block)
+        self.assertIn("event_age<0", block)
+        self.assertIn("event_age>180000", block)
+        self.assertIn("Binance depth cache stale_or_insufficient", block)
     def test_self_heal_health_check_failure_is_captured_under_set_e(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Self-heal stale Binance WS collector')
