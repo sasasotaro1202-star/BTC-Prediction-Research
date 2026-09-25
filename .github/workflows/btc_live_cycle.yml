@@ -780,6 +780,29 @@ jobs:
         run: python src/venue_drift.py
       - name: Diagnose FLAT disappearance by prediction pipeline stage
         run: python src/flat_diagnostic.py
+      - name: Report BTC performance changes automatically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/performance_change.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/historical_research/performance_change.json")
+          if not p.is_file():
+              raise SystemExit("performance change artifact missing")
+          obj = json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("schema_version") != 1:
+              raise SystemExit("performance change schema mismatch")
+          if not isinstance(obj.get("changed"), bool):
+              raise SystemExit("performance change flag invalid")
+          if not isinstance(obj.get("changes"), list):
+              raise SystemExit("performance change list invalid")
+          print(
+              "BTC performance-change monitor: VERIFIED "
+              f"changed={obj['changed']} changes={len(obj['changes'])}"
+          )
+          PY
       - name: Validate BTC prediction state
         shell: bash
         run: |
@@ -943,6 +966,8 @@ jobs:
             data/historical_research/research_health.json \
             data/historical_research/venue_drift.json \
             data/historical_research/flat_diagnostic.json \
+            data/historical_research/performance_snapshot.json \
+            data/historical_research/performance_change.json \
             data/experience/experience_summary.json; do
             if [ -f "$path" ]; then git add -- "$path"; fi
           done
@@ -964,6 +989,8 @@ jobs:
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
             if [ -f data/historical_research/flat_diagnostic.json ]; then cp data/historical_research/flat_diagnostic.json /tmp/btc_local_flat_diagnostic.json; fi
+            if [ -f data/historical_research/performance_snapshot.json ]; then cp data/historical_research/performance_snapshot.json /tmp/btc_local_performance_snapshot.json; fi
+            if [ -f data/historical_research/performance_change.json ]; then cp data/historical_research/performance_change.json /tmp/btc_local_performance_change.json; fi
             if [ -f data/experience/experience_summary.json ]; then cp data/experience/experience_summary.json /tmp/btc_local_experience_summary.json; fi
             if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
               git rebase --abort
@@ -999,6 +1026,8 @@ jobs:
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
+            if [ -f /tmp/btc_local_performance_snapshot.json ]; then cp /tmp/btc_local_performance_snapshot.json data/historical_research/performance_snapshot.json; fi
+            if [ -f /tmp/btc_local_performance_change.json ]; then cp /tmp/btc_local_performance_change.json data/historical_research/performance_change.json; fi
             if [ -f /tmp/btc_local_experience_summary.json ]; then
               mkdir -p data/experience
               cp /tmp/btc_local_experience_summary.json data/experience/experience_summary.json
