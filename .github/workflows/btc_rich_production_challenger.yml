@@ -1,0 +1,132 @@
+name: BTC Rich Production Challenger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/rich_production_research.py'
+      - 'src/historical_research.py'
+      - 'src/label_policy.py'
+      - 'models/*.joblib'
+      - '.github/workflows/btc_rich_production_challenger.yml'
+  schedule:
+    - cron: '43 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-rich-production-challenger
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            sleep $((15 * attempt))
+          done
+          exit 1
+
+      - name: Compile challenger
+        run: python -m compileall -q src tests
+
+      - name: Run challenger
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "=== rich challenger attempt ${attempt}/3 ==="
+            if python -m src.rich_production_research; then
+              exit 0
+            fi
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((30 * attempt))
+            fi
+          done
+          exit 1
+
+      - name: Validate challenger report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/historical_research/rich_production_challenger.json")
+          if not path.is_file():
+              raise SystemExit("rich challenger report missing")
+          obj = json.loads(path.read_text(encoding="utf-8"))
+          assert obj.get("schema_version") == 1
+          assert obj.get("research_only") is True
+          assert obj.get("production_changed") is False
+          assert set(obj.get("horizons", {})) == {"5m", "10m"}
+          for horizon, result in obj["horizons"].items():
+              assert result["status"] == "OK", horizon
+              assert result["frozen_holdout_n"] >= 2000, horizon
+              assert set(result["frozen_holdout"]) >= {
+                  "current_champion", "legacy_retrained", "rich_candidate",
+                  "rich_vs_champion", "stability_vs_champion",
+                  "bootstrap_ci_vs_champion"
+              }, horizon
+          print("rich challenger artifact validation: OK")
+          PY
+
+      - name: Commit research report only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/rich_production_challenger.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Record BTC rich production challenger results'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push attempt ${attempt} rejected; rebasing onto origin/main"
+            cp data/historical_research/rich_production_challenger.json /tmp/btc_rich_challenger.json
+            git fetch --prune origin main
+            git reset --hard origin/main
+            cp /tmp/btc_rich_challenger.json data/historical_research/rich_production_challenger.json
+            git add data/historical_research/rich_production_challenger.json
+            git diff --cached --quiet || git commit -m 'Merge BTC rich challenger result safely'
+            sleep $((5 * attempt))
+          done
+          exit 1
+
+      - name: Upload challenger artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-rich-production-challenger
+          path: |
+            data/historical_research/rich_production_challenger.json
+            models/5m.rich_candidate.json
+            models/10m.rich_candidate.json
+            models/5m.rich_candidate.joblib
+            models/10m.rich_candidate.joblib
+          if-no-files-found: ignore
+          retention-days: 7
