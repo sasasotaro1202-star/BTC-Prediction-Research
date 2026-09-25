@@ -228,12 +228,36 @@ def candidate_factories():
             ),
         ),
         (
+            "rf_balanced",
+            RandomForestClassifier(
+                n_estimators=500,
+                max_depth=10,
+                min_samples_leaf=10,
+                max_features="sqrt",
+                class_weight="balanced_subsample",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
             "extra_trees",
             ExtraTreesClassifier(
                 n_estimators=350,
                 max_depth=10,
                 min_samples_leaf=10,
                 max_features="sqrt",
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
+            "extra_balanced",
+            ExtraTreesClassifier(
+                n_estimators=500,
+                max_depth=10,
+                min_samples_leaf=10,
+                max_features="sqrt",
+                class_weight="balanced",
                 random_state=42,
                 n_jobs=-1,
             ),
