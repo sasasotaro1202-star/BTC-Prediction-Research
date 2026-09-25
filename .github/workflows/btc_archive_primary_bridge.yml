@@ -1,6 +1,12 @@
 name: BTC Archive-to-Primary Bridge OOS
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/archive_primary_bridge_oos.py'
+      - 'tests/test_archive_primary_bridge_oos.py'
+      - '.github/workflows/btc_archive_primary_bridge.yml'
   schedule:
     - cron: '43 */8 * * *'
   workflow_dispatch:
