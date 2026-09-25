@@ -22,10 +22,9 @@ def test_route_block_falls_back_safely():
 def test_routing_is_probability_contract():
     cal = [{"y": "DOWN"} for _ in range(30)] + [{"y": "UP"} for _ in range(30)]
     p = np.asarray([[0.45, 0.10, 0.45]], dtype=float)
-    parts = {"logreg": p, "extra_trees": p, "hgb": p, "soft_equal": p}
-    cal_parts = parts
-    routed, sizes, _ = route_block(cal_parts, cal, parts)
-    assert routed.shape == (1, 3)
+    parts = {name: np.repeat(p, len(cal), axis=0) for name in ("logreg", "extra_trees", "hgb", "soft_equal")}
+    routed, sizes, _ = route_block(parts, cal, parts)
+    assert routed.shape == (len(cal), 3)
     assert np.isfinite(routed).all()
 
 
