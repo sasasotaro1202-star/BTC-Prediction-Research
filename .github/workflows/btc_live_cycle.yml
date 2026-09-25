@@ -311,6 +311,24 @@ jobs:
           set -euo pipefail
           python src/reconcile_fallback_settlements.py
 
+      - name: Canonicalize prediction state before settlement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/merge_prediction_state.py --compact data/predictions.db
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python - <<'PY'
+          import sqlite3
+          from src.prediction_identity import canonical_compaction_snapshot
+
+          with sqlite3.connect("data/predictions.db") as con:
+              snapshot = canonical_compaction_snapshot(con)
+          if snapshot["settlement_conflicts"]:
+              raise SystemExit(
+                  "pre-settlement canonicalization left conflicting settlement state: "
+                  + "; ".join(snapshot["settlement_conflicts"][:10])
+              )
+          print("pre-settlement canonicalization: VERIFIED")
+
       - name: Settle due BTC predictions
         run: python src/settle.py
       # Model adoption must precede both calibration layers so a newly
