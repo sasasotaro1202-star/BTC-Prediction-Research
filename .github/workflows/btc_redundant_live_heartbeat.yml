@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
-      GH_TOKEN: \${{ github.token }}
-      REPO: \${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - name: Dispatch only when Live heartbeat is stale
         shell: bash

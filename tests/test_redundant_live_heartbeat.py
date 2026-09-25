@@ -25,3 +25,11 @@ def test_redundant_live_heartbeat_dispatch_has_explicit_fallback_failure():
     assert "gh workflow run btc_live_cycle.yml --ref main" in text
     assert 'echo "ERROR: Live recovery dispatch failed through REST and CLI."' in text
     assert text.count("exit 1") >= 4
+
+
+def test_redundant_live_heartbeat_uses_real_github_action_context():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "GH_TOKEN: ${{ github.token }}" in text
+    assert "REPO: ${{ github.repository }}" in text
+    assert r"\${{ github.token }}" not in text
+    assert r"\${{ github.repository }}" not in text
