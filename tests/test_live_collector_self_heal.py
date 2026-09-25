@@ -14,7 +14,9 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('--workflow btc_binance_ws_collector.yml', workflow)
         self.assertIn('select(.status == "queued" or .status == "in_progress")', workflow)
         self.assertIn('gh workflow run btc_binance_ws_collector.yml --repo "$GITHUB_REPOSITORY" --ref main', workflow)
-        self.assertIn('[ "$age_ms" -gt 180000 ]', workflow)
+        self.assertIn('cache_health_status=$?', workflow)
+        self.assertIn('if [ "$cache_health_status" -ne 0 ]; then', workflow)
+        self.assertIn('stale=true', workflow)
         self.assertIn('Live prediction remains fail-closed on stale data.', workflow)
 
     def test_self_heal_is_nonfatal_when_github_actions_api_is_unavailable(self):
@@ -42,7 +44,8 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         block = workflow[start:end]
         self.assertIn('contiguous_suffix=', block)
         self.assertIn('event_age_ms=', block)
-        self.assertIn('if [ "$cache_health_status" -ne 0 ]; then stale=true; fi', block)
+        self.assertIn('if [ "$cache_health_status" -ne 0 ]; then', block)
+        self.assertIn('stale=true', block)
         self.assertIn('if suffix < 40', block)
         self.assertIn('event_age > 180000', block)
 
