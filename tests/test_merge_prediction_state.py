@@ -216,6 +216,46 @@ class TestMergePredictionState(unittest.TestCase):
             self.assertEqual(expected_compacted_event_count(con), 2)
             con.close()
 
+    def test_settlement_conflict_evidence_survives_state_merge(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / 'target.db'
+            local = Path(td) / 'local.db'
+            make_db(target, [])
+            make_db(local, [])
+
+            con = sqlite3.connect(local)
+            con.execute(
+                '''CREATE TABLE prediction_settlement_conflicts (
+                    identity_sha256 TEXT PRIMARY KEY,
+                    detected_at_utc TEXT NOT NULL,
+                    identity_json TEXT NOT NULL,
+                    conflicts_json TEXT NOT NULL,
+                    resolution TEXT NOT NULL
+                )'''
+            )
+            con.execute(
+                '''INSERT INTO prediction_settlement_conflicts
+                   (identity_sha256, detected_at_utc, identity_json, conflicts_json, resolution)
+                   VALUES (?, ?, ?, ?, ?)''',
+                ('abc123', '2026-09-25T16:00:00+00:00', '{}', '{"actual_price_5m":["1","2"]}',
+                 'QUARANTINED_CONFLICTING_SETTLEMENT'),
+            )
+            con.commit()
+            con.close()
+
+            subprocess.run([sys.executable, str(SCRIPT), str(local), str(target)], check=True)
+
+            con = sqlite3.connect(target)
+            row = con.execute(
+                '''SELECT identity_sha256, resolution, conflicts_json
+                   FROM prediction_settlement_conflicts'''
+            ).fetchone()
+            con.close()
+            self.assertEqual(
+                row,
+                ('abc123', 'QUARANTINED_CONFLICTING_SETTLEMENT', '{"actual_price_5m":["1","2"]}')
+            )
+
     def test_model_registry_prefers_newer_state_and_does_not_roll_back(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / 'target.db'; local = Path(td) / 'local.db'
