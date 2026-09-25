@@ -174,11 +174,119 @@ jobs:
               echo 'No prior flow cache in dedicated branch; starting empty.'
             fi
           fi
-      - name: Capture rolling flow/liquidation window
+      - name: Capture rolling flow/liquidation window with resumable checkpoints
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p data
-          python src/binance_flow_ws.py --capture-seconds 1500 --checkpoint-seconds 30 --output data/binance_flow_5s.json
+
+          publish_flow_cache() {
+            test -s data/binance_flow_5s.json
+            if ! git fetch --no-tags --depth=1 origin binance-flow-cache; then
+              echo 'WARN: flow cache branch fetch failed; retaining local checkpoint.' >&2
+              return 1
+            fi
+            local base remote_file local_latest remote_latest
+            base="$(git rev-parse origin/binance-flow-cache)"
+            remote_file="/tmp/btc_remote_flow_cache.json"
+            remote_latest=0
+            if git show origin/binance-flow-cache:data/binance_flow_5s.json > "$remote_file" 2>/dev/null; then
+              remote_latest="$(python - "$remote_file" <<'PY'
+          import json,sys
+          from pathlib import Path
+          try:
+              obj=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+              rows=obj.get('rows',[])
+              print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          except Exception:
+              print(0)
+          PY
+              )"
+            fi
+            local_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_flow_5s.json').read_text(encoding='utf-8'))
+          rows=obj.get('rows',[])
+          print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          PY
+            )"
+            if [ "$local_latest" -le "$remote_latest" ]; then
+              echo "Flow checkpoint not newer than dedicated cache (local=$local_latest remote=$remote_latest)."
+              return 0
+            fi
+
+            local tmp_index tree commit
+            tmp_index="$(mktemp)"
+            GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
+            GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
+            tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)"
+            commit="$(printf '%s\n\n%s\n' 'Checkpoint Binance flow research cache' 'Resumable PIT-safe aggressive-flow/liquidation checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$tree" -p "$base")"
+            rm -f "$tmp_index"
+            for attempt in 1 2 3 4; do
+              if git push origin "$commit:refs/heads/binance-flow-cache"; then
+                echo "Published resumable flow checkpoint end_time_ms=$local_latest"
+                return 0
+              fi
+              git fetch --no-tags --depth=1 origin binance-flow-cache
+              base="$(git rev-parse origin/binance-flow-cache)"
+              GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
+              GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
+              tree="$(GIT_INDEX_FILE="$tmp_index" git write-tree)"
+              commit="$(printf '%s\n\n%s\n' 'Checkpoint Binance flow research cache' 'Resumable PIT-safe aggressive-flow/liquidation checkpoint' | GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' git commit-tree "$tree" -p "$base")"
+              sleep $((attempt * 2))
+            done
+            echo 'ERROR: flow checkpoint publish failed after retries' >&2
+            return 1
+          }
+
+          rm -f /tmp/btc_flow_collector.log /tmp/btc_flow_publisher.log
+          python src/binance_flow_ws.py --capture-seconds 1500 --checkpoint-seconds 30 --output data/binance_flow_5s.json > /tmp/btc_flow_collector.log 2>&1 &
+          collector_pid="$!"
+
+          publisher_loop() {
+            local last_published=0
+            while kill -0 "$collector_pid" 2>/dev/null; do
+              sleep 60
+              if [ -s data/binance_flow_5s.json ]; then
+                current_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_flow_5s.json').read_text(encoding='utf-8'))
+          rows=obj.get('rows',[])
+          print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          PY
+                )"
+                if [ "$current_latest" -ge $((last_published + 300000)) ]; then
+                  if publish_flow_cache; then
+                    last_published="$current_latest"
+                  else
+                    echo "WARN: resumable flow checkpoint publication failed; continuing capture." >&2
+                  fi
+                fi
+              fi
+            done
+          }
+
+          publisher_loop > /tmp/btc_flow_publisher.log 2>&1 &
+          publisher_pid="$!"
+
+          collector_status=0
+          wait "$collector_pid" || collector_status=$?
+
+          if kill -0 "$publisher_pid" 2>/dev/null; then
+            kill "$publisher_pid" || true
+            wait "$publisher_pid" || true
+          fi
+
+          cat /tmp/btc_flow_collector.log
+          cat /tmp/btc_flow_publisher.log
+
+          if [ "$collector_status" -ne 0 ]; then
+            echo "Binance flow collector failed closed with status $collector_status." >&2
+            exit "$collector_status"
+          fi
+
           test -s data/binance_flow_5s.json
       - name: Validate flow cache
         run: |
