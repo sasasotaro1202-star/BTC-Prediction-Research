@@ -100,23 +100,36 @@ def _experience_from_row(row, horizon: str):
     )
 
 
+def _field(row, key: str):
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        return None
+
+
 def _stats(rows):
     if not rows:
         return {"n": 0, "accuracy": None, "by_predicted": {}, "by_actual": {}}
     n = len(rows)
-    accuracy = sum(int(r[9]) for r in rows) / n
+    accuracy = sum(int(_field(r, "correct") or 0) for r in rows) / n
     by_pred = {}
     by_actual = {}
     for cls in CLASSES:
-        pred_rows = [r for r in rows if r[7] == cls]
-        actual_rows = [r for r in rows if r[8] == cls]
+        pred_rows = [r for r in rows if _field(r, "predicted_direction") == cls]
+        actual_rows = [r for r in rows if _field(r, "actual_direction") == cls]
         by_pred[cls] = {
             "n": len(pred_rows),
-            "accuracy": (sum(int(r[9]) for r in pred_rows) / len(pred_rows)) if pred_rows else None,
+            "accuracy": (
+                sum(int(_field(r, "correct") or 0) for r in pred_rows) / len(pred_rows)
+                if pred_rows else None
+            ),
         }
         by_actual[cls] = {
             "n": len(actual_rows),
-            "hit_rate": (sum(int(r[9]) for r in actual_rows) / len(actual_rows)) if actual_rows else None,
+            "hit_rate": (
+                sum(int(_field(r, "correct") or 0) for r in actual_rows) / len(actual_rows)
+                if actual_rows else None
+            ),
         }
     return {"n": n, "accuracy": float(accuracy), "by_predicted": by_pred, "by_actual": by_actual}
 
@@ -133,14 +146,14 @@ def _case_stats(rows, key_fn):
             continue
         out[key] = {
             "n": len(group),
-            "accuracy": sum(int(r[9]) for r in group) / len(group),
-            "avg_confidence": sum(float(r[10]) for r in group) / len(group),
+            "accuracy": sum(int(_field(r, "correct") or 0) for r in group) / len(group),
+            "avg_confidence": sum(float(_field(r, "confidence") or 0.0) for r in group) / len(group),
         }
     return out
 
 
 def _jst_hour(created: str) -> int:
-    return (_parse(created).astimezone(timezone(timedelta(hours=9)))).hour
+    return _parse(created).astimezone(timezone(timedelta(hours=9))).hour
 
 
 def build():
@@ -193,7 +206,7 @@ def build():
 
     for horizon in ("5m", "10m"):
         hrows = [r for r in ledger_rows if r["horizon"] == horizon]
-        serial = [tuple(r) for r in hrows]
+        serial = hrows
         recent = {}
         for window in WINDOWS:
             subset = serial[-window:] if len(serial) > window else serial
@@ -201,18 +214,18 @@ def build():
 
         weak = []
         cases = {
-            "regime": lambda r: r[6] or "UNKNOWN",
-            "predicted_direction": lambda r: r[7],
-            "hour_jst": lambda r: _jst_hour(r[2]),
+            "regime": lambda r: _field(r, "regime") or "UNKNOWN",
+            "predicted_direction": lambda r: _field(r, "predicted_direction"),
+            "hour_jst": lambda r: _jst_hour(_field(r, "created_at_utc")),
             "confidence_bucket": lambda r: (
-                "0.33-0.40" if r[10] < 0.40 else
-                "0.40-0.50" if r[10] < 0.50 else
-                "0.50-0.60" if r[10] < 0.60 else
-                "0.60-0.70" if r[10] < 0.70 else "0.70+"
+                "0.33-0.40" if float(_field(r, "confidence") or 0.0) < 0.40 else
+                "0.40-0.50" if float(_field(r, "confidence") or 0.0) < 0.50 else
+                "0.50-0.60" if float(_field(r, "confidence") or 0.0) < 0.60 else
+                "0.60-0.70" if float(_field(r, "confidence") or 0.0) < 0.70 else "0.70+"
             ),
-            "warning": lambda r: "NONE" if r[13] in ("[]", "null", "") else r[13],
-            "model_version": lambda r: r[4],
-            "production_mode": lambda r: r[5] or "UNKNOWN",
+            "warning": lambda r: "NONE" if _field(r, "warning_flags") in ("[]", "null", "") else _field(r, "warning_flags"),
+            "model_version": lambda r: _field(r, "model_version"),
+            "production_mode": lambda r: _field(r, "production_mode") or "UNKNOWN",
         }
         case_output = {}
         for name, fn in cases.items():
