@@ -185,10 +185,13 @@ class TestModelGuards(unittest.TestCase):
         ))
         self.assertFalse(prediction_precedes_target('bad', '2026-09-21T19:00:00+00:00'))
 
+    def test_rolling_challenger_contains_replay_and_balanced_tree_candidates(self):
+        from rolling_challenger_oos import factories
+        names = factories()
+        self.assertIn("rf_replay", names)
+        self.assertIn("rf_balanced", names)
+        self.assertIn("extra_trees_balanced", names)
+
 
 if __name__ == '__main__':
     unittest.main()
-
-    def test_rolling_challenger_contains_replay_rf(self):
-        from rolling_challenger_oos import factories
-        self.assertIn("rf_replay", factories())
