@@ -483,8 +483,11 @@ jobs:
             fi
 
             for attempt in 1 2 3 4; do
-              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
-              if [ -z "$cache_base" ]; then
+              set +e
+              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null)"
+              cache_base_status=$?
+              set -e
+              if [ "$cache_base_status" -ne 0 ] || [ -z "$cache_base" ]; then
                 echo 'Dedicated cache branch base is unavailable.' >&2
                 return 1
               fi
@@ -571,8 +574,11 @@ jobs:
             fi
 
             for attempt in 1 2 3 4; do
-              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null || true)"
-              if [ -z "$cache_base" ]; then return 1; fi
+              set +e
+              cache_base="$(git rev-parse origin/binance-ws-cache 2>/dev/null)"
+              cache_base_status=$?
+              set -e
+              if [ "$cache_base_status" -ne 0 ] || [ -z "$cache_base" ]; then return 1; fi
               tmp_index="$(mktemp)"
               trap 'rm -f "$tmp_index"' RETURN
               GIT_INDEX_FILE="$tmp_index" git read-tree "$cache_base"
@@ -668,8 +674,18 @@ jobs:
            fi
 
            if kill -0 "$publisher_pid" 2>/dev/null; then
-             kill "$publisher_pid" || true
-             wait "$publisher_pid" || true
+             set +e
+             kill "$publisher_pid"
+             publisher_kill_status=$?
+             wait "$publisher_pid"
+             publisher_wait_status=$?
+             set -e
+             if [ "$publisher_kill_status" -ne 0 ]; then
+               echo "WARN: publisher process could not be signalled (status=${publisher_kill_status}); it may have already exited." >&2
+             fi
+             if [ "$publisher_wait_status" -ne 0 ] && [ "$publisher_wait_status" -ne 143 ]; then
+               echo "WARN: publisher process exited with status ${publisher_wait_status} after shutdown." >&2
+             fi
            fi
 
            cat /tmp/btc_ws_collector.log
