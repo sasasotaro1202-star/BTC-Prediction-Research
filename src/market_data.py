@@ -442,11 +442,18 @@ def resilient_1m_series(limit: int = 120):
     # the production price/target venue independent of REST reachability and
     # avoids spending the live-cycle budget on a known-good market-data source.
     ws_cache = load_binance_ws_cache(BINANCE_WS_CACHE, max(120, limit))
+    ws_transport = "websocket"
+    try:
+        cache_obj = json.loads(BINANCE_WS_CACHE.read_text(encoding="utf-8"))
+        if cache_obj.get("transport") == "binance_futures_rest":
+            ws_transport = "rest"
+    except (OSError, ValueError, TypeError):
+        pass
     ws_suffix = _fresh_ws_suffix(ws_cache, 40)
     fut = _ws_series_rows(ws_suffix[-limit:]) if len(ws_suffix) >= 40 else []
     if fut:
         status["binance_futures"] = "ok"
-        status["binance_futures_transport"] = "websocket"
+        status["binance_futures_transport"] = ws_transport
         status["binance_futures_ws_event_time_ms"] = int(ws_suffix[-1]["event_time_ms"])
         status["binance_futures_ws_retrieved_at_ms"] = int(ws_suffix[-1]["retrieved_at_ms"])
     else:
