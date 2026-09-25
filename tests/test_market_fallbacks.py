@@ -103,7 +103,15 @@ class TestMarketFallbacks(unittest.TestCase):
                     json.dumps(meta), encoding="utf-8"
                 )
                 (predict.MODEL_DIR / "coinbase_5m.joblib").write_bytes(b"placeholder")
-                self.assertTrue(predict._fallback_model_ready("coinbase", "5m"))
+                class FakeModel:
+                    classes_ = ["DOWN", "FLAT", "UP"]
+
+                    def predict_proba(self, X):
+                        return [[0.4, 0.2, 0.4] for _ in X]
+
+                from unittest.mock import patch
+                with patch.object(predict.joblib, "load", return_value=FakeModel()):
+                    self.assertTrue(predict._fallback_model_ready("coinbase", "5m"))
                 self.assertFalse(predict._fallback_model_ready("coinbase", "10m"))
         finally:
             predict.MODEL_DIR = original_dir
