@@ -418,22 +418,7 @@ jobs:
           # A long-lived pre-hardening collector may still be running after a newer
           # collector starts; rejecting a gappy local window prevents it from
           # overwriting a newly REST-healed remote cache.
-          contiguous_tail="$(python - "$local_file" <<'PY'
-          import json,sys
-          from pathlib import Path
-          rows=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')).get('rows',[])
-          ordered=sorted(
-              (r for r in rows if isinstance(r,dict) and 'open_time_ms' in r),
-              key=lambda r:int(r['open_time_ms']),
-          )
-          suffix=1 if ordered else 0
-          for i in range(len(ordered)-1,0,-1):
-              if int(ordered[i]['open_time_ms'])-int(ordered[i-1]['open_time_ms']) != 60000:
-                  break
-              suffix += 1
-          print(suffix)
-          PY
-          )"
+          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); suffix=1 if ordered else 0;\nfor i in range(len(ordered)-1, 0, -1):\n    if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000: break\n    suffix += 1\nprint(suffix)' "$local_file")
           if [ "$contiguous_tail" -lt 40 ]; then
             echo "WARN: refusing to publish gappy Binance WS checkpoint; contiguous_tail=$contiguous_tail." >&2
             return 0
@@ -677,21 +662,7 @@ jobs:
             exit 1
           fi
 
-          final_contiguous="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=sorted(
-              json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8'))['rows'],
-              key=lambda row:int(row['open_time_ms']),
-          )
-          suffix=1
-          for i in range(len(rows)-1,0,-1):
-              if int(rows[i]['open_time_ms'])-int(rows[i-1]['open_time_ms']) != 60000:
-                  break
-              suffix += 1
-          print(suffix)
-          PY
-          )"
+          final_contiguous="$(python -c 'import json; from pathlib import Path; rows=sorted(json.loads(Path("data/binance_ws_1m.json").read_text(encoding="utf-8"))["rows"], key=lambda row:int(row["open_time_ms"])); suffix=1 if rows else 0;\nfor i in range(len(rows)-1, 0, -1):\n    if int(rows[i]["open_time_ms"])-int(rows[i-1]["open_time_ms"]) != 60000: break\n    suffix += 1\nprint(suffix)' )"
           if [ "$final_contiguous" -lt 40 ]; then
             echo "Final Binance WS cache has only $final_contiguous contiguous closed bars; failing closed." >&2
             exit 1
