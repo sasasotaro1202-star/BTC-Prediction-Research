@@ -68,7 +68,7 @@ jobs:
             age=999999999
           else
             epoch="$(date -d "$updated" +%s)"
-            age=\$((now-epoch))
+            age=$((now-epoch))
           fi
 
           echo "main_sha=$main_sha active_live=$active latest_live_head=${head:-none} age=${age}s"
