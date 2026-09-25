@@ -438,5 +438,18 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('ordered = [row for _, row in sorted(valid_rows, key=lambda item: item[0])]', block)
         self.assertIn('return 0, 0, None', block)
 
+    def test_collector_blocks_old_generation_after_rest_repair(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        seed_start = workflow.index("      - name: Seed stale Binance Futures cache from closed REST klines")
+        seed_end = workflow.index("      - name: Record fixed collector base SHA", seed_start)
+        seed_block = workflow[seed_start:seed_end]
+        self.assertIn('"recovery_epoch_ms": retrieved_ms', seed_block)
+        start = workflow.index("          publish_cache() {")
+        end = workflow.index("          publish_depth_cache() {", start)
+        block = workflow[start:end]
+        self.assertIn('recovery_epoch_ms', block)
+        self.assertIn('remote_epoch" -gt "$local_epoch', block)
+        self.assertIn('preserving repaired remote cache', block)
+
 if __name__ == "__main__":
     unittest.main()
