@@ -18,3 +18,19 @@ def test_rf_configuration_is_fixed():
     assert model.max_depth == 10
     assert model.min_samples_leaf == 10
     assert model.random_state == 42
+
+
+def test_workflow_accepts_deferred_data_insufficiency_without_failing():
+    from pathlib import Path
+
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "btc_rolling_retrain_10m_oos.yml"
+    )
+    text = workflow.read_text(encoding="utf-8")
+    assert "status in {'OK', 'DEFERRED'}" in text
+    assert "status == 'DEFERRED'" in text
+    assert "v.get('reason')" in text
+    assert "v.get('final_holdout',{}).get('protected') is True" in text
