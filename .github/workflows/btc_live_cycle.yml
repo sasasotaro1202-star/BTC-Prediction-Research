@@ -337,6 +337,30 @@ jobs:
 
       - name: Settle due BTC predictions
         run: python src/settle.py
+      - name: Build post-settlement BTC experience ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="\${GITHUB_WORKSPACE}/src:\${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/experience/experience_summary.json")
+          if not p.is_file():
+              raise SystemExit("experience summary was not generated")
+          obj = json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("schema_version") != 1:
+              raise SystemExit("experience summary schema mismatch")
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("experience ledger must remain research-only")
+          if int(obj.get("parse_errors", 0)) != 0:
+              raise SystemExit("experience ledger parse errors must be zero")
+          total = obj.get("total_experiences")
+          if not isinstance(total, int) or total < 0:
+              raise SystemExit("experience ledger count invalid")
+          print(f"BTC experience ledger: VERIFIED total_experiences={total}")
+          PY
+
       # Model adoption must precede both calibration layers so a newly
       # adopted generation is never left running with stale calibration.
       - name: Run BTC model comparison and adoption gate
