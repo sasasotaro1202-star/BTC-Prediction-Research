@@ -398,5 +398,15 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('fapi.binance.com/fapi/v1/klines?', block)
         self.assertIn('curl_exit_', block)
 
+    def test_publisher_loop_avoids_heredoc_command_substitutions(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("          publisher_loop() {")
+        end = workflow.index("          publisher_loop > /tmp/btc_ws_publisher.log", start)
+        block = workflow[start:end]
+        self.assertNotIn("<<'PY'", block)
+        self.assertIn('last_depth_published="$(python -c', block)
+        self.assertIn('current_latest="$(python -c', block)
+        self.assertIn('current_depth="$(python -c', block)
+
 if __name__ == "__main__":
     unittest.main()
