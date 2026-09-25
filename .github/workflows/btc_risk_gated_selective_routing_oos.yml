@@ -1,0 +1,64 @@
+name: BTC Risk-Gated Selective Routing OOS
+
+on:
+  pull_request:
+    paths:
+      - 'src/risk_gated_selective_routing_oos.py'
+      - 'tests/test_risk_gated_selective_routing_oos.py'
+      - 'data/historical_research/oos_5m_*.csv'
+      - 'data/historical_research/oos_10m_*.csv'
+      - '.github/workflows/btc_risk_gated_selective_routing_oos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-risk-gated-selective-routing-\${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and unit test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m pytest -q tests/test_risk_gated_selective_routing_oos.py
+      - name: Run chronological OOS
+        run: |
+          set -euo pipefail
+          python src/risk_gated_selective_routing_oos.py
+          test -s data/historical_research/risk_gated_selective_routing_oos.json
+      - name: Validate research evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('data/historical_research/risk_gated_selective_routing_oos.json')
+          obj = json.loads(p.read_text(encoding='utf-8'))
+          assert obj.get('research_only') is True
+          assert obj.get('production_changed') is False
+          assert all(v.get('status') == 'OK' for v in obj.get('horizons', {}).values())
+          assert all(v.get('final_holdout_protected') is True for v in obj.get('horizons', {}).values())
+          print('validated risk-gated selective routing evidence')
+          PY
+      - name: Upload evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-risk-gated-selective-routing
+          path: data/historical_research/risk_gated_selective_routing_oos.json
+          if-no-files-found: error
+          retention-days: 7
