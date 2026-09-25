@@ -211,6 +211,28 @@ class TestMarketFallbacks(unittest.TestCase):
         self.assertEqual(result["ok"], {"value": 1})
         self.assertIsInstance(result["bad"], RuntimeError)
 
+    def test_fresh_closed_candle_suffix_rejects_stale_rest_event(self):
+        now = 1_800_000_000_000
+        original = market_data.time.time
+        try:
+            market_data.time.time = lambda: now / 1000
+            open_ms = now - 46_100_000
+            rows = [[open_ms - i * 60_000, 100, 101, 99, 100, 10] for i in range(39, -1, -1)]
+            self.assertEqual(market_data._fresh_closed_candle_suffix(rows, 40), [])
+        finally:
+            market_data.time.time = original
+
+    def test_fresh_closed_candle_suffix_accepts_recent_closed_rest_event(self):
+        now = 1_800_000_000_000
+        original = market_data.time.time
+        try:
+            market_data.time.time = lambda: now / 1000
+            open_ms = now - 120_000
+            rows = [[open_ms - i * 60_000, 100, 101, 99, 100, 10] for i in range(39, -1, -1)]
+            self.assertEqual(len(market_data._fresh_closed_candle_suffix(rows, 40)), 40)
+        finally:
+            market_data.time.time = original
+
     def test_error_label_exposes_http_status_without_response_body(self):
         err = HTTPError("https://fapi.binance.com/fapi/v1/klines", 403, "Forbidden", {}, None)
         self.assertEqual(market_data._error_label(err), "HTTPError:403")
