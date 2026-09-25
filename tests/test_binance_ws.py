@@ -346,7 +346,7 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn("if suffix < 40:", workflow)
         self.assertIn("Continuing to WebSocket capture.", workflow)
         self.assertIn("local last_published=0", workflow)
-        self.assertIn("semantic no-op publish", workflow)
+        self.assertIn('python scripts/merge_binance_ws_cache.py "$local_file" "$remote_file"', workflow)
 
     def test_collector_publisher_loop_has_single_function_definition(self):
         workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
@@ -409,10 +409,11 @@ class TestBinanceWebSocket(unittest.TestCase):
         start = workflow.index("          publish_cache() {")
         end = workflow.index("          publish_depth_cache() {", start)
         block = workflow[start:end]
-        self.assertIn('contiguous_tail="$(python -c', block)
-        self.assertIn('if [ "$contiguous_tail" -lt 40 ]; then', block)
-        self.assertIn('refusing to publish gappy Binance WS checkpoint', block)
-        self.assertIn('return 0', block)
+        self.assertIn('python scripts/merge_binance_ws_cache.py "$local_file" "$remote_file"', block)
+        self.assertIn('merge_status=$?', block)
+        self.assertIn('if [ "$merge_status" -eq 11 ]; then', block)
+        self.assertIn('if [ "$merge_status" -eq 12 ]; then', block)
+        self.assertNotIn('<<\'PY\'', block)
 
 
     def test_collector_rest_seed_repairs_internal_cache_gaps(self):
@@ -466,9 +467,9 @@ class TestBinanceWebSocket(unittest.TestCase):
         start = workflow.index("          publish_cache() {")
         end = workflow.index("          publish_depth_cache() {", start)
         block = workflow[start:end]
-        self.assertIn('contiguous_tail="$(python -c', block)
-        self.assertNotIn('contiguous_tail="$(python - "$local_file" <<\'PY\'', block)
-        self.assertIn('gappy Binance WS checkpoint', block)
+        self.assertIn('python scripts/merge_binance_ws_cache.py "$local_file" "$remote_file"', block)
+        self.assertNotIn("<<'PY'", block)
+        self.assertIn('merge_status=$?', block)
 
     def test_collector_rest_seed_empty_cache_returns_full_health_tuple(self):
         workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
