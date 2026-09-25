@@ -401,7 +401,7 @@ jobs:
           # delayed/stuck collector while preserving Binance Futures provenance.
           if [ "$cache_loaded" != true ]; then
             rest_seed() {
-              timeout 30s python - "$tmp_cache" <<'PY'
+              PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" timeout 30s python - "$tmp_cache" <<'PY'
           import json
           import sys
           import time
