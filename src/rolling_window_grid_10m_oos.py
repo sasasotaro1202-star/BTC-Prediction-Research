@@ -152,6 +152,7 @@ def _evaluate_blocks(blocks):
         "baseline":_metrics(ys,np.asarray(bp)),
         "recent":_metrics(ys,np.asarray(rp)),
         "candidate":_metrics(ys,np.asarray(cp)),
+        "blocks":len(blocks),
         "delta":{
             k:float(_metrics(ys,np.asarray(cp))[k]-_metrics(ys,np.asarray(bp))[k])
             for k in ("accuracy","logloss","brier","ece")
