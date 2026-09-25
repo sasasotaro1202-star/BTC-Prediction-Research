@@ -299,6 +299,11 @@ def candidate_factories():
     ]
 
 
+def validation_selection_key(result: dict):
+    """Order development candidates by proper scoring first, then accuracy."""
+    return (float(result["logloss"]), float(result["brier"]), -float(result["accuracy"]))
+
+
 def train_one(X, y, purge_gap=0):
     """Nested chronological development selection with a frozen descriptive holdout.
 
@@ -350,7 +355,7 @@ def train_one(X, y, purge_gap=0):
             }
         )
 
-    validation_results.sort(key=lambda r: (-r["accuracy"], r["logloss"], r["brier"]))
+    validation_results.sort(key=validation_selection_key)
     selected_name = validation_results[0]["model"]
     factories = {name: model for name, model in candidates}
     selected_for_gate = factories[selected_name]
