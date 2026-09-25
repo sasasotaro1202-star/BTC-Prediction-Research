@@ -16,16 +16,16 @@ on:
     paths:
       - '.github/workflows/btc_binance_ws_collector.yml'
       - 'src/binance_ws.py'
-      - 'tests/test_binance_ws.py'
       - 'requirements.txt'
   workflow_dispatch:
 
 concurrency:
   # Scheduled collectors deliberately get independent concurrency keys so two
   # staggered windows can overlap and cover transient schedule jitter. Manual /
-  # push control runs still replace one another to avoid stale-code execution.
-  group: btc-binance-ws-cache-${{ github.event_name == 'schedule' && github.run_id || 'control' }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  # Every collector run may overlap safely because checkpoints use direct-ref
+  # publication plus remote merge. Never cancel an already-warm capture window.
+  group: btc-binance-ws-cache-${{ github.event_name == 'schedule' && github.run_id || github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
