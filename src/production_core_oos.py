@@ -149,6 +149,8 @@ def _compare(candidate: dict[str, dict], champion_name: str = "frozen_production
     champion = candidate[champion_name]
     out = {}
     for name, item in candidate.items():
+        if "overall" not in item or "block_metrics" not in item:
+            continue
         base = champion["overall"]
         cur = item["overall"]
         out[name] = {
@@ -191,7 +193,9 @@ def evaluate(horizon: str) -> dict:
     split = min(TRAIN_ROWS, max(3_000, len(y) - MIN_FUTURE_ROWS))
     if len(y) - split < MIN_FUTURE_ROWS:
         split = len(y) - MIN_FUTURE_ROWS
-    train_X, train_y = X[:split], np.asarray(y[:split])
+    steps = int(horizon[:-1])
+    train_end = max(1, split - steps)
+    train_X, train_y = X[:train_end], np.asarray(y[:train_end])
     test_X, test_y = X[split:], y[split:]
     test_ts = timestamps[split:]
 
@@ -212,10 +216,19 @@ def evaluate(horizon: str) -> dict:
         "retrained_soft_ensemble": soft_p,
     }
     result = {}
+    final_holdout_n = max(1000, int(round(len(test_y) * 0.20)))
+    final_holdout_start = max(0, len(test_y) - final_holdout_n)
+    development_y = test_y[:final_holdout_start]
+    holdout_y = test_y[final_holdout_start:]
+    holdout_ts = test_ts[final_holdout_start:]
     for name, p in models.items():
         blocks = _cohort_metrics(test_y, p, test_ts)
+        development_metrics = _metrics(development_y, p[:final_holdout_start])
+        holdout_metrics = _metrics(holdout_y, p[final_holdout_start:])
         result[name] = {
             "overall": _metrics(test_y, p),
+            "development": development_metrics,
+            "final_holdout": holdout_metrics,
             "block_metrics": {
                 "accuracy": [float(b["accuracy"]) for b in blocks],
                 "logloss": [float(b["logloss"]) for b in blocks],
@@ -224,6 +237,8 @@ def evaluate(horizon: str) -> dict:
             },
             "blocks": blocks,
             "stability": _stability(blocks),
+            "final_holdout_start": holdout_ts[0].isoformat() if holdout_ts else None,
+            "final_holdout_end": holdout_ts[-1].isoformat() if holdout_ts else None,
         }
 
     # Diagnostic high-risk bucket: use only model disagreement between the
@@ -252,7 +267,7 @@ def evaluate(horizon: str) -> dict:
             c["logloss_delta"] <= -0.03 * max(abs(result["frozen_production"]["overall"]["logloss"]), EPS)
             and c["brier_delta"] <= -0.01 * max(abs(result["frozen_production"]["overall"]["brier"]), EPS)
             and c["non_worse_accuracy_ratio"] >= 0.70
-            and result[name]["overall"]["accuracy"] >= result["frozen_production"]["overall"]["accuracy"] - 0.005
+            and result[name]["development"]["accuracy"] >= result["frozen_production"]["development"]["accuracy"] - 0.005
         ):
             eligible = True
 
@@ -267,14 +282,19 @@ def evaluate(horizon: str) -> dict:
         "horizon": horizon,
         "production_generation": meta.get("model_version"),
         "trained_at_utc": meta.get("trained_at_utc"),
-        "train_n": int(split),
+        "train_n": int(train_end),
+        "train_purge_bars": int(steps),
         "future_test_n": int(len(test_y)),
+        "final_holdout_protected": True,
+        "final_holdout_n": int(final_holdout_n),
         "future_test_start": test_ts[0].isoformat(),
         "future_test_end": test_ts[-1].isoformat(),
         "features": list(FEATURES),
         "models": result,
         "comparison_to_frozen_production": comparison,
         "research_gate_satisfied": bool(eligible),
+        "holdout_used_for_selection": False,
+        "holdout_used_for_gate": False,
     }
 
 
