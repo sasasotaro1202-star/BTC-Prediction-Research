@@ -22,6 +22,8 @@ SETTLEMENT_COLUMNS = (
     "actual_direction_10m",
     "correct_10m",
     "settled_10m_at_utc",
+    "settlement_source_5m",
+    "settlement_source_10m",
 )
 
 # Settlement timestamps describe when a known outcome was recorded, not the
