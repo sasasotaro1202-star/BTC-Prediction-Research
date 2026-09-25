@@ -15,6 +15,7 @@ import html
 import io
 import json
 import re
+import sys
 import urllib.request
 import zipfile
 import time
@@ -22,6 +23,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE = "https://data.gdeltproject.org/gdeltv2"
+
+# GDELT GKG can contain very large tab-delimited fields (for example XML-ish
+# metadata). The stdlib CSV parser defaults to 128 KiB, which is too small.
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(16 * 1024 * 1024)
 KEYWORDS = (
     "bitcoin", "btc", "crypto", "cryptocurrency", "ethereum", "eth",
     "binance", "coinbase", "digital asset", "spot etf", "bitcoin etf",
