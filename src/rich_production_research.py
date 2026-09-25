@@ -15,8 +15,14 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 import joblib
 import numpy as np
@@ -51,7 +57,6 @@ try:
 except ModuleNotFoundError:
     from src.label_policy import direction_from_return, NEUTRAL_BPS
 
-ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 OUT_DIR = ROOT / "data" / "historical_research"
 OUT = OUT_DIR / "rich_production_challenger.json"
