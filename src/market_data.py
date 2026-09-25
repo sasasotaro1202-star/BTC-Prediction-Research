@@ -343,7 +343,10 @@ def _fresh_closed_candle_suffix(rows, minimum: int = 40, max_age_ms: int = BINAN
         return []
     latest_event_ms = latest_open_ms + 60_000 - 1
     age = now_ms - latest_event_ms
-    if age < -60_000 or age > int(max_age_ms):
+    # A candle's close boundary is an event timestamp. For PIT integrity
+    # it must never be later than the acquisition clock; do not allow future
+    # events merely because they are within a clock-skew tolerance.
+    if age < 0 or age > int(max_age_ms):
         return []
     return suffix
 
