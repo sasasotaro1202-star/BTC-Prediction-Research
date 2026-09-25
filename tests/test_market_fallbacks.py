@@ -153,6 +153,28 @@ class TestMarketFallbacks(unittest.TestCase):
             runner._ORIGINAL_REQ_JSON = original_request
             runner._archive_fallback = original_fallback
 
+    def test_ws_freshness_rejects_old_event_with_fresh_retrieval(self):
+        now = 1_800_000_000_000
+        original = market_data.time.time
+        try:
+            market_data.time.time = lambda: now / 1000
+            rows = []
+            for i in range(40):
+                event = now - (59 - i) * 60_000
+                rows.append({
+                    "open_time_ms": event,
+                    "event_time_ms": event,
+                    "retrieved_at_ms": now,
+                })
+            self.assertEqual(len(market_data._fresh_ws_suffix(rows, minimum=40)), 40)
+
+            stale = [dict(row) for row in rows]
+            stale[-1]["event_time_ms"] = now - 181_000
+            stale[-1]["retrieved_at_ms"] = now
+            self.assertEqual(market_data._fresh_ws_suffix(stale, minimum=40), [])
+        finally:
+            market_data.time.time = original
+
     def test_parallel_result_calls_preserve_success_and_failure(self):
         calls = {
             "ok": lambda: {"value": 1},
