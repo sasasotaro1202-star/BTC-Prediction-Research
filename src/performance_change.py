@@ -9,9 +9,6 @@ FLAT = ROOT / "data" / "historical_research" / "flat_diagnostic.json"
 SNAPSHOT = ROOT / "data" / "historical_research" / "performance_snapshot.json"
 CHANGE = ROOT / "data" / "historical_research" / "performance_change.json"
 HORIZONS = ("5m", "10m")
-METRICS = ("accuracy", "logloss", "brier", "ece")
-
-
 def _load(path: Path) -> dict:
     if not path.is_file():
         raise SystemExit(f"required performance artifact missing: {path}")
@@ -24,9 +21,9 @@ def _load(path: Path) -> dict:
     return obj
 
 
-def _current_scores() -> dict:
-    experience = _load(EXPERIENCE)
-    flat = _load(FLAT)
+def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) -> dict:
+    experience = _load(experience_path)
+    flat = _load(flat_path)
     if experience.get("schema_version") != 1:
         raise SystemExit("experience summary schema mismatch")
     if flat.get("ok") is not True:
@@ -71,13 +68,7 @@ def compare_and_record(
     experience_path: Path = EXPERIENCE,
     flat_path: Path = FLAT,
 ) -> dict:
-    global EXPERIENCE, FLAT
-    old_experience, old_flat = EXPERIENCE, FLAT
-    try:
-        EXPERIENCE, FLAT = experience_path, flat_path
-        current = _current_scores()
-    finally:
-        EXPERIENCE, FLAT = old_experience, old_flat
+    current = _current_scores(experience_path, flat_path)
 
     previous = {}
     if snapshot_path.is_file():
