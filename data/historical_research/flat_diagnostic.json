@@ -1,51 +1,193 @@
 {
+  "argmax_transitions": {
+    "10m": {
+      "model_raw_to_calibrated": {
+        "DOWN": {
+          "DOWN": 121,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 65
+        }
+      },
+      "model_raw_to_final": {
+        "DOWN": {
+          "DOWN": 157,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 103
+        }
+      },
+      "model_raw_to_fused_raw": {
+        "DOWN": {
+          "DOWN": 157,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 103
+        }
+      },
+      "model_raw_to_structural": {
+        "DOWN": {
+          "DOWN": 79,
+          "FLAT": 0,
+          "UP": 78
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 43,
+          "FLAT": 0,
+          "UP": 60
+        }
+      }
+    },
+    "5m": {
+      "model_raw_to_calibrated": {
+        "DOWN": {
+          "DOWN": 118,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 8,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 63
+        }
+      },
+      "model_raw_to_final": {
+        "DOWN": {
+          "DOWN": 154,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 8,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 101
+        }
+      },
+      "model_raw_to_fused_raw": {
+        "DOWN": {
+          "DOWN": 154,
+          "FLAT": 0,
+          "UP": 0
+        },
+        "FLAT": {
+          "DOWN": 0,
+          "FLAT": 8,
+          "UP": 0
+        },
+        "UP": {
+          "DOWN": 0,
+          "FLAT": 0,
+          "UP": 101
+        }
+      },
+      "model_raw_to_structural": {
+        "DOWN": {
+          "DOWN": 79,
+          "FLAT": 0,
+          "UP": 75
+        },
+        "FLAT": {
+          "DOWN": 1,
+          "FLAT": 0,
+          "UP": 7
+        },
+        "UP": {
+          "DOWN": 43,
+          "FLAT": 0,
+          "UP": 58
+        }
+      }
+    }
+  },
   "counts": {
     "10m": {
       "calibrated": {
-        "DOWN": 125,
+        "DOWN": 126,
         "UP": 65
       },
       "final": {
-        "DOWN": 179,
+        "DOWN": 180,
         "UP": 122
       },
       "fused_raw": {
-        "DOWN": 161,
+        "DOWN": 162,
         "UP": 103
       },
       "model_raw": {
-        "DOWN": 161,
+        "DOWN": 162,
         "UP": 103
       },
       "structural": {
         "DOWN": 124,
-        "UP": 140
+        "UP": 141
       }
     },
     "5m": {
       "calibrated": {
-        "DOWN": 119,
+        "DOWN": 120,
         "FLAT": 8,
         "UP": 63
       },
       "final": {
-        "DOWN": 173,
+        "DOWN": 174,
         "FLAT": 8,
         "UP": 120
       },
       "fused_raw": {
-        "DOWN": 155,
+        "DOWN": 156,
         "FLAT": 8,
         "UP": 101
       },
       "model_raw": {
-        "DOWN": 155,
+        "DOWN": 156,
         "FLAT": 8,
         "UP": 101
       },
       "structural": {
         "DOWN": 124,
-        "UP": 140
+        "UP": 141
       }
     }
   },
@@ -53,17 +195,93 @@
   "parse_errors": 0,
   "policy": "diagnostic_only_no_model_input_no_promotion_effect",
   "purpose": "locate_the_pipeline_stage_where_FLAT_stops_being_argmax",
-  "stage_observations": {
-    "10m_calibrated": 190,
-    "10m_final": 301,
-    "10m_fused_raw": 264,
-    "10m_model_raw": 264,
-    "10m_structural": 264,
-    "5m_calibrated": 190,
-    "5m_final": 301,
-    "5m_fused_raw": 264,
-    "5m_model_raw": 264,
-    "5m_structural": 264
+  "settled_metrics": {
+    "10m": {
+      "calibrated": {
+        "accuracy": 0.5,
+        "brier": 0.6443641977808702,
+        "ece": 0.09136848380721015,
+        "logloss": 1.075024069863321,
+        "n": 186
+      },
+      "final": {
+        "accuracy": 0.4478114478114478,
+        "brier": 0.7316863809760467,
+        "ece": 0.1757522692741994,
+        "logloss": 1.2262754510425495,
+        "n": 297
+      },
+      "fused_raw": {
+        "accuracy": 0.49230769230769234,
+        "brier": 0.6887005574802556,
+        "ece": 0.1526977556945657,
+        "logloss": 1.16436291299212,
+        "n": 260
+      },
+      "model_raw": {
+        "accuracy": 0.49230769230769234,
+        "brier": 0.6887005574802556,
+        "ece": 0.1526977556945657,
+        "logloss": 1.16436291299212,
+        "n": 260
+      },
+      "structural": {
+        "accuracy": 0.4153846153846154,
+        "brier": 0.8843378175322119,
+        "ece": 0.3642817769946959,
+        "logloss": 1.5191504093298465,
+        "n": 260
+      }
+    },
+    "5m": {
+      "calibrated": {
+        "accuracy": 0.3544973544973545,
+        "brier": 0.683567063333658,
+        "ece": 0.0846506660545325,
+        "logloss": 1.1282488676321263,
+        "n": 189
+      },
+      "final": {
+        "accuracy": 0.3333333333333333,
+        "brier": 0.7458146563505396,
+        "ece": 0.18305801362446214,
+        "logloss": 1.2256003384791214,
+        "n": 300
+      },
+      "fused_raw": {
+        "accuracy": 0.34980988593155893,
+        "brier": 0.7876830706643307,
+        "ece": 0.2033765769931278,
+        "logloss": 1.3071121250667752,
+        "n": 263
+      },
+      "model_raw": {
+        "accuracy": 0.34980988593155893,
+        "brier": 0.7876830706643307,
+        "ece": 0.2033765769931278,
+        "logloss": 1.3071121250667752,
+        "n": 263
+      },
+      "structural": {
+        "accuracy": 0.33079847908745247,
+        "brier": 0.9697119616503237,
+        "ece": 0.43589223810268507,
+        "logloss": 1.6122876730928943,
+        "n": 263
+      }
+    }
   },
-  "window": 301
+  "stage_observations": {
+    "10m_calibrated": 191,
+    "10m_final": 302,
+    "10m_fused_raw": 265,
+    "10m_model_raw": 265,
+    "10m_structural": 265,
+    "5m_calibrated": 191,
+    "5m_final": 302,
+    "5m_fused_raw": 265,
+    "5m_model_raw": 265,
+    "5m_structural": 265
+  },
+  "window": 302
 }
