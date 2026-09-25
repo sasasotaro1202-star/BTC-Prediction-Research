@@ -34,6 +34,7 @@ FINAL_HOLDOUT_FRAC = 0.20
 MAX_ROWS = 12000
 EPS = 1e-7
 NON_RF = ("logreg", "extra_trees", "hgb")
+EXPERTS = ("random_forest", *NON_RF)
 
 
 def _factory(name: str):
