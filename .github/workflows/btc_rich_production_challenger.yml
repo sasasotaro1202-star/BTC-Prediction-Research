@@ -15,7 +15,9 @@ on:
 
 concurrency:
   group: btc-rich-production-challenger
-  cancel-in-progress: false
+  # Keep only the newest rich-challenger generation; stale data-acquisition/model
+  # runs must not consume the full runner budget after research code changes.
+  cancel-in-progress: true
 
 permissions:
   contents: write
