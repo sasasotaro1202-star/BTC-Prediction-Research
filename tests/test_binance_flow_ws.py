@@ -59,7 +59,11 @@ def test_features_use_only_available_bins():
          "max_trade_notional":200.0,"liquidation_count":1,"liquidation_buy_notional":50.0,"liquidation_sell_notional":0.0},
     ]
     feat=derive_flow_features(rows,10000)
-    assert feat["flow_15s_missing"]==0.0
+    # Only 1 of the 3 required 5s bins is available at this cutoff;
+    # coverage hardening marks the window missing instead of treating it complete.
+    assert feat["flow_15s_missing"]==1.0
+    assert feat["flow_15s_coverage_ratio"] < 1.0
+    assert feat["flow_15s_contiguous_ratio"] < 1.0
     assert feat["flow_15s_signed_notional"]==100.0
     assert feat["flow_30s_trade_count"]==2.0
 

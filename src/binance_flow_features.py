@@ -24,6 +24,21 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
     for width in WINDOWS:
         suffix=[r for r in all_rows if int(prediction_cutoff_ms-width)<=int(r["end_time_ms"])<=int(prediction_cutoff_ms)]
         prefix=f"flow_{width//1000}s"
+        expected_bins=max(1,width//5000)
+        suffix=sorted(suffix,key=lambda x:int(x["end_time_ms"]))
+        contiguous=0
+        if suffix:
+            contiguous=1
+            for i in range(len(suffix)-1,0,-1):
+                if int(suffix[i]["end_time_ms"])-int(suffix[i-1]["end_time_ms"]) != 5000:
+                    break
+                contiguous += 1
+                if contiguous >= expected_bins:
+                    break
+        coverage_ratio=min(len(suffix),expected_bins)/expected_bins
+        contiguous_ratio=min(contiguous,expected_bins)/expected_bins
+        out[f"{prefix}_coverage_ratio"]=float(coverage_ratio)
+        out[f"{prefix}_contiguous_ratio"]=float(contiguous_ratio)
         if not suffix:
             for key in ("signed_qty","signed_notional","buy_share","trade_count","avg_trade_notional","max_trade_notional","liquidation_count","liquidation_signed_notional","liquidation_notional","liquidation_to_trade_notional"):
                 out[f"{prefix}_{key}"]=0.0
@@ -50,7 +65,7 @@ def derive_flow_features(rows:Iterable[dict[str,Any]], prediction_cutoff_ms:int)
         out[f"{prefix}_liquidation_signed_notional"]=liq_buy-liq_sell
         out[f"{prefix}_liquidation_notional"]=liq_notional
         out[f"{prefix}_liquidation_to_trade_notional"]=liq_notional/total_notional if total_notional>0 else 0.0
-        out[f"{prefix}_missing"]=0.0
+        out[f"{prefix}_missing"]=1.0 if contiguous_ratio < 1.0 else 0.0
     out["flow_30s_vs_5m_signed_notional"]=out["flow_30s_signed_notional"]-0.10*out["flow_300s_signed_notional"]
     out["flow_60s_liquidation_shock"]=out["flow_60s_liquidation_to_trade_notional"]*math.log1p(out["flow_60s_liquidation_notional"])
     out["flow_any_available"]=1.0 if all_rows else 0.0
