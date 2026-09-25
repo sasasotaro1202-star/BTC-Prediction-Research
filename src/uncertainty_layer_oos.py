@@ -218,27 +218,41 @@ def evaluate(horizon: str) -> dict[str, Any]:
         "low_uncertainty_error_rate": float(1.0 - hold_hit[~high].mean()) if low_risk_n else None,
     }
 
-    block = _block_metrics(hold_y, hold_candidate_p)
-    block["candidate_vs_baseline_logloss_non_worse_ratio"] = float(
+    # Eligibility is decided ONLY on development data. The final holdout is
+    # descriptive and cannot influence promotion/selection.
+    dev_ll_rel = (float(dev_base["logloss"]) - float(dev_candidate["logloss"])) / max(
+        EPS, abs(float(dev_base["logloss"]))
+    )
+    dev_br_rel = (float(dev_base["brier"]) - float(dev_candidate["brier"])) / max(
+        EPS, abs(float(dev_base["brier"]))
+    )
+    dev_block = _block_metrics(dev_y, _shrink(ensemble[development], feats["uncertainty"][development], best_alpha))
+    dev_block["candidate_vs_baseline_logloss_non_worse_ratio"] = float(
         np.mean(
             [
-                _metrics(
-                    hold_y[a:b],
-                    hold_candidate_p[a:b],
-                )["logloss"]
-                <= _metrics(hold_y[a:b], hold_base_p[a:b])["logloss"]
+                _metrics(dev_y[a:b], _shrink(ensemble[development][a:b], feats["uncertainty"][development][a:b], best_alpha))["logloss"]
+                <= _metrics(dev_y[a:b], ensemble[development][a:b])["logloss"]
                 for a, b in [
                     (int(x), int(z))
                     for x, z in zip(
-                        np.linspace(0, len(hold_y), HOLDOUT_BLOCKS + 1, dtype=int)[:-1],
-                        np.linspace(0, len(hold_y), HOLDOUT_BLOCKS + 1, dtype=int)[1:],
+                        np.linspace(0, len(dev_y), HOLDOUT_BLOCKS + 1, dtype=int)[:-1],
+                        np.linspace(0, len(dev_y), HOLDOUT_BLOCKS + 1, dtype=int)[1:],
                     )
                     if int(z) - int(x) >= 25
                 ]
             ]
         )
-    )
+    ) if len(dev_y) >= HOLDOUT_BLOCKS * 25 else 0.0
 
+    high_dev = feats["uncertainty"][development] >= risk_threshold
+    high_dev_n = int(high_dev.sum())
+    dev_hit = (
+        np.argmax(ensemble[development], axis=1)
+        == np.asarray([CLASSES.index(v) for v in dev_y])
+    ).astype(float)
+    dev_risk_error = float(1.0 - dev_hit[high_dev].mean()) if high_dev_n else None
+
+    # Final holdout numbers remain descriptive only.
     ll_rel = (float(hold_base["logloss"]) - float(hold_candidate["logloss"])) / max(
         EPS, abs(float(hold_base["logloss"]))
     )
@@ -246,12 +260,12 @@ def evaluate(horizon: str) -> dict[str, Any]:
         EPS, abs(float(hold_base["brier"]))
     )
     eligible = bool(
-        ll_rel >= 0.03
-        and br_rel >= 0.01
-        and block["candidate_vs_baseline_logloss_non_worse_ratio"] >= 0.70
-        and float(hold_candidate["ece"]) <= float(hold_base["ece"])
-        and float(hold_candidate["accuracy"]) >= float(hold_base["accuracy"]) - 0.005
-        and high_risk_n >= 100
+        dev_ll_rel >= 0.03
+        and dev_br_rel >= 0.01
+        and dev_block["candidate_vs_baseline_logloss_non_worse_ratio"] >= 0.70
+        and float(dev_candidate["ece"]) <= float(dev_base["ece"])
+        and float(dev_candidate["accuracy"]) >= float(dev_base["accuracy"]) - 0.005
+        and high_dev_n >= 100
     )
 
     return {
@@ -291,6 +305,13 @@ def evaluate(horizon: str) -> dict[str, Any]:
             ],
             "outcome_used_after_prediction_fixed": True,
             "no_future_features": True,
+        },
+        "development_eligibility_metrics": {
+            "relative_logloss_improvement": float(dev_ll_rel),
+            "relative_brier_improvement": float(dev_br_rel),
+            "block_stability": dev_block,
+            "high_uncertainty_n": high_dev_n,
+            "high_uncertainty_error_rate": dev_risk_error,
         },
         "eligibility": eligible,
         "timestamp_start": int(timestamps[0]),
