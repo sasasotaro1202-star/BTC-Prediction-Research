@@ -418,6 +418,7 @@ jobs:
             # Merge rows already published remotely before creating the next
             # checkpoint. This prevents a long-lived collector that started with
             # an older snapshot from overwriting a newer bootstrap/cache update.
+            # Use the standalone, unit-tested merge helper; keep shell glue minimal and fail-closed.
             remote_file="/tmp/btc_remote_ws_cache.json"
             if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$remote_file" 2>/dev/null; then
               set +e
