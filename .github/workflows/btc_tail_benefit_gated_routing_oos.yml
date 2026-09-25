@@ -1,0 +1,61 @@
+name: BTC Tail Benefit-Gated Routing OOS
+
+on:
+  pull_request:
+    paths:
+      - 'src/tail_benefit_gated_routing_oos.py'
+      - 'tests/test_tail_benefit_gated_routing_oos.py'
+      - '.github/workflows/btc_tail_benefit_gated_routing_oos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-tail-benefit-gated-routing-v1
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m pytest -q tests/test_tail_benefit_gated_routing_oos.py
+      - name: Run chronological OOS
+        run: |
+          set -euo pipefail
+          python src/tail_benefit_gated_routing_oos.py
+          test -s data/historical_research/tail_benefit_gated_routing_oos.json
+      - name: Validate evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj = json.loads(Path('data/historical_research/tail_benefit_gated_routing_oos.json').read_text())
+          assert obj['research_only'] is True
+          assert obj['production_changed'] is False
+          for item in obj['horizons'].values():
+              assert item['final_holdout_protected'] is True
+              assert item['final_holdout_used_for_selection'] is False
+          print('tail benefit-gated routing evidence: VERIFIED')
+          PY
+      - name: Upload evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-tail-benefit-gated-routing-oos
+          path: data/historical_research/tail_benefit_gated_routing_oos.json
+          if-no-files-found: error
+          retention-days: 7
