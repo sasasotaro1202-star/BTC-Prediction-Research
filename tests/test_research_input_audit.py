@@ -205,20 +205,23 @@ class ResearchInputAuditTests(unittest.TestCase):
     def test_recent_pit_stats_detects_missing_provenance(self):
         con = self._db()
         row = list(self._row("model-v3"))
+        row[0] = "2026-09-26T00:00:00+00:00"
+        row[1] = "2026-09-26T00:05:00+00:00"
+        row[2] = "2026-09-26T00:10:00+00:00"
         scenario = {
             "production_mode": "binance_primary",
-            "decision_time_utc": "2026-09-22T00:00:00+00:00",
+            "decision_time_utc": "2026-09-26T00:00:00+00:00",
             "provenance": {
-                "available_at": "2026-09-21T23:59:50+00:00",
-                "retrieved_at": "2026-09-21T23:59:55+00:00",
-                "prediction_cutoff": "2026-09-22T00:00:00+00:00",
+                "available_at": "2026-09-25T23:59:50+00:00",
+                "retrieved_at": "2026-09-25T23:59:55+00:00",
+                "prediction_cutoff": "2026-09-26T00:00:00+00:00",
                 "sources": {
                     name: {
                         "status": "ok",
-                        "event_time": "2026-09-21T23:59:40+00:00",
-                        "available_at": "2026-09-21T23:59:50+00:00",
-                        "retrieved_at": "2026-09-21T23:59:55+00:00",
-                        "prediction_cutoff": "2026-09-22T00:00:00+00:00",
+                        "event_time": "2026-09-25T23:59:40+00:00",
+                        "available_at": "2026-09-25T23:59:50+00:00",
+                        "retrieved_at": "2026-09-25T23:59:55+00:00",
+                        "prediction_cutoff": "2026-09-26T00:00:00+00:00",
                     }
                     for name in ("binance_futures", "binance_depth", "binance_taker", "binance_premium")
                 },
