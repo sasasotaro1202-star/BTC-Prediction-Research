@@ -57,7 +57,7 @@ jobs:
       - name: Upload evidence
         uses: actions/upload-artifact@v6
         with:
-          name: btc-disagreement-gated-routing-\${{ github.run_id }}
+          name: btc-disagreement-gated-routing-${{ github.run_id }}
           path: data/historical_research/disagreement_gated_routing_oos.json
           if-no-files-found: error
           retention-days: 3
