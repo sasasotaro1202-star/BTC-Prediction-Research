@@ -917,7 +917,10 @@ jobs:
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
-            if [ -f /tmp/btc_local_experience_summary.json ]; then cp /tmp/btc_local_experience_summary.json data/experience/experience_summary.json; fi
+            if [ -f /tmp/btc_local_experience_summary.json ]; then
+              mkdir -p data/experience
+              cp /tmp/btc_local_experience_summary.json data/experience/experience_summary.json
+            fi
             git add -- data/predictions.db.gz data/live_cycle_status.json
             for path in \
               data/historical_research/research_health.json \
