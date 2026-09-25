@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-consensus-correction-\${{ github.head_ref || github.ref_name }}
+  group: btc-consensus-correction-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -57,10 +57,10 @@ jobs:
           print("consensus correction OOS evidence contract verified")
           PY
       - name: Upload evidence
-        if: \${{ !cancelled() }}
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: btc-consensus-correction-\${{ github.run_id }}
+          name: btc-consensus-correction-${{ github.run_id }}
           path: data/historical_research/consensus_correction_oos.json
           if-no-files-found: error
           retention-days: 7
