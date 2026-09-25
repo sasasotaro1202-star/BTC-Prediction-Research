@@ -576,6 +576,25 @@ jobs:
             # when the remote checkpoint already contains the same rows.
             local last_published=0
             local last_depth_published=0
+
+            # Publish a REST-healed cache immediately. Do not wait for the first
+            # 30-second checkpoint or for the WebSocket process to stay alive;
+            # this makes self-heal useful in the same live cycle.
+            if [ -s data/binance_ws_1m.json ]; then
+              if publish_cache; then
+                last_published="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
+          print(int(rows[-1]['open_time_ms']) if rows else 0)
+          PY
+                )"
+                echo "Initial Binance WS cache checkpoint published latest_open_time_ms=$last_published"
+              else
+                echo 'WARN: initial Binance WS cache checkpoint publication failed; stream continues.' >&2
+              fi
+            fi
+
             if [ -s data/binance_ws_depth.json ]; then
               last_depth_published="$(python - <<'PY'
           import json
