@@ -83,17 +83,21 @@ def compare_and_record(
         new = current[horizon]
         for key, new_value in new.items():
             old_value = old.get(key)
-            if isinstance(new_value, (int, float)) and isinstance(old_value, (int, float)):
-                delta = float(new_value) - float(old_value)
-                if abs(delta) > 1e-12:
-                    changed = True
-                    changes.append({
-                        "horizon": horizon,
-                        "metric": key,
-                        "old": float(old_value),
-                        "new": float(new_value),
-                        "delta": delta,
-                    })
+            if not isinstance(new_value, (int, float)) or not isinstance(old_value, (int, float)):
+                continue
+            # Sample-size movement is tracked, but it is not itself a score change.
+            if key.endswith("_n"):
+                continue
+            delta = float(new_value) - float(old_value)
+            if abs(delta) > 1e-12:
+                changed = True
+                changes.append({
+                    "horizon": horizon,
+                    "metric": key,
+                    "old": float(old_value),
+                    "new": float(new_value),
+                    "delta": delta,
+                })
 
     payload = {
         "schema_version": 1,
@@ -122,7 +126,7 @@ def compare_and_record(
     elif not previous:
         print("  baseline snapshot initialized; no prior score available for delta comparison.")
     else:
-        print("  no Accuracy/LogLoss/Brier/ECE or tracked sample-count changes.")
+        print("  no tracked Accuracy/LogLoss/Brier/ECE score changes.")
 
     return payload
 
