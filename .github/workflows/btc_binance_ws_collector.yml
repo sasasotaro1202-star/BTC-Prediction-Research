@@ -89,13 +89,13 @@ jobs:
           def fresh_contiguous_suffix(obj):
               rows = obj.get("rows", []) if isinstance(obj, dict) else []
               if not isinstance(rows, list) or not rows:
-                  return 0, None
+                  return 0, 0, None
               ordered = sorted(
                   (r for r in rows if isinstance(r, dict)),
                   key=lambda r: int(r.get("open_time_ms", 0)),
               )
               if not ordered:
-                  return 0, None
+                  return 0, 0, None
               suffix = 1
               for i in range(len(ordered) - 1, 0, -1):
                   if int(ordered[i]["open_time_ms"]) - int(ordered[i - 1]["open_time_ms"]) != 60_000:
