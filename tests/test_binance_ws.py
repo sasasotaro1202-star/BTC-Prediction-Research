@@ -388,5 +388,15 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('Initial Binance WS cache checkpoint published', block)
         self.assertIn('initial Binance WS cache checkpoint publication failed', block)
 
+    def test_collector_uses_curl_fallback_for_rest_seed(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("      - name: Seed stale Binance Futures cache from closed REST klines")
+        end = workflow.index("      - name: Record fixed collector base SHA", start)
+        block = workflow[start:end]
+        self.assertIn('curl', block)
+        self.assertIn('--retry-all-errors', block)
+        self.assertIn('fapi.binance.com/fapi/v1/klines?', block)
+        self.assertIn('curl_exit_', block)
+
 if __name__ == "__main__":
     unittest.main()
