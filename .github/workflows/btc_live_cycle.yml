@@ -194,6 +194,7 @@ jobs:
             tests/test_state_archive.py
             tests/test_merge_prediction_state.py
             tests/test_prediction_state_guard.py
+            tests/test_live_collector_self_heal.py
           )
           for test_file in "${tests[@]}"; do
             test -s "${test_file}" || { echo "Missing production guard test: ${test_file}" >&2; exit 1; }
