@@ -694,7 +694,7 @@ jobs:
             exit 1
           fi
 
-          final_contiguous="$(python -c 'import json; from pathlib import Path; rows=sorted(json.loads(Path("data/binance_ws_1m.json").read_text(encoding="utf-8"))["rows"], key=lambda row:int(row["open_time_ms"])); suffix=1 if rows else 0;\nfor i in range(len(rows)-1, 0, -1):\n    if int(rows[i]["open_time_ms"])-int(rows[i-1]["open_time_ms"]) != 60000: break\n    suffix += 1\nprint(suffix)' )"
+          final_contiguous="$(python -c 'import json; from pathlib import Path; rows=sorted(json.loads(Path("data/binance_ws_1m.json").read_text(encoding="utf-8"))["rows"], key=lambda row:int(row["open_time_ms"])); gaps=[i for i in range(1,len(rows)) if int(rows[i]["open_time_ms"])-int(rows[i-1]["open_time_ms"]) != 60000]; print(len(rows)-gaps[-1] if gaps else len(rows))')"
           if [ "$final_contiguous" -lt 40 ]; then
             echo "Final Binance WS cache has only $final_contiguous contiguous closed bars; failing closed." >&2
             exit 1
