@@ -14,7 +14,7 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('--workflow btc_binance_ws_collector.yml', workflow)
         self.assertIn('select(.status == "queued" or .status == "in_progress")', workflow)
         self.assertIn('gh workflow run btc_binance_ws_collector.yml --repo "$GITHUB_REPOSITORY" --ref main', workflow)
-        self.assertIn('age_ms -gt 180000', workflow)
+        self.assertIn('[ "$age_ms" -gt 180000 ]', workflow)
         self.assertIn('Live prediction remains fail-closed on stale data.', workflow)
 
     def test_self_heal_is_nonfatal_when_github_actions_api_is_unavailable(self):
