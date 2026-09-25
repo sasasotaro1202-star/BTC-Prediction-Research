@@ -25,6 +25,15 @@ def test_shrink_is_normalized_and_less_confident():
 
 def test_metrics_contract():
     y = ["UP", "DOWN", "FLAT"]
-    p = np.asarray([[0.7,0.2,0.1],[0.1,0.2,0.7],[0.2,0.7,0.1]],dtype=float)
+    p = np.asarray([[0.1,0.2,0.7],[0.7,0.2,0.1],[0.2,0.7,0.1]],dtype=float)
     m = _metrics(y,p)
     assert m["accuracy"] == 1.0
+
+
+def test_uncertainty_is_higher_for_ambiguous_prediction():
+    clear = np.asarray([[0.90, 0.08, 0.02]], dtype=float)
+    ambiguous = np.asarray([[0.35, 0.34, 0.31]], dtype=float)
+    models = np.asarray([clear, clear * 0.0 + np.asarray([[0.89,0.09,0.02]]),
+                         ambiguous, np.asarray([[0.34,0.35,0.31]])], dtype=float)
+    f = uncertainty_features(models, np.vstack([clear, ambiguous]))
+    assert f["uncertainty"][1] > f["uncertainty"][0]
