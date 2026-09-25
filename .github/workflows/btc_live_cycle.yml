@@ -903,7 +903,8 @@ jobs:
             for path in \
               data/historical_research/research_health.json \
               data/historical_research/venue_drift.json \
-              data/historical_research/flat_diagnostic.json; do
+              data/historical_research/flat_diagnostic.json \
+              data/experience/experience_summary.json; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
             for path in models/*.json models/*.joblib; do
