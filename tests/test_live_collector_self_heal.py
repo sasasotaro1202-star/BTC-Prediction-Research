@@ -101,6 +101,7 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         end = workflow.index('      - name: Refresh latest Binance depth cache immediately before prediction', start)
         block = workflow[start:end]
         self.assertIn('rest_seed() {', block)
+        self.assertIn('PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" timeout 30s python', block)
         self.assertIn('from src.market_data import binance_klines', block)
         self.assertIn('raw = binance_klines(False, 720)', block)
         self.assertIn('if rest_seed; then', block)
