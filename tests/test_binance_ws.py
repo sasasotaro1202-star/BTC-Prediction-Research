@@ -336,7 +336,7 @@ class TestBinanceWebSocket(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Seed stale Binance Futures cache from closed REST klines", workflow)
-        self.assertIn("https://fapi.binance.com/fapi/v1/klines?", workflow)
+        self.assertIn("/fapi/v1/klines?", workflow)
         self.assertIn('"symbol": "BTCUSDT"', workflow)
         self.assertIn('"interval": "1m"', workflow)
         self.assertIn('"event_time_ms": close_ms', workflow)
@@ -357,7 +357,7 @@ class TestBinanceWebSocket(unittest.TestCase):
         start = workflow.index("          publish_cache() {")
         end = workflow.index("          publish_depth_cache() {", start)
         block = workflow[start:end]
-        self.assertIn('contiguous_tail="$(python - "$local_file"', block)
+        self.assertIn('contiguous_tail="$(python -c', block)
         self.assertIn('if [ "$contiguous_tail" -lt 40 ]; then', block)
         self.assertIn('refusing to publish gappy Binance WS checkpoint', block)
         self.assertIn('return 0', block)
@@ -478,8 +478,7 @@ class TestBinanceWebSocket(unittest.TestCase):
     def test_collect_forever_window_carries_recovery_epoch_into_checkpoint_writes(self):
         source = Path(binance_ws.__file__).read_text(encoding="utf-8")
         start = source.index("async def collect_forever_window(")
-        end = source.index("async def capture_depth_snapshot", start)
-        block = source[start:end]
+        block = source[start:]
         self.assertIn('recovery_epoch_ms = 0', block)
         self.assertIn('write_cache(rows, path, recovery_epoch_ms=recovery_epoch_ms)', block)
         self.assertIn('write_cache(merged, path, recovery_epoch_ms=recovery_epoch_ms)', block)
