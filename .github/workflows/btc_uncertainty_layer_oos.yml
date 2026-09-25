@@ -55,7 +55,7 @@ jobs:
       - name: Upload evidence
         uses: actions/upload-artifact@v6
         with:
-          name: btc-uncertainty-oos-\${{ github.run_id }}
+          name: btc-uncertainty-oos-${{ github.run_id }}
           path: data/historical_research/uncertainty_layer_oos.json
           if-no-files-found: error
           retention-days: 7
