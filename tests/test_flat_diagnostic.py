@@ -15,7 +15,9 @@ class TestFlatDiagnostic(unittest.TestCase):
             con = sqlite3.connect(db)
             con.execute('''CREATE TABLE predictions (
                 prediction_id INTEGER PRIMARY KEY,
+                actual_direction_5m TEXT,
                 p_down_5m REAL, p_flat_5m REAL, p_up_5m REAL,
+                actual_direction_10m TEXT,
                 p_down_10m REAL, p_flat_10m REAL, p_up_10m REAL,
                 scenario_json TEXT)''')
             scenario = {'components': {
@@ -28,8 +30,8 @@ class TestFlatDiagnostic(unittest.TestCase):
                 'fused_raw_10m': [0.4, 0.2, 0.4],
                 'calibrated_10m': [0.35, 0.25, 0.4],
             }}
-            con.execute('INSERT INTO predictions VALUES (?,?,?,?,?,?,?,?)',
-                         (1, .50, .25, .25, .35, .25, .40, json.dumps(scenario)))
+            con.execute('INSERT INTO predictions VALUES (?,?,?,?,?,?,?,?,?,?)',
+                         (1, 'FLAT', .50, .25, .25, 'FLAT', .35, .25, .40, json.dumps(scenario)))
             con.commit(); con.close()
             with patch.object(flat_diagnostic, 'OUT', Path(td) / 'flat_diagnostic.json'):
                 report = flat_diagnostic.build_report(db, window=10)
@@ -43,7 +45,7 @@ class TestFlatDiagnostic(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / 'predictions.db'
             con = sqlite3.connect(db)
-            con.execute('CREATE TABLE predictions (prediction_id INTEGER PRIMARY KEY, p_down_5m REAL, p_flat_5m REAL, p_up_5m REAL, p_down_10m REAL, p_flat_10m REAL, p_up_10m REAL, scenario_json TEXT)')
+            con.execute('CREATE TABLE predictions (prediction_id INTEGER PRIMARY KEY, actual_direction_5m TEXT, p_down_5m REAL, p_flat_5m REAL, p_up_5m REAL, actual_direction_10m TEXT, p_down_10m REAL, p_flat_10m REAL, p_up_10m REAL, scenario_json TEXT)')
             con.commit(); con.close()
             with patch.object(flat_diagnostic, 'OUT', Path(td) / 'flat_diagnostic.json'):
                 report = flat_diagnostic.build_report(db)
