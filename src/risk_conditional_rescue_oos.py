@@ -206,7 +206,8 @@ def _evaluate(horizon):
     if not blocks:
         return {"status":"DEFERRED","reason":"no_valid_blocks","n":len(rows)}
     def agg(side,key):
-        return float(sum(b["n"]*b[side][key] for b in blocks)/sum(b["n"] for b in blocks))
+        metric_key = "calibration_error" if key == "ece" else key
+        return float(sum(b["n"]*b[side][metric_key] for b in blocks)/sum(b["n"] for b in blocks))
     base={k:agg("baseline",k) for k in ("accuracy","logloss","brier","ece")}
     cand={k:agg("candidate",k) for k in ("accuracy","logloss","brier","ece")}
     deltas={k:cand[k]-base[k] for k in base}
