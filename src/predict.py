@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from db import DB, init_db
 from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
-from market_data import BINANCE_WS_CACHE, resilient_1m_series, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
+from market_data import BINANCE_WS_CACHE, resilient_1m_series, derive_binance_taker_from_closed_klines, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
 from microstructure_features import derive_market_flow_features
 from runtime_production_model import resolve_production_model
@@ -345,6 +345,13 @@ def main():
             int(r["retrieved_at_ms"]) for r in ws_candidate
         )
     ws_taker_result = ws_taker_imbalance(ws_candidate, 5) if ws_fresh else None
+    kline_taker_result = None
+    if ws_taker_result is None and status.get("binance_futures_transport") in {"rest", "websocket"}:
+        kline_taker_result = derive_binance_taker_from_closed_klines(
+            fut,
+            window=5,
+            cutoff_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
+        )
 
     # Prefer a fresh WS depth snapshot over Binance REST. A short direct-WS
     # recovery is attempted only when the rolling cache is unavailable.
@@ -371,7 +378,7 @@ def main():
         market_call_defs["binance_depth"] = binance_depth
     if ws_mark is None:
         market_call_defs["binance_premium"] = binance_premium
-    if ws_taker_result is None:
+    if ws_taker_result is None and kline_taker_result is None:
         market_call_defs["binance_taker"] = binance_taker
     market_calls = _parallel_market_calls(market_call_defs)
 
@@ -490,7 +497,13 @@ def main():
     except Exception as exc:
         status['binance_oi']=f'error:{type(exc).__name__}'
 
-    taker_result = ws_taker_result if ws_taker_result is not None else market_calls.get("binance_taker")
+    taker_result = (
+        ws_taker_result
+        if ws_taker_result is not None
+        else kline_taker_result
+        if kline_taker_result is not None
+        else market_calls.get("binance_taker")
+    )
     try:
         if ws_taker_result is not None:
             m['taker_imbalance'], event_ms = ws_taker_result
@@ -504,6 +517,13 @@ def main():
             status['binance_taker_transport']='websocket_derived_from_closed_klines'
             status['binance_taker_event_time_ms']=int(event_ms)
             status['binance_taker_retrieved_at_ms']=int(freshest_retrieved)
+        elif kline_taker_result is not None:
+            m['taker_imbalance']=float(kline_taker_result['taker_imbalance'])
+            status['binance_taker']='ok'
+            status['binance_taker_transport']='closed_kline_derived'
+            status['binance_taker_event_time_ms']=int(kline_taker_result['event_time_ms'])
+            status['binance_taker_retrieved_at_ms']=int(kline_taker_result['retrieved_at_ms'])
+            status['binance_taker_rows']=int(kline_taker_result['rows'])
         else:
             if taker_result is None or isinstance(taker_result, Exception):
                 raise RuntimeError('binance_taker_unavailable')
