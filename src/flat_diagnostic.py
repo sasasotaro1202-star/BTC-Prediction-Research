@@ -41,6 +41,40 @@ def _probabilities(value):
     return [x / total for x in vals]
 
 
+def _probability_summary(probabilities):
+    """Describe how strongly each stage favors FLAT versus directional classes.
+
+    Diagnostic-only: this never feeds prediction, routing, calibration, or promotion.
+    """
+    if not probabilities:
+        return None
+    arr = []
+    for raw in probabilities:
+        p = _probabilities(raw)
+        if p is None:
+            continue
+        arr.append(p)
+    if not arr:
+        return None
+    import numpy as np
+    a = np.asarray(arr, dtype=float)
+    directional_max = np.maximum(a[:, 0], a[:, 2])
+    flat_margin = a[:, 1] - directional_max
+    return {
+        'n': int(len(a)),
+        'mean_probability': {c: float(a[:, i].mean()) for i, c in enumerate(CLASSES)},
+        'median_probability': {c: float(np.median(a[:, i])) for i, c in enumerate(CLASSES)},
+        'p10_probability': {c: float(np.quantile(a[:, i], 0.10)) for i, c in enumerate(CLASSES)},
+        'p90_probability': {c: float(np.quantile(a[:, i], 0.90)) for i, c in enumerate(CLASSES)},
+        'flat_argmax_rate': float((a.argmax(axis=1) == 1).mean()),
+        'flat_margin_mean': float(flat_margin.mean()),
+        'flat_margin_median': float(np.median(flat_margin)),
+        'flat_within_0.02_rate': float((flat_margin >= -0.02).mean()),
+        'flat_within_0.05_rate': float((flat_margin >= -0.05).mean()),
+        'flat_above_0.30_rate': float((a[:, 1] >= 0.30).mean()),
+    }
+
+
 def _metrics(labels, probabilities):
     if not labels or len(labels) != len(probabilities):
         return None
@@ -134,12 +168,16 @@ def _settled_stage_diagnostics(db_path: str | Path, window: int):
             continue
 
     settled_metrics = {h: {} for h in ('5m', '10m')}
+    probability_summary = {h: {} for h in ('5m', '10m')}
     argmax_transitions = {h: {} for h in ('5m', '10m')}
     for h in ('5m', '10m'):
         for stage in labels[h]:
             metric = _metrics(labels[h][stage], probabilities[h][stage])
             if metric is not None:
                 settled_metrics[h][stage] = metric
+            summary = _probability_summary(probabilities[h][stage])
+            if summary is not None:
+                probability_summary[h][stage] = summary
         for target_stage, pairs in transition_pairs[h].items():
             matrix = {src: {dst: 0 for dst in CLASSES} for src in CLASSES}
             for src, dst in pairs:
@@ -147,8 +185,13 @@ def _settled_stage_diagnostics(db_path: str | Path, window: int):
             if pairs:
                 argmax_transitions[h][f'model_raw_to_{target_stage}'] = matrix
     settled_metrics = {h: v for h, v in settled_metrics.items() if v}
+    probability_summary = {h: v for h, v in probability_summary.items() if v}
     argmax_transitions = {h: v for h, v in argmax_transitions.items() if v}
-    return {'settled_metrics': settled_metrics, 'argmax_transitions': argmax_transitions}
+    return {
+        'settled_metrics': settled_metrics,
+        'probability_summary': probability_summary,
+        'argmax_transitions': argmax_transitions,
+    }
 
 
 def _stage(obj: dict, key: str):
