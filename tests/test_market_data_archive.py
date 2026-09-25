@@ -89,8 +89,10 @@ def test_daily_archive_never_accepts_current_open_candle():
 
 
 def test_resilient_series_uses_archive_before_cross_venue_fallback():
+    now_ms = int(market_data.time.time() * 1000)
+    start = now_ms - 119 * 60_000 - 59_999
     rows = [
-        [1_700_000_000_000 + i * 60_000, 100.0, 101.0, 99.0, 100.5, 10.0]
+        [start + i * 60_000, 100.0, 101.0, 99.0, 100.5, 10.0]
         for i in range(120)
     ]
     network_error = RuntimeError("simulated_transport_failure")
