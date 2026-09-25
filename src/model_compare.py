@@ -23,6 +23,11 @@ try:
 except ImportError:
     LGBMClassifier = None
 
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
+
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000,12000,14000,16000,18000,20000,24000,30000,40000,50000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
 # Five-minute and ten-minute labels resolve into the future. Keep a conservative
@@ -445,7 +450,9 @@ def better(c,p,stability=None):
         stability.get('improved_logloss_ratio',0.0) >= 0.55 and
         stability.get('improved_brier_ratio',0.0) >= 0.55
     )
-    return stable and c['accuracy']>=p['accuracy']-0.01 and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
+    # Production direction accuracy is a hard non-regression criterion.
+    # Probability metrics still need a clear improvement before adoption.
+    return stable and c['accuracy']>=p['accuracy'] and c['logloss']<=p['logloss']-0.005 and c['brier']<=p['brier']-0.002 and c['calibration_error']<=p['calibration_error']+0.01
 
 def loss_arrays(ys,prod,cand):
     idx={c:i for i,c in enumerate(CLASSES)}; y=np.array([idx[v] for v in ys]); one=np.eye(3)[y]; pp=normalize(prod); cp=normalize(cand)
@@ -538,6 +545,12 @@ def compare_h(h):
           num_leaves=31,min_child_samples=30,subsample=0.9,colsample_bytree=0.9,
           reg_lambda=1.0,random_state=42,n_jobs=-1,verbosity=-1
       )} if LGBMClassifier is not None else {}),
+      **({'xgboost':lambda:XGBClassifier(
+          objective='multi:softprob',num_class=3,n_estimators=320,max_depth=5,
+          learning_rate=0.03,min_child_weight=12,subsample=0.9,colsample_bytree=0.9,
+          reg_lambda=2.0,reg_alpha=0.05,eval_metric='mlogloss',
+          random_state=42,n_jobs=-1,verbosity=0
+      )} if XGBClassifier is not None else {}),
       'hgb':lambda:HistGradientBoostingClassifier(max_iter=250,max_leaf_nodes=15,learning_rate=.04,l2_regularization=1.0,random_state=42),
       # A compact heterogeneous soft-vote candidate tests whether probability
       # averaging improves generalization over any single estimator. It remains
