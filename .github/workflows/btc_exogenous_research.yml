@@ -15,12 +15,14 @@ on:
       - 'scripts/exogenous_oos_ablation.py'
       - '.github/workflows/btc_exogenous_research.yml'
   schedule:
-    - cron: '7 * * * *'
+    # GDELT source data is published in 15-minute slices; collect each slice
+    # repeatedly so one transient missing slice is repaired before OOS use.
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 concurrency:
   group: btc-exogenous-research
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -50,7 +52,7 @@ jobs:
         run: python -m compileall -q src tests scripts
       - name: Unit test exogenous collector
         run: python -m pytest -q tests/test_exogenous_information.py tests/test_exogenous_feature_join.py tests/test_gdelt_exogenous_research.py
-      - name: Collect recent GDELT research events
+      - name: Collect recent GDELT research events (incremental 15-minute coverage)
         run: python scripts/gdelt_exogenous_research.py --hours 1
       - name: Restore prediction state for research-only OOS
         run: |
