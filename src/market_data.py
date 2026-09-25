@@ -165,6 +165,84 @@ def binance_archive_daily_rows(target: int = 120) -> list[list[float]]:
         )
     return suffix[-target:]
 
+def binance_archive_daily_taker_rows(target: int = 5) -> list[dict]:
+    """Load recent closed BTCUSDT 1m Futures taker-buy volumes from Binance Vision.
+
+    The daily archive contains the same kline taker-buy-base field used by the
+    Futures kline API. The archive retrieval timestamp is used as the conservative
+    availability boundary; closed/future rows and gaps are rejected.
+    """
+    target = max(5, min(int(target), 120))
+    now = datetime.now(timezone.utc)
+    now_ms = int(now.timestamp() * 1000)
+    days = [now, now - timedelta(days=1)]
+    rows: list[dict] = []
+    errors: list[str] = []
+
+    for day in days:
+        for url in _archive_daily_urls(day):
+            try:
+                req = Request(url, headers={"User-Agent": UA})
+                with urlopen(req, timeout=20) as response:
+                    payload = response.read()
+                with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+                    if zf.testzip() is not None:
+                        raise RuntimeError("archive_zip_crc_failed")
+                    names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+                    if not names:
+                        raise RuntimeError("archive_contains_no_csv")
+                    with zf.open(names[0]) as fh:
+                        reader = csv.reader(io.TextIOWrapper(fh, encoding="utf-8", newline=""))
+                        for raw in reader:
+                            if len(raw) < 10:
+                                continue
+                            try:
+                                open_ms = int(raw[0])
+                                volume = float(raw[5])
+                                close_ms = int(raw[6])
+                                taker_buy = float(raw[9])
+                            except (TypeError, ValueError, IndexError):
+                                continue
+                            if (
+                                open_ms <= 0
+                                or close_ms <= 0
+                                or volume <= 0
+                                or taker_buy < 0
+                                or taker_buy > volume + 1e-9
+                                or open_ms + 60_000 > now_ms
+                                or close_ms > now_ms
+                            ):
+                                continue
+                            rows.append(
+                                {
+                                    "open_time_ms": open_ms,
+                                    "volume": volume,
+                                    "taker_buy_base": taker_buy,
+                                    "event_time_ms": close_ms,
+                                    "retrieved_at_ms": now_ms,
+                                }
+                            )
+                if len(rows) >= target:
+                    break
+            except Exception as exc:
+                errors.append(f"{day.strftime('%Y-%m-%d')}:{type(exc).__name__}")
+        if len(rows) >= target:
+            break
+
+    dedup = {int(r["open_time_ms"]): r for r in rows}
+    ordered = [dedup[k] for k in sorted(dedup)]
+    if len(ordered) < target:
+        raise RuntimeError(
+            f"Binance Vision daily archive returned insufficient taker rows: "
+            f"{len(ordered)} need {target}; errors={errors}"
+        )
+    suffix = ordered[-target:]
+    for left, right in zip(suffix, suffix[1:]):
+        if int(right["open_time_ms"]) - int(left["open_time_ms"]) != 60_000:
+            raise RuntimeError("Binance Vision daily archive taker rows are non-contiguous")
+    return suffix
+
+
 def binance_archive_rows(target: int):
     now = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     months = [now]
