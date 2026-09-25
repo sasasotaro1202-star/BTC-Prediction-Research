@@ -45,8 +45,34 @@ def _get(url: str, attempts: int = 3):
     raise last
 
 
+BINANCE_FUTURES_REST_HOSTS = (
+    "fapi.binance.com",
+    "fapi1.binance.com",
+    "fapi2.binance.com",
+    "fapi3.binance.com",
+    "fapi4.binance.com",
+)
+
+
 def _binance(path: str, params: dict):
     return _get(f"https://{path}?{urlencode(params)}")
+
+
+def _binance_futures(path: str, params: dict):
+    """Query Binance USD-M Futures with same-product REST host failover.
+    
+    The canonical fapi host is tried first; mirror hosts are only transport
+    failover and do not change the underlying Binance Futures product.
+    """
+    last = None
+    for host in BINANCE_FUTURES_REST_HOSTS:
+        try:
+            return _get(f"https://{host}/{path}?{urlencode(params)}")
+        except Exception as exc:
+            last = exc
+    if last is not None:
+        raise last
+    raise RuntimeError("binance_futures_rest_hosts_empty")
 
 
 def coinbase_rows(limit: int = 300):
@@ -264,8 +290,9 @@ def binance_archive_rows(target: int):
 
 
 def binance_klines(spot: bool = False, limit: int = 120):
-    host = "api.binance.com/api/v3/klines" if spot else "fapi.binance.com/fapi/v1/klines"
-    return _binance(host, {"symbol": "BTCUSDT", "interval": "1m", "limit": limit})
+    if spot:
+        return _binance("api.binance.com/api/v3/klines", {"symbol": "BTCUSDT", "interval": "1m", "limit": limit})
+    return _binance_futures("fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1m", "limit": limit})
 
 
 def bybit_klines(limit: int = 120):
@@ -576,7 +603,7 @@ def resilient_1m_series(limit: int = 120):
 
 
 def binance_depth():
-    return _binance("fapi.binance.com/fapi/v1/depth", {"symbol": "BTCUSDT", "limit": 50})
+    return _binance_futures("fapi/v1/depth", {"symbol": "BTCUSDT", "limit": 50})
 
 
 def bybit_depth():
@@ -584,11 +611,11 @@ def bybit_depth():
 
 
 def binance_premium():
-    return _binance("fapi.binance.com/fapi/v1/premiumIndex", {"symbol": "BTCUSDT"})
+    return _binance_futures("fapi/v1/premiumIndex", {"symbol": "BTCUSDT"})
 
 
 def binance_oi():
-    return _binance("fapi.binance.com/fapi/v1/openInterest", {"symbol": "BTCUSDT"})
+    return _binance_futures("fapi/v1/openInterest", {"symbol": "BTCUSDT"})
 
 
 def derive_binance_taker_from_closed_klines(
@@ -692,8 +719,7 @@ def derive_binance_taker_from_closed_klines(
 
 
 def binance_taker():
-    # Taker-flow is a Binance Futures endpoint; keep the fapi host explicit.
-    return _binance("fapi.binance.com/futures/data/takerBuySellVol", {"symbol": "BTCUSDT", "period": "5m", "limit": 1})
+    return _binance_futures("futures/data/takerBuySellVol", {"symbol": "BTCUSDT", "period": "5m", "limit": 1})
 
 
 def bybit_funding():
