@@ -420,66 +420,20 @@ jobs:
             # an older snapshot from overwriting a newer bootstrap/cache update.
             remote_file="/tmp/btc_remote_ws_cache.json"
             if git show origin/binance-ws-cache:data/binance_ws_1m.json > "$remote_file" 2>/dev/null; then
-              python - "$local_file" "$remote_file" <<'PY'
-          import json,sys
-          from pathlib import Path
-
-          local_path=Path(sys.argv[1])
-          remote_path=Path(sys.argv[2])
-          local=json.loads(local_path.read_text(encoding='utf-8'))
-          remote=json.loads(remote_path.read_text(encoding='utf-8'))
-
-          if remote.get('schema_version') != 1 or remote.get('source') != 'Binance USD-M Futures WebSocket':
-              raise SystemExit('remote Binance WS cache provenance invalid')
-
-          lrows=local.get('rows',[]) if isinstance(local,dict) else []
-          rrows=remote.get('rows',[]) if isinstance(remote,dict) else []
-          merged={int(row['open_time_ms']):row for row in rrows if isinstance(row,dict)}
-          for row in lrows:
-              if not isinstance(row,dict) or 'open_time_ms' not in row:
-                  continue
-              key=int(row['open_time_ms'])
-              previous=merged.get(key)
-              if previous is None or int(row.get('retrieved_at_ms',0)) >= int(previous.get('retrieved_at_ms',0)):
-                  merged[key]=row
-
-          rows=[merged[k] for k in sorted(merged)[-720:]]
-          local['rows']=rows
-
-          # Concurrent staggered collectors frequently observe the same newest
-          # closed bars. Skip a semantic no-op publish so overlapping runs do not
-          # create needless cache-branch commits or ref contention.
-          remote_rows = [
-              {k: v for k, v in row.items() if k != 'retrieved_at_ms'}
-              for row in rrows[-720:]
-              if isinstance(row, dict)
-          ]
-          local_rows = [
-              {k: v for k, v in row.items() if k != 'retrieved_at_ms'}
-              for row in rows[-720:]
-              if isinstance(row, dict)
-          ]
-          if local_rows == remote_rows:
-              print('Binance WS cache semantic no-op; remote checkpoint already contains the same rows.')
-              raise SystemExit(0)
-
-          temp=local_path.with_name('.binance_ws_1m.merge.tmp')
-          temp.write_text(
-              json.dumps(local,sort_keys=True,separators=(',',':'))+'\\n',
-              encoding='utf-8',
-          )
-          temp.replace(local_path)
-          PY
-
-          # Never publish a checkpoint whose newest history is itself broken.
-          # A long-lived pre-hardening collector may still be running after a newer
-          # collector starts; rejecting a gappy local window prevents it from
-          # overwriting a newly REST-healed remote cache.
-          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); gaps=[i for i in range(1,len(ordered)) if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000]; print(len(ordered)-gaps[-1] if gaps else len(ordered))' "$local_file")
-          if [ "$contiguous_tail" -lt 40 ]; then
-            echo "WARN: refusing to publish gappy Binance WS checkpoint; contiguous_tail=$contiguous_tail." >&2
-            return 0
-          fi
+              set +e
+              python scripts/merge_binance_ws_cache.py "$local_file" "$remote_file"
+              merge_status=$?
+              set -e
+              if [ "$merge_status" -eq 11 ]; then
+                return 0
+              fi
+              if [ "$merge_status" -eq 12 ]; then
+                return 0
+              fi
+              if [ "$merge_status" -ne 0 ]; then
+                echo "ERROR: Binance WS cache merge helper failed with status $merge_status." >&2
+                return "$merge_status"
+              fi
             fi
 
             for attempt in 1 2 3 4; do
