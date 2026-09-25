@@ -336,7 +336,8 @@ jobs:
           # real code/data-contract failures red.
           if [ "$predict_status" -eq 124 ] || [ "$predict_status" -eq 137 ] || \
              (grep -q "live_prediction_inputs_incomplete:" "$err" && \
-              (grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err" || grep -q "fallback_not_allowed" "$err")); then
+              (grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err" || grep -q "fallback_not_allowed" "$err")) || \
+             grep -Eq "stale_live_market_event:|future_live_market_event:" "$err"; then
             echo "BTC_LIVE_DEFERRED=1" >> "$GITHUB_ENV"
             echo "BTC live prediction deferred: Binance critical market-data endpoints are unavailable. No prediction was fabricated." >&2
             rm -f "$out" "$err"
