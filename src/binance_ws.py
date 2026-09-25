@@ -212,8 +212,12 @@ def load_depth_cache(path: Path = DEFAULT_DEPTH_CACHE, max_age_ms: int = 180_000
         )
         if parsed is None:
             return None
-        age=int(time.time()*1000)-int(parsed["retrieved_at_ms"])
-        if age < 0 or age > int(max_age_ms):
+        now_ms=int(time.time()*1000)
+        retrieved_age=now_ms-int(parsed["retrieved_at_ms"])
+        event_age=now_ms-int(parsed["event_time_ms"])
+        if retrieved_age < 0 or retrieved_age > int(max_age_ms):
+            return None
+        if event_age < 0 or event_age > int(max_age_ms):
             return None
         return parsed
     except (OSError,ValueError,TypeError,KeyError):
