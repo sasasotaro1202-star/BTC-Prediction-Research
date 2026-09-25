@@ -23,3 +23,13 @@ def test_no_router_models_is_fail_closed():
     assert np.allclose(out,ensemble)
     assert not use.any()
     assert (chosen=="ensemble").all()
+
+
+def test_risk_threshold_is_external_and_causal():
+    rows=_rows(2)
+    probs={k:np.tile(v,(2,1)) for k,v in {
+        "logreg":[0.6,0.25,0.15],"extra_trees":[0.5,0.3,0.2],"hgb":[0.55,0.25,0.2]
+    }.items()}
+    out,use,chosen,high,q,scores=_route(rows,probs,{},0.60,0.0)
+    assert high.all()
+    assert np.isclose(q,0.0)
