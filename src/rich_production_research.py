@@ -159,15 +159,7 @@ def _factories() -> dict[str, callable]:
                 random_state=42, n_jobs=-1, verbosity=-1
             )
         } if LGBMClassifier is not None else {}),
-        **({
-            "xgboost": lambda: XGBClassifier(
-                objective="multi:softprob", num_class=3, n_estimators=300,
-                max_depth=5, learning_rate=0.04, subsample=0.9,
-                colsample_bytree=0.9, min_child_weight=10,
-                reg_lambda=1.0, tree_method="hist", n_jobs=-1,
-                random_state=42, eval_metric="mlogloss"
-            )
-        } if XGBClassifier is not None else {}),
+
     }
 
 def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:

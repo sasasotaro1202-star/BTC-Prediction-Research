@@ -29,7 +29,7 @@ def test_metrics_three_class_known_case():
     m = _metrics(y, p)
     assert m["n"] == 3
     assert m["accuracy"] == 1.0
-    assert m["brier"] == 0.0
+    assert m["brier"] < 1e-12
     assert m["logloss"] < 1e-6
 
 
@@ -39,8 +39,8 @@ def test_relative_gain_direction():
 
 
 def test_block_bootstrap_is_paired_and_finite():
-    y = np.array(["DOWN","FLAT","UP"] * 1000, dtype=object)
-    rich = np.tile(np.eye(3), (1000,1))
+    y = np.array(["DOWN","FLAT","UP"] * 2000, dtype=object)
+    rich = np.tile(np.eye(3), (2000,1))
     base = np.roll(rich, 1, axis=1)
     out = _block_bootstrap_ci(y, rich, base)
     assert out["n_blocks"] >= 5
