@@ -408,5 +408,14 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn('current_latest="$(python -c', block)
         self.assertIn('current_depth="$(python -c', block)
 
+    def test_collector_capture_step_avoids_heredoc_command_substitutions(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("          publish_cache() {")
+        end = workflow.index("          publish_depth_cache() {", start)
+        block = workflow[start:end]
+        self.assertIn('contiguous_tail="$(python -c', block)
+        self.assertNotIn('contiguous_tail="$(python - "$local_file" <<\'PY\'', block)
+        self.assertIn('gappy Binance WS checkpoint', block)
+
 if __name__ == "__main__":
     unittest.main()
