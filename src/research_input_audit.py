@@ -21,6 +21,7 @@ TARGETS = {"5m": "target_5m", "10m": "target_10m"}
 CLASSES = ("DOWN", "FLAT", "UP")
 LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
 LEGACY_COINBASE_MODEL_VERSION = "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1"
+PIT_CONTRACT_CUTOFF_UTC = datetime.fromisoformat("2026-09-25T19:53:39+00:00")
 
 def _dt(value):
     try:
@@ -194,6 +195,13 @@ def recent_pit_stats(con, horizon: str, limit: int = 20) -> dict:
     strict = 0
     failures = Counter()
     for prediction_id, created_at, target_at, model_version, scenario_json, actual in rows:
+        created_dt = _dt(created_at)
+        # Predictions emitted before the strict-PIT contract deployment are
+        # immutable historical evidence. Keep them in the ledger, but do not
+        # let a known pre-contract observation contaminate the post-fix window.
+        if created_dt is not None and created_dt < PIT_CONTRACT_CUTOFF_UTC:
+            failures["pre_contract_prediction_quarantined"] += 1
+            continue
         if not prediction_precedes_target(created_at, target_at):
             failures["prediction_time_not_before_target"] += 1
             continue
