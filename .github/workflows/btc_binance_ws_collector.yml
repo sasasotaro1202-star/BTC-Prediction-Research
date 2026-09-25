@@ -102,7 +102,7 @@ jobs:
                       break
                   suffix += 1
               age = now_ms - int(ordered[-1].get("retrieved_at_ms", 0))
-              return suffix, age
+              return len(ordered), suffix, age
 
           existing = None
           if path.is_file():
@@ -111,10 +111,19 @@ jobs:
               except Exception:
                   existing = None
 
-          suffix, age = fresh_contiguous_suffix(existing)
-          if suffix >= 40 and age is not None and 0 <= age <= 180_000:
-              print(f"Existing Binance WS cache is fresh: contiguous_rows={suffix} age_ms={age}")
+          row_count, suffix, age = fresh_contiguous_suffix(existing)
+          if suffix >= 40 and suffix == row_count and age is not None and 0 <= age <= 180_000:
+              print(
+                  "Existing Binance WS cache is fresh and fully contiguous: "
+                  f"rows={row_count} age_ms={age}"
+              )
               raise SystemExit(0)
+
+          if row_count:
+              print(
+                  "Existing Binance WS cache requires REST healing: "
+                  f"rows={row_count} contiguous_suffix={suffix} age_ms={age}"
+              )
 
           url = (
               "https://fapi.binance.com/fapi/v1/klines?"
