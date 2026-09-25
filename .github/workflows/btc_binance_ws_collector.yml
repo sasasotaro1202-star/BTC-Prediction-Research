@@ -227,6 +227,7 @@ jobs:
               "schema_version": 1,
               "source": "Binance USD-M Futures WebSocket",
               "stream": "btcusdt@kline_1m",
+              "recovery_epoch_ms": retrieved_ms,
               "rows": rows[-720:],
               "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(retrieved_ms / 1000)),
           }
@@ -388,6 +389,17 @@ jobs:
             local_file="data/binance_ws_1m.json"
             test -s "$local_file"
             git fetch --no-tags --depth=1 origin binance-ws-cache
+
+            # A REST-healed cache advances a monotonic recovery epoch. Older
+            # collectors that started before that repair must never overwrite it.
+            if git show origin/binance-ws-cache:data/binance_ws_1m.json > /tmp/btc_remote_ws_cache_epoch.json 2>/dev/null; then
+              local_epoch="$(python -c 'import json; from pathlib import Path; obj=json.loads(Path("data/binance_ws_1m.json").read_text(encoding="utf-8")); print(int(obj.get("recovery_epoch_ms", 0) or 0))')"
+              remote_epoch="$(python -c 'import json; from pathlib import Path; obj=json.loads(Path("/tmp/btc_remote_ws_cache_epoch.json").read_text(encoding="utf-8")); print(int(obj.get("recovery_epoch_ms", 0) or 0))')"
+              if [ "$remote_epoch" -gt "$local_epoch" ]; then
+                echo "Binance WS cache recovery epoch is newer remotely (remote=$remote_epoch local=$local_epoch); preserving repaired remote cache."
+                return 0
+              fi
+            fi
 
             # Merge rows already published remotely before creating the next
             # checkpoint. This prevents a long-lived collector that started with
