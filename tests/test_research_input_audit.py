@@ -237,6 +237,9 @@ class ResearchInputAuditTests(unittest.TestCase):
         self.assertEqual(result["rate"], 1.0)
 
         row2 = list(self._row("model-v4"))
+        row2[0] = "2026-09-26T00:20:00+00:00"
+        row2[1] = "2026-09-26T00:25:00+00:00"
+        row2[2] = "2026-09-26T00:30:00+00:00"
         self._insert(con, [tuple(row2)])
         result2 = recent_pit_stats(con, "5m", limit=20)
         self.assertFalse(result2["all_strict"])
