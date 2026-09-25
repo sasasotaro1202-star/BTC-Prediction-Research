@@ -484,6 +484,7 @@ jobs:
 
             if rest_seed; then
               if validate_boundary_cache; then
+                cp "$tmp_cache" data/binance_ws_1m.json
                 cache_loaded=true
                 echo 'Loaded fresh Binance Futures cache directly via same-product REST failover.'
               else
