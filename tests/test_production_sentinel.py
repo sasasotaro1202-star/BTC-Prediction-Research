@@ -13,7 +13,7 @@ def test_production_sentinel_has_real_shell_variable_expansion():
     assert '[ "$active" -eq 0 ]' in text
     assert '[ "$age" -ge 300 ]' in text
     assert '[ "$head" != "$main_sha" ]' in text
-    for token in ("\\$live_json", "\\$latest", "\\$updated", "\\$active", "\\$age", "\\$head", "\\$main_sha"):
+    for token in ("\\$live_json", "\\$latest", "\\$updated", "\\$active", "\\$age", "\\$head", "\\$main_sha", "age=\\$((now-epoch))"):
         assert token not in text
 
 
