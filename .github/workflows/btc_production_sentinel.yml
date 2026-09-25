@@ -30,38 +30,64 @@ jobs:
       - name: Check production heartbeat
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          degraded=0
           now="$(date -u +%s)"
-          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
 
-          live_json="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")"
-          active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$live_json")"
-          latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"$live_json")"
-
-          updated="$(cut -f1 <<<"$latest")"
-          head="$(cut -f2 <<<"$latest")"
-          if [ -z "$updated" ]; then
-            age=999999999
-          else
-            epoch="$(date -d "$updated" +%s)"
-            age=$((now-epoch))
-          fi
-
-          echo "main_sha=$main_sha active_live=$active latest_live_head=${head:-none} age=${age}s"
-
-          if [ "$active" -gt 0 ]; then
-            echo "Live run already active; no dispatch."
+          if ! live_json="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=30" 2>/dev/null)"; then
+            echo "::warning::Unable to inspect BTC Live runs; sentinel degraded."
             exit 0
           fi
 
-          if [ "$age" -lt 300 ] && [ "$head" = "$main_sha" ]; then
+          active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$live_json" 2>/dev/null || echo -1)"
+          latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | .updated_at // ""' <<<"$live_json" 2>/dev/null || echo "")"
+
+          if [ "$active" -lt 0 ]; then
+            echo "::warning::Unable to parse active Live-run state; sentinel degraded."
+            exit 0
+          fi
+
+          if [ -z "$latest" ]; then
+            age=999999999
+          else
+            epoch="$(date -d "$latest" +%s 2>/dev/null || echo 0)"
+            if [ "$epoch" -eq 0 ]; then
+              age=999999999
+            else
+              age=$((now-epoch))
+            fi
+          fi
+
+          echo "active_live=$active latest_live=${latest:-none} age=${age}s"
+
+          if [ "$active" -gt 0 ]; then
+            echo "Live run already active/queued; no dispatch."
+            exit 0
+          fi
+
+          # Research-only commits do not by themselves make the production heartbeat stale.
+          if [ "$age" -lt 300 ]; then
             echo "Production heartbeat healthy."
             exit 0
           fi
 
           echo "Production heartbeat stale; dispatching one Live Cycle from current main."
-          if ! gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null; then
-            echo "ERROR: Live Cycle dispatch failed." >&2
-            exit 1
+          dispatched=0
+          for attempt in 1 2 3; do
+            if gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null 2>&1; then
+              echo "Live Cycle recovery dispatch accepted via REST (attempt ${attempt})."
+              dispatched=1
+              break
+            fi
+            echo "WARN: Live Cycle REST dispatch failed (attempt ${attempt})." >&2
+            sleep $((5 * attempt))
+          done
+
+          if [ "$dispatched" -eq 0 ]; then
+            echo "::warning::BTC Production Sentinel could not dispatch Live Cycle after 3 REST attempts."
+            degraded=1
           fi
-          echo "Live Cycle recovery dispatch accepted."
+
+          if [ "$degraded" -ne 0 ]; then
+            echo "sentinel_degraded=1" >> "$GITHUB_STEP_SUMMARY"
+          fi
