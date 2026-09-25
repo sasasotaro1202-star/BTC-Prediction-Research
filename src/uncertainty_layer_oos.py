@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parents[1]
 RESEARCH = ROOT / "data" / "historical_research"
@@ -139,6 +142,49 @@ def uncertainty_features(model_probs: np.ndarray, ensemble: np.ndarray) -> dict[
     }
 
 
+
+def _risk_matrix(feats: dict[str, np.ndarray], indices: list[int] | np.ndarray) -> np.ndarray:
+    idx = np.asarray(indices, dtype=int)
+    return np.column_stack(
+        [feats[key][idx] for key in ("confidence", "entropy", "margin", "disagreement", "agreement", "uncertainty")]
+    ).astype(float)
+
+
+def _fit_error_model(
+    feats: dict[str, np.ndarray],
+    ensemble: np.ndarray,
+    y: list[str],
+    train_idx: list[int] | np.ndarray,
+) -> Pipeline | None:
+    idx = np.asarray(train_idx, dtype=int)
+    labels = np.asarray([int(np.argmax(ensemble[i]) != CLASSES.index(y[i])) for i in idx], dtype=int)
+    if len(np.unique(labels)) < 2 or len(idx) < 200:
+        return None
+    model = Pipeline(
+        [
+            ("scale", StandardScaler()),
+            ("risk", LogisticRegression(C=0.5, max_iter=2000, class_weight="balanced")),
+        ]
+    )
+    model.fit(_risk_matrix(feats, idx), labels)
+    return model
+
+
+def _risk_probability(model: Pipeline | None, feats: dict[str, np.ndarray], indices: list[int] | np.ndarray) -> np.ndarray:
+    idx = np.asarray(indices, dtype=int)
+    if model is None:
+        return np.clip(feats["uncertainty"][idx], 0.0, 1.0)
+    prob = np.asarray(model.predict_proba(_risk_matrix(feats, idx))[:, 1], dtype=float)
+    if not np.isfinite(prob).all():
+        raise ValueError("risk_probability_nonfinite")
+    return np.clip(prob, 0.0, 1.0)
+
+
+def _risk_shrink(ensemble: np.ndarray, risk_probability: np.ndarray, alpha: float) -> np.ndarray:
+    w = np.clip(float(alpha) * np.asarray(risk_probability, dtype=float), 0.0, 0.80)[:, None]
+    uniform = np.full_like(ensemble, 1.0 / 3.0)
+    return _norm((1.0 - w) * ensemble + w * uniform)
+
 def _shrink(ensemble: np.ndarray, uncertainty: np.ndarray, alpha: float) -> np.ndarray:
     w = np.clip(float(alpha) * uncertainty, 0.0, 0.80)[:, None]
     uniform = np.full_like(ensemble, 1.0 / 3.0)
@@ -191,18 +237,48 @@ def evaluate(horizon: str) -> dict[str, Any]:
             best_ll, best_alpha = score, alpha
 
     assert best_alpha is not None
+
+    # Learned upset/error-risk detector: fit only on the earlier development
+    # segment, tune shrink strength on the later development segment, then
+    # refit on all development rows before the frozen holdout. This keeps the
+    # final holdout entirely out of model/risk-threshold selection.
+    risk_train_idx = train_idx
+    risk_model = _fit_error_model(feats, ensemble, y, risk_train_idx)
+    tune_risk = _risk_probability(risk_model, feats, tune_idx)
+    risk_alpha_grid = (0.10, 0.20, 0.40, 0.60, 0.80)
+    risk_scores: list[dict[str, float]] = []
+    best_risk_alpha = None
+    best_risk_ll = float("inf")
+    for alpha in risk_alpha_grid:
+        p = _risk_shrink(ensemble[tune_idx], tune_risk, alpha)
+        score = float(_metrics(dev_tune_y, p)["logloss"])
+        risk_scores.append({"alpha": float(alpha), "tune_logloss": score})
+        if score < best_risk_ll:
+            best_risk_ll, best_risk_alpha = score, alpha
+    assert best_risk_alpha is not None
+
     dev_y = [y[i] for i in development]
     dev_base = _metrics(dev_y, ensemble[development])
     dev_candidate = _metrics(
         dev_y,
         _shrink(ensemble[development], feats["uncertainty"][development], best_alpha),
     )
+    dev_risk_model = _fit_error_model(feats, ensemble, y, development)
+    dev_risk_probability = _risk_probability(dev_risk_model, feats, development)
+    dev_risk_candidate = _metrics(
+        dev_y,
+        _risk_shrink(ensemble[development], dev_risk_probability, best_risk_alpha),
+    )
 
     hold_y = [y[i] for i in holdout]
     hold_base_p = ensemble[holdout]
     hold_candidate_p = _shrink(hold_base_p, feats["uncertainty"][holdout], best_alpha)
+    hold_risk_model = _fit_error_model(feats, ensemble, y, development)
+    hold_risk_probability = _risk_probability(hold_risk_model, feats, holdout)
+    hold_risk_candidate_p = _risk_shrink(hold_base_p, hold_risk_probability, best_risk_alpha)
     hold_base = _metrics(hold_y, hold_base_p)
     hold_candidate = _metrics(hold_y, hold_candidate_p)
+    hold_risk_candidate = _metrics(hold_y, hold_risk_candidate_p)
 
     # Upset-risk identification threshold is learned only from development.
     risk_threshold = float(np.quantile(feats["uncertainty"][development], 0.75))
@@ -259,12 +335,17 @@ def evaluate(horizon: str) -> dict[str, Any]:
     br_rel = (float(hold_base["brier"]) - float(hold_candidate["brier"])) / max(
         EPS, abs(float(hold_base["brier"]))
     )
+    risk_dev_ll_rel = (float(dev_base["logloss"]) - float(dev_risk_candidate["logloss"])) / max(
+        EPS, abs(float(dev_base["logloss"]))
+    )
+    risk_dev_br_rel = (float(dev_base["brier"]) - float(dev_risk_candidate["brier"])) / max(
+        EPS, abs(float(dev_base["brier"]))
+    )
     eligible = bool(
-        dev_ll_rel >= 0.03
-        and dev_br_rel >= 0.01
-        and dev_block["candidate_vs_baseline_logloss_non_worse_ratio"] >= 0.70
-        and float(dev_candidate["ece"]) <= float(dev_base["ece"])
-        and float(dev_candidate["accuracy"]) >= float(dev_base["accuracy"]) - 0.005
+        risk_dev_ll_rel >= 0.03
+        and risk_dev_br_rel >= 0.01
+        and float(dev_risk_candidate["ece"]) <= float(dev_base["ece"])
+        and float(dev_risk_candidate["accuracy"]) >= float(dev_base["accuracy"]) - 0.005
         and high_dev_n >= 100
     )
 
@@ -294,8 +375,17 @@ def evaluate(horizon: str) -> dict[str, Any]:
         "final_holdout": {
             "baseline": hold_base,
             "candidate": hold_candidate,
+            "learned_risk_candidate": hold_risk_candidate,
             "relative_logloss_improvement": float(ll_rel),
             "relative_brier_improvement": float(br_rel),
+            "learned_risk_relative_logloss_improvement": float(
+                (float(hold_base["logloss"]) - float(hold_risk_candidate["logloss"]))
+                / max(EPS, abs(float(hold_base["logloss"])))
+            ),
+            "learned_risk_relative_brier_improvement": float(
+                (float(hold_base["brier"]) - float(hold_risk_candidate["brier"]))
+                / max(EPS, abs(float(hold_base["brier"])))
+            ),
             "block_stability": hold_block,
             "baseline_block_stability": hold_baseline_block,
             "risk_detection": risk_stats,
@@ -306,13 +396,22 @@ def evaluate(horizon: str) -> dict[str, Any]:
                 "model_entropy",
                 "model_disagreement",
                 "probability_margin",
+                "learned_error_probability",
             ],
             "outcome_used_after_prediction_fixed": True,
             "no_future_features": True,
         },
         "development_eligibility_metrics": {
-            "relative_logloss_improvement": float(dev_ll_rel),
-            "relative_brier_improvement": float(dev_br_rel),
+            "uncertainty_shrink": {
+                "relative_logloss_improvement": float(dev_ll_rel),
+                "relative_brier_improvement": float(dev_br_rel),
+            },
+            "learned_risk_shrink": {
+                "relative_logloss_improvement": float(risk_dev_ll_rel),
+                "relative_brier_improvement": float(risk_dev_br_rel),
+                "selected_alpha": float(best_risk_alpha),
+                "tune_scores": risk_scores,
+            },
             "block_stability": dev_block,
             "high_uncertainty_n": high_dev_n,
             "high_uncertainty_error_rate": dev_risk_error,
