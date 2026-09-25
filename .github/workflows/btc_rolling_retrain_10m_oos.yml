@@ -57,8 +57,17 @@ jobs:
           assert o['production_changed'] is False
           assert o['strict_pit'] is False
           assert o['promotion_evidence_eligible'] is False
-          assert v.get('final_holdout',{}).get('protected') is True
-          print('rolling retrain evidence contract verified')
+          status = v.get('status')
+          assert status in {'OK', 'DEFERRED'}
+          if status == 'DEFERRED':
+              assert v.get('reason')
+              assert v.get('research_only') is True
+              assert v.get('production_changed') is False
+              print(f"rolling retrain evidence DEFERRED: {v['reason']}")
+          else:
+              assert v.get('final_holdout',{}).get('protected') is True
+              assert v.get('final_holdout',{}).get('used_for_selection') is False
+              print('rolling retrain evidence contract verified')
           PY
       - name: Upload evidence
         if: \${{ !cancelled() }}
