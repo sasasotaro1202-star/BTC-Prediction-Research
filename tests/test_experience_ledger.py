@@ -237,11 +237,11 @@ def test_unsettled_rows_are_excluded_and_invalid_probabilities_fail_closed():
             patch.object(experience_ledger, "DB", db),
             patch.object(experience_ledger, "SUMMARY", summary),
             patch.object(experience_ledger, "init_db", lambda: None),
-            pytest.raises(SystemExit, match="experience ledger parse errors: 1"),
         ):
-            experience_ledger.build()
+            report = experience_ledger.build()
 
-        report = json.loads(summary.read_text(encoding="utf-8"))
+        assert report["status"] == "PARTIAL"
+        assert report["invalid_row_policy"] == "fail_closed_exclude_invalid_settlements_continue"
         assert report["total_experiences"] == 0
         assert report["parse_errors"] == 1
         assert report["horizons"]["5m"]["total"]["n"] == 0

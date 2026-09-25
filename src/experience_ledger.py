@@ -247,10 +247,13 @@ def build():
         }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    payload["status"] = "PARTIAL" if parse_errors else "OK"
+    payload["invalid_row_policy"] = "fail_closed_exclude_invalid_settlements_continue"
     SUMMARY.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False))
-    if parse_errors:
-        raise SystemExit(f"experience ledger parse errors: {parse_errors}")
+    # Invalid settled observations are excluded from the research ledger. They
+    # must not block the independent live-prediction path because this module
+    # is research-only; the count remains explicit for downstream investigation.
     return payload
 
 
