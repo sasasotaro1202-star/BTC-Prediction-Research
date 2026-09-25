@@ -264,6 +264,7 @@ def names(probs):
 
 def main():
     payload={"schema_version":1,"research_only":True,"production_changed":False,
+             "promotion_evidence_eligible":False,
              "horizons":{h:_evaluate(h) for h in HORIZONS}}
     OUT.parent.mkdir(parents=True,exist_ok=True)
     OUT.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
