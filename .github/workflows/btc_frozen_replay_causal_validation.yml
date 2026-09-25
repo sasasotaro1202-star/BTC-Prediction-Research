@@ -1,0 +1,68 @@
+name: BTC Frozen Replay Causal PR Validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/frozen_archive_replay_oos.py'
+      - 'tests/test_frozen_archive_replay_oos.py'
+      - '.github/workflows/btc_frozen_replay_causal_validation.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-frozen-replay-causal-\${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  causal_replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and regression test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          python -m pytest -q tests/test_frozen_archive_replay_oos.py
+
+      - name: Run corrected frozen archive replay
+        run: |
+          set -euo pipefail
+          python src/frozen_archive_replay_oos.py
+          test -s data/historical_research/frozen_archive_replay_oos.json
+
+      - name: Validate causal evidence contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/frozen_archive_replay_oos.json').read_text())
+          assert obj.get('research_only') is True
+          assert obj.get('production_changed') is False
+          assert obj.get('replay_holdout_protected') is True
+          for horizon,item in obj.get('horizons',{}).items():
+              assert item.get('promotion_evidence_eligible') is False
+              assert item.get('causal_protocol_verified') is True
+          print('CORRECTED_FROZEN_REPLAY_VERIFIED')
+          PY
+
+      - name: Upload corrected replay evidence
+        if: \${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-frozen-replay-causal-\${{ github.run_id }}
+          path: data/historical_research/frozen_archive_replay_oos.json
+          if-no-files-found: error
+          retention-days: 7
