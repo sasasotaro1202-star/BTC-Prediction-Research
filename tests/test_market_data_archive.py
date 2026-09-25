@@ -106,6 +106,7 @@ def test_resilient_series_uses_archive_before_cross_venue_fallback():
                  "binance_futures": network_error,
              },
          ), \
+         patch.object(market_data, "bybit_mark_price", side_effect=network_error), \
          patch.object(market_data, "binance_archive_daily_rows", return_value=rows):
         fut, spot, bybit, status = market_data.resilient_1m_series(120)
 
