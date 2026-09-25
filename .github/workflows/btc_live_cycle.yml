@@ -267,6 +267,7 @@ jobs:
             tests/test_promotion_gate.py
             tests/test_model_compare_promotion_boundary.py
             tests/test_settle.py
+            tests/test_experience_ledger.py
             tests/test_settlement_source.py
             tests/test_state_archive.py
             tests/test_merge_prediction_state.py
@@ -310,12 +311,6 @@ jobs:
         run: |
           set -euo pipefail
           python src/reconcile_fallback_settlements.py
-
-      - name: Build BTC settled experience ledger
-        shell: bash
-        run: |
-          set -euo pipefail
-          python src/experience_ledger.py
 
       - name: Canonicalize prediction state before settlement
         shell: bash
