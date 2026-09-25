@@ -29,3 +29,18 @@ class BootstrapGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_development_gate_rejects_accuracy_regression_even_with_loss_gain():
+        baseline = {"accuracy": 0.50, "logloss": 0.90, "brier": 0.50}
+        candidate = {"accuracy": 0.499, "logloss": 0.84, "brier": 0.49}
+        self.assertFalse(development_gate_passes(candidate, baseline))
+
+
+    def test_candidate_factories_include_free_boosting_candidates_when_available():
+        from src.bootstrap_train import LGBMClassifier, XGBClassifier, candidate_factories
+        names = {name for name, _ in candidate_factories()}
+        if LGBMClassifier is not None:
+            self.assertIn("lightgbm", names)
+        if XGBClassifier is not None:
+            self.assertIn("xgboost", names)

@@ -279,15 +279,52 @@ jobs:
           done
           PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python -m pytest -q "${tests[@]}"
 
-      - name: Ensure BTC production models exist without retraining every 5 minutes
+      - name: Refresh stale BTC production models behind the bootstrap gate
         shell: bash
         run: |
           set -euo pipefail
-          missing=0
+          need_train=0
           for horizon in 5m 10m; do
-            if [ ! -s "models/${horizon}.joblib" ] || [ ! -s "models/${horizon}.json" ]; then missing=1; fi
+            if [ ! -s "models/${horizon}.joblib" ] || [ ! -s "models/${horizon}.json" ]; then need_train=1; fi
           done
-          if [ "${missing}" -eq 0 ]; then exit 0; fi
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          now = datetime.now(timezone.utc)
+          ages = []
+          for horizon in ("5m", "10m"):
+              p = Path(f"models/{horizon}.json")
+              if not p.exists():
+                  ages.append(float("inf"))
+                  continue
+              try:
+                  obj = json.loads(p.read_text(encoding="utf-8"))
+                  ts = datetime.fromisoformat(str(obj["trained_at_utc"]).replace("Z", "+00:00"))
+                  if ts.tzinfo is None:
+                      raise ValueError("training timestamp must be timezone-aware")
+                  ages.append((now - ts).total_seconds())
+              except Exception:
+                  ages.append(float("inf"))
+          status = Path("data/historical_research/bootstrap_status.json")
+          recent_attempt = False
+          if status.exists():
+              try:
+                  obj = json.loads(status.read_text(encoding="utf-8"))
+                  ts = datetime.fromisoformat(str(obj["updated_at_utc"]).replace("Z", "+00:00"))
+                  if ts.tzinfo is None:
+                      raise ValueError("status timestamp must be timezone-aware")
+                  recent_attempt = (now - ts).total_seconds() < 6 * 3600
+              except Exception:
+                  recent_attempt = False
+          if max(ages, default=float("inf")) >= 24 * 3600 and not recent_attempt:
+              Path("/tmp/btc_bootstrap_train_due").write_text("1", encoding="utf-8")
+          PY
+          if [ -s /tmp/btc_bootstrap_train_due ]; then need_train=1; fi
+          if [ "${need_train}" -eq 0 ]; then
+            echo "BTC production models are fresh enough; bootstrap retrain not due."
+            exit 0
+          fi
           python src/bootstrap_train.py
       - name: Ensure gated Coinbase fallback models exist
         shell: bash

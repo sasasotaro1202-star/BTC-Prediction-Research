@@ -11,11 +11,21 @@ from urllib.parse import urlencode
 
 import joblib
 import numpy as np
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
+try:
+    from lightgbm import LGBMClassifier
+except ImportError:
+    LGBMClassifier = None
+
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
 
 try:
     from db import DB, init_db
@@ -168,7 +178,7 @@ def development_gate_passes(gate_score, baseline_gate):
     return bool(
         ll_rel_gain >= 0.03
         and br_rel_gain >= 0.01
-        and acc_delta >= -0.005
+        and acc_delta >= 0.0
     )
 
 
@@ -219,7 +229,7 @@ def candidate_factories():
         ),
         (
             "extra_trees",
-            __import__("sklearn.ensemble", fromlist=["ExtraTreesClassifier"]).ExtraTreesClassifier(
+            ExtraTreesClassifier(
                 n_estimators=350,
                 max_depth=10,
                 min_samples_leaf=10,
@@ -227,6 +237,29 @@ def candidate_factories():
                 random_state=42,
                 n_jobs=-1,
             ),
+        ),
+        *(
+            [(
+                "lightgbm",
+                LGBMClassifier(
+                    objective="multiclass", num_class=3, n_estimators=350,
+                    learning_rate=0.03, num_leaves=31, min_child_samples=30,
+                    subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
+                    random_state=42, n_jobs=-1, verbosity=-1,
+                ),
+            )] if LGBMClassifier is not None else []
+        ),
+        *(
+            [(
+                "xgboost",
+                XGBClassifier(
+                    objective="multi:softprob", num_class=3, n_estimators=320,
+                    max_depth=5, learning_rate=0.03, min_child_weight=12,
+                    subsample=0.9, colsample_bytree=0.9, reg_lambda=2.0,
+                    reg_alpha=0.05, eval_metric="mlogloss", random_state=42,
+                    n_jobs=-1, verbosity=0,
+                ),
+            )] if XGBClassifier is not None else []
         ),
         (
             "hgb",
@@ -293,7 +326,7 @@ def train_one(X, y, purge_gap=0):
             }
         )
 
-    validation_results.sort(key=lambda r: (r["logloss"], r["brier"], -r["accuracy"]))
+    validation_results.sort(key=lambda r: (-r["accuracy"], r["logloss"], r["brier"]))
     selected_name = validation_results[0]["model"]
     factories = {name: model for name, model in candidates}
     selected_for_gate = factories[selected_name]
