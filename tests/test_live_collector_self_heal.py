@@ -85,6 +85,20 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn("event_age<0", block)
         self.assertIn("event_age>180000", block)
         self.assertIn("Binance depth cache stale_or_insufficient", block)
+    def test_live_boundary_attempts_same_product_rest_recovery_before_polling(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Refresh latest Binance WebSocket cache immediately before prediction')
+        end = workflow.index('      - name: Refresh latest Binance depth cache immediately before prediction', start)
+        block = workflow[start:end]
+        self.assertIn('def rest_seed()', block)
+        self.assertIn('from src.market_data import binance_klines', block)
+        self.assertIn('raw = binance_klines(False, 720)', block)
+        self.assertIn('if rest_seed; then', block)
+        self.assertIn('Loaded fresh Binance Futures cache directly via same-product REST failover.', block)
+        self.assertIn('if [ "$cache_loaded" != true ]; then', block)
+        self.assertIn('for attempt in 1 2 3 4 5 6; do', block)
+        self.assertIn('raise SystemExit(f"Binance Futures REST recovery insufficient contiguous rows: {suffix}")', block)
+
     def test_self_heal_health_check_failure_is_captured_under_set_e(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Self-heal stale Binance WS collector')
