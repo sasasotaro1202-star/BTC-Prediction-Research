@@ -60,6 +60,36 @@ jobs:
             exit 1
           }
           active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$live_json")"
+
+          # Recover only clearly stale live runs: an active run older than 12 minutes
+          # and running an older main SHA. This avoids cancelling normal short cycles
+          # while preventing an obsolete/hung generation from blocking current main.
+          stale_ids="$(jq -r --arg main_sha "$main_sha" --argjson now "$now" '
+            .workflow_runs[]?
+            | select(.status=="queued" or .status=="pending" or .status=="in_progress")
+            | select(.head_sha != $main_sha)
+            | select((($now - ((.run_started_at // .created_at) | fromdateiso8601)) >= 720))
+            | .id
+          ' <<<"$live_json")"
+          if [ -n "$stale_ids" ]; then
+            while IFS= read -r run_id; do
+              [ -z "$run_id" ] && continue
+              echo "Stale obsolete Live Cycle detected; cancelling run_id=$run_id."
+              if gh run cancel "$run_id" --repo "$REPO"; then
+                echo "Cancelled stale obsolete Live Cycle run_id=$run_id."
+              else
+                echo "ERROR: failed to cancel stale obsolete Live Cycle run_id=$run_id." >&2
+                exit 1
+              fi
+            done <<<"$stale_ids"
+            sleep 5
+            live_json="$(retry_api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
+              echo "ERROR: unable to refresh Live workflow runs after stale-run cancellation." >&2
+              exit 1
+            }
+            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$live_json")"
+          fi
+
           latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"$live_json")"
 
           updated="$(cut -f1 <<<"$latest")"
