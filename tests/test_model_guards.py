@@ -14,10 +14,14 @@ class TestModelGuards(unittest.TestCase):
     def test_bootstrap_candidate_set_contains_diverse_safe_models(self):
         from bootstrap_train import candidate_factories
         names = [name for name, _ in candidate_factories()]
-        self.assertEqual(
-            names,
-            ["logreg", "rf", "rf_replay", "extra_trees", "hgb", "soft_ensemble"],
-        )
+        expected = ["logreg", "rf", "rf_replay", "extra_trees"]
+        from bootstrap_train import LGBMClassifier, XGBClassifier
+        if LGBMClassifier is not None:
+            expected.append("lightgbm")
+        if XGBClassifier is not None:
+            expected.append("xgboost")
+        expected.extend(["hgb", "soft_ensemble"])
+        self.assertEqual(names, expected)
 
 
     def test_fallback_calibration_is_source_and_version_bound(self):
