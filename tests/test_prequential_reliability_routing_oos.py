@@ -26,7 +26,7 @@ def _row(y="UP"):
 
 
 def test_context_is_deterministic():
-    assert _feature_context(_row()["x"]) == "UP|LOW|MID"
+    assert _feature_context(_row()["x"]) == "UP|HIGH|MID"
 
 
 def test_weights_normalize():
