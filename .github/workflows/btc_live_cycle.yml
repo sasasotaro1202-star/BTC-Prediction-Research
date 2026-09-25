@@ -124,7 +124,10 @@ jobs:
           fi
 
           set +e
-          active="$(gh run list --repo "$GITHUB_REPOSITORY"             --workflow btc_binance_ws_collector.yml             --limit 20             --json status             --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length' 2>/tmp/btc_ws_gh_list.err)"
+          active_runs_json="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow btc_binance_ws_collector.yml \
+            --limit 20 \
+            --json databaseId,headSha,status 2>/tmp/btc_ws_gh_list.err)"
           list_status=$?
           set -e
           if [ "$list_status" -ne 0 ]; then
@@ -133,12 +136,59 @@ jobs:
             exit 0
           fi
 
-          # A stale cache with one active collector indicates that the active run
-          # is not publishing a usable heartbeat. The collector workflow is
-          # intentionally overlap-safe, so allow one additional recovery run.
-          # Avoid an unbounded dispatch storm when two collectors are already active.
+          # Cancel only collector generations whose executable code differs from
+          # the current main branch. Data/state-only commits keep the same code
+          # blobs and therefore do not churn healthy collectors.
+          set +e
+          current_workflow_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=main" --jq '.sha' 2>/tmp/btc_ws_workflow_sha.err)"
+          current_source_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=main" --jq '.sha' 2>/tmp/btc_ws_source_sha.err)"
+          code_status=$?
+          set -e
+          if [ "$code_status" -ne 0 ] || [ -z "$current_workflow_blob" ] || [ -z "$current_source_blob" ]; then
+            cat /tmp/btc_ws_workflow_sha.err /tmp/btc_ws_source_sha.err >&2
+            echo 'WARN: could not fingerprint current Binance collector code; preserving active collectors and continuing recovery.' >&2
+          else
+            while IFS=$'\t' read -r run_id run_sha run_status; do
+              [ -n "$run_id" ] || continue
+              [ "$run_status" = "queued" ] || [ "$run_status" = "in_progress" ] || continue
+
+              set +e
+              run_workflow_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=$run_sha" --jq '.sha' 2>/dev/null)"
+              run_source_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=$run_sha" --jq '.sha' 2>/dev/null)"
+              set -e
+              if [ -n "$run_workflow_blob" ] && [ -n "$run_source_blob" ] \
+                && { [ "$run_workflow_blob" != "$current_workflow_blob" ] || [ "$run_source_blob" != "$current_source_blob" ]; }; then
+                set +e
+                gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
+                cancel_status=$?
+                set -e
+                if [ "$cancel_status" -eq 0 ]; then
+                  echo "Cancelled stale Binance WS collector generation run=${run_id} sha=${run_sha} because collector code differs from current main."
+                else
+                  echo "WARN: failed to cancel stale Binance WS collector generation run=${run_id} status=${cancel_status}." >&2
+                fi
+              fi
+            done < <(printf '%s' "$active_runs_json" | jq -r '.[] | [.databaseId,.headSha,.status] | @tsv')
+          fi
+
+          set +e
+          active="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow btc_binance_ws_collector.yml \
+            --limit 20 \
+            --json status \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length' 2>/tmp/btc_ws_gh_list2.err)"
+          active_status=$?
+          set -e
+          if [ "$active_status" -ne 0 ]; then
+            cat /tmp/btc_ws_gh_list2.err >&2
+            echo 'WARN: could not recount Binance WS collector runs; leaving live prediction policy unchanged.' >&2
+            exit 0
+          fi
+
+          # A stale cache with current-code collectors may still need one additional
+          # recovery run. Avoid an unbounded dispatch storm when two collectors are active.
           if [ "${active:-0}" -ge 2 ]; then
-            echo "Binance WS collector already has ${active} active run(s); self-heal dispatch capped to avoid a recovery storm."
+            echo "Binance WS collector already has ${active} active current-code run(s); self-heal dispatch capped to avoid a recovery storm."
             exit 0
           fi
 
