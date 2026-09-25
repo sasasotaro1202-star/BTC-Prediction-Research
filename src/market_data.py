@@ -304,6 +304,23 @@ def _latest_row(rows):
     return max(rows, key=lambda r: int(r[0])) if rows else None
 
 
+def _fresh_closed_candle_suffix(rows, minimum: int = 40, max_age_ms: int = BINANCE_WS_MAX_AGE_MS):
+    """Return contiguous closed candles only when the latest close boundary is fresh."""
+    suffix = _latest_contiguous_suffix(rows, minimum)
+    if not suffix:
+        return []
+    try:
+        now_ms = int(time.time() * 1000)
+        latest_open_ms = int(suffix[-1][0])
+    except (TypeError, ValueError, IndexError):
+        return []
+    latest_event_ms = latest_open_ms + 60_000 - 1
+    age = now_ms - latest_event_ms
+    if age < -60_000 or age > int(max_age_ms):
+        return []
+    return suffix
+
+
 def cache_rows(limit=120):
     try:
         obj = json.loads(CACHE.read_text(encoding="utf-8"))
@@ -460,10 +477,10 @@ def resilient_1m_series(limit: int = 120):
         if isinstance(fut_error, Exception):
             status["binance_futures"] = f"error:{_error_label(fut_error)}"
         elif fut_error is not None:
-            fut = _latest_contiguous_suffix(fut_error, 40)
-            status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
-            if fut:
-                status["binance_futures_transport"] = "rest"
+            raw_fut = _latest_contiguous_suffix(fut_error, 40)
+            fut = _fresh_closed_candle_suffix(raw_fut, 40)
+            status["binance_futures"] = "ok" if fut else "stale_or_insufficient"
+            status["binance_futures_transport"] = "rest"
 
     spot = []
     spot_error = parallel.get("binance_spot")
@@ -496,23 +513,28 @@ def resilient_1m_series(limit: int = 120):
     if len(fut) < 40:
         try:
             archive_rows = binance_archive_daily_rows(max(120, limit))
-            if len(archive_rows) >= 40:
-                fut = archive_rows[-limit:]
+            fresh_archive = _fresh_closed_candle_suffix(archive_rows, 40)
+            if len(fresh_archive) >= 40:
+                fut = fresh_archive[-limit:]
                 status["binance_futures"] = "ok"
                 status["binance_futures_transport"] = "binance_vision_daily_archive"
                 status["binance_futures_archive_retrieved_at_ms"] = int(
                     time.time() * 1000
                 )
             else:
-                status["binance_futures_archive_contiguous_rows"] = len(archive_rows)
+                status["binance_futures"] = "stale_or_insufficient_archive"
         except Exception as exc:
             status["binance_futures_archive"] = f"error:{_error_label(exc)}"
 
     if len(fut) >= 40 and status.get("binance_futures_transport") == "websocket":
         status["price_feature_fallback"] = "none"
     elif len(fut) < 40 and len(by) >= 40:
-        fut = by
-        status["price_feature_fallback"] = "bybit"
+        fresh_by = _fresh_closed_candle_suffix(by, 40)
+        if len(fresh_by) >= 40:
+            fut = fresh_by
+            status["price_feature_fallback"] = "bybit"
+        else:
+            status["price_feature_fallback"] = "none"
     elif len(fut) < 40:
         try:
             cb = _latest_contiguous_suffix(coinbase_rows(min(300, max(120, limit))), 40)
