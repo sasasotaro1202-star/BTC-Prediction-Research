@@ -1,12 +1,6 @@
 name: BTC Recency Challenger
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/recency_challenger.py'
-      - 'tests/test_recency_challenger.py'
-      - '.github/workflows/btc_recency_challenger.yml'
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
