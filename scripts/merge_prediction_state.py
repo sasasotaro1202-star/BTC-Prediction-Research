@@ -130,6 +130,8 @@ def compact_predictions(con):
         if conflict_horizons:
             for horizon in sorted(conflict_horizons):
                 for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
+                    if column not in cols:
+                        continue
                     values = sorted(
                         {str(row.get(column)) for row in group if row.get(column) is not None}
                     )
@@ -138,6 +140,8 @@ def compact_predictions(con):
             _record_settlement_conflict(con, prediction_identity(survivor), conflicts)
             for horizon in conflict_horizons:
                 for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
+                    if column not in cols:
+                        continue
                     survivor[column] = None
                     clear_columns.add(column)
             conflict_count += 1
