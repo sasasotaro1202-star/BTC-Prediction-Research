@@ -28,6 +28,15 @@ import joblib
 import numpy as np
 import sys
 
+# Reuse the verified Binance Vision/archive fallback used by the main historical
+# research path. Hosted runners can receive HTTP 451 from Binance REST.
+try:
+    import historical_research_runner as _research_runner
+except ModuleNotFoundError:
+    from src import historical_research_runner as _research_runner
+import historical_research as _historical_module
+_historical_module.req_json = _research_runner.resilient_req_json
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
@@ -170,7 +179,15 @@ def _factories() -> dict[str, callable]:
                 random_state=42, n_jobs=-1, verbosity=-1
             )
         } if LGBMClassifier is not None else {}),
-
+        **({
+            "xgboost": lambda: XGBClassifier(
+                objective="multi:softprob", num_class=3, n_estimators=320,
+                max_depth=5, learning_rate=0.03, min_child_weight=12,
+                subsample=0.9, colsample_bytree=0.9, reg_lambda=2.0,
+                reg_alpha=0.05, eval_metric="mlogloss", random_state=42,
+                n_jobs=-1, verbosity=0
+            )
+        } if XGBClassifier is not None else {}),
     }
 
 def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:

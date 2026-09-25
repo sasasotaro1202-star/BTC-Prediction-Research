@@ -65,3 +65,17 @@ def test_extended_microstructure_features_are_append_only():
         "rangepos10","body","upper","lower","volratio","voltrend",
         "ema_gap_5m","ema_gap_10m",
     ]
+
+
+def test_model_factories_include_xgboost_when_dependency_is_available():
+    from src import rich_production_research as r
+    factories = r._factories()
+    if r.XGBClassifier is not None:
+        assert "xgboost" in factories
+    else:
+        assert "xgboost" not in factories
+
+
+def test_archive_resilient_request_patch_is_wired():
+    import historical_research as hr
+    assert hr.req_json.__module__ in {"historical_research_runner", "src.historical_research_runner"}

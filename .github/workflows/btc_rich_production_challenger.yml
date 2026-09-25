@@ -1,6 +1,14 @@
 name: BTC Rich Production Challenger
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/rich_production_research.py'
+      - 'src/historical_research.py'
+      - 'src/historical_research_runner.py'
+      - 'tests/test_rich_production_research.py'
+      - '.github/workflows/btc_rich_production_challenger.yml'
   schedule:
     - cron: '43 2 * * *'
   workflow_dispatch:
