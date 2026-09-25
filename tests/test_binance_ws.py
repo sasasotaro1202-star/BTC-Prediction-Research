@@ -104,7 +104,10 @@ class TestBinanceWebSocket(unittest.TestCase):
                 if not hasattr(self, "_used"):
                     self._used = True
                     return json.dumps({"result": None, "id": 1})
-                return json.dumps(incoming)
+                if not hasattr(self, "_used_data"):
+                    self._used_data = True
+                    return json.dumps(incoming)
+                raise asyncio.TimeoutError()
 
         fake_ws = FakeWebSocket()
         with patch.object(
