@@ -49,3 +49,49 @@ class TestLiveWebSocketPriority(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBinanceCacheTransportMetadata(unittest.TestCase):
+    def test_rest_recovered_cache_is_not_mislabeled_as_websocket(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        original = market_data.BINANCE_WS_CACHE
+        original_loader = market_data.load_binance_ws_cache
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                path = Path(td) / 'binance_ws_1m.json'
+                now = 1_800_000_000_000
+                rows = []
+                for i in range(40):
+                    open_ms = now - (39 - i) * 60_000
+                    rows.append({
+                        'open_time_ms': open_ms,
+                        'open': 100.0,
+                        'high': 101.0,
+                        'low': 99.0,
+                        'close': 100.0,
+                        'volume': 10.0,
+                        'taker_buy_base': 5.0,
+                        'event_time_ms': open_ms + 59_999,
+                        'retrieved_at_ms': now,
+                    })
+                path.write_text(json.dumps({
+                    'schema_version': 1,
+                    'source': 'Binance USD-M Futures WebSocket',
+                    'stream': 'btcusdt@kline_1m',
+                    'transport': 'binance_futures_rest',
+                    'rows': rows,
+                }), encoding='utf-8')
+                market_data.BINANCE_WS_CACHE = path
+                market_data.load_binance_ws_cache = lambda p, limit: rows
+                original_time = market_data.time.time
+                market_data.time.time = lambda: now / 1000
+                try:
+                    _, _, _, status = market_data.resilient_1m_series(40)
+                finally:
+                    market_data.time.time = original_time
+                self.assertEqual(status['binance_futures_transport'], 'rest')
+        finally:
+            market_data.BINANCE_WS_CACHE = original
+            market_data.load_binance_ws_cache = original_loader
