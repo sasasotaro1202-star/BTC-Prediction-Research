@@ -1,0 +1,51 @@
+name: BTC Redundant Live Heartbeat
+
+on:
+  schedule:
+    - cron: '1-59/3 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-redundant-live-heartbeat
+  cancel-in-progress: true
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: \${{ github.token }}
+      REPO: \${{ github.repository }}
+    steps:
+      - name: Dispatch only when Live heartbeat is stale
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          main_sha="$(gh api "/repos/\${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          now="$(date -u +%s)"
+          status="$(gh api "/repos/\${REPO}/contents/data/live_cycle_status.json?ref=main" --jq '.content' | base64 -d)"
+          completed="$(jq -r '.completed_at_utc // ""' <<<"$status")"
+          status_head="$(jq -r '.head_sha // ""' <<<"$status")"
+          completed_epoch="$(date -d "$completed" +%s 2>/dev/null || echo 0)"
+          age=$((now - completed_epoch))
+
+          active="$(gh api "/repos/\${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=30" --jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length')"
+
+          echo "main=\${main_sha} live_status_head=\${status_head:-unknown} age=\${age}s active=\${active}"
+
+          if [ "$active" -gt 0 ]; then
+            echo "Live already active/queued; no dispatch."
+            exit 0
+          fi
+
+          if [ "$completed_epoch" -eq 0 ] || [ "$age" -ge 300 ] || [ "$status_head" != "$main_sha" ]; then
+            echo "Live heartbeat stale; dispatching current-main Live cycle."
+            gh workflow run btc_live_cycle.yml --ref main
+          else
+            echo "Live heartbeat fresh; no dispatch."
+          fi
