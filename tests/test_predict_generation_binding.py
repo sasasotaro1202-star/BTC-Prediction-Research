@@ -102,6 +102,23 @@ class TestPredictGenerationBinding(unittest.TestCase):
         event = predict.validate_latest_event_time(fresh, now=current)
         self.assertEqual(event, current - predict.timedelta(seconds=120))
 
+    def test_latest_market_event_uses_closed_boundary_for_rest(self):
+        current = predict.datetime(2026, 9, 20, 5, 0, tzinfo=predict.timezone.utc)
+        open_ms = int((current - predict.timedelta(seconds=170)).timestamp() * 1000)
+        event_ms = predict.latest_market_event_ms([[open_ms, 1, 1, 1, 1, 1]], {'binance_futures_transport': 'rest'})
+        self.assertEqual(event_ms, open_ms + 59_999)
+        event = predict.validate_latest_event_time(event_ms, now=current)
+        self.assertEqual(event, current - predict.timedelta(seconds=110, milliseconds=1))
+
+    def test_latest_market_event_uses_exchange_event_for_websocket(self):
+        current = predict.datetime(2026, 9, 20, 5, 0, tzinfo=predict.timezone.utc)
+        open_ms = int((current - predict.timedelta(seconds=170)).timestamp() * 1000)
+        ws_event_ms = int((current - predict.timedelta(seconds=90)).timestamp() * 1000)
+        event_ms = predict.latest_market_event_ms([[open_ms, 1, 1, 1, 1, 1]], {
+            'binance_futures_transport': 'websocket',
+            'binance_futures_ws_event_time_ms': ws_event_ms,
+        })
+        self.assertEqual(event_ms, ws_event_ms)
     def test_features_fail_closed_on_nonfinite_or_invalid_ohlc(self):
         rows=[]
         for i in range(31):
