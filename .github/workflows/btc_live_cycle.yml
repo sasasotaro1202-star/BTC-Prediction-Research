@@ -387,14 +387,24 @@ jobs:
           PY
           }
 
+          # Keep a healthy persisted cache on the fast path. Only attempt REST
+          # recovery when the cache is absent/stale/gappy.
+          if git fetch --no-tags --depth=1 origin binance-ws-cache             && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
+            if validate_boundary_cache; then
+              cache_loaded=true
+              echo 'Loaded fresh Binance Futures WS cache before direct REST recovery.'
+            fi
+          fi
+
           # Direct same-product REST recovery is attempted before waiting for the
           # background collector. This keeps the live boundary independent of a
           # delayed/stuck collector while preserving Binance Futures provenance.
-          rest_seed() {
-            python - "$tmp_cache" <<'PY'
+          if [ "$cache_loaded" != true ]; then
+            rest_seed() {
+              timeout 30s python - "$tmp_cache" <<'PY'
           import json
-          import time
           import sys
+          import time
           from pathlib import Path
           from src.market_data import binance_klines
 
@@ -436,6 +446,7 @@ jobs:
           payload = {
               "schema_version": 1,
               "source": "Binance USD-M Futures WebSocket",
+              "transport": "binance_futures_rest",
               "stream": "btcusdt@kline_1m",
               "rows": rows[-720:],
               "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(retrieved_ms / 1000)),
@@ -451,17 +462,18 @@ jobs:
               "latest_open_time_ms": rows[-1]["open_time_ms"],
           }, sort_keys=True))
           PY
-          }
+            }
 
-          if rest_seed; then
-            if validate_boundary_cache; then
-              cache_loaded=true
-              echo 'Loaded fresh Binance Futures cache directly via same-product REST failover.'
+            if rest_seed; then
+              if validate_boundary_cache; then
+                cache_loaded=true
+                echo 'Loaded fresh Binance Futures cache directly via same-product REST failover.'
+              else
+                echo 'WARN: Binance Futures REST recovery produced an invalid/stale cache; continuing to verified cache polling.' >&2
+              fi
             else
-              echo 'WARN: Binance Futures REST recovery produced an invalid/stale cache; continuing to verified cache polling.' >&2
+              echo 'WARN: direct Binance Futures REST recovery unavailable; continuing to verified cache polling.' >&2
             fi
-          else
-            echo 'WARN: direct Binance Futures REST recovery unavailable; continuing to verified cache polling.' >&2
           fi
 
           if [ "$cache_loaded" != true ]; then
