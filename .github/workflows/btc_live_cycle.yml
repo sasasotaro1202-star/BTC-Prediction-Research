@@ -702,7 +702,7 @@ jobs:
           # database and let diagnostics/state archival continue, while keeping
           # real code/data-contract failures red.
           if [ "$predict_status" -eq 124 ] || [ "$predict_status" -eq 137 ] || \
-             grep -Eq "^(.*stale_live_market_event:|.*future_live_market_event:)" "$err" || \
+             grep -Eq "^(.*stale_live_market_event:|.*future_live_market_event:|.*live_prediction_fail_closed:)" "$err" || \
              (grep -q "live_prediction_inputs_incomplete:" "$err" && \
               (grep -Eq "binance_(futures|depth|taker|premium)='error:" "$err" || grep -q "fallback_not_allowed" "$err")); then
             echo "BTC_LIVE_DEFERRED=1" >> "$GITHUB_ENV"
