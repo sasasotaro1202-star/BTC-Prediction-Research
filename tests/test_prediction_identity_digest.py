@@ -149,8 +149,13 @@ class TestPredictionIdentityDigest(unittest.TestCase):
             with sqlite3.connect(db) as con:
                 snapshot = canonical_compaction_snapshot(con)
                 self.assertTrue(snapshot["settlement_conflicts"])
-                with self.assertRaises(RuntimeError):
-                    compact_predictions(con)
+                result = compact_predictions(con)
+                con.commit()
+                repaired = con.execute(
+                    "SELECT actual_price_5m, actual_direction_5m, correct_5m, settled_5m_at_utc FROM predictions"
+                ).fetchone()
+                self.assertEqual(result["quarantined_conflicts"], 1)
+                self.assertEqual(repaired, (None, None, None, None))
 
 
 if __name__ == "__main__":
