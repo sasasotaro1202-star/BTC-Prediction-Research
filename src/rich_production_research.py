@@ -26,6 +26,16 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 try:
+    from lightgbm import LGBMClassifier
+except ImportError:
+    LGBMClassifier = None
+
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
+
+try:
     from historical_research import load_market, exists, _window_is_contiguous
 except ModuleNotFoundError:
     from src.historical_research import load_market, exists, _window_is_contiguous
@@ -141,6 +151,23 @@ def _factories() -> dict[str, callable]:
             max_iter=300, max_leaf_nodes=31, learning_rate=0.035,
             l2_regularization=1.5, random_state=42
         ),
+        **({
+            "lightgbm": lambda: LGBMClassifier(
+                objective="multiclass", num_class=3, n_estimators=350,
+                learning_rate=0.03, num_leaves=31, min_child_samples=30,
+                subsample=0.9, colsample_bytree=0.9, reg_lambda=1.0,
+                random_state=42, n_jobs=-1, verbosity=-1
+            )
+        } if LGBMClassifier is not None else {}),
+        **({
+            "xgboost": lambda: XGBClassifier(
+                objective="multi:softprob", num_class=3, n_estimators=300,
+                max_depth=5, learning_rate=0.04, subsample=0.9,
+                colsample_bytree=0.9, min_child_weight=10,
+                reg_lambda=1.0, tree_method="hist", n_jobs=-1,
+                random_state=42, eval_metric="mlogloss"
+            )
+        } if XGBClassifier is not None else {}),
     }
 
 def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
@@ -152,12 +179,10 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
     maps = {k: {int(r[0]): r for r in v} for k, v in raw.items() if k not in ("funding", "oi")}
     if not maps.get("btc_fut"):
         raise RuntimeError("missing_btc_futures_history")
+    spot_proxy = False
     if not maps.get("btc_spot"):
         maps["btc_spot"] = dict(maps["btc_fut"])
-    if not maps.get("btc_mark"):
-        maps["btc_mark"] = dict(maps["btc_fut"])
-    if not maps.get("btc_premium"):
-        maps["btc_premium"] = dict(maps["btc_fut"])
+        spot_proxy = True
 
     funding = {int(r["fundingTime"]): float(r["fundingRate"]) for r in raw.get("funding", [])}
     oi = {int(r["timestamp"]): float(r["sumOpenInterest"]) for r in raw.get("oi", [])}
