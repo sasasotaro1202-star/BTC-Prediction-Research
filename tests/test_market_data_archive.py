@@ -149,3 +149,76 @@ def test_daily_archive_exposes_closed_taker_buy_volume_with_pit_timestamps():
     assert all(row["event_time_ms"] <= now_ms for row in out)
     assert all(now_ms <= row["retrieved_at_ms"] <= after_ms for row in out)
     assert all(out[i]["open_time_ms"] - out[i - 1]["open_time_ms"] == 60_000 for i in range(1, len(out)))
+
+
+def test_cache_freshness_requires_recent_candle_event_time(tmp_path):
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    stale_start = now_ms - 10 * 60 * 60 * 1000
+    rows = _rows(stale_start, 120)
+    payload = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "rows": rows,
+    }
+    cache_path = tmp_path / "btc_bootstrap_1m.json"
+    cache_path.write_text(__import__("json").dumps(payload), encoding="utf-8")
+
+    with patch.object(market_data, "CACHE", cache_path):
+        cached, created, age_ms, fresh = market_data.cache_rows(120)
+
+    assert cached == []
+    assert created
+    assert age_ms is not None
+    assert fresh is False
+
+
+def test_ws_freshness_rejects_stale_event_even_when_retrieval_is_recent():
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    stale_open = now_ms - 10 * 60 * 1000
+    rows = [
+        {
+            "open_time_ms": stale_open + i * 60_000,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 10.0,
+            "taker_buy_base": 5.0,
+            "event_time_ms": stale_open + i * 60_000 + 59_999,
+            "retrieved_at_ms": now_ms,
+        }
+        for i in range(40)
+    ]
+
+    assert market_data._fresh_ws_suffix(rows, 40) == []
+
+
+def test_resilient_series_rejects_stale_rest_and_uses_same_venue_archive():
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    stale_start = now_ms - 10 * 60 * 1000
+    stale_rows = [
+        [stale_start + i * 60_000, 100.0, 101.0, 99.0, 100.5, 10.0]
+        for i in range(120)
+    ]
+    fresh_start = now_ms - 120 * 60_000
+    archive_rows = [
+        [fresh_start + i * 60_000, 100.0, 101.0, 99.0, 100.5, 10.0]
+        for i in range(120)
+    ]
+    network_error = RuntimeError("simulated_transport_failure")
+
+    with patch.object(market_data, "load_binance_ws_cache", return_value=[]),          patch.object(market_data, "_capture_ws_suffix", return_value=[]),          patch.object(
+             market_data,
+             "_parallel_result_calls",
+             return_value={
+                 "bybit": network_error,
+                 "binance_spot": network_error,
+                 "binance_futures": stale_rows,
+             },
+         ),          patch.object(market_data, "bybit_mark_price", side_effect=network_error),          patch.object(market_data, "binance_archive_daily_rows", return_value=archive_rows):
+        fut, spot, bybit, status = market_data.resilient_1m_series(120)
+
+    assert len(fut) == 120
+    assert fut[-1][0] == archive_rows[-1][0]
+    assert status["binance_futures"] == "ok"
+    assert status["binance_futures_transport"] == "binance_vision_daily_archive"
+    assert status["price_feature_fallback"] == "none"
