@@ -76,6 +76,7 @@ jobs:
           cache='data/binance_ws_1m.json'
           stale=false
           if [ -s "$cache" ]; then
+            set +e
             cache_health="$(python - "$cache" <<'PY'
           import json, sys, time
           from pathlib import Path
@@ -83,7 +84,7 @@ jobs:
           rows=obj.get('rows', [])
           if not isinstance(rows, list) or not rows:
               print("rows=0 contiguous_suffix=0 retrieved_age_ms=-1 event_age_ms=-1")
-              raise SystemExit(0)
+              raise SystemExit(2)
           ordered=sorted(
               (row for row in rows if isinstance(row, dict)),
               key=lambda row:int(row.get('open_time_ms', 0)),
@@ -106,8 +107,12 @@ jobs:
           PY
             )"
             cache_health_status=$?
+            set -e
             echo "Binance WS cache health before self-heal=${cache_health}" >&2
-            if [ "$cache_health_status" -ne 0 ]; then stale=true; fi
+            if [ "$cache_health_status" -ne 0 ]; then
+              echo 'Binance WS cache health check failed or found stale/gappy data; self-heal required.' >&2
+              stale=true
+            fi
           else
             echo 'Binance WS cache is absent before self-heal.' >&2
             stale=true
