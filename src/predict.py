@@ -115,8 +115,16 @@ def _fallback_model_ready(source, horizon):
             return False
         if ll > base_ll - 0.005:
             return False
+        # The metadata contract alone is insufficient for production fallback.
+        # Validate the serialized estimator before allowing it to become the
+        # selected source; malformed/partial artifacts must fail closed.
+        model = joblib.load(artifact_path)
+        if [str(x) for x in getattr(model, 'classes_', [])] != CLASSES:
+            return False
+        if not callable(getattr(model, 'predict_proba', None)):
+            return False
         return True
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError, json.JSONDecodeError, EOFError, ImportError):
         return False
 
 
