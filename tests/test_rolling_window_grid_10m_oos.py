@@ -29,4 +29,5 @@ def test_window_grid_source_preserves_block_count_contract():
     result = _evaluate_blocks(blocks)
     assert result["baseline"]["n"] == 1
     assert result["candidate"]["n"] == 1
+    assert result["blocks"] == 1
     assert "delta" in result
