@@ -156,6 +156,15 @@ def _champion_probs(model, X):
     return out
 
 
+def frozen_holdout_confirms(candidate: dict, champion: dict) -> bool:
+    """Confirm no material degradation on the untouched final holdout."""
+    return bool(
+        float(candidate["logloss"]) <= float(champion["logloss"]) + 0.001
+        and float(candidate["brier"]) <= float(champion["brier"]) + 0.001
+        and float(candidate["accuracy"]) >= float(champion["accuracy"]) - 0.01
+    )
+
+
 def candidate_gate_eligible(candidate: dict, champion: dict, n: int) -> bool:
     """Apply the conservative archive-refresh promotion evidence gate."""
     champion_ll = max(abs(float(champion["logloss"])), 1e-12)
@@ -308,6 +317,7 @@ def evaluate_horizon(dataset, horizon):
         "final_holdout": {
             "champion": hold_champ,
             "candidate": hold_cand,
+            "confirmation_pass": frozen_holdout_confirms(hold_cand, hold_champ),
             "delta": {
                 "accuracy": hold_cand["accuracy"] - hold_champ["accuracy"],
                 "logloss": hold_cand["logloss"] - hold_champ["logloss"],
