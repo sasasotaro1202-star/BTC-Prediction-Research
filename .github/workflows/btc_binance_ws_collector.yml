@@ -149,6 +149,27 @@ jobs:
                       time.sleep(2 * attempt)
 
           if not isinstance(raw, list):
+              try:
+                  import subprocess
+                  result = subprocess.run(
+                      [
+                          "curl", "-fsS", "--retry", "3", "--retry-all-errors",
+                          "--connect-timeout", "10", "--max-time", "20",
+                          "-A", "BTC-Prediction-Research/binance-cache-seed/1.1",
+                          "-H", "Accept: application/json", url,
+                      ],
+                      capture_output=True, text=True, timeout=30, check=False,
+                  )
+                  if result.returncode == 0:
+                      raw = json.loads(result.stdout)
+                  else:
+                      last_error = RuntimeError(
+                          f"curl_exit_{result.returncode}: {result.stderr.strip()[:300]}"
+                      )
+              except Exception as exc:
+                  last_error = exc
+
+          if not isinstance(raw, list):
               print(
                   "WARN: Binance REST cache seed unavailable; "
                   f"keeping existing cache and continuing to WebSocket capture. "
