@@ -417,5 +417,15 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertNotIn('contiguous_tail="$(python - "$local_file" <<\'PY\'', block)
         self.assertIn('gappy Binance WS checkpoint', block)
 
+    def test_collector_rest_seed_empty_cache_returns_full_health_tuple(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        start = workflow.index("      - name: Seed stale Binance Futures cache from closed REST klines")
+        end = workflow.index("      - name: Record fixed collector base SHA", start)
+        block = workflow[start:end]
+        self.assertIn('if not isinstance(rows, list) or not rows:', block)
+        self.assertIn('return 0, 0, None', block)
+        self.assertIn('if not ordered:', block)
+        self.assertEqual(block.count('return 0, 0, None'), 2)
+
 if __name__ == "__main__":
     unittest.main()
