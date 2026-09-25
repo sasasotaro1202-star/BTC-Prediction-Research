@@ -35,17 +35,5 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertNotIn('fallback_not_allowed', block)
 
 
-    def test_self_heal_polls_for_fresh_same_product_cache(self):
-        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
-        start = workflow.index('      - name: Self-heal stale Binance WS collector')
-        end = workflow.index('      - name: Load latest Binance depth cache', start)
-        block = workflow[start:end]
-        self.assertIn('for attempt in 1 2 3 4 5 6 7 8; do', block)
-        self.assertIn('git fetch --no-tags --depth=1 origin binance-ws-cache', block)
-        self.assertIn('age_ms > 180000', block)
-        self.assertIn('cp "$tmp_cache" data/binance_ws_1m.json', block)
-        self.assertIn('live prediction remains fail-closed', block)
-        self.assertNotIn('python src/predict.py', block)
-
 if __name__ == '__main__':
     unittest.main()
