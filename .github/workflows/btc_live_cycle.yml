@@ -314,7 +314,21 @@ jobs:
                   ts = datetime.fromisoformat(str(obj["updated_at_utc"]).replace("Z", "+00:00"))
                   if ts.tzinfo is None:
                       raise ValueError("status timestamp must be timezone-aware")
-                  recent_attempt = (now - ts).total_seconds() < 6 * 3600
+                  status_kind = str(obj.get("status", ""))
+                  attempt_statuses = {
+                      "complete",
+                      "complete_partial_or_rejected",
+                      "deferred_history_failed",
+                      "deferred_insufficient_history",
+                  }
+                  # Only a real bootstrap execution result suppresses another
+                  # attempt for 6h. Legacy/administrative states such as
+                  # skipped_existing_production_models must never masquerade
+                  # as a recent training attempt.
+                  recent_attempt = (
+                      status_kind in attempt_statuses
+                      and (now - ts).total_seconds() < 6 * 3600
+                  )
               except Exception:
                   recent_attempt = False
           if max(ages, default=float("inf")) >= 24 * 3600 and not recent_attempt:
