@@ -1,3 +1,4 @@
+# Validation revision marker: execute-only change; algorithm untouched.
 from src.rolling_retrain_10m_oos import _metrics, _norm, _rf
 import numpy as np
 
