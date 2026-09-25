@@ -458,9 +458,9 @@ def evaluate():
                 "logloss_delta_bootstrap_ci": _bootstrap(dev_ll_deltas),
                 "brier_delta_bootstrap_ci": _bootstrap(dev_br_deltas),
             },
-            "mean_recent_weight": float(np.mean([b["recent_weight"] for b in selected_dev["block_results"])),
-            "min_recent_weight": float(np.min([b["recent_weight"] for b in selected_dev["block_results"])),
-            "max_recent_weight": float(np.max([b["recent_weight"] for b in selected_dev["block_results"])),
+            "mean_recent_weight": float(np.mean([b["recent_weight"] for b in selected_dev["block_results"]])),
+            "min_recent_weight": float(np.min([b["recent_weight"] for b in selected_dev["block_results"]])),
+            "max_recent_weight": float(np.max([b["recent_weight"] for b in selected_dev["block_results"]])),
         },
         "adaptive_holdout": {
             "blocks": int(adapt_result.get("blocks", 0)),
