@@ -475,7 +475,7 @@ jobs:
           # A long-lived pre-hardening collector may still be running after a newer
           # collector starts; rejecting a gappy local window prevents it from
           # overwriting a newly REST-healed remote cache.
-          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); suffix=1 if ordered else 0;\\nfor i in range(len(ordered)-1, 0, -1):\\n    if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000: break\\n    suffix += 1\\nprint(suffix)' "$local_file")
+          contiguous_tail="$(python -c 'import json,sys; from pathlib import Path; rows=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("rows", []); ordered=sorted((r for r in rows if isinstance(r, dict) and "open_time_ms" in r), key=lambda r:int(r["open_time_ms"])); gaps=[i for i in range(1,len(ordered)) if int(ordered[i]["open_time_ms"])-int(ordered[i-1]["open_time_ms"]) != 60000]; print(len(ordered)-gaps[-1] if gaps else len(ordered))' "$local_file")
           if [ "$contiguous_tail" -lt 40 ]; then
             echo "WARN: refusing to publish gappy Binance WS checkpoint; contiguous_tail=$contiguous_tail." >&2
             return 0
