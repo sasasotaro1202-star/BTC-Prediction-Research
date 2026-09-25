@@ -326,6 +326,31 @@ jobs:
             exit 0
           fi
           python src/bootstrap_train.py
+          # Never infer successful retraining from process exit code alone.
+          # Inspect the persisted bootstrap status and make deferrals explicit.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/historical_research/bootstrap_status.json")
+          if not p.is_file():
+              raise SystemExit("bootstrap status artifact missing after due retrain attempt")
+          obj = json.loads(p.read_text(encoding="utf-8"))
+          status = str(obj.get("status", ""))
+          allowed = {
+              "complete",
+              "complete_partial_or_rejected",
+              "deferred_history_failed",
+              "deferred_insufficient_history",
+          }
+          if status not in allowed:
+              raise SystemExit(f"unexpected bootstrap status: {status!r}")
+          if status.startswith("deferred_"):
+              print(f"BTC bootstrap DEFERRED: {status}")
+          elif status == "complete_partial_or_rejected":
+              print("BTC bootstrap completed with at least one horizon not published; no automatic promotion is implied.")
+          else:
+              print("BTC bootstrap completed and status artifact is valid.")
+          PY
       - name: Ensure gated Coinbase fallback models exist
         shell: bash
         run: |
