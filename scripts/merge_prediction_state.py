@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import sys
@@ -22,6 +23,24 @@ def expected_compacted_event_count(con):
     """Return the number of immutable prediction events before compaction."""
     return int(canonical_compaction_snapshot(con)["unique_event_count"])
 
+SETTLEMENT_HORIZON_COLUMNS = {
+    "5m": (
+        "actual_price_5m",
+        "actual_direction_5m",
+        "correct_5m",
+        "settled_5m_at_utc",
+        "settlement_source_5m",
+    ),
+    "10m": (
+        "actual_price_10m",
+        "actual_direction_10m",
+        "correct_10m",
+        "settled_10m_at_utc",
+        "settlement_source_10m",
+    ),
+}
+
+
 def settlement_score(row):
     present = sum(row.get(c) is not None for c in SETTLEMENT_COLUMNS)
     latest = max(
@@ -31,17 +50,64 @@ def settlement_score(row):
     return (present, latest, -int(row['rowid']))
 
 
+def _identity_digest(identity):
+    raw = json.dumps(identity, sort_keys=False, separators=(',', ':'), allow_nan=False)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _conflicting_horizons(group):
+    horizons = set()
+    for horizon, columns in SETTLEMENT_HORIZON_COLUMNS.items():
+        for column in columns:
+            if column in {'settled_5m_at_utc', 'settled_10m_at_utc'}:
+                continue
+            values = {row.get(column) for row in group if row.get(column) is not None}
+            if len(values) > 1:
+                horizons.add(horizon)
+                break
+    return horizons
+
+
+def _record_settlement_conflict(con, identity, conflicts):
+    con.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS prediction_settlement_conflicts (
+          identity_sha256 TEXT PRIMARY KEY,
+          detected_at_utc TEXT NOT NULL,
+          identity_json TEXT NOT NULL,
+          conflicts_json TEXT NOT NULL,
+          resolution TEXT NOT NULL
+        )
+        '''
+    )
+    identity_text = json.dumps(identity, sort_keys=False, separators=(',', ':'), allow_nan=False)
+    con.execute(
+        '''
+        INSERT INTO prediction_settlement_conflicts
+          (identity_sha256, detected_at_utc, identity_json, conflicts_json, resolution)
+        VALUES (?, datetime('now'), ?, ?, ?)
+        ON CONFLICT(identity_sha256) DO UPDATE SET
+          detected_at_utc=excluded.detected_at_utc,
+          conflicts_json=excluded.conflicts_json,
+          resolution=excluded.resolution
+        ''',
+        (
+            _identity_digest(identity),
+            identity_text,
+            json.dumps(conflicts, sort_keys=True, separators=(',', ':')),
+            'QUARANTINED_CONFLICTING_SETTLEMENT',
+        ),
+    )
+
+
 def compact_predictions(con):
     """Collapse only exact immutable duplicates after checking settlement conflicts."""
     before_snapshot = canonical_compaction_snapshot(con)
-    # canonical_compaction_snapshot now normalizes valid replicated settlement
-    # timestamps. Any remaining conflict is either an outcome contradiction or
-    # malformed settlement metadata, so both remain fail-closed.
-    if before_snapshot["settlement_conflicts"]:
-        raise RuntimeError(
-            "conflicting or malformed settlement state for immutable prediction event: "
-            + "; ".join(before_snapshot["settlement_conflicts"][:10])
-        )
+    # Conflicting outcome/provenance replicas are handled per immutable event.
+    # Never guess which settlement is correct: quarantine only the affected
+    # horizon, preserve the prediction event, and clear that horizon back to
+    # an unsettled state so the next deterministic resolver can re-evaluate it.
+    conflict_count = 0
     info = con.execute('PRAGMA table_info(predictions)').fetchall()
     if not info:
         return {'compacted_duplicates': 0, 'total_events': 0}
@@ -58,6 +124,21 @@ def compact_predictions(con):
         if len(group) <= 1:
             continue
         survivor = max(group, key=settlement_score)
+        conflicts = []
+        conflict_horizons = _conflicting_horizons(group)
+        if conflict_horizons:
+            for horizon in sorted(conflict_horizons):
+                for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
+                    values = sorted(
+                        {str(row.get(column)) for row in group if row.get(column) is not None}
+                    )
+                    if len(values) > 1:
+                        conflicts.append(f"{column}:{values}")
+            _record_settlement_conflict(con, prediction_identity(survivor), conflicts)
+            for horizon in conflict_horizons:
+                for column in SETTLEMENT_HORIZON_COLUMNS[horizon]:
+                    survivor[column] = None
+            conflict_count += 1
         duplicate_ids = []
         for candidate in group:
             if candidate['rowid'] == survivor['rowid']:
@@ -86,7 +167,11 @@ def compact_predictions(con):
             con.execute(f'DELETE FROM predictions WHERE rowid IN ({placeholders})', duplicate_ids)
             compacted += len(duplicate_ids)
 
-    result = {'compacted_duplicates': compacted, 'total_events': len(groups)}
+    result = {
+        'compacted_duplicates': compacted,
+        'total_events': len(groups),
+        'quarantined_conflicts': conflict_count,
+    }
     print(json.dumps({'prediction-state compaction': result}, sort_keys=True))
     return result
 
@@ -105,7 +190,10 @@ def main():
         finally:
             con.close()
         if result['compacted_duplicates'] >= 0:
-            print('prediction-state compaction: OK')
+            print(
+                'prediction-state compaction: OK '
+                f"(quarantined_conflicts={result['quarantined_conflicts']})"
+            )
         raise SystemExit(0)
 
 
@@ -174,6 +262,7 @@ def main():
                 mutable = {
                     'actual_price_5m', 'actual_direction_5m', 'correct_5m', 'settled_5m_at_utc',
                     'actual_price_10m', 'actual_direction_10m', 'correct_10m', 'settled_10m_at_utc',
+                    'settlement_source_5m', 'settlement_source_10m',
                 }
                 identity_cols = [
                     c for c in common
