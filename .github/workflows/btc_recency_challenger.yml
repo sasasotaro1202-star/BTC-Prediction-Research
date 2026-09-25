@@ -1,0 +1,87 @@
+name: BTC Recency Challenger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/recency_challenger.py'
+      - 'tests/test_recency_challenger.py'
+      - '.github/workflows/btc_recency_challenger.yml'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-recency-challenger
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then exit 0; fi
+            sleep $((15 * attempt))
+          done
+          exit 1
+
+      - name: Compile challenger
+        run: python -m compileall -q src tests
+
+      - name: Run challenger
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "=== recency challenger attempt ${attempt}/3 ==="
+            if python -m src.recency_challenger; then exit 0; fi
+            [ "${attempt}" -lt 3 ] && sleep $((30 * attempt))
+          done
+          exit 1
+
+      - name: Validate report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/historical_research/recency_challenger.json")
+          if not p.is_file(): raise SystemExit("recency report missing")
+          o = json.loads(p.read_text(encoding="utf-8"))
+          assert o["schema_version"] == 1
+          assert o["research_only"] is True
+          assert o["production_changed"] is False
+          assert set(o["horizons"]) == {"5m", "10m"}
+          for h, r in o["horizons"].items():
+              assert r["frozen_holdout_n"] == 5000
+              assert r["frozen_holdout"]["recency_candidate"]["n"] == 5000
+              assert r["frozen_holdout"]["current_champion"]["n"] == 5000
+              assert "frequency_baseline" in r["frozen_holdout"]
+          print("recency challenger artifact validation: OK")
+          PY
+
+      - name: Upload recency artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-recency-challenger
+          path: data/historical_research/recency_challenger.json
+          retention-days: 14
