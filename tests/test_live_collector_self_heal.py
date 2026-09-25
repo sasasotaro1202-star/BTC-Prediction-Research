@@ -85,6 +85,16 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn("event_age<0", block)
         self.assertIn("event_age>180000", block)
         self.assertIn("Binance depth cache stale_or_insufficient", block)
+    def test_live_boundary_keeps_fresh_cache_and_bounds_rest_recovery(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Refresh latest Binance WebSocket cache immediately before prediction')
+        end = workflow.index('      - name: Refresh latest Binance depth cache immediately before prediction', start)
+        block = workflow[start:end]
+        self.assertIn('Loaded fresh Binance Futures WS cache before direct REST recovery.', block)
+        self.assertIn('timeout 30s python - "$tmp_cache"', block)
+        self.assertIn('"transport": "binance_futures_rest"', block)
+        self.assertIn('if [ "$cache_loaded" != true ]; then', block)
+
     def test_live_boundary_attempts_same_product_rest_recovery_before_polling(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Refresh latest Binance WebSocket cache immediately before prediction')
