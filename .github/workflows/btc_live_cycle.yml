@@ -318,9 +318,17 @@ jobs:
               if int(ordered[i]['open_time_ms'])-int(ordered[i-1]['open_time_ms']) != 60000:
                   break
               suffix+=1
-          age=int(time.time()*1000)-int(ordered[-1]['retrieved_at_ms'])
-          print(f'latest_retrieved_age_ms={age} contiguous_rows={suffix} latest_open_time_ms={ordered[-1]["open_time_ms"]}')
-          if suffix<40 or age>180000:
+          now_ms=int(time.time()*1000)
+          retrieved_age=now_ms-int(ordered[-1]['retrieved_at_ms'])
+          event_age=now_ms-int(ordered[-1].get('event_time_ms', ordered[-1]['open_time_ms']))
+          print(f'latest_retrieved_age_ms={retrieved_age} latest_event_age_ms={event_age} contiguous_rows={suffix} latest_open_time_ms={ordered[-1]["open_time_ms"]}')
+          if (
+              suffix<40
+              or retrieved_age<0
+              or retrieved_age>180000
+              or event_age<0
+              or event_age>180000
+          ):
               raise SystemExit('Binance WS cache stale_or_insufficient_at_prediction_boundary')
           PY
           }
