@@ -46,5 +46,16 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('if suffix < 40', block)
         self.assertIn('event_age > 180000', block)
 
+    def test_self_heal_health_check_failure_is_captured_under_set_e(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Self-heal stale Binance WS collector')
+        end = workflow.index('      - name: Load latest Binance depth cache', start)
+        block = workflow[start:end]
+        self.assertIn('set +e\n            cache_health=', block)
+        self.assertIn('cache_health_status=$?\n            set -e', block)
+        self.assertIn('if [ "$cache_health_status" -ne 0 ]; then', block)
+        self.assertIn('stale=true', block)
+        self.assertIn('raise SystemExit(2)', block)
+
 if __name__ == '__main__':
     unittest.main()
