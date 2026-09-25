@@ -1,6 +1,11 @@
 name: BTC Frozen Archive Replay Research
 
 on:
+  pull_request:
+    paths:
+      - 'src/frozen_archive_replay_oos.py'
+      - 'tests/test_frozen_archive_replay_oos.py'
+      - '.github/workflows/btc_frozen_archive_replay.yml'
   schedule:
     - cron: '53 */6 * * *'
   workflow_run:
@@ -9,8 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-frozen-archive-replay
-  cancel-in-progress: false
+  group: btc-frozen-archive-replay-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
