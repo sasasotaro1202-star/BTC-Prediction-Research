@@ -258,7 +258,7 @@ def evaluate():
         "adaptive_holdout_n":adapt_end-dev_end,"final_blind_n":n-blind_start,
         "window_selection":{"selected_window":selected_window,"selected_from":"development_oos_only","trials":trial_results},
         "development":{
-            "blocks":selected_dev["blocks"],"baseline":base,"candidate":cand,"delta":selected_dev["delta"],
+            "blocks":len(dev_blocks_by_window[selected_window]),"baseline":base,"candidate":cand,"delta":selected_dev["delta"],
             "block_stability":{
                 "improved_logloss_ratio":float(np.mean(np.asarray(ll_d)<0)),
                 "improved_brier_ratio":float(np.mean(np.asarray(br_d)<0)),
