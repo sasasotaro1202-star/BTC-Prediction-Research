@@ -76,21 +76,38 @@ jobs:
           cache='data/binance_ws_1m.json'
           stale=false
           if [ -s "$cache" ]; then
-            latest_retrieved="$(python - "$cache" <<'PY'
-          import json, sys
+            cache_health="$(python - "$cache" <<'PY'
+          import json, sys, time
           from pathlib import Path
           obj=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
           rows=obj.get('rows', [])
           if not isinstance(rows, list) or not rows:
+              print("rows=0 contiguous_suffix=0 retrieved_age_ms=-1 event_age_ms=-1")
               raise SystemExit(0)
-          latest=max(int(row['retrieved_at_ms']) for row in rows if isinstance(row, dict) and 'retrieved_at_ms' in row)
-          print(latest)
+          ordered=sorted(
+              (row for row in rows if isinstance(row, dict)),
+              key=lambda row:int(row.get('open_time_ms', 0)),
+          )
+          suffix=1 if ordered else 0
+          for i in range(len(ordered)-1,0,-1):
+              if int(ordered[i].get('open_time_ms',0))-int(ordered[i-1].get('open_time_ms',0)) != 60000:
+                  break
+              suffix += 1
+          now_ms=int(time.time()*1000)
+          latest=ordered[-1]
+          retrieved_age=now_ms-int(latest.get('retrieved_at_ms',0))
+          event_age=now_ms-int(latest.get('event_time_ms',latest.get('open_time_ms',0)))
+          print(
+              f"rows={len(ordered)} contiguous_suffix={suffix} "
+              f"retrieved_age_ms={retrieved_age} event_age_ms={event_age}"
+          )
+          if suffix < 40 or retrieved_age < 0 or retrieved_age > 180000 or event_age < 0 or event_age > 180000:
+              raise SystemExit(2)
           PY
             )"
-            now_ms="$(date +%s000)"
-            age_ms=$((now_ms - latest_retrieved))
-            echo "Binance WS cache age before self-heal=${age_ms}ms"
-            if [ "$age_ms" -gt 180000 ]; then stale=true; fi
+            cache_health_status=$?
+            echo "Binance WS cache health before self-heal=${cache_health}" >&2
+            if [ "$cache_health_status" -ne 0 ]; then stale=true; fi
           else
             echo 'Binance WS cache is absent before self-heal.' >&2
             stale=true
