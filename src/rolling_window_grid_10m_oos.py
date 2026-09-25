@@ -36,6 +36,7 @@ HORIZON="10m"
 STEPS=10
 TARGET_ROWS=50_000
 WINDOW_GRID=(4_000,6_000,8_000)
+BLEND_WEIGHT_GRID=(0.25,0.40,0.50,0.60,0.75)
 TEST_BLOCK=500
 GAP_BARS=10
 DEV_FRAC=0.75
@@ -122,9 +123,6 @@ def _blocks(x,y,ts,champion,start,end,window):
         recent=_align(model,x[test_start:test_end])
         frozen=_align(champion,x[test_start:test_end])
         block_y=y[test_start:test_end]
-        candidate=_norm((frozen+recent)/2.0)
-        baseline_metrics=_metrics(block_y,frozen)
-        candidate_metrics=_metrics(block_y,candidate)
         out.append({
             "start":timestamps(ts[test_start]),
             "end":timestamps(ts[test_end-1]),
@@ -132,10 +130,6 @@ def _blocks(x,y,ts,champion,start,end,window):
             "y":block_y,
             "frozen":frozen,
             "recent":recent,
-            "delta":{
-                k:float(candidate_metrics[k]-baseline_metrics[k])
-                for k in ("accuracy","logloss","brier","ece")
-            }
         })
     return out
 
@@ -143,25 +137,33 @@ def _blocks(x,y,ts,champion,start,end,window):
 def timestamps(value):return value.isoformat() if hasattr(value,"isoformat") else str(value)
 
 
-def _evaluate_blocks(blocks):
-    ys=[]; bp=[]; rp=[]; cp=[]
-    for b in blocks:
-        ys.extend(b["y"]); bp.extend(b["frozen"].tolist()); rp.extend(b["recent"].tolist())
-        cp.extend(((b["frozen"]+b["recent"])/2.0).tolist())
+def _blend(frozen:np.ndarray,recent:np.ndarray,weight:float)->np.ndarray:
+    if not 0.0 <= float(weight) <= 1.0:
+        raise ValueError("invalid_blend_weight")
+    return _norm((1.0-float(weight))*np.asarray(frozen,dtype=float)+float(weight)*np.asarray(recent,dtype=float))
+
+
+def _evaluate_blocks(blocks,weight=0.5):
+    ys=[]; bp=[]; rp=[]; cp=[]; block_deltas=[]
+    for block in blocks:
+        y=block["y"]; frozen=np.asarray(block["frozen"],dtype=float); recent=np.asarray(block["recent"],dtype=float)
+        candidate=_blend(frozen,recent,weight)
+        bm=_metrics(y,frozen); cm=_metrics(y,candidate)
+        ys.extend(y); bp.extend(frozen.tolist()); rp.extend(recent.tolist()); cp.extend(candidate.tolist())
+        block_deltas.append({k:float(cm[k]-bm[k]) for k in ("accuracy","logloss","brier","ece")})
+    baseline=_metrics(ys,np.asarray(bp)); recent=_metrics(ys,np.asarray(rp)); candidate=_metrics(ys,np.asarray(cp))
     return {
-        "baseline":_metrics(ys,np.asarray(bp)),
-        "recent":_metrics(ys,np.asarray(rp)),
-        "candidate":_metrics(ys,np.asarray(cp)),
+        "baseline":baseline,
+        "recent":recent,
+        "candidate":candidate,
         "blocks":len(blocks),
-        "delta":{
-            k:float(_metrics(ys,np.asarray(cp))[k]-_metrics(ys,np.asarray(bp))[k])
-            for k in ("accuracy","logloss","brier","ece")
-        }
+        "block_deltas":block_deltas,
+        "delta":{k:float(candidate[k]-baseline[k]) for k in ("accuracy","logloss","brier","ece")}
     }
 
 
-def _aggregate_blocks(blocks):
-    return _evaluate_blocks(blocks)
+def _aggregate_blocks(blocks,weight=0.5):
+    return _evaluate_blocks(blocks,weight)
 
 
 def evaluate():
@@ -181,35 +183,48 @@ def evaluate():
 
     trial_results={}
     dev_blocks_by_window={}
+    selection_candidates=[]
     for window in WINDOW_GRID:
         blocks=_blocks(x,y,ts,champion,0,dev_end,window)
         dev_blocks_by_window[window]=blocks
         if len(blocks)<MIN_BLOCKS:
             trial_results[str(window)]={"status":"DEFERRED","blocks":len(blocks)}
             continue
-        agg=_aggregate_blocks(blocks)
-        trial_results[str(window)]={
-            "status":"OK","window":window,"blocks":len(blocks),
-            "accuracy":agg["candidate"]["accuracy"],
-            "logloss":agg["candidate"]["logloss"],
-            "brier":agg["candidate"]["brier"],
-            "delta_accuracy":agg["delta"]["accuracy"],
-            "delta_logloss":agg["delta"]["logloss"],
-            "delta_brier":agg["delta"]["brier"],
-        }
+        weight_trials={}
+        for weight in BLEND_WEIGHT_GRID:
+            agg=_aggregate_blocks(blocks,weight)
+            key=f"{weight:.2f}"
+            weight_trials[key]={
+                "weight":weight,
+                "accuracy":agg["candidate"]["accuracy"],
+                "logloss":agg["candidate"]["logloss"],
+                "brier":agg["candidate"]["brier"],
+                "ece":agg["candidate"]["ece"],
+                "delta_accuracy":agg["delta"]["accuracy"],
+                "delta_logloss":agg["delta"]["logloss"],
+                "delta_brier":agg["delta"]["brier"],
+                "delta_ece":agg["delta"]["ece"],
+            }
+            selection_candidates.append((
+                float(agg["candidate"]["logloss"]),
+                float(agg["candidate"]["brier"]),
+                -float(agg["candidate"]["accuracy"]),
+                window,
+                weight,
+            ))
+        trial_results[str(window)]={"status":"OK","window":window,"blocks":len(blocks),"weights":weight_trials}
 
-    eligible_windows=[w for w in WINDOW_GRID if trial_results[str(w)].get("status")=="OK"]
-    if not eligible_windows:
+    if not selection_candidates:
         return {"status":"DEFERRED","reason":"no_window_has_enough_oos_blocks","n":n,"trials":trial_results,"research_only":True,"production_changed":False,"strict_pit":False,"promotion_evidence_eligible":False}
-    selected_window=min(eligible_windows,key=lambda w:(trial_results[str(w)]["logloss"],trial_results[str(w)]["brier"],w))
-    selected_dev=_aggregate_blocks(dev_blocks_by_window[selected_window])
+    _,_,_,selected_window,selected_weight=min(selection_candidates)
+    selected_dev=_aggregate_blocks(dev_blocks_by_window[selected_window],selected_weight)
 
-    # Adaptive holdout: selected window is frozen, no tuning.
+    # Adaptive holdout: selected window and blend weight are frozen, no tuning.
     adapt_blocks=_blocks(x,y,ts,champion,dev_end,adapt_end,selected_window)
-    adapt_result=_aggregate_blocks(adapt_blocks) if adapt_blocks else None
+    adapt_result=_aggregate_blocks(adapt_blocks,selected_weight) if adapt_blocks else None
 
     # True final blind: train exactly one recent model using only observations
-    # before blind start. Freeze both model and 50/50 weight through blind.
+    # before blind start. Freeze both model and selected blend weight through blind.
     train_end=blind_start-GAP_BARS
     train_start=max(0,train_end-selected_window)
     if train_end-train_start<selected_window or len(set(y[train_start:train_end]))<3:
@@ -218,15 +233,16 @@ def evaluate():
     blind_model.fit(x[train_start:train_end],np.asarray(y[train_start:train_end]))
     blind_recent=_align(blind_model,x[blind_start:])
     blind_frozen=_align(champion,x[blind_start:])
-    blind_candidate=_norm((blind_frozen+blind_recent)/2.0)
+    blind_candidate=_blend(blind_frozen,blind_recent,selected_weight)
     blind_y=y[blind_start:]
     blind_b=_metrics(blind_y,blind_frozen)
     blind_c=_metrics(blind_y,blind_candidate)
 
-    ll_d=[float(b["delta"]["logloss"]) for b in dev_blocks_by_window[selected_window]]
-    br_d=[float(b["delta"]["brier"]) for b in dev_blocks_by_window[selected_window]]
-    ac_d=[float(b["delta"]["accuracy"]) for b in dev_blocks_by_window[selected_window]]
-    ece_d=[float(b["delta"]["ece"]) for b in dev_blocks_by_window[selected_window]]
+    selected_block_deltas=selected_dev["block_deltas"]
+    ll_d=[float(b["logloss"]) for b in selected_block_deltas]
+    br_d=[float(b["brier"]) for b in selected_block_deltas]
+    ac_d=[float(b["accuracy"]) for b in selected_block_deltas]
+    ece_d=[float(b["ece"]) for b in selected_block_deltas]
     base=selected_dev["baseline"]; cand=selected_dev["candidate"]
     ll_gain=(base["logloss"]-cand["logloss"])/max(abs(base["logloss"]),EPS)
     br_gain=(base["brier"]-cand["brier"])/max(abs(base["brier"]),EPS)
@@ -246,18 +262,19 @@ def evaluate():
         "strict_pit":False,"promotion_evidence_eligible":False,
         "archive_publication_time_unknown":True,
         "horizon":HORIZON,"production_model_version":meta.get("model_version"),
-        "model_version_under_test":"rolling_window_grid_50_50_blend",
+        "model_version_under_test":"rolling_window_grid_weighted_blend",
         "trained_at_utc":meta.get("trained_at_utc"),
         "features":list(FEATURES),
         "config":{
-            "window_grid":list(WINDOW_GRID),"selected_window":selected_window,
+            "window_grid":list(WINDOW_GRID),"blend_weight_grid":list(BLEND_WEIGHT_GRID),
+            "selected_window":selected_window,"selected_blend_weight_recent":selected_weight,
             "test_block":TEST_BLOCK,"gap_bars":GAP_BARS,
-            "rf_trees":RF_TREES,"blend_weight_recent":0.5,
+            "rf_trees":RF_TREES,
             "dev_frac":DEV_FRAC,"adaptive_holdout_frac":ADAPT_FRAC,"blind_frac":BLIND_FRAC
         },
         "n":n,"development_n":dev_end,
         "adaptive_holdout_n":adapt_end-dev_end,"final_blind_n":n-blind_start,
-        "window_selection":{"selected_window":selected_window,"selected_from":"development_oos_only","trials":trial_results},
+        "window_selection":{"selected_window":selected_window,"selected_blend_weight_recent":selected_weight,"selected_from":"development_oos_only","trials":trial_results},
         "development":{
             "blocks":len(dev_blocks_by_window[selected_window]),"baseline":base,"candidate":cand,"delta":selected_dev["delta"],
             "block_stability":{
@@ -276,7 +293,7 @@ def evaluate():
         },
         "final_blind":{
             "protected":True,"used_for_selection":False,
-            "selected_window":selected_window,"blend_weight_recent":0.5,
+            "selected_window":selected_window,"blend_weight_recent":selected_weight,
             "baseline":blind_b,"candidate":blind_c,
             "delta":{k:float(blind_c[k]-blind_b[k]) for k in ("accuracy","logloss","brier","ece")}
         },
