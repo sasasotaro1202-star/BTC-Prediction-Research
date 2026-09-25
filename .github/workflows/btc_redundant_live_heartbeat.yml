@@ -3,6 +3,11 @@ name: BTC Redundant Live Heartbeat
 on:
   schedule:
     - cron: '1-59/3 * * * *'
+  workflow_run:
+    workflows:
+      - BTC Recency Research
+      - BTC Exogenous Research
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -38,6 +43,11 @@ jobs:
 
           if [ "$active" -gt 0 ]; then
             echo "Live already active/queued; no dispatch."
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "Triggering upstream workflow did not succeed; no Live dispatch."
             exit 0
           fi
 
