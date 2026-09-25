@@ -6,9 +6,9 @@ name: BTC Binance WS Collector
 # Each capture window is independently recoverable, so a delayed schedule does
 # not create a predictable 15-minute cache gap.
 on:
-  # Keep the rolling cache continuously warm, and bootstrap a fresh collector
-  # immediately after a market-data/protocol change so recovery does not wait
-  # for the next scheduled slot.
+  # Keep the rolling cache continuously warm. Changes to this workflow itself
+  # are also a recovery trigger so the current hardened collector is started
+  # immediately instead of waiting for the next scheduled slot.
   schedule:
     - cron: '3,33 * * * *'
   push:
