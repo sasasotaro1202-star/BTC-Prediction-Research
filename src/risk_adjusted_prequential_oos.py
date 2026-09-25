@@ -373,10 +373,20 @@ def _evaluate_development(rows: list[dict[str, Any]], horizon: str) -> dict[str,
             and non_worse_acc >= 0.70
         ),
         "blocks_detail": outputs,
+        # Used only to continue the strictly prequential loss state into the
+        # untouched frozen holdout. These losses were computed on OOS blocks.
+        "final_prequential_state": {
+            "ema": {expert: float(value) for expert, value in state["ema"].items()},
+            "seen": int(state["seen"]),
+        },
     }
 
 
-def _evaluate_holdout(rows: list[dict[str, Any]], horizon: str) -> dict[str, Any]:
+def _evaluate_holdout(
+    rows: list[dict[str, Any]],
+    horizon: str,
+    development_state: dict[str, Any] | None,
+) -> dict[str, Any]:
     split = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
     development = rows[:split]
     holdout = rows[split:]
@@ -392,16 +402,18 @@ def _evaluate_holdout(rows: list[dict[str, Any]], horizon: str) -> dict[str, Any
     meta_probs = _expert_probs(meta_models, meta)
     reliability_models = _fit_reliability_models(meta_probs, meta)
 
-    # The complete development period is available before the holdout starts.
-    # Carry its settled-loss state forward, while fitting reliability models only
-    # on the earlier meta block. No holdout outcome is used before routing.
+    # Carry only the state generated from genuinely OOS development blocks.
+    # In-sample development predictions are never used to update the online state.
     hold_models = _fit_experts(development)
     hold_probs = _expert_probs(hold_models, holdout)
     hold_reliability = _reliability_probs(hold_probs, holdout, reliability_models)
 
-    development_probs = _expert_probs(hold_models, development)
     state = _new_state()
-    _update_state(development_probs, development, state)
+    if development_state:
+        state["ema"].update(
+            {expert: float(value) for expert, value in development_state["ema"].items()}
+        )
+        state["seen"] = int(development_state["seen"])
     baseline = hold_probs["soft_equal"]
     candidate, weights = _route(hold_probs, hold_reliability, state)
     y = [r["y"] for r in holdout]
@@ -435,7 +447,8 @@ def evaluate(horizon: str) -> dict[str, Any]:
     development_end = int(len(rows) * (1.0 - FINAL_HOLDOUT_FRAC))
     development = rows[:development_end]
     dev = _evaluate_development(development, horizon)
-    hold = _evaluate_holdout(rows, horizon)
+    dev_state = dev.get("final_prequential_state") if isinstance(dev, dict) else None
+    hold = _evaluate_holdout(rows, horizon, dev_state)
     return {
         "status": "OK",
         "schema_version": 1,
