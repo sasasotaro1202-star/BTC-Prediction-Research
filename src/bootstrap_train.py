@@ -343,9 +343,22 @@ def train_one(X, y, purge_gap=0):
     candidates = candidate_factories()
 
     validation_results = []
+    validation_errors = []
     for name, model in candidates:
-        _fit_model(model, Xtr, ytr)
-        v = metrics(ysel, normalize(model.predict_proba(Xsel)))
+        try:
+            _fit_model(model, Xtr, ytr)
+            v = metrics(ysel, normalize(model.predict_proba(Xsel)))
+        except Exception as exc:
+            # Keep one optional candidate failure from blocking the remaining
+            # research set. The failure is explicit evidence, not suppression.
+            validation_errors.append(
+                {
+                    "model": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                }
+            )
+            continue
         validation_results.append(
             {
                 "model": name,
@@ -353,6 +366,12 @@ def train_one(X, y, purge_gap=0):
                 "brier": float(v["brier"]),
                 "accuracy": float(v["accuracy"]),
             }
+        )
+
+    if not validation_results:
+        raise RuntimeError(
+            "all bootstrap candidates failed validation: "
+            + json.dumps(validation_errors, sort_keys=True)
         )
 
     validation_results.sort(key=validation_selection_key)
@@ -387,6 +406,7 @@ def train_one(X, y, purge_gap=0):
         "holdout_score": holdout_score,
         "holdout_n": len(yhold),
         "validation_results": validation_results,
+        "validation_errors": validation_errors,
         "promotion_allowed": bool(safe_gain),
         "selection_method": "nested_chronological_selection_gate_holdout",
         "holdout_used_for_selection": False,
@@ -410,6 +430,7 @@ def publish(horizon, result):
             "holdout_metrics": result["holdout_score"],
             "holdout_n": result["holdout_n"],
             "selection": result["validation_results"],
+            "validation_errors": result.get("validation_errors", []),
             "selection_method": result["selection_method"],
             "holdout_used_for_selection": False,
             "holdout_used_for_gate": False,
@@ -439,6 +460,7 @@ def publish(horizon, result):
         "baseline_gate_metrics": result["baseline_gate"],
         "final_holdout_metrics": result["holdout_score"],
         "validation_metrics": result["validation_results"],
+        "validation_errors": result.get("validation_errors", []),
         "final_fit_fraction": 0.85,
         "trained_at_utc": datetime.now(timezone.utc).isoformat(),
     }
