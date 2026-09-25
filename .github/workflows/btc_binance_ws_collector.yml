@@ -611,25 +611,12 @@ jobs:
             fi
 
             if [ -s data/binance_ws_depth.json ]; then
-              last_depth_published="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          obj=json.loads(Path('data/binance_ws_depth.json').read_text(encoding='utf-8'))
-          snap=obj.get('snapshot',{})
-          print(int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
-          PY
-              )"
+              last_depth_published="$(python -c 'import json; from pathlib import Path; obj=json.loads(Path("data/binance_ws_depth.json").read_text(encoding="utf-8")); snap=obj.get("snapshot", {}); print(int(snap.get("retrieved_at_ms", 0)) if isinstance(snap, dict) else 0)')"
             fi
             while kill -0 "$collector_pid" 2>/dev/null || { [ -n "$depth_pid" ] && kill -0 "$depth_pid" 2>/dev/null; }; do
               sleep 30
               if kill -0 "$collector_pid" 2>/dev/null && [ -s data/binance_ws_1m.json ]; then
-                current_latest="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=json.loads(Path('data/binance_ws_1m.json').read_text(encoding='utf-8')).get('rows',[])
-          print(int(rows[-1]['open_time_ms']) if rows else 0)
-          PY
-                )"
+                current_latest="$(python -c 'import json; from pathlib import Path; rows=json.loads(Path("data/binance_ws_1m.json").read_text(encoding="utf-8")).get("rows", []); print(int(rows[-1]["open_time_ms"]) if rows else 0)')"
                 if [ "$current_latest" -gt "$last_published" ]; then
                   if publish_cache; then
                     last_published="$current_latest"
@@ -640,14 +627,7 @@ jobs:
                 fi
               fi
               if [ -n "$depth_pid" ] && kill -0 "$depth_pid" 2>/dev/null && [ -s data/binance_ws_depth.json ]; then
-                current_depth="$(python - <<'PY'
-          import json
-          from pathlib import Path
-          obj=json.loads(Path('data/binance_ws_depth.json').read_text(encoding='utf-8'))
-          snap=obj.get('snapshot',{})
-          print(int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
-          PY
-                )"
+                current_depth="$(python -c 'import json; from pathlib import Path; obj=json.loads(Path("data/binance_ws_depth.json").read_text(encoding="utf-8")); snap=obj.get("snapshot", {}); print(int(snap.get("retrieved_at_ms", 0)) if isinstance(snap, dict) else 0)')"
                 if [ "$current_depth" -gt "$last_depth_published" ]; then
                   if publish_depth_cache; then
                     last_depth_published="$current_depth"
