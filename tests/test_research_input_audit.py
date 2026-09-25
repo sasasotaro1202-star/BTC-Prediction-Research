@@ -199,7 +199,10 @@ class ResearchInputAuditTests(unittest.TestCase):
         self._insert(con, [tuple(row)])
         result = recent_pit_stats(con, "5m", limit=20)
         self.assertEqual(result["strict_pit"], 0)
-        self.assertEqual(result["failure_reasons"], {"pre_contract_prediction_quarantined": 1})
+        self.assertEqual(result["observed"], 0)
+        self.assertEqual(result["failure_reasons"], {})
+        self.assertEqual(result["pre_contract_quarantined"], 1)
+        self.assertFalse(result["all_strict"])
 
 
     def test_recent_pit_stats_detects_missing_provenance(self):
