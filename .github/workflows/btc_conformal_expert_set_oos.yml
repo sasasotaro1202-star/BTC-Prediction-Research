@@ -1,1 +1,53 @@
-name: BTC Conformal Expert Set OOS\n\non:\n  pull_request:\n    paths:\n      - 'src/conformal_expert_set_oos.py'\n      - 'tests/test_conformal_expert_set_oos.py'\n      - 'src/model_compare.py'\n      - '.github/workflows/btc_conformal_expert_set_oos.yml'\n  workflow_dispatch:\n\nconcurrency:\n  group: btc-conformal-expert-set-${{ github.head_ref || github.ref_name }}\n  cancel-in-progress: true\n\npermissions:\n  contents: read\n\njobs:\n  oos:\n    runs-on: ubuntu-latest\n    timeout-minutes: 90\n    steps:\n      - uses: actions/checkout@v7\n      - uses: actions/setup-python@v7\n        with:\n          python-version: '3.12'\n          cache: pip\n          cache-dependency-path: requirements.txt\n      - name: Install dependencies\n        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt\n      - name: Compile and unit test\n        run: |\n          set -euo pipefail\n          python -m compileall -q src tests\n          python -m pytest -q tests/test_conformal_expert_set_oos.py\n      - name: Run chronological OOS\n        run: |\n          set -euo pipefail\n          python src/conformal_expert_set_oos.py\n          test -s data/historical_research/conformal_expert_set_oos.json\n      - name: Validate evidence contract\n        run: |\n          set -euo pipefail\n          python -c 'import json; from pathlib import Path; o=json.loads(Path("data/historical_research/conformal_expert_set_oos.json").read_text()); assert o.get("research_only") is True and o.get("production_changed") is False; print("evidence contract verified")'\n      - name: Upload evidence\n        if: ${{ !cancelled() }}\n        uses: actions/upload-artifact@v6\n        with:\n          name: btc-conformal-expert-set-${{ github.run_id }}\n          path: data/historical_research/conformal_expert_set_oos.json\n          if-no-files-found: error\n          retention-days: 7
+name: BTC Conformal Expert Set OOS
+
+on:
+  pull_request:
+    paths:
+      - 'src/conformal_expert_set_oos.py'
+      - 'tests/test_conformal_expert_set_oos.py'
+      - 'src/model_compare.py'
+      - '.github/workflows/btc_conformal_expert_set_oos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-conformal-expert-set-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile and unit test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m pytest -q tests/test_conformal_expert_set_oos.py
+      - name: Run chronological OOS
+        run: |
+          set -euo pipefail
+          python src/conformal_expert_set_oos.py
+          test -s data/historical_research/conformal_expert_set_oos.json
+      - name: Validate evidence contract
+        run: |
+          set -euo pipefail
+          python -c 'import json; from pathlib import Path; o=json.loads(Path("data/historical_research/conformal_expert_set_oos.json").read_text()); assert o.get("research_only") is True and o.get("production_changed") is False; print("evidence contract verified")'
+      - name: Upload evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-conformal-expert-set-${{ github.run_id }}
+          path: data/historical_research/conformal_expert_set_oos.json
+          if-no-files-found: error
+          retention-days: 7
