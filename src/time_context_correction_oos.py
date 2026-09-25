@@ -221,7 +221,16 @@ def _evaluate_horizon(horizon):
     hold_cm = metrics([row["y"] for row in holdout], hold_c)
     hold_delta = {k: float(hold_cm[k] - hold_bm[k]) for k in ("accuracy", "logloss", "brier", "calibration_error")}
 
-    deltas = np.asarray(\n        [[float(block["delta"][k]) for k in ("accuracy", "logloss", "brier", "calibration_error")] for block in blocks],\n        dtype=float,\n    )
+    deltas = np.asarray(
+        [
+            [
+                float(block["delta"][k])
+                for k in ("accuracy", "logloss", "brier", "calibration_error")
+            ]
+            for block in blocks
+        ],
+        dtype=float,
+    )
     eligibility = bool(
         (baseline["logloss"] - candidate["logloss"]) / max(abs(baseline["logloss"]), EPS) >= 0.03
         and (baseline["brier"] - candidate["brier"]) / max(abs(baseline["brier"]), EPS) >= 0.01
