@@ -127,7 +127,7 @@ def _fit_rescue(meta_rows, meta_probs, meta_risk):
         models[expert]=m
     return models
 
-def _route(test_rows, test_probs, rescue_models, threshold, risk_threshold):
+def _route(test_rows, test_probs, rescue_models, threshold, risk_threshold=1.0):
     names=tuple(test_probs)
     ensemble=np.mean(np.stack([test_probs[n] for n in names],axis=0),axis=0)
     x=_risk_features(test_probs,test_rows)
