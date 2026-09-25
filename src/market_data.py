@@ -376,6 +376,8 @@ def resilient_1m_series(limit: int = 120):
         elif fut_error is not None:
             fut = _latest_contiguous_suffix(fut_error, 40)
             status["binance_futures"] = "ok" if fut else "non_contiguous_or_insufficient"
+            if fut:
+                status["binance_futures_transport"] = "rest"
 
     spot = []
     spot_error = parallel.get("binance_spot")
@@ -479,6 +481,106 @@ def binance_premium():
 
 def binance_oi():
     return _binance("fapi.binance.com/fapi/v1/openInterest", {"symbol": "BTCUSDT"})
+
+
+def derive_binance_taker_from_closed_klines(
+    rows,
+    window: int = 5,
+    cutoff_ms: int | None = None,
+):
+    """Derive taker imbalance from already-fetched closed Binance Futures klines.
+
+    Supports normalized Binance WebSocket rows and raw Binance Futures REST
+    kline rows. Only closed, contiguous bars available at the prediction cutoff
+    are used. Invalid, future, unavailable, or gapped data fails closed.
+    """
+    try:
+        window = int(window)
+    except (TypeError, ValueError):
+        return None
+    if window <= 0:
+        return None
+
+    now_ms = int(time.time() * 1000)
+    cutoff = now_ms if cutoff_ms is None else int(cutoff_ms)
+    normalized = []
+
+    for row in rows or []:
+        try:
+            if isinstance(row, dict):
+                open_ms = int(row["open_time_ms"])
+                volume = float(row["volume"])
+                taker_buy = float(row["taker_buy_base"])
+                event_ms = int(row.get("event_time_ms", open_ms + 59_999))
+                retrieved_ms = int(row.get("retrieved_at_ms", now_ms))
+            else:
+                values = list(row)
+                if len(values) >= 10:
+                    open_ms = int(values[0])
+                    close_ms = int(values[6])
+                    volume = float(values[5])
+                    taker_buy = float(values[9])
+                    event_ms = close_ms
+                    retrieved_ms = now_ms
+                elif len(values) >= 9:
+                    open_ms = int(values[0])
+                    volume = float(values[5])
+                    taker_buy = float(values[6])
+                    event_ms = int(values[7])
+                    retrieved_ms = int(values[8])
+                else:
+                    continue
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+
+        if (
+            open_ms <= 0
+            or volume <= 0
+            or taker_buy < 0
+            or taker_buy > volume + 1e-9
+            or event_ms <= 0
+            or retrieved_ms <= 0
+            or open_ms + 60_000 > cutoff
+            or event_ms > cutoff
+            or retrieved_ms > cutoff
+        ):
+            continue
+
+        normalized.append(
+            {
+                "open_time_ms": open_ms,
+                "volume": volume,
+                "taker_buy_base": taker_buy,
+                "event_time_ms": event_ms,
+                "retrieved_at_ms": retrieved_ms,
+            }
+        )
+
+    normalized.sort(key=lambda r: r["open_time_ms"])
+    if len(normalized) < window:
+        return None
+
+    suffix = normalized[-window:]
+    for left, right in zip(suffix, suffix[1:]):
+        if right["open_time_ms"] - left["open_time_ms"] != 60_000:
+            return None
+
+    total_volume = sum(r["volume"] for r in suffix)
+    total_taker_buy = sum(r["taker_buy_base"] for r in suffix)
+    if not math.isfinite(total_volume) or total_volume <= 0:
+        return None
+
+    imbalance = 2.0 * total_taker_buy / total_volume - 1.0
+    if not math.isfinite(imbalance):
+        return None
+
+    return {
+        "taker_imbalance": float(imbalance),
+        "event_time_ms": max(r["event_time_ms"] for r in suffix),
+        "retrieved_at_ms": max(r["retrieved_at_ms"] for r in suffix),
+        "rows": window,
+        "source": "binance_futures_closed_klines",
+    }
 
 
 def binance_taker():
