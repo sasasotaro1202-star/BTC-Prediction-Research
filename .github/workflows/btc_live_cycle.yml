@@ -133,8 +133,12 @@ jobs:
             exit 0
           fi
 
-          if [ "${active:-0}" -gt 0 ]; then
-            echo "Binance WS collector already has ${active} queued/in-progress run(s); self-heal dispatch skipped."
+          # A stale cache with one active collector indicates that the active run
+          # is not publishing a usable heartbeat. The collector workflow is
+          # intentionally overlap-safe, so allow one additional recovery run.
+          # Avoid an unbounded dispatch storm when two collectors are already active.
+          if [ "${active:-0}" -ge 2 ]; then
+            echo "Binance WS collector already has ${active} active run(s); self-heal dispatch capped to avoid a recovery storm."
             exit 0
           fi
 
@@ -377,9 +381,18 @@ jobs:
               snap['E']=snap['event_time_ms']
           parsed=parse_depth_message(snap,int(snap.get('retrieved_at_ms',0)) if isinstance(snap,dict) else 0)
           if parsed is None: raise SystemExit('invalid Binance depth cache snapshot')
-          age=int(time.time()*1000)-int(parsed['retrieved_at_ms'])
-          print(f'binance_depth_cache_age_ms={age} event_time_ms={parsed["event_time_ms"]} levels={min(len(parsed["bids"]),len(parsed["asks"]))}')
-          if age<0 or age>180000 or min(len(parsed['bids']),len(parsed['asks']))<20: raise SystemExit('Binance depth cache stale_or_insufficient')
+          now_ms=int(time.time()*1000)
+          retrieved_age=now_ms-int(parsed['retrieved_at_ms'])
+          event_age=now_ms-int(parsed['event_time_ms'])
+          print(f'binance_depth_retrieved_age_ms={retrieved_age} binance_depth_event_age_ms={event_age} event_time_ms={parsed["event_time_ms"]} levels={min(len(parsed["bids"]),len(parsed["asks"]))}')
+          if (
+              retrieved_age<0
+              or retrieved_age>180000
+              or event_age<0
+              or event_age>180000
+              or min(len(parsed['bids']),len(parsed['asks']))<20
+          ):
+              raise SystemExit('Binance depth cache stale_or_insufficient')
           PY
           }
           for attempt in 1 2 3 4 5 6; do
