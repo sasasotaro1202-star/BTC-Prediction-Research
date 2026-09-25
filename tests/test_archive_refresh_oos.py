@@ -1,6 +1,6 @@
 import unittest
 
-from src.archive_refresh_oos import candidate_gate_eligible, factories
+from src.archive_refresh_oos import candidate_gate_eligible, factories, frozen_holdout_confirms
 
 
 class ArchiveRefreshTests(unittest.TestCase):
@@ -10,6 +10,13 @@ class ArchiveRefreshTests(unittest.TestCase):
 
 
 
+
+    def test_frozen_holdout_confirmation_rejects_material_degradation(self):
+        champion = {"accuracy": 0.44, "logloss": 1.0, "brier": 0.60}
+        same_quality = {"accuracy": 0.435, "logloss": 1.0005, "brier": 0.6005}
+        degraded = {"accuracy": 0.430, "logloss": 1.003, "brier": 0.603}
+        self.assertTrue(frozen_holdout_confirms(same_quality, champion))
+        self.assertFalse(frozen_holdout_confirms(degraded, champion))
 
     def test_relative_scoring_gain_gate_contract_is_strict(self):
         champion = {"accuracy": 0.44, "logloss": 1.0, "brier": 0.60}
