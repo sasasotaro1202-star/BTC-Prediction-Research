@@ -346,6 +346,11 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn("local last_published=0", workflow)
         self.assertIn("semantic no-op publish", workflow)
 
+    def test_collector_publisher_loop_has_single_function_definition(self):
+        workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("          publisher_loop() {"), 1)
+        self.assertIn('publisher_loop > /tmp/btc_ws_publisher.log 2>&1 &', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
