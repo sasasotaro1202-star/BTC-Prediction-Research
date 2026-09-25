@@ -96,7 +96,9 @@ def _future_dataset(rows: list[list[float]], horizon: str, trained_at: datetime)
             continue
         future_return = float(rows[i + steps][4]) / float(rows[i][4]) - 1.0
         label = "UP" if future_return > NEUTRAL_RETURN else "DOWN" if future_return < -NEUTRAL_RETURN else "FLAT"
-        features = make_features(rows[: i + 1])
+        # make_features only reads the last 30 candles; avoid O(n^2)
+        # prefix reconstruction while preserving the exact feature equations.
+        features = make_features(rows[i - 29 : i + 1])
         if len(features) != len(FEATURES) or not all(math.isfinite(float(v)) for v in features):
             continue
         X.append(features)
