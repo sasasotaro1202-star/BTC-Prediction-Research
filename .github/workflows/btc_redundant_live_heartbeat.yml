@@ -93,7 +93,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$completed_epoch" -eq 0 ] || [ "$age" -ge 300 ]; then
+          if [ "$age" -ge 300 ]; then
             echo "Live heartbeat stale; dispatching current-main Live cycle."
             dispatched=0
             for attempt in 1 2 3; do
