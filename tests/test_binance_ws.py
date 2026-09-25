@@ -23,6 +23,8 @@ class TestBinanceWebSocket(unittest.TestCase):
             binance_ws.KLINE_FALLBACK_URLS,
             ("wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m",),
         )
+        self.assertEqual(binance_ws.KLINE_SUBSCRIBE_URL, "wss://fstream.binance.com/market/stream")
+        self.assertEqual(binance_ws.KLINE_SUBSCRIBE_STREAM, "btcusdt@kline_1m")
         self.assertEqual(
             binance_ws.DEPTH_FALLBACK_URLS,
             ("wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms",),
@@ -72,6 +74,64 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertEqual(rows, primary_rows)
         self.assertEqual(source, primary)
         async_mock.assert_awaited_once_with(primary, 1.0, binance_ws.parse_kline_message)
+
+    def test_kline_subscribed_transport_sends_documented_subscribe_request(self):
+        incoming = {
+            "stream": "btcusdt@kline_1m",
+            "data": {
+                "e": "kline", "E": 1_800_000_060_500,
+                "k": {
+                    "t": 1_800_000_000_000, "o": "100", "h": "102", "l": "99",
+                    "c": "101", "v": "10", "V": "4", "i": "1m", "x": True,
+                },
+            },
+        }
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.sent = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def send(self, raw):
+                self.sent.append(json.loads(raw))
+
+            async def recv(self):
+                if not hasattr(self, "_used"):
+                    self._used = True
+                    return json.dumps({"result": None, "id": 1})
+                return json.dumps(incoming)
+
+        fake_ws = FakeWebSocket()
+        with patch.object(
+            binance_ws.websockets,
+            "connect",
+            return_value=fake_ws,
+        ):
+            rows = []
+
+            async def on_row(row):
+                rows.append(row)
+
+            count, started = asyncio.run(
+                binance_ws._stream_subscribed_url(
+                    binance_ws.KLINE_SUBSCRIBE_URL,
+                    binance_ws.KLINE_SUBSCRIBE_STREAM,
+                    1.0,
+                    binance_ws.parse_kline_message,
+                    on_row,
+                )
+            )
+
+        self.assertTrue(started)
+        self.assertEqual(count, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(fake_ws.sent[0]["method"], "SUBSCRIBE")
+        self.assertEqual(fake_ws.sent[0]["params"], ["btcusdt@kline_1m"])
 
     def test_kline_parser_requires_closed_one_minute_bar(self):
         base = {
@@ -210,6 +270,49 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn(initial[0]["open_time_ms"], opens)
         self.assertIn(incoming["open_time_ms"], opens)
         self.assertGreaterEqual(len(checkpoints), 1)
+
+    def test_continuous_capture_uses_subscribe_transport_after_url_failures(self):
+        incoming = {
+            "open_time_ms": 1_800_000_000_000,
+            "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+            "volume": 10.0, "taker_buy_base": 4.0,
+            "event_time_ms": 1_800_000_060_000,
+            "retrieved_at_ms": 1_800_000_061_000,
+        }
+        url_calls = []
+        subscribe_calls = []
+
+        async def fake_stream(url, timeout_seconds, parser, on_row):
+            url_calls.append(url)
+            return 0, True
+
+        async def fake_subscribe(url, stream_name, timeout_seconds, parser, on_row):
+            subscribe_calls.append((url, stream_name))
+            await on_row(incoming)
+            return 1, True
+
+        async def no_sleep(_seconds):
+            return None
+
+        with patch.object(binance_ws, "_stream_url", new=AsyncMock(side_effect=fake_stream)):
+            with patch.object(binance_ws, "_stream_subscribed_url", new=AsyncMock(side_effect=fake_subscribe)):
+                with patch.object(binance_ws.asyncio, "sleep", new=AsyncMock(side_effect=no_sleep)):
+                    rows = asyncio.run(
+                        binance_ws.capture_closed_klines_stream(
+                            timeout_seconds=0.02,
+                            checkpoint_seconds=999.0,
+                            initial_rows=[],
+                            on_checkpoint=None,
+                        )
+                    )
+
+        self.assertIn(binance_ws.KLINE_URL, url_calls)
+        self.assertIn(binance_ws.KLINE_FALLBACK_URLS[0], url_calls)
+        self.assertEqual(
+            subscribe_calls,
+            [(binance_ws.KLINE_SUBSCRIBE_URL, binance_ws.KLINE_SUBSCRIBE_STREAM)],
+        )
+        self.assertEqual(rows[-1]["open_time_ms"], incoming["open_time_ms"])
 
     def test_continuous_capture_reconnects_after_primary_socket_drop(self):
         incoming = {
