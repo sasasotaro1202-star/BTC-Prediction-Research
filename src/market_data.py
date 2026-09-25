@@ -735,7 +735,7 @@ def target_close_binance(target_iso: str):
     ts = int(target.timestamp() * 1000)
     start = ts - 60000
     try:
-        rows = _binance("fapi.binance.com/fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1m", "startTime": start, "endTime": ts, "limit": 2})
+        rows = _binance_futures("fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1m", "startTime": start, "endTime": ts, "limit": 2})
         for row in rows:
             if int(row[0]) == start:
                 return float(row[4]), "binance"
