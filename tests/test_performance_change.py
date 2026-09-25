@@ -75,6 +75,31 @@ class TestPerformanceChange(unittest.TestCase):
             self.assertAlmostEqual(changed[("10m", "final_logloss")], -0.03)
             self.assertTrue(payload["changed"])
 
+    def test_sample_count_change_alone_is_not_score_change(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._artifacts(root)
+            snapshot = root / "data/historical_research/performance_snapshot.json"
+            change = root / "data/historical_research/performance_change.json"
+            performance_change.compare_and_record(
+                snapshot, change,
+                root / "data/experience/experience_summary.json",
+                root / "data/historical_research/flat_diagnostic.json",
+            )
+            exp = json.loads((root / "data/experience/experience_summary.json").read_text())
+            exp["horizons"]["5m"]["total"]["n"] = 11
+            exp["total_experiences"] = 11
+            (root / "data/experience/experience_summary.json").write_text(
+                json.dumps(exp)
+            )
+            payload = performance_change.compare_and_record(
+                snapshot, change,
+                root / "data/experience/experience_summary.json",
+                root / "data/historical_research/flat_diagnostic.json",
+            )
+            self.assertFalse(payload["changed"])
+            self.assertFalse(payload["changes"])
+
     def test_no_change_after_identical_run(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
