@@ -39,6 +39,12 @@ class TestFlatDiagnostic(unittest.TestCase):
             self.assertEqual(report['counts']['5m']['model_raw'], {'FLAT': 1})
             self.assertEqual(report['counts']['5m']['final'], {'DOWN': 1})
             self.assertEqual(report['counts']['10m']['model_raw'], {'FLAT': 1})
+            summary = report['probability_summary']['10m']['model_raw']
+            self.assertEqual(summary['flat_argmax_rate'], 1.0)
+            self.assertAlmostEqual(summary['mean_probability']['FLAT'], 0.5)
+            self.assertAlmostEqual(summary['flat_margin_mean'], 0.2)
+            self.assertEqual(summary['flat_within_0.02_rate'], 1.0)
+            self.assertEqual(summary['flat_above_0.30_rate'], 1.0)
             self.assertEqual(report['policy'], 'diagnostic_only_no_model_input_no_promotion_effect')
 
     def test_empty_history_is_not_healthy(self):
