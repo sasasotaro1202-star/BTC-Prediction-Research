@@ -49,6 +49,18 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('if suffix < 40', block)
         self.assertIn('event_age > 180000', block)
 
+    def test_prediction_boundary_rejects_stale_event_even_when_retrieval_is_fresh(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Refresh latest Binance WebSocket cache immediately before prediction')
+        end = workflow.index('      - name: Refresh latest Binance depth cache immediately before prediction', start)
+        block = workflow[start:end]
+        self.assertIn('latest_event_age_ms=', block)
+        self.assertIn("event_time_ms", block)
+        self.assertIn('retrieved_age<0', block)
+        self.assertIn('event_age<0', block)
+        self.assertIn('event_age>180000', block)
+        self.assertIn('stale_or_insufficient_at_prediction_boundary', block)
+
     def test_self_heal_health_check_failure_is_captured_under_set_e(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Self-heal stale Binance WS collector')
