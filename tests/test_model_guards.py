@@ -11,6 +11,12 @@ from model_compare import CLASSES, EMBARGO_BARS, PURGE_BARS, _strict_pit_provena
 
 
 class TestModelGuards(unittest.TestCase):
+    def test_bootstrap_validation_selection_uses_proper_scores_first(self):
+        from bootstrap_train import validation_selection_key
+        better = {"logloss": 0.95, "brier": 0.58, "accuracy": 0.47}
+        more_accurate = {"logloss": 0.97, "brier": 0.57, "accuracy": 0.50}
+        self.assertLess(validation_selection_key(better), validation_selection_key(more_accurate))
+
     def test_bootstrap_candidate_set_contains_diverse_safe_models(self):
         from bootstrap_train import candidate_factories
         names = [name for name, _ in candidate_factories()]
