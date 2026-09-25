@@ -69,3 +69,18 @@ def test_features_use_only_available_bins():
 def test_feature_output_is_finite():
     feat=derive_flow_features([],10000)
     assert np.isfinite(np.asarray(list(feat.values()),dtype=float)).all()
+
+def test_partial_windows_are_marked_missing_not_complete():
+    rows=[
+        {"start_time_ms":0,"end_time_ms":5000,"available_at_ms":5500,"last_event_time_ms":4000,
+         "trade_count":2,"buy_qty":2.0,"sell_qty":1.0,"buy_notional":200.0,"sell_notional":100.0,
+         "max_trade_notional":150.0,"liquidation_count":0,"liquidation_buy_notional":0.0,"liquidation_sell_notional":0.0},
+        {"start_time_ms":5000,"end_time_ms":10000,"available_at_ms":10500,"last_event_time_ms":9000,
+         "trade_count":5,"buy_qty":5.0,"sell_qty":1.0,"buy_notional":500.0,"sell_notional":100.0,
+         "max_trade_notional":200.0,"liquidation_count":1,"liquidation_buy_notional":50.0,"liquidation_sell_notional":0.0},
+    ]
+    feat=derive_flow_features(rows,10000)
+    assert feat["flow_15s_missing"]==1.0
+    assert feat["flow_15s_coverage_ratio"] < 1.0
+    assert feat["flow_15s_contiguous_ratio"] < 1.0
+    assert feat["flow_15s_signed_notional"]==100.0
