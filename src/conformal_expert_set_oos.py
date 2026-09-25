@@ -146,9 +146,12 @@ def evaluate(horizon):
     br = np.asarray([b["delta"]["brier"] for b in blocks], dtype=float)
     ac = np.asarray([b["delta"]["accuracy"] for b in blocks], dtype=float)
 
-    final_models = _fit_experts(dev)
+    # Frozen-holdout protocol: experts must be fit only on observations
+    # strictly before the final calibration block; calibration labels are not
+    # allowed into the expert fit that generates holdout probabilities.
     final_cal = dev[-CAL_BLOCK:]
     final_train = dev[:-CAL_BLOCK]
+    final_models = _fit_experts(final_train)
     final_cal_parts = _expert_probs(final_models, final_cal)
     final_hold_parts = _expert_probs(final_models, holdout)
     final_routed, final_sizes, _ = route_block(final_cal_parts, final_cal, final_hold_parts)
