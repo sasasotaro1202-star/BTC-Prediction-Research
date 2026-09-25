@@ -36,26 +36,46 @@ jobs:
         run: |
           set -euo pipefail
           now="$(date -u +%s)"
-          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          retry_api() {
+            local endpoint="$1"
+            shift
+            for attempt in 1 2 3; do
+              if out="$(gh api "$endpoint" "$@" 2>/dev/null)"; then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              echo "WARN: GitHub API request failed (attempt ${attempt}/3): ${endpoint}" >&2
+              [ "$attempt" -lt 3 ] && sleep $((5 * attempt))
+            done
+            return 1
+          }
 
-          live_json="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")"
-          active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"\$live_json")"
-          latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"\$live_json")"
+          main_sha="$(retry_api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')" || {
+            echo "ERROR: unable to read current main SHA after 3 attempts." >&2
+            exit 1
+          }
 
-          updated="$(cut -f1 <<<"\$latest")"
-          head="$(cut -f2 <<<"\$latest")"
-          if [ -z "\$updated" ]; then
+          live_json="$(retry_api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
+            echo "ERROR: unable to read Live workflow runs after 3 attempts." >&2
+            exit 1
+          }
+          active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$live_json")"
+          latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion=="success")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"$live_json")"
+
+          updated="$(cut -f1 <<<"$latest")"
+          head="$(cut -f2 <<<"$latest")"
+          if [ -z "$updated" ]; then
             age=999999999
           else
-            epoch="$(date -d "\$updated" +%s)"
+            epoch="$(date -d "$updated" +%s)"
             age=\$((now-epoch))
           fi
 
-          echo "main_sha=\$main_sha active_live=\$active latest_live_head=${head:-none} age=${age}s"
+          echo "main_sha=$main_sha active_live=$active latest_live_head=${head:-none} age=${age}s"
 
-          if [ "\$active" -eq 0 ] && { [ "\$age" -ge 300 ] || [ "\$head" != "\$main_sha" ]; }; then
+          if [ "$active" -eq 0 ] && { [ "$age" -ge 300 ] || [ "$head" != "$main_sha" ]; }; then
             echo "Production heartbeat stale; dispatching one Live Cycle from current main."
-            if gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null; then
+            if gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null 2>&1; then
               echo "Live Cycle recovery dispatch accepted."
             else
               echo "ERROR: Live Cycle recovery dispatch failed." >&2
