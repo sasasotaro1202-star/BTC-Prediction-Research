@@ -315,7 +315,7 @@ jobs:
           # evidence. Stash them before rebasing the immutable run ledger so
           # concurrent research commits cannot make rebase fail with unstaged
           # changes.
-          git stash push --include-untracked --message 'v13-runtime-artifacts' >/dev/null || true
+          git stash push --include-untracked --message 'v13-runtime-artifacts' >/dev/null
           pushed=0
           for attempt in 1 2 3 4 5; do
             if git fetch --prune origin main && git rebase origin/main && git push origin HEAD:main; then
