@@ -54,6 +54,222 @@ VALID_ACTIONS = {
 }
 
 
+STRATEGY_TO_V6_VARIANT = {
+    "STANDARD_MODEL": "soft_ensemble",
+    "ENSEMBLE": "adaptive_ensemble",
+    "RETRIEVAL_FUSION": "three_layers_retrieval",
+    "SPECIALIST": "three_layers_regime",
+    "DEEP_COMPUTE": "full_architecture",
+    "SCENARIO": "full_architecture",
+}
+
+_CLASS_INDEX = {"DOWN": 0, "FLAT": 1, "UP": 2}
+
+
+def _policy_state_from_v6_block(block: dict[str, Any]) -> dict[str, Any]:
+    raw = dict(block.get("state") or {})
+    raw["failure_monitoring"] = {"latest_failure_risk": dict(block.get("failure_state") or {})}
+    return _state(raw)
+
+
+def policy_metrics(y: list[str], probs: Any) -> dict[str, float | int]:
+    import numpy as np
+
+    if probs is None:
+        return {"n": 0, "accuracy": None, "logloss": None, "brier": None, "calibration_error": None}
+    p = np.asarray(probs, dtype=float)
+    if p.ndim != 2 or p.shape[1] != 3 or len(y) != len(p) or len(y) == 0:
+        raise ValueError("invalid_policy_metric_shape")
+    yi = np.asarray([_CLASS_INDEX[str(v)] for v in y], dtype=int)
+    p = np.clip(p, 1e-7, 1.0)
+    p /= p.sum(axis=1, keepdims=True)
+    pred = np.argmax(p, axis=1)
+    one = np.eye(3)[yi]
+    accuracy = float(np.mean(pred == yi))
+    logloss = float(-np.mean(np.log(p[np.arange(len(yi)), yi])))
+    brier = float(np.mean(np.sum((p - one) ** 2, axis=1)))
+    ece = 0.0
+    conf = np.max(p, axis=1)
+    correct = (pred == yi).astype(float)
+    edges = np.linspace(0.0, 1.0, 11)
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        mask = (conf > lo) & (conf <= hi if hi < 1.0 else conf <= hi)
+        if np.any(mask):
+            ece += float(np.mean(mask)) * abs(float(np.mean(conf[mask])) - float(np.mean(correct[mask])))
+    return {
+        "n": int(len(y)),
+        "accuracy": accuracy,
+        "logloss": logloss,
+        "brier": brier,
+        "calibration_error": float(ece),
+    }
+
+
+def evaluate_policy_case(
+    block: dict[str, Any],
+    *,
+    previous_strategy: str | None = None,
+    previous_predictability: float | None = None,
+) -> dict[str, Any]:
+    state = _policy_state_from_v6_block(block)
+    strategy = select_strategy(state)
+    output = select_output_format(state, strategy["strategy"])
+    action = select_action(
+        state,
+        previous_strategy=previous_strategy,
+        previous_predictability=previous_predictability,
+    )
+    selected = STRATEGY_TO_V6_VARIANT.get(strategy["strategy"])
+    if selected is None:
+        raise ValueError(f"unmapped_policy_strategy:{strategy['strategy']}")
+    probs = None
+    if strategy["strategy"] != "ABSTAIN":
+        variants = block.get("variants") or {}
+        if selected not in variants:
+            raise ValueError(f"missing_policy_variant:{selected}")
+        probs = variants[selected].get("probs")
+    return {
+        "state": state,
+        "strategy_selection": strategy,
+        "output_selection": output,
+        "action_selection": action,
+        "variant": selected,
+        "covered": strategy["strategy"] != "ABSTAIN",
+        "probs": probs,
+    }
+
+
+def summarize_policy_blocks(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    import numpy as np
+
+    all_y: list[str] = []
+    all_baseline: list[Any] = []
+    covered_y: list[str] = []
+    covered_policy: list[Any] = []
+    covered_baseline: list[Any] = []
+    strategy_counts: dict[str, int] = {}
+    output_counts: dict[str, int] = {}
+    action_counts: dict[str, int] = {}
+    changed_strategy = 0
+    prev_strategy = None
+    prev_predictability = None
+    cases = []
+
+    for block in blocks:
+        y = [str(v) for v in block.get("y", [])]
+        baseline = (block.get("variants") or {}).get("soft_ensemble", {}).get("probs")
+        if baseline is None or len(y) != len(baseline):
+            raise ValueError("policy_baseline_missing")
+        case = evaluate_policy_case(
+            block,
+            previous_strategy=prev_strategy,
+            previous_predictability=prev_predictability,
+        )
+        strategy = case["strategy_selection"]["strategy"]
+        output = case["output_selection"]["format"]
+        action = case["action_selection"]["action"]
+        strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+        output_counts[output] = output_counts.get(output, 0) + 1
+        action_counts[action] = action_counts.get(action, 0) + 1
+        if prev_strategy is not None and strategy != prev_strategy:
+            changed_strategy += 1
+        all_y.extend(y)
+        all_baseline.append(np.asarray(baseline, dtype=float))
+        if case["covered"]:
+            policy_p = np.asarray(case["probs"], dtype=float)
+            covered_y.extend(y)
+            covered_policy.append(policy_p)
+            covered_baseline.append(np.asarray(baseline, dtype=float))
+        cases.append({
+            "index": int(block.get("index", len(cases))),
+            "strategy": strategy,
+            "variant": case["variant"],
+            "output_format": output,
+            "action": action,
+            "covered": bool(case["covered"]),
+            "predictability": float(case["state"]["predictability"]),
+            "uncertainty": float(case["state"]["uncertainty"]),
+            "failure_risk": float(case["state"]["failure_mean"]),
+        })
+        prev_strategy = strategy
+        prev_predictability = float(case["state"]["predictability"])
+
+    if not all_y:
+        return {
+            "status": "DEFERRED",
+            "reason": "no_policy_cases",
+            "n_blocks": 0,
+            "n_samples": 0,
+        }
+
+    baseline_probs = np.vstack(all_baseline)
+    baseline = policy_metrics(all_y, baseline_probs)
+    covered = len(covered_y)
+    policy = (
+        policy_metrics(covered_y, np.vstack(covered_policy))
+        if covered else policy_metrics([], None)
+    )
+    matched = (
+        policy_metrics(covered_y, np.vstack(covered_baseline))
+        if covered else policy_metrics([], None)
+    )
+
+    def delta(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        out = {}
+        for key in ("accuracy", "logloss", "brier", "calibration_error"):
+            av, bv = a.get(key), b.get(key)
+            out[key] = None if av is None or bv is None else float(av - bv)
+        return out
+
+    return {
+        "status": "MEASURED_DEV_OOS",
+        "n_blocks": int(len(blocks)),
+        "n_samples": int(len(all_y)),
+        "coverage": float(covered / len(all_y)),
+        "abstain_rate": float(1.0 - covered / len(all_y)),
+        "baseline": baseline,
+        "policy": policy,
+        "matched_baseline": matched,
+        "delta_vs_full_baseline": delta(policy, baseline),
+        "delta_vs_matched_baseline": delta(policy, matched),
+        "strategy_counts": strategy_counts,
+        "output_counts": output_counts,
+        "action_counts": action_counts,
+        "strategy_switches": int(changed_strategy),
+        "cases": cases,
+        "policy_value_is_selection_free": True,
+        "note": "Development OOS only; frozen holdout remains a separate protected evaluation.",
+    }
+
+
+def evaluate_policy_holdout_case(
+    block: dict[str, Any],
+    *,
+    previous_strategy: str | None = None,
+    previous_predictability: float | None = None,
+) -> dict[str, Any]:
+    case = evaluate_policy_case(
+        block,
+        previous_strategy=previous_strategy,
+        previous_predictability=previous_predictability,
+    )
+    y = [str(v) for v in block.get("y", [])]
+    baseline = (block.get("variants") or {}).get("soft_ensemble", {}).get("probs")
+    return {
+        "decision": {
+            "strategy_selection": case["strategy_selection"],
+            "output_selection": case["output_selection"],
+            "action_selection": case["action_selection"],
+            "variant": case["variant"],
+            "covered": case["covered"],
+        },
+        "policy_metrics": policy_metrics(y, case["probs"]),
+        "baseline_metrics": policy_metrics(y, baseline),
+        "covered_baseline_metrics": policy_metrics(y, baseline) if case["covered"] else policy_metrics([], None),
+        "comparison_scope": "FROZEN_HOLDOUT",
+    }
+
+
 def _clip01(value: Any, default: float = 0.0) -> float:
     try:
         value = float(value)
@@ -381,6 +597,7 @@ def build_policy_record(horizon: str, result: dict[str, Any]) -> dict[str, Any]:
             "reason": action["reason"],
             "immutable_input": "maximum_future_generalization_v6_registry",
         },
+        "oos_evidence": result.get("prediction_policy_oos", {}),
     }
 
 
@@ -435,7 +652,16 @@ def main() -> None:
         "research_only": True,
         "production_changed": False,
         "status": "IMPLEMENTED_EXECUTED_RESEARCH_ONLY",
-        "oos_policy_value_status": "UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION",
+        "oos_policy_value_status": (
+            "MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT"
+            if all(
+                isinstance(v, dict)
+                and v.get("prediction_policy_oos", {}).get("development", {}).get("status") == "MEASURED_DEV_OOS"
+                and v.get("prediction_policy_oos", {}).get("frozen_holdout", {}).get("status") == "FROZEN_HOLDOUT_EVALUATED"
+                for v in records.values()
+            )
+            else "UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION"
+        ),
         "horizons": records,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
