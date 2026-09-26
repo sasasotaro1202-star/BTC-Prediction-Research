@@ -119,14 +119,15 @@ jobs:
               if r.get('status') != 'OK':
                   raise SystemExit(f'{h}: v2 OOS did not complete: {r.get("status")} {r.get("reason","")}')
               audit=r.get('meta_leakage_policy', {})
-              required=(
+              required_true=(
                   'failure_labels_require_future_window_completion_before_meta_fit',
                   'predictability_labels_require_future_window_completion_before_meta_fit',
                   'current_block_labels_not_used_for_routing',
-                  'frozen_holdout_used_for_selection',
               )
-              if not all(audit.get(k) is True for k in required):
+              if not all(audit.get(k) is True for k in required_true):
                   raise SystemExit(f'{h}: meta-leakage contract failed')
+              if audit.get('frozen_holdout_used_for_selection') is not False:
+                  raise SystemExit(f'{h}: frozen holdout selection flag must be false')
               if r.get('final_holdout_protected') is not True:
                   raise SystemExit(f'{h}: frozen holdout not protected')
           print('v2 PIT/meta-leakage contract: VERIFIED')
