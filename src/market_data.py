@@ -610,7 +610,7 @@ def resilient_1m_series(limit: int = 120):
                     status["price_feature_fallback"] = "stale_cache_rejected"
                 else:
                     status["price_feature_fallback"] = "none"
-    else:
+    if status.get("price_feature_fallback") is None:
         status["price_feature_fallback"] = "none"
     status["spot_fallback"] = "unavailable" if len(spot) < 40 else "none"
     if not by and by_current:
