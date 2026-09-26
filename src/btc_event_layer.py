@@ -81,6 +81,8 @@ def make_event(
 
     if event_time > retrieved:
         raise ValueError("event_time_after_retrieval")
+    if event_time > available:
+        raise ValueError("event_time_after_availability")
     if available > retrieved:
         raise ValueError("available_at_after_retrieval")
 
