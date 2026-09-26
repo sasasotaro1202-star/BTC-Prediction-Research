@@ -152,14 +152,59 @@ jobs:
                   raise SystemExit(f'{h}: meta-leakage audit failure')
           print('V6 leakage/meta-leakage audit: PASS')
           PY
+      - name: Generate v6 report
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/historical_research')
+          obj=json.loads((root/'maximum_future_generalization_v6_registry.json').read_text())
+          lines=[
+              '# Maximum Future-Generalization Predictive Control V6',
+              '',
+              f"Generated: {obj.get('generated_at_utc')}",
+              f"Research mode: {obj.get('research_mode')}",
+              'Production changed: false',
+              ''
+          ]
+          for h,r in obj.get('horizons',{}).items():
+              lines += [f"## {h}", f"Status: {r.get('status')}"]
+              if r.get('status')=='OK':
+                  d=r.get('deltas_vs_soft',{})
+                  lines += [
+                      f"Accuracy Δ vs Soft: {d.get('accuracy')}",
+                      f"LogLoss Δ vs Soft: {d.get('logloss')}",
+                      f"Brier Δ vs Soft: {d.get('brier')}",
+                      f"ECE Δ vs Soft: {d.get('ece')}",
+                      f"Coverage: {r.get('selective_prediction',{})}",
+                      f"Predictability: {r.get('predictability',{})}",
+                      f"Failure Risk: {r.get('failure_monitoring',{}).get('latest_failure_risk')}",
+                      f"Time-to-Failure: {r.get('failure_monitoring',{}).get('latest_failure_risk',{}).get('expected_time_to_failure_blocks')}",
+                      f"Error Correlation: {r.get('error_correlation',{})}",
+                      f"Regime Transition: {r.get('regime_transition',{})}",
+                      f"Drift: {r.get('information_shock',{})}",
+                      f"Retrieval: {r.get('retrieval',{})}",
+                      f"Uncertainty: {r.get('uncertainty',{})}",
+                      f"Robustness: {r.get('robustness',{})}",
+                      f"Promotion: {r.get('promotion',{})}",
+                      ''
+                  ]
+              else:
+                  lines += [f"Reason: {r.get('reason')}", '']
+          (root/'maximum_future_generalization_v6_report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          PY
+          test -s data/historical_research/maximum_future_generalization_v6_report.md
+
       - name: Artifact integrity
         run: |
           set -euo pipefail
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
-          for f in data/historical_research/maximum_future_generalization_*_*.json; do
+          for f in data/historical_research/maximum_future_generalization_*.json; do
             test -s "$f"
             python -m json.tool "$f" >/dev/null
           done
+          test -s data/historical_research/maximum_future_generalization_v6_report.md
           git diff --check
       - name: Record v6 run completion
         if: always()
@@ -205,7 +250,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: btc-maximum-future-generalization-v6
-          path: data/historical_research/maximum_future_generalization_*.json
+          path: |
+            data/historical_research/maximum_future_generalization_*.json
+            data/historical_research/maximum_future_generalization_v6_report.md
           if-no-files-found: error
           retention-days: 14
 

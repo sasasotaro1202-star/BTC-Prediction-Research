@@ -345,7 +345,10 @@ def _meta_training(blocks, before_index):
                     p_acc = float(np.mean([x["metrics"][e]["accuracy"] for x in past]))
                     f_acc = float(np.mean([x["metrics"][e]["accuracy"] for x in future]))
                     failure = int((f_ll - p_ll) >= 0.05 or (f_acc - p_acc) <= -0.05)
-                    failure_pairs[e].append((state_vec, failure))
+                    failure_pairs[e].append((
+                        np.concatenate([state_vec, [float(b["metrics"][e]["logloss"])]])
+                        , failure
+                    ))
                     for h in (1, 2, 3):
                         ff = future[:h]
                         within = int(any(
@@ -827,6 +830,7 @@ def _development(rows):
             "panel": panel,
             "y": [r["y"] for r in test],
             "X": np.asarray([r["x"] for r in test], dtype=float),
+            "models": models,
             "x": [r["x"] for r in test],
             "variants": variants,
             "calibrated": calibrated,
@@ -1013,10 +1017,7 @@ def evaluate(horizon, max_rows=9000):
     worst = _worst_regime(dev_blocks, "full_architecture")
     selective = _selective_metrics(dev_blocks)
     conf = _conformal_from_blocks(dev_blocks)
-    last_stress = _stress(dev_blocks[-1], _fit_and_predict(
-        _purged_train(dev_rows, dev_blocks[-1]["test_start"]),
-        dev_rows[max(0, len(dev_rows)-TEST_BLOCK):len(dev_rows)] if len(dev_rows) >= TEST_BLOCK else dev_rows
-    )[1]) if False else {"status": "SKIPPED_UNTIL_E2E"}
+    last_stress = _stress(dev_blocks[-1], dev_blocks[-1]["models"])
     invariant = dev_blocks[-1]["invariant"]
     holdout = _holdout_frozen(dev_blocks, dev_rows, holdout)
 
