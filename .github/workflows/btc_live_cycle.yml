@@ -102,7 +102,7 @@ jobs:
               f"rows={len(ordered)} contiguous_suffix={suffix} "
               f"retrieved_age_ms={retrieved_age} event_age_ms={event_age}"
           )
-          if suffix < 40 or retrieved_age < 0 or retrieved_age > 180000 or event_age < 0 or event_age > 180000:
+          # Start collector recovery with a 60s margin before the 180s prediction hard cutoff.\n          if suffix < 40 or retrieved_age < 0 or retrieved_age > 120000 or event_age < 0 or event_age > 120000:
               raise SystemExit(2)
           PY
             )"

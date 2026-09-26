@@ -47,7 +47,9 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('if [ "$cache_health_status" -ne 0 ]; then', block)
         self.assertIn('stale=true', block)
         self.assertIn('if suffix < 40', block)
-        self.assertIn('event_age > 180000', block)
+        self.assertIn('retrieved_age > 120000', block)
+        self.assertIn('event_age > 120000', block)
+        self.assertNotIn('event_age > 180000', block)
 
     def test_prediction_boundary_rejects_stale_event_even_when_retrieval_is_fresh(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
