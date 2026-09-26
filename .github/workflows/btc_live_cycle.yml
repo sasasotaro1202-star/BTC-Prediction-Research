@@ -438,6 +438,65 @@ jobs:
         run: python src/model_compare.py
       - name: Recalculate BTC calibration metrics after model adoption
         run: python src/calibration.py
+      - name: Verify BTC calibration evidence matches settled production rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          db = Path("data/predictions.db")
+          if not db.is_file():
+              raise SystemExit("prediction database missing for calibration evidence check")
+
+          with sqlite3.connect(db) as con:
+              registry = dict(con.execute(
+                  "SELECT horizon, production_version FROM model_registry"
+              ).fetchall())
+              for horizon in ("5m", "10m"):
+                  version = str(registry.get(horizon, "")).strip()
+                  if not version:
+                      raise SystemExit(f"{horizon}: production registry version missing")
+                  actual_col = f"actual_direction_{horizon}"
+                  segment = f"{horizon}:{version}"
+                  row = con.execute(
+                      f"""SELECT COUNT(*)
+                          FROM predictions
+                          WHERE {actual_col} IS NOT NULL
+                            AND ('|' || model_version || '|') LIKE ?
+                            AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
+                            AND json_extract(scenario_json, '$.production_mode') = 'binance_primary'""",
+                      (f"%|{segment}|%",),
+                  ).fetchone()
+                  settled = int(row[0] or 0)
+
+                  path = Path(f"models/{horizon}.calibration.json")
+                  if not path.is_file():
+                      raise SystemExit(f"{horizon}: calibration artifact missing")
+                  obj = json.loads(path.read_text(encoding="utf-8"))
+                  if obj.get("model_version") != version:
+                      raise SystemExit(
+                          f"{horizon}: calibration generation mismatch: "
+                          f"{obj.get('model_version')!r} != {version!r}"
+                      )
+                  try:
+                      n_settled = int(obj.get("n_settled", -1))
+                  except (TypeError, ValueError):
+                      raise SystemExit(f"{horizon}: calibration n_settled is invalid")
+                  if n_settled != settled:
+                      raise SystemExit(
+                          f"{horizon}: calibration evidence count mismatch: "
+                          f"artifact={n_settled} db={settled}"
+                      )
+                  print(
+                      f"{horizon}: calibration evidence bound to current generation "
+                      f"and exact settled primary count={settled}"
+                  )
+          print("BTC calibration evidence binding: VERIFIED")
+          PY
+
       - name: Recalibrate BTC live structural blend after model adoption
         run: python src/blend_calibration.py
       - name: Recalibrate source-native Coinbase fallback after settlement
