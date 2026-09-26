@@ -1,1 +1,148 @@
-"""Research-only adapter from BTC public-venue Situation Cards to v18 Decision Objects.\n\nThis module never computes a prediction. It only packages an already-produced\nprobability distribution together with causal shadow-venue evidence. Missing\nor non-causal evidence is fail-closed.\n"""\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nfrom collections import defaultdict\nfrom typing import Any, Mapping\n\nfrom src.btc_decision_object_v18 import PredictionDecisionObject\n\n\ndef _canonical_event_ids(ids: list[str]) -> str:\n    raw = json.dumps(sorted(ids), separators=(",", ":"), ensure_ascii=False).encode("utf-8")\n    return hashlib.sha256(raw).hexdigest()\n\n\ndef _provenance(events: list[dict[str, Any]], used_ids: list[str], cutoff_ms: int) -> tuple[dict[str, Any], ...]:\n    by_group: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)\n    for event in events:\n        event_id = str(event.get("event_id", ""))\n        if event_id in used_ids:\n            by_group[(str(event.get("source", "")), str(event.get("event_type", "")))].append(event)\n\n    if set(used_ids) != {str(e.get("event_id", "")) for group in by_group.values() for e in group}:\n        raise ValueError("situation_card_missing_event_provenance")\n\n    out: list[dict[str, Any]] = []\n    for (source, event_type), group in sorted(by_group.items()):\n        available = []\n        retrieved = []\n        event_times = []\n        payload_hashes = []\n        for event in group:\n            try:\n                event_time = int(event["event_time_ms"])\n                available_at = int(event["available_at_ms"])\n                retrieved_at = int(event["retrieved_at_ms"])\n            except (KeyError, TypeError, ValueError) as exc:\n                raise ValueError("invalid_shadow_event_provenance") from exc\n            if event_time > available_at:\n                raise ValueError("event_after_available_time")\n            if available_at > cutoff_ms:\n                raise ValueError("future_shadow_information")\n            if retrieved_at < available_at:\n                raise ValueError("retrieval_before_available_time")\n            event_times.append(event_time)\n            available.append(available_at)\n            retrieved.append(retrieved_at)\n            payload_hashes.append(str(event.get("payload_sha256", "")))\n\n        out.append(\n            {\n                "source": source,\n                "event_type": event_type,\n                "available_at_ms": max(available),\n                "retrieved_at_ms": max(retrieved),\n                "event_time_min_ms": min(event_times),\n                "event_time_max_ms": max(event_times),\n                "event_count": len(group),\n                "event_ids_sha256": _canonical_event_ids([str(e["event_id"]) for e in group]),\n                "payload_hashes_sha256": hashlib.sha256(\n                    json.dumps(sorted(payload_hashes), separators=(",", ":")).encode("utf-8")\n                ).hexdigest(),\n            }\n        )\n    return tuple(out)\n\n\ndef build_decision_from_situation_card(\n    *,\n    cutoff_ms: int,\n    probability: Mapping[str, float],\n    situation_card: Mapping[str, Any],\n    events: list[dict[str, Any]],\n    target: str = "direction",\n    horizon: str = "5m",\n    granularity: str = "1m",\n    model: str = "precomputed_probability",\n    strategy: str = "public_venue_shadow",\n    compute_budget: str = "standard",\n    update_policy: str = "research_only",\n    current_regime: str | None = None,\n    action: str = "maintain",\n) -> PredictionDecisionObject:\n    """Package causal Situation Card evidence without producing a prediction."""\n    if int(situation_card.get("prediction_cutoff_ms", -1)) != int(cutoff_ms):\n        raise ValueError("situation_card_cutoff_mismatch")\n\n    used_ids = [str(x) for x in situation_card.get("used_event_ids", [])]\n    if len(used_ids) != len(set(used_ids)):\n        raise ValueError("duplicate_situation_event_ids")\n\n    provenance = _provenance(events, used_ids, int(cutoff_ms)) if used_ids else ()\n    pit_status = "verified" if provenance else "deferred"\n\n    return PredictionDecisionObject(\n        prediction_time_ms=int(cutoff_ms),\n        target=target,\n        horizon=horizon,\n        granularity=granularity,\n        output_type="probability",\n        probability=dict(probability),\n        distribution=dict(probability),\n        predictability=None,\n        confidence=None,\n        uncertainty=None,\n        current_state="public_venue_shadow",\n        future_state=None,\n        current_regime=current_regime,\n        future_regime=None,\n        trajectory=(),\n        scenarios=(),\n        branches=(),\n        disagreement=None,\n        error_correlation=None,\n        future_failure=None,\n        time_to_failure_ms=None,\n        ood=False,\n        novelty=None,\n        tail_risk=None,\n        forecast_lifetime_ms=None,\n        freshness_ms=situation_card.get("freshness_ms"),\n        revision_risk=None,\n        update_need=None,\n        next_update_time_ms=None,\n        information_value=None,\n        model=model,\n        strategy=strategy,\n        compute_budget=compute_budget,\n        update_policy=update_policy,\n        action=action,\n        pit_status=pit_status,\n        provenance=provenance,\n    )\n\n\n__all__ = ["build_decision_from_situation_card"]
+"""Research-only adapter from BTC public-venue Situation Cards to v18 Decision Objects.
+
+This module never computes a prediction. It only packages an already-produced
+probability distribution together with causal shadow-venue evidence. Missing
+or non-causal evidence is fail-closed.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from collections import defaultdict
+from typing import Any, Mapping
+
+from src.btc_decision_object_v18 import PredictionDecisionObject
+
+
+def _canonical_event_ids(ids: list[str]) -> str:
+    raw = json.dumps(sorted(ids), separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _provenance(events: list[dict[str, Any]], used_ids: list[str], cutoff_ms: int) -> tuple[dict[str, Any], ...]:
+    by_group: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        event_id = str(event.get("event_id", ""))
+        if event_id in used_ids:
+            by_group[(str(event.get("source", "")), str(event.get("event_type", "")))].append(event)
+
+    found_ids = [str(e.get("event_id", "")) for group in by_group.values() for e in group]
+    if set(used_ids) != set(found_ids) or len(found_ids) != len(used_ids):
+        raise ValueError("situation_card_missing_event_provenance")
+
+    out: list[dict[str, Any]] = []
+    for (source, event_type), group in sorted(by_group.items()):
+        if not source or not event_type:
+            raise ValueError("invalid_shadow_event_identity")
+        available = []
+        retrieved = []
+        event_times = []
+        payload_hashes = []
+        for event in group:
+            try:
+                event_time = int(event["event_time_ms"])
+                available_at = int(event["available_at_ms"])
+                retrieved_at = int(event["retrieved_at_ms"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("invalid_shadow_event_provenance") from exc
+            if event_time > available_at:
+                raise ValueError("event_after_available_time")
+            if available_at > cutoff_ms:
+                raise ValueError("future_shadow_information")
+            if retrieved_at < available_at:
+                raise ValueError("retrieval_before_available_time")
+            payload_hash = str(event.get("payload_sha256", ""))
+            if not payload_hash:
+                raise ValueError("missing_shadow_payload_hash")
+            event_times.append(event_time)
+            available.append(available_at)
+            retrieved.append(retrieved_at)
+            payload_hashes.append(payload_hash)
+
+        out.append(
+            {
+                "source": source,
+                "event_type": event_type,
+                "available_at_ms": max(available),
+                "retrieved_at_ms": max(retrieved),
+                "event_time_min_ms": min(event_times),
+                "event_time_max_ms": max(event_times),
+                "event_count": len(group),
+                "event_ids_sha256": _canonical_event_ids([str(e["event_id"]) for e in group]),
+                "payload_hashes_sha256": hashlib.sha256(
+                    json.dumps(sorted(payload_hashes), separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    return tuple(out)
+
+
+def build_decision_from_situation_card(
+    *,
+    cutoff_ms: int,
+    probability: Mapping[str, float],
+    situation_card: Mapping[str, Any],
+    events: list[dict[str, Any]],
+    target: str = "direction",
+    horizon: str = "5m",
+    granularity: str = "1m",
+    model: str = "precomputed_probability",
+    strategy: str = "public_venue_shadow",
+    compute_budget: str = "standard",
+    update_policy: str = "research_only",
+    current_regime: str | None = None,
+    action: str = "maintain",
+) -> PredictionDecisionObject:
+    """Package causal Situation Card evidence without producing a prediction."""
+    if int(situation_card.get("prediction_cutoff_ms", -1)) != int(cutoff_ms):
+        raise ValueError("situation_card_cutoff_mismatch")
+
+    used_ids = [str(x) for x in situation_card.get("used_event_ids", [])]
+    if len(used_ids) != len(set(used_ids)):
+        raise ValueError("duplicate_situation_event_ids")
+
+    provenance = _provenance(events, used_ids, int(cutoff_ms)) if used_ids else ()
+    pit_status = "verified" if provenance else "deferred"
+
+    return PredictionDecisionObject(
+        prediction_time_ms=int(cutoff_ms),
+        target=target,
+        horizon=horizon,
+        granularity=granularity,
+        output_type="probability",
+        probability=dict(probability),
+        distribution=dict(probability),
+        predictability=None,
+        confidence=None,
+        uncertainty=None,
+        current_state="public_venue_shadow",
+        future_state=None,
+        current_regime=current_regime,
+        future_regime=None,
+        trajectory=(),
+        scenarios=(),
+        branches=(),
+        disagreement=None,
+        error_correlation=None,
+        future_failure=None,
+        time_to_failure_ms=None,
+        ood=False,
+        novelty=None,
+        tail_risk=None,
+        forecast_lifetime_ms=None,
+        freshness_ms=situation_card.get("freshness_ms"),
+        revision_risk=None,
+        update_need=None,
+        next_update_time_ms=None,
+        information_value=None,
+        model=model,
+        strategy=strategy,
+        compute_budget=compute_budget,
+        update_policy=update_policy,
+        action=action,
+        pit_status=pit_status,
+        provenance=provenance,
+    )
+
+
+__all__ = ["build_decision_from_situation_card"]
