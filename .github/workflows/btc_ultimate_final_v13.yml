@@ -20,8 +20,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-ultimate-final-v13-${{ github.sha }}
-  cancel-in-progress: false
+  group: btc-ultimate-final-v13-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -164,7 +164,7 @@ jobs:
       - name: Artifact integrity
         run: |
           set -euo pipefail
-          for f in             data/historical_research/ultimate_final_v13_report.json             data/historical_research/ultimate_final_v13_ledger.json             data/historical_research/ultimate_final_v13_leakage_audit.json             data/historical_research/ultimate_final_v13_prediction_contract.json             data/historical_research/promotion_gate.json
+          for f in             data/historical_research/ultimate_final_v13_report.json             data/historical_research/ultimate_final_v13_ledger.json             data/historical_research/ultimate_final_v13_leakage_audit.json             data/historical_research/ultimate_final_v13_prediction_contract.json             data/historical_research/ultimate_final_v13_meta_control.json             data/historical_research/ultimate_final_v13_prediction_strategy.json             data/historical_research/ultimate_final_v13_prediction_trajectory.json             data/historical_research/ultimate_final_v13_active_information.json             data/historical_research/ultimate_final_v13_failure_memory.json             data/historical_research/promotion_gate.json
           do
             test -s "$f"
             python -m json.tool "$f" >/dev/null
