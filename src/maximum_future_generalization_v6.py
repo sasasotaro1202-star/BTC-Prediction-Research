@@ -927,6 +927,9 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
         "regime_transition": _regime_transition(regime, dev_blocks),
         "hard_negative_density": _hard_negative_density(dev_blocks),
         "predictability": dev_blocks[-1]["state"]["predictability"],
+        "disagreement": dev_blocks[-1]["state"]["disagreement"],
+        "drift": dev_blocks[-1]["state"]["drift"],
+        "current_regime": dev_blocks[-1]["regime"],
         "meta_label": dev_blocks[-1]["state"]["meta_label"],
         "retrieval": _retrieval({
             "disagreement": d, "error_correlation": _error_corr(dev_blocks),
