@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +9,7 @@ EXPERIENCE = ROOT / "data" / "experience" / "experience_summary.json"
 FLAT = ROOT / "data" / "historical_research" / "flat_diagnostic.json"
 SNAPSHOT = ROOT / "data" / "historical_research" / "performance_snapshot.json"
 CHANGE = ROOT / "data" / "historical_research" / "performance_change.json"
+PREDICTIONS_DB = ROOT / "data" / "predictions.db"
 HORIZONS = ("5m", "10m")
 def _load(path: Path) -> dict:
     if not path.is_file():
@@ -19,6 +21,77 @@ def _load(path: Path) -> dict:
     if not isinstance(obj, dict):
         raise SystemExit(f"performance artifact is not an object: {path}")
     return obj
+
+
+def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
+    """Score only settled predictions that pass the canonical strict-PIT contract.
+
+    Legacy/pre-contract/unknown-venue rows are deliberately excluded so the
+    monitoring baseline reflects the current production input domain rather than
+    mixing incompatible historical cohorts.
+    """
+    if horizon not in {"5m", "10m"}:
+        raise ValueError(f"unsupported horizon: {horizon}")
+    if not db_path.is_file():
+        raise SystemExit(f"predictions database missing: {db_path}")
+
+    try:
+        from model_compare import prediction_precedes_target, strict_pit_provenance_reason
+    except ModuleNotFoundError:
+        from src.model_compare import prediction_precedes_target, strict_pit_provenance_reason
+    try:
+        from calibration import multiclass_metrics
+    except ModuleNotFoundError:
+        from src.calibration import multiclass_metrics
+
+    actual_col = f"actual_direction_{horizon}"
+    target_col = f"target_{horizon}"
+    with sqlite3.connect(db_path) as con:
+        rows = con.execute(
+            f"""SELECT created_at_utc,{target_col},{actual_col},
+                       p_up_{horizon},p_down_{horizon},p_flat_{horizon},
+                       model_version,scenario_json
+                FROM predictions
+                WHERE {actual_col} IS NOT NULL
+                ORDER BY created_at_utc"""
+        ).fetchall()
+
+    eligible = []
+    mode_counts = {}
+    for row in rows:
+        created_at, target_at, actual, p_up, p_down, p_flat, model_version, scenario_text = row
+        if str(model_version or "").startswith("DEGRADED_NO_FRESH_DATA"):
+            continue
+        if not prediction_precedes_target(created_at, target_at):
+            continue
+        try:
+            scenario = json.loads(scenario_text or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            scenario = {}
+        if strict_pit_provenance_reason(scenario, created_at) is not None:
+            continue
+        try:
+            probs = [float(p_up), float(p_down), float(p_flat)]
+        except (TypeError, ValueError):
+            continue
+        if not all(0.0 <= p <= 1.0 for p in probs) or not isinstance(actual, str):
+            continue
+        eligible.append((probs[0], probs[1], probs[2], actual))
+        mode = str(scenario.get("production_mode", "unknown"))
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+
+    if not eligible:
+        return {"n": 0, "accuracy": None, "logloss": None, "brier": None, "ece": None, "mode_counts": mode_counts}
+
+    accuracy, logloss, brier, ece = multiclass_metrics(eligible, horizon)
+    return {
+        "n": len(eligible),
+        "accuracy": float(accuracy),
+        "logloss": float(logloss),
+        "brier": float(brier),
+        "ece": float(ece),
+        "mode_counts": mode_counts,
+    }
 
 
 def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) -> dict:
@@ -43,6 +116,7 @@ def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) 
         if not isinstance(final, dict) or not isinstance(calibrated, dict):
             raise SystemExit(f"missing stage metrics for {horizon}")
 
+        strict_pit = _strict_pit_scores(horizon)
         scores[horizon] = {
             "experience_total_n": int(total.get("n", 0)),
             "experience_total_accuracy": float(total["accuracy"]),
@@ -58,6 +132,12 @@ def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) 
             "calibrated_logloss": float(calibrated["logloss"]),
             "calibrated_brier": float(calibrated["brier"]),
             "calibrated_ece": float(calibrated["ece"]),
+            "strict_pit_n": int(strict_pit["n"]),
+            "strict_pit_accuracy": strict_pit["accuracy"],
+            "strict_pit_logloss": strict_pit["logloss"],
+            "strict_pit_brier": strict_pit["brier"],
+            "strict_pit_ece": strict_pit["ece"],
+            "strict_pit_mode_counts": strict_pit["mode_counts"],
         }
     return scores
 
