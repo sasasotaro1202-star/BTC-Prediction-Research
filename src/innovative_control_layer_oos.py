@@ -625,7 +625,12 @@ def _stress_test(reference):
     base = np.asarray(reference["weights"], dtype=float)
     scenarios = {}
     for name, changes in {
-        "disagreement_spike": {"disagreement_pairwise": min(1.0, reference["disagreement"] + 0.35)},
+        "disagreement_spike": {
+            "disagreement_pairwise": min(
+                1.0,
+                float(reference["disagreement"].get("pairwise_disagreement", 0.0)) + 0.35,
+            )
+        },
         "severe_drift": {"drift": 1.0},
         "low_predictability": {"predictability": 0.10},
         "high_failure_risk": {"failure": 0.90},
