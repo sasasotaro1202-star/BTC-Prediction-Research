@@ -10,6 +10,7 @@ from src.innovative_control_layer_oos import (
     _coverage_metrics,
     _route_weights,
     _past_quality_logloss,
+    _stress_test,
     disagreement_features,
 )
 
@@ -63,6 +64,19 @@ class TestInnovativeControlLayer(unittest.TestCase):
         out = _coverage_metrics(probs, ["DOWN", "DOWN", "FLAT"], 0.0)
         for key in ("coverage", "accuracy", "logloss", "brier", "ece"):
             self.assertIn(key, out)
+
+    def test_stress_test_uses_scalar_pairwise_disagreement(self):
+        reference = {
+            "weights": [0.25, 0.25, 0.25, 0.25],
+            "quality_logloss": {e: 1.0 for e in ("logreg", "extra_trees", "hgb", "lightgbm")},
+            "disagreement": {"pairwise_disagreement": 0.20},
+            "drift": {"drift_score": 0.20},
+            "predictability": 0.70,
+            "failure_risks": {e: 0.30 for e in ("logreg", "extra_trees", "hgb", "lightgbm")},
+        }
+        out = _stress_test(reference)
+        self.assertEqual(out["status"], "OK")
+        self.assertIn("disagreement_spike", out["scenarios"])
 
 
 if __name__ == "__main__":
