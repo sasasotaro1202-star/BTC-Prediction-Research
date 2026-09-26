@@ -85,8 +85,7 @@ jobs:
               'run_id':os.environ.get('GITHUB_RUN_ID',''),
               'commit':os.environ.get('GITHUB_SHA',''),
               'started_at_utc':datetime.now(timezone.utc).isoformat()
-          },indent=2,sort_keys=True)+'
-')
+          }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
