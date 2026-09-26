@@ -14,6 +14,7 @@ from src.prediction_policy_oos import (
     validate_record,
     evaluate_policy_case,
     summarize_policy_blocks,
+    policy_oos_value_status,
 )
 
 
@@ -212,6 +213,29 @@ class TestPredictionPolicyV13(unittest.TestCase):
         self.assertEqual(out["status"], "MEASURED_DEV_OOS")
         self.assertIn("matched_baseline", out)
         self.assertEqual(out["n_samples"], 2)
+
+
+    def test_policy_oos_value_status_reads_nested_oos_evidence(self):
+        records = {
+            "5m": {
+                "oos_evidence": {
+                    "development": {"status": "MEASURED_DEV_OOS"},
+                    "frozen_holdout": {"status": "FROZEN_HOLDOUT_EVALUATED"},
+                    "frozen_holdout_used_for_selection": False,
+                }
+            },
+            "10m": {
+                "oos_evidence": {
+                    "development": {"status": "MEASURED_DEV_OOS"},
+                    "frozen_holdout": {"status": "FROZEN_HOLDOUT_EVALUATED"},
+                    "frozen_holdout_used_for_selection": False,
+                }
+            },
+        }
+        self.assertEqual(
+            policy_oos_value_status(records),
+            "MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT",
+        )
 
 
 if __name__ == "__main__":
