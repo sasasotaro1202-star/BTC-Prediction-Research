@@ -438,26 +438,47 @@ def _predictability(state, predict_model, history):
 
 
 def _failure_state(state, quality, failure_models, hazard_models, priors=None):
+    """Estimate future model-failure risk with an explicit evidence-strength gate.
+
+    Failure labels are naturally sparse because they require a completed future
+    window. A low-sample predictor must not be allowed to exert full routing
+    force. Its estimate is therefore shrunk toward a neutral 0.5 according to
+    prior OOS evidence count. This is causal and research-only.
+    """
     priors = priors if isinstance(priors, dict) else {}
     expert_priors = priors.get("failure_prior_by_expert", {})
     hazard_priors = priors.get("hazard_prior_by_horizon", {})
+    sample_counts = priors.get("failure_samples", {})
+    prior_counts = priors.get("failure_prior_counts", {})
+    if not isinstance(prior_counts, dict):
+        prior_counts = {}
     risks = {}
+    reliabilities = {}
     for e in EXPERTS:
         m = failure_models.get(e)
         if m is None:
-            risks[e] = float(np.clip(float(expert_priors.get(e, 0.5)), 0.0, 1.0))
+            raw = float(np.clip(float(expert_priors.get(e, 0.5)), 0.0, 1.0))
         else:
             x = np.concatenate([_numeric_state(state), [quality[e]]]).reshape(1, -1)
-            risks[e] = float(m.predict_proba(x)[0, 1])
+            raw = float(m.predict_proba(x)[0, 1])
+        n_evidence = int(sample_counts.get(e, prior_counts.get(e, 0) or 0))
+        reliability = float(np.clip(n_evidence / (n_evidence + 12.0), 0.0, 1.0))
+        reliabilities[e] = reliability
+        risks[e] = float(np.clip(0.5 + reliability * (raw - 0.5), 0.0, 1.0))
+
     hazard = {}
     x = _numeric_state(state).reshape(1, -1)
     for h in (1, 2, 3):
         m = hazard_models.get(h)
-        hazard[h] = (
+        raw = (
             float(m.predict_proba(x)[0, 1])
             if m is not None
             else float(np.clip(float(hazard_priors.get(str(h), 0.5)), 0.0, 1.0))
         )
+        n_hazard = int(priors.get("hazard_samples", {}).get(str(h), 0) or 0)
+        h_rel = float(np.clip(n_hazard / (n_hazard + 12.0), 0.0, 1.0))
+        hazard[h] = float(np.clip(0.5 + h_rel * (raw - 0.5), 0.0, 1.0))
+
     cumulative = [0.0, hazard[1], max(hazard[1], hazard[2]), max(hazard[2], hazard[3])]
     p1 = np.clip(cumulative[1], 0.0, 1.0)
     p2 = np.clip(cumulative[2] - cumulative[1], 0.0, 1.0)
@@ -466,6 +487,10 @@ def _failure_state(state, quality, failure_models, hazard_models, priors=None):
     expected = 1.0 * p1 + 2.0 * p2 + 3.0 * p3 + 4.0 * remaining
     return {
         "by_expert": risks,
+        "evidence_reliability_by_expert": reliabilities,
+        "evidence_samples_by_expert": {
+            e: int(sample_counts.get(e, prior_counts.get(e, 0) or 0)) for e in EXPERTS
+        },
         "mean": float(np.mean(list(risks.values()))),
         "max": float(max(risks.values())),
         "hazard_within_1_2_3": hazard,
