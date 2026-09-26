@@ -370,6 +370,10 @@ def _past_completed_meta(blocks, before_index):
     failure_rows = {e: [] for e in EXPERTS}
     predict_rows = []
     for i in range(before_index):
+        # A meta label is usable only after its entire future evaluation window
+        # has completed. This is the core protection against meta-leakage.
+        if i + FUTURE_WINDOW >= before_index:
+            continue
         fl = _build_failure_labels(blocks, i)
         if all(fl[e] is not None for e in EXPERTS):
             for e in EXPERTS:
