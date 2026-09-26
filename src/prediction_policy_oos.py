@@ -120,10 +120,12 @@ def evaluate_policy_case(
         previous_predictability=previous_predictability,
     )
     selected = STRATEGY_TO_V6_VARIANT.get(strategy["strategy"])
-    if selected is None:
+    if strategy["strategy"] == "ABSTAIN":
+        selected = None
+    elif selected is None:
         raise ValueError(f"unmapped_policy_strategy:{strategy['strategy']}")
     probs = None
-    if strategy["strategy"] != "ABSTAIN":
+    if selected is not None:
         variants = block.get("variants") or {}
         if selected not in variants:
             raise ValueError(f"missing_policy_variant:{selected}")
