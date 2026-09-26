@@ -1,0 +1,169 @@
+name: BTC Innovative Prediction Control V2
+
+on:
+  schedule:
+    - cron: '31 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/innovative_control_layer_oos.py'
+      - 'tests/test_innovative_control_layer_oos.py'
+      - '.github/workflows/btc_innovative_prediction_control_v2.yml'
+      - 'src/model_compare.py'
+      - 'src/runtime_production_model.py'
+      - 'src/label_policy.py'
+      - 'requirements.txt'
+
+concurrency:
+  group: btc-innovative-control-v2
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install free research dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and unit test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m unittest -q tests/test_innovative_control_layer_oos.py
+
+      - name: Run v2 chronological OOS experiment
+        run: |
+          set -euo pipefail
+          python src/innovative_control_layer_oos.py
+          test -s data/historical_research/innovative_experiment_registry.json
+
+      - name: Verify PIT and meta-leakage contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/innovative_experiment_registry.json').read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('v2 contract violation: research-only/production mutation')
+          for h, r in obj.get('horizons', {}).items():
+              if r.get('status') != 'OK':
+                  continue
+              audit=r.get('meta_leakage_policy', {})
+              required=(
+                  'failure_labels_require_future_window_completion_before_meta_fit',
+                  'predictability_labels_require_future_window_completion_before_meta_fit',
+                  'current_block_labels_not_used_for_routing',
+                  'frozen_holdout_used_for_selection',
+              )
+              if not all(audit.get(k) is True for k in required):
+                  raise SystemExit(f'{h}: meta-leakage contract failed')
+              if r.get('final_holdout_protected') is not True:
+                  raise SystemExit(f'{h}: frozen holdout not protected')
+          print('v2 PIT/meta-leakage contract: VERIFIED')
+          PY
+
+      - name: Write promotion/fallback manifests
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/historical_research')
+          reg=json.loads((root/'innovative_experiment_registry.json').read_text(encoding='utf-8'))
+          promotion={
+              'schema_version':1,
+              'experiment':'btc_innovative_prediction_control_v2',
+              'research_only':True,
+              'production_changed':False,
+              'decision':'HOLD',
+              'horizons':{
+                  h:{
+                      'eligible': bool(r.get('promotion',{}).get('eligible',False)),
+                      'reason': r.get('promotion',{}).get('reason','missing')
+                  } for h,r in reg.get('horizons',{}).items()
+              }
+          }
+          fallback={
+              'schema_version':1,
+              'policy':'soft_global_fallback_on_meta_failure',
+              'production_eligible':False,
+              'rules':[
+                  'PIT_FAIL=>ABSTAIN',
+                  'META_MODEL_UNAVAILABLE=>SOFT_EQUAL',
+                  'EXTREME_PROBABILITY=>SOFT_EQUAL_AND_CALIBRATE',
+                  'SEVERE_DRIFT=>SOFTEN_WEIGHTS',
+                  'ARTIFACT_OR_SCHEMA_MISMATCH=>ABSTAIN'
+              ]
+          }
+          leakage={
+              'schema_version':1,
+              'research_only':True,
+              'pit':'PASS_BY_CONSTRUCTION_FOR_ARCHIVE_REPLAY',
+              'meta_leakage':'PASS_BY_CONSTRUCTION',
+              'frozen_holdout':'PROTECTED',
+              'random_split':'NOT_USED'
+          }
+          for name,payload in (
+              ('innovative_promotion_gate.json',promotion),
+              ('innovative_fallback_config.json',fallback),
+              ('innovative_leakage_audit.json',leakage),
+          ):
+              (root/name).write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')
+          PY
+
+      - name: Validate research artifacts and diff
+        run: |
+          set -euo pipefail
+          test -s data/historical_research/innovative_experiment_registry.json
+          test -s data/historical_research/innovative_experiment_manifest.json
+          test -s data/historical_research/innovative_promotion_gate.json
+          test -s data/historical_research/innovative_fallback_config.json
+          test -s data/historical_research/innovative_leakage_audit.json
+          git diff --check
+
+      - name: Commit research evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/innovative_*.json
+          if git diff --cached --quiet; then
+            echo 'No v2 evidence changes.'
+            exit 0
+          fi
+          git commit -m 'Record BTC innovative control v2 research evidence'
+          git fetch --prune origin main
+          if ! git merge --no-edit --strategy-option=ours origin/main; then
+            git merge --abort
+            git reset --hard origin/main
+            git add data/historical_research/innovative_*.json
+            git commit -m 'Record BTC innovative control v2 research evidence'
+          fi
+          git push origin HEAD:main
+
+      - name: Upload full v2 evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-innovative-control-v2
+          path: |
+            data/historical_research/innovative_*.json
+          if-no-files-found: error
+          retention-days: 14
