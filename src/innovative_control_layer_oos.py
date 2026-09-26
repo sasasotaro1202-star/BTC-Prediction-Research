@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +147,7 @@ def disagreement_features(panel_probs: dict[str, np.ndarray]) -> dict[str, float
     mean_p = matrix.mean(axis=0)
     std_p = matrix.std(axis=0)
     top = np.argmax(matrix, axis=2)
-    agreement = float(np.mean(np.mean(top == np.argmax(mean_p, axis=1), axis=0)))
+    agreement = float(np.mean(top == np.argmax(mean_p, axis=1)))
     margin = np.sort(mean_p, axis=1)[:, -1] - np.sort(mean_p, axis=1)[:, -2]
     pairwise = []
     for i in range(len(EXPERTS)):
@@ -565,9 +565,20 @@ def _champion_benchmark(horizon, rows):
         if not trained:
             return {"status": "DEFERRED", "reason": "production_training_timestamp_missing"}
         cutoff = datetime.fromisoformat(str(trained).replace("Z", "+00:00"))
-        usable = [r for r in rows if datetime.fromisoformat(r["created"].replace("Z", "+00:00")) > cutoff]
+        usable = [
+            r for r in rows
+            if datetime.fromisoformat(r["created"].replace("Z", "+00:00")) > cutoff
+        ]
         if len(usable) < 300:
             return {"status": "DEFERRED", "reason": "insufficient_post_training_oos_rows", "n": len(usable)}
+        sources = {str(r.get("data_source", "")) for r in usable}
+        if sources != {"binance_vision"}:
+            return {
+                "status": "DEFERRED",
+                "reason": "champion_benchmark_requires_binance_vision_same_product",
+                "sources": sorted(sources),
+                "n": len(usable),
+            }
         X = np.asarray([r["x"] for r in usable], dtype=float)
         y = [r["y"] for r in usable]
         p = _aligned(bundle.load(), X)
@@ -627,12 +638,29 @@ def evaluate(horizon):
     points = _window_points(len(rows))
     blocks = []
     prior_weights = None
-    prior_selective_scores = []
-    model_cache = {}
+    holdout_cut = max(12, int(len(points) * (1.0 - FINAL_HOLDOUT_FRAC)))
+    frozen_failure_models = None
+    frozen_predict_model = None
+    frozen_meta_counts = None
+    frozen_temperature = 1.0
+    frozen_reference_scores = None
+
     for bi, test_start in enumerate(points):
         test = rows[test_start:min(test_start + TEST_BLOCK, len(rows))]
         train_end = max(MIN_TRAIN, test_start)
-        train = rows[:train_end]
+        test_start_dt = datetime.fromisoformat(
+            str(test[0]["created"]).replace("Z", "+00:00")
+        )
+        embargo_cutoff = test_start_dt - timedelta(minutes=60)
+        train = [
+            r for r in rows[:train_end]
+            if (
+                datetime.fromisoformat(str(r["created"]).replace("Z", "+00:00")) < embargo_cutoff
+                and datetime.fromisoformat(str(r["target"]).replace("Z", "+00:00")) < embargo_cutoff
+                and datetime.fromisoformat(str(r["created"]).replace("Z", "+00:00"))
+                < datetime.fromisoformat(str(r["target"]).replace("Z", "+00:00"))
+            )
+        ]
         if len(test) < TEST_BLOCK // 2 or len(train) < MIN_TRAIN:
             continue
         panel, _ = _fit_panel(train, test)
@@ -688,7 +716,31 @@ def evaluate(horizon):
             "drift": drift,
             "quality_logloss": quality_logloss,
         }
-        failure_models, predict_model, meta_counts = _fit_meta_models(blocks, len(blocks))
+        if len(blocks) >= holdout_cut:
+            if len(blocks) == holdout_cut:
+                frozen_failure_models, frozen_predict_model, frozen_meta_counts = _fit_meta_models(
+                    blocks, holdout_cut
+                )
+                prior_p = [
+                    np.asarray(b["routes"]["full_architecture"], dtype=float)
+                    for b in blocks
+                ]
+                prior_y = [y for b in blocks for y in b["y"]]
+                frozen_temperature = (
+                    _temperature(np.vstack(prior_p), prior_y)
+                    if len(prior_y) >= 50 else 1.0
+                )
+                frozen_reference_scores = [
+                    score for b in blocks for score in b.get("selective_scores", [])
+                ]
+            failure_models = frozen_failure_models or {}
+            predict_model = frozen_predict_model
+            meta_counts = frozen_meta_counts or {
+                "failure_samples": {e: 0 for e in EXPERTS},
+                "predictability_samples": 0,
+            }
+        else:
+            failure_models, predict_model, meta_counts = _fit_meta_models(blocks, len(blocks))
         failure_risks = _failure_risks(provisional_state, quality_logloss, failure_models)
         predictability = _predictability(provisional_state, predict_model)
 
@@ -744,19 +796,27 @@ def evaluate(horizon):
         block["calibrated_full_temperature"] = 1.0
         calibrated_full = routes["full_architecture"]
         if routes["full_architecture"].size:
-            prior_p = []
-            prior_y = []
-            for old in blocks[-min(8, len(blocks)):]:
-                prior_p.append(np.asarray(old["routes"]["full_architecture"], dtype=float))
-                prior_y.extend(old["y"])
-            if prior_p and len(prior_y) >= 50:
-                flat_p = np.vstack(prior_p)
-                t = _temperature(flat_p, prior_y)
+            if len(blocks) >= holdout_cut and frozen_reference_scores is not None:
+                t = frozen_temperature
                 calibrated_full = _apply_temperature(routes["full_architecture"], t)
                 block["calibrated_full_temperature"] = t
                 block["full_architecture_calibrated"] = metrics(
                     [r["y"] for r in test], calibrated_full
                 )
+            else:
+                prior_p = []
+                prior_y = []
+                for old in blocks[-min(8, len(blocks)):]:
+                    prior_p.append(np.asarray(old["routes"]["full_architecture"], dtype=float))
+                    prior_y.extend(old["y"])
+                if prior_p and len(prior_y) >= 50:
+                    flat_p = np.vstack(prior_p)
+                    t = _temperature(flat_p, prior_y)
+                    calibrated_full = _apply_temperature(routes["full_architecture"], t)
+                    block["calibrated_full_temperature"] = t
+                    block["full_architecture_calibrated"] = metrics(
+                        [r["y"] for r in test], calibrated_full
+                    )
         block["routes"]["full_architecture_calibrated"] = calibrated_full.tolist()
         block["y"] = [r["y"] for r in test]
         block["selective_score"] = _selective_score(
@@ -953,6 +1013,72 @@ def write_outputs(result):
         json.dumps(result.get("shadow", {}), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    state = result.get("blocks_detail", [])
+    last_state = state[-1] if state else {}
+    (prefix.with_name(prefix.name + "_disagreement_features.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "feature_family": "model_disagreement",
+            "latest_block": last_state.get("index"),
+            "latest_disagreement": last_state.get("state", {}).get("disagreement", {}),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (prefix.with_name(prefix.name + "_predictability_model.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "policy": "prequential_logistic_easy_block_probability",
+            "latest_score": last_state.get("state", {}).get("predictability"),
+            "meta_samples": last_state.get("state", {}).get("meta_counts", {}).get("predictability_samples", 0),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (prefix.with_name(prefix.name + "_future_failure_model.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "policy": "prequential_per_expert_future_failure_probability",
+            "latest_risk": last_state.get("state", {}).get("failure_risks", {}),
+            "meta_samples": last_state.get("state", {}).get("meta_counts", {}).get("failure_samples", {}),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (prefix.with_name(prefix.name + "_drift_detector.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "latest_drift": last_state.get("state", {}).get("drift", {}),
+            "regime": last_state.get("regime"),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (prefix.with_name(prefix.name + "_dynamic_router.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "policy": "quality_x_predictability_x_disagreement_x_drift_x_failure_soft_routing",
+            "models": list(result.get("oos_summary", {}).keys()),
+            "promotion": result.get("promotion", {}),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (prefix.with_name(prefix.name + "_calibration_artifact.json")).write_text(
+        json.dumps({
+            "schema_version": 1,
+            "research_only": True,
+            "horizon": horizon,
+            "method": "chronological_temperature_from_prior_routed_blocks",
+            "latest_temperature": last_state.get("calibrated_full_temperature"),
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     (OUT_DIR / "innovative_experiment_manifest.json").write_text(
         json.dumps({
             "schema_version": 1,
@@ -972,6 +1098,12 @@ def write_outputs(result):
                 f"innovative_control_{h}_stress_test.json",
                 f"innovative_control_{h}_selective_policy.json",
                 f"innovative_control_{h}_shadow_results.json",
+                f"innovative_control_{h}_disagreement_features.json",
+                f"innovative_control_{h}_predictability_model.json",
+                f"innovative_control_{h}_future_failure_model.json",
+                f"innovative_control_{h}_drift_detector.json",
+                f"innovative_control_{h}_dynamic_router.json",
+                f"innovative_control_{h}_calibration_artifact.json",
             ],
         }, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

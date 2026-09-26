@@ -41,6 +41,18 @@ jobs:
       - name: Install free research dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
+      - name: Restore prediction state for production-benchmark provenance
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+
+
       - name: Compile and unit test
         run: |
           set -euo pipefail
