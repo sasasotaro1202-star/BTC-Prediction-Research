@@ -782,6 +782,7 @@ jobs:
           set -euo pipefail
           PYTHONPATH="src:scripts" python - <<'PY'
           import json
+          import os
           from pathlib import Path
           from pit_history import record_pit_history
 
