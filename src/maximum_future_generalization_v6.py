@@ -59,6 +59,7 @@ try:
         _champion_benchmark,
     )
     from src.model_compare import load_archive_research_rows, metrics
+    from src.prediction_policy_oos import evaluate_policy_case, summarize_policy_blocks, evaluate_policy_holdout_case
 except ModuleNotFoundError:
     from innovative_control_layer_oos import (
         EXPERTS,
@@ -77,6 +78,7 @@ except ModuleNotFoundError:
         _champion_benchmark,
     )
     from model_compare import load_archive_research_rows, metrics
+    from prediction_policy_oos import evaluate_policy_case, summarize_policy_blocks, evaluate_policy_holdout_case
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "historical_research"
@@ -751,6 +753,8 @@ def _development(rows):
     points = [p for p in points if p + TEST_BLOCK <= len(dev_rows)]
     blocks = []
     previous_weights = None
+    previous_policy_strategy = None
+    previous_policy_predictability = None
 
     for start in points:
         test = dev_rows[start:start + TEST_BLOCK]
@@ -877,7 +881,19 @@ def _development(rows):
             b[name] = metrics(b["y"], item["probs"])
         b["full"] = b["full_architecture"]
         b["full_architecture_calibrated"] = metrics(b["y"], calibrated)
+
+        # v13 policy selection is evaluated on the same causal OOS block using
+        # only the block state already available before its outcome is consumed.
+        policy_case = evaluate_policy_case(
+            b,
+            previous_strategy=previous_policy_strategy,
+            previous_predictability=previous_policy_predictability,
+        )
+        b["prediction_policy"] = policy_case
         blocks.append(b)
+        previous_policy_strategy = policy_case["strategy_selection"]["strategy"]
+        previous_policy_predictability = float(policy_case["state"]["predictability"])
+
         previous_weights = variants["full_architecture"]["weights"]
 
     return blocks, dev_rows, rows[holdout_row:]
@@ -958,16 +974,55 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
     state["retrieval"] = _retrieval(state, dev_blocks)
     state["uncertainty"] = _uncertainty(state)
     failure_state = _failure_state(state, quality, failure_models, hazard_models)
-    full_raw, weights = _evaluate_variant(
-        state, panel, quality, failure_state, dev_blocks[-1]["variants"]["full_architecture"]["weights"],
-        "full_architecture", retrieval_mix=0.10,
-    )
+    policy_variants = {}
+    for name in (
+        "soft_ensemble", "adaptive_ensemble", "three_layers_regime",
+        "three_layers_retrieval", "full_architecture",
+    ):
+        mix = 0.10 if name == "three_layers_retrieval" else 0.0
+        p, w = _evaluate_variant(
+            state,
+            panel,
+            quality,
+            failure_state,
+            dev_blocks[-1]["variants"]["full_architecture"]["weights"],
+            name,
+            retrieval_mix=mix,
+        )
+        policy_variants[name] = {"probs": p, "weights": w}
+
+    full_raw = policy_variants["full_architecture"]["probs"]
+    weights = policy_variants["full_architecture"]["weights"]
     baseline = _norm(np.mean(np.stack(list(panel.values()), axis=0), axis=0))
     prior_cal_p = [np.asarray(b["calibrated"], dtype=float) for b in dev_blocks[-8:]]
     prior_cal_y = [y for b in dev_blocks[-8:] for y in b["y"]]
     t = _temperature(np.vstack(prior_cal_p), prior_cal_y) if len(prior_cal_y) >= 50 else 1.0
     full_cal = _apply_temperature(full_raw, t)
     y = [r["y"] for r in holdout]
+    holdout_policy_block = {
+        "index": -1,
+        "y": y,
+        "state": state,
+        "failure_state": failure_state,
+        "variants": policy_variants,
+    }
+    previous_policy = dev_blocks[-1].get("prediction_policy", {})
+    previous_strategy = (
+        previous_policy.get("strategy_selection", {}).get("strategy")
+        if isinstance(previous_policy, dict)
+        else None
+    )
+    previous_predictability = float(dev_blocks[-1]["state"]["predictability"]["global"])
+    policy_holdout = evaluate_policy_holdout_case(
+        holdout_policy_block,
+        previous_strategy=previous_strategy,
+        previous_predictability=previous_predictability,
+    )
+    policy_holdout = {
+        "status": "FROZEN_HOLDOUT_EVALUATED",
+        **policy_holdout,
+        "selection_frozen_before_holdout": True,
+    }
     return {
         "status": "OK",
         "n": len(holdout),
@@ -984,6 +1039,7 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
         "temperature": t,
         "counterfactual": _counterfactual_stability(models, np.asarray([r["x"] for r in holdout], dtype=float)),
         "stress": None,
+        "prediction_policy": policy_holdout,
     }
 
 
@@ -1039,6 +1095,7 @@ def evaluate(horizon, max_rows=9000):
     last_stress = _stress(dev_blocks[-1], dev_blocks[-1]["models"])
     invariant = dev_blocks[-1]["invariant"]
     holdout = _holdout_frozen(dev_blocks, dev_rows, holdout)
+    policy_oos = summarize_policy_blocks(dev_blocks)
 
     # Detection lead time on development history: compare risk at T to failure
     # actually realized after T. Both are measured strictly out-of-sample.
@@ -1192,6 +1249,13 @@ def evaluate(horizon, max_rows=9000):
         },
         "champion_benchmark": mc,
         "offline_holdout": holdout,
+        "prediction_policy_oos": {
+            "status": policy_oos.get("status", "DEFERRED"),
+            "development": policy_oos,
+            "frozen_holdout": holdout.get("prediction_policy", {}) if isinstance(holdout, dict) else {},
+            "selection_scope": "development_OOS_only",
+            "frozen_holdout_used_for_selection": False,
+        },
         "shadow": {
             "status": "OFFLINE_REPLAY_ONLY",
             "production_live_shadow": False,
@@ -1232,6 +1296,7 @@ def write_artifacts(result):
         "_shadow_results.json": result.get("shadow", {}),
         "_challenger_results.json": result.get("offline_holdout", {}),
         "_promotion_gate.json": result.get("promotion", {}),
+        "_prediction_policy.json": result.get("prediction_policy_oos", {}),
         "_fallback_config.json": {
             "research_only": True,
             "policy": "full=>reduced=>soft_equal=>verified_baseline",
