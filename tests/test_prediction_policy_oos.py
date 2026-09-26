@@ -12,6 +12,8 @@ from src.prediction_policy_oos import (
     rank_information_sources,
     project_prediction_trajectory,
     validate_record,
+    evaluate_policy_case,
+    summarize_policy_blocks,
 )
 
 
@@ -95,6 +97,82 @@ class TestPredictionPolicyV13(unittest.TestCase):
         record["state"]["predictability"] = float("nan")
         with self.assertRaises(ValueError):
             validate_record(record)
+
+
+    def test_policy_case_maps_to_existing_variant_and_is_causal(self):
+        state = _state(self._result())
+        block = {
+            "index": 0,
+            "y": ["DOWN", "UP"],
+            "state": {
+                "predictability": {
+                    "global": 0.72,
+                    "velocity": -0.01,
+                    "acceleration": 0.0,
+                },
+                "uncertainty": {"total": 0.28},
+                "regime_transition": {
+                    "current": "RANGE",
+                    "next_regime": "TREND",
+                    "next_probability": {"TREND": 0.62, "RANGE": 0.38},
+                    "stay_probability": 0.38,
+                },
+                "information_shock": {"shock_score": 0.15, "update_rate": 0.1},
+                "prediction_momentum": {"velocity": 0.08, "acceleration": 0.0, "reversal": 0.05},
+                "counterfactual_stability": {"instability": 0.12},
+                "feature_reliability": {"global": 0.9},
+                "source_reliability": 0.9,
+                "error_correlation": {"mean_abs_error_correlation": 0.2},
+                "hard_negative_density": 0.1,
+                "drift": {"feature_drift": 0.1, "prediction_drift": 0.1, "drift_score": 0.1},
+            },
+            "failure_state": {
+                "mean": 0.18,
+                "max": 0.26,
+                "expected_time_to_failure_blocks": 2.0,
+            },
+            "variants": {
+                "soft_ensemble": {"probs": [[0.6, 0.2, 0.2], [0.2, 0.2, 0.6]]},
+                "adaptive_ensemble": {"probs": [[0.6, 0.2, 0.2], [0.2, 0.2, 0.6]]},
+                "three_layers_regime": {"probs": [[0.5, 0.2, 0.3], [0.2, 0.2, 0.6]]},
+                "three_layers_retrieval": {"probs": [[0.5, 0.2, 0.3], [0.2, 0.2, 0.6]]},
+                "full_architecture": {"probs": [[0.5, 0.2, 0.3], [0.2, 0.2, 0.6]]},
+            },
+        }
+        case = evaluate_policy_case(block)
+        self.assertIn(case["variant"], {"soft_ensemble", "adaptive_ensemble", "three_layers_regime", "three_layers_retrieval", "full_architecture"})
+        self.assertEqual(len(case["probs"]), 2)
+
+    def test_policy_summary_measures_matched_baseline(self):
+        block = {
+            "index": 0,
+            "y": ["DOWN", "UP"],
+            "state": self._result()["predictability"] and {
+                "predictability": {"global": 0.72, "velocity": 0.0, "acceleration": 0.0},
+                "uncertainty": {"total": 0.28},
+                "regime_transition": {"current": "RANGE", "next_regime": "RANGE", "next_probability": {"RANGE": 0.9}, "stay_probability": 0.9},
+                "information_shock": {"shock_score": 0.1, "update_rate": 0.1},
+                "prediction_momentum": {"velocity": 0.0, "acceleration": 0.0, "reversal": 0.0},
+                "counterfactual_stability": {"instability": 0.1},
+                "feature_reliability": {"global": 0.9},
+                "source_reliability": 0.9,
+                "error_correlation": {"mean_abs_error_correlation": 0.2},
+                "hard_negative_density": 0.1,
+                "drift": {"feature_drift": 0.1, "prediction_drift": 0.1, "drift_score": 0.1},
+            },
+            "failure_state": {"mean": 0.1, "max": 0.1, "expected_time_to_failure_blocks": 3.0},
+            "variants": {
+                "soft_ensemble": {"probs": [[0.6,0.2,0.2],[0.2,0.2,0.6]]},
+                "adaptive_ensemble": {"probs": [[0.6,0.2,0.2],[0.2,0.2,0.6]]},
+                "three_layers_regime": {"probs": [[0.6,0.2,0.2],[0.2,0.2,0.6]]},
+                "three_layers_retrieval": {"probs": [[0.6,0.2,0.2],[0.2,0.2,0.6]]},
+                "full_architecture": {"probs": [[0.6,0.2,0.2],[0.2,0.2,0.6]]},
+            },
+        }
+        out = summarize_policy_blocks([block])
+        self.assertEqual(out["status"], "MEASURED_DEV_OOS")
+        self.assertIn("matched_baseline", out)
+        self.assertEqual(out["n_samples"], 2)
 
 
 if __name__ == "__main__":
