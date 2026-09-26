@@ -205,6 +205,16 @@ jobs:
           done
           test -s data/historical_research/maximum_future_generalization_v6_report.md
           git diff --check
+      - name: Upload V6 evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-maximum-future-generalization-v6
+          path: |
+            data/historical_research/maximum_future_generalization_*.json
+            data/historical_research/maximum_future_generalization_v6_report.md
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Record v6 run completion
         if: always()
         env:
@@ -246,15 +256,6 @@ jobs:
             sleep $((2 * attempt))
           done
           exit 1
-      - name: Upload V6 evidence
-        uses: actions/upload-artifact@v6
-        with:
-          name: btc-maximum-future-generalization-v6
-          path: |
-            data/historical_research/maximum_future_generalization_*.json
-            data/historical_research/maximum_future_generalization_v6_report.md
-          if-no-files-found: error
-          retention-days: 14
 
   promotion_gate:
     needs: research_e2e
@@ -262,15 +263,20 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - name: Download V6 evidence
+        uses: actions/download-artifact@v6
+        with:
+          name: btc-maximum-future-generalization-v6
+          path: v6-evidence
       - name: Verify research-only gate
         run: |
           set -euo pipefail
           PYTHONPATH=src:. python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('data/historical_research/maximum_future_generalization_v6_registry.json')
+          p=Path('v6-evidence/maximum_future_generalization_v6_registry.json')
           if not p.is_file():
-              raise SystemExit('v6 registry absent on main checkout')
+              raise SystemExit('v6 registry absent from uploaded evidence')
           obj=json.loads(p.read_text())
           for h,r in obj.get('horizons',{}).items():
               if r.get('production_changed') is not False:
