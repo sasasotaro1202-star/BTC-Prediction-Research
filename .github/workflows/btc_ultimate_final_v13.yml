@@ -12,6 +12,8 @@ on:
       - "src/market_data.py"
       - "tests/test_class_prior_recalibration_oos.py"
       - "tests/test_market_data_fallback_chain.py"
+      - "src/rollback_safety.py"
+      - "tests/test_rollback_safety.py"
       - ".github/workflows/btc_ultimate_final_v13.yml"
   workflow_dispatch:
 
@@ -104,6 +106,8 @@ jobs:
         run: python src/pit_oos_audit.py
       - name: Robustness OOS
         run: python src/robustness_oos.py
+      - name: Rollback rehearsal
+        run: python src/rollback_safety.py
       - name: Upload audit evidence
         uses: actions/upload-artifact@v6
         with:
@@ -113,6 +117,7 @@ jobs:
             data/historical_research/research_input_audit.json
             data/historical_research/pit_oos_audit.json
             data/historical_research/robustness_oos_report.json
+            data/historical_research/rollback_safety.json
           retention-days: 3
 
   finalize:
