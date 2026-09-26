@@ -120,6 +120,8 @@ def event_from_binance_kline(
     row: dict[str, Any],
     *,
     available_at_ms: int | None = None,
+    source: str = "binance_ws",
+    venue: str = "binance_usdm_futures",
 ) -> dict[str, Any]:
     """Convert an already validated Binance WS 1m cache row into an event."""
     if not isinstance(row, dict):
@@ -161,8 +163,8 @@ def event_from_binance_kline(
     )
 
     return make_event(
-        source="binance_ws",
-        venue="binance_usdm_futures",
+        source=str(source),
+        venue=str(venue),
         symbol="BTCUSDT_PERP",
         event_type="kline_1m",
         event_time_ms=_positive_int(row["event_time_ms"], "event_time_ms"),
