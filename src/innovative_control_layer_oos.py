@@ -1,3 +1,4 @@
+# V2_EXPERIMENT_TRIGGER = 2026-09-26
 """Research-only v2 innovative BTC prediction control layer.
 
 Implements a prequential meta-control experiment around four causal base
