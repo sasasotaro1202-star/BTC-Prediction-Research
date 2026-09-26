@@ -124,9 +124,32 @@ jobs:
           obj=json.loads(p.read_text())
           if obj.get('research_only') is not True or obj.get('production_changed') is not False:
               raise SystemExit('v13 policy layer attempted production mutation')
-          if obj.get('oos_policy_value_status') != 'UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION':
-              raise SystemExit('v13 policy value must remain explicitly unverified')
-          print('V13 prediction policy controller: EXECUTED / research-only / OOS-value-unverified')
+          status = obj.get('oos_policy_value_status')
+          allowed = {'MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT', 'UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION'}
+          if status not in allowed:
+              raise SystemExit(f'unexpected v13 policy status: {status}')
+          print(f'V13 prediction policy controller: EXECUTED / research-only / status={status}')
+          PY
+
+      - name: Verify v13 policy-level OOS ablation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') != 'OK':
+                  continue
+              p=r.get('prediction_policy_oos',{})
+              if p.get('development',{}).get('status') != 'MEASURED_DEV_OOS':
+                  raise SystemExit(f'{h}: policy development OOS not measured')
+              hold=p.get('frozen_holdout',{})
+              if hold.get('status') != 'FROZEN_HOLDOUT_EVALUATED':
+                  raise SystemExit(f'{h}: policy frozen holdout not evaluated')
+              if p.get('frozen_holdout_used_for_selection') is not False:
+                  raise SystemExit(f'{h}: frozen holdout contaminated selection')
+          print('V13 policy-level ablation: MEASURED_DEV_OOS + FROZEN_HOLDOUT / selection-safe')
           PY
 
       - name: PIT audit
@@ -235,6 +258,7 @@ jobs:
             data/historical_research/maximum_future_generalization_*.json
             data/historical_research/maximum_future_generalization_v6_report.md
             data/historical_research/prediction_policy_oos.json
+            data/historical_research/maximum_future_generalization_*_prediction_policy.json
           if-no-files-found: error
           retention-days: 14
 
