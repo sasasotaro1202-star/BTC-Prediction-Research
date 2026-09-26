@@ -33,7 +33,15 @@ def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
     if horizon not in {"5m", "10m"}:
         raise ValueError(f"unsupported horizon: {horizon}")
     if not db_path.is_file():
-        raise SystemExit(f"predictions database missing: {db_path}")
+        return {
+            "status": "unavailable_missing_database",
+            "n": 0,
+            "accuracy": None,
+            "logloss": None,
+            "brier": None,
+            "ece": None,
+            "mode_counts": {},
+        }
 
     try:
         from model_compare import prediction_precedes_target, strict_pit_provenance_reason
@@ -94,7 +102,11 @@ def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
     }
 
 
-def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) -> dict:
+def _current_scores(
+    experience_path: Path = EXPERIENCE,
+    flat_path: Path = FLAT,
+    db_path: Path | None = None,
+) -> dict:
     experience = _load(experience_path)
     flat = _load(flat_path)
     if experience.get("schema_version") != 1:
@@ -116,7 +128,12 @@ def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) 
         if not isinstance(final, dict) or not isinstance(calibrated, dict):
             raise SystemExit(f"missing stage metrics for {horizon}")
 
-        strict_pit = _strict_pit_scores(horizon)
+        strict_db = db_path
+        if strict_db is None:
+            # Resolve a DB next to the supplied test/production data root so
+            # temporary artifact tests remain self-contained.
+            strict_db = Path(experience_path).parents[1] / "predictions.db"
+        strict_pit = _strict_pit_scores(horizon, strict_db)
         scores[horizon] = {
             "experience_total_n": int(total.get("n", 0)),
             "experience_total_accuracy": float(total["accuracy"]),
@@ -132,6 +149,7 @@ def _current_scores(experience_path: Path = EXPERIENCE, flat_path: Path = FLAT) 
             "calibrated_logloss": float(calibrated["logloss"]),
             "calibrated_brier": float(calibrated["brier"]),
             "calibrated_ece": float(calibrated["ece"]),
+            "strict_pit_status": str(strict_pit.get("status", "ok")),
             "strict_pit_n": int(strict_pit["n"]),
             "strict_pit_accuracy": strict_pit["accuracy"],
             "strict_pit_logloss": strict_pit["logloss"],
@@ -147,8 +165,9 @@ def compare_and_record(
     change_path: Path = CHANGE,
     experience_path: Path = EXPERIENCE,
     flat_path: Path = FLAT,
+    db_path: Path | None = None,
 ) -> dict:
-    current = _current_scores(experience_path, flat_path)
+    current = _current_scores(experience_path, flat_path, db_path=db_path)
 
     previous = {}
     if snapshot_path.is_file():
