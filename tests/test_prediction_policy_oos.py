@@ -59,13 +59,29 @@ class TestPredictionPolicyV13(unittest.TestCase):
         self.assertIn(action["action"], VALID_ACTIONS)
 
     def test_hysteresis_maintains_stable_strategy(self):
-        state = _state(self._result())
+        result = self._result()
+        result["regime_transition"] = {
+            "current": "RANGE",
+            "next_regime": "RANGE",
+            "next_probability": {"RANGE": 0.90, "TREND": 0.10},
+            "stay_probability": 0.90,
+        }
+        state = _state(result)
         action = select_action(
             state,
             previous_strategy="STANDARD_MODEL",
             previous_predictability=0.70,
         )
         self.assertEqual(action["action"], "MAINTAIN")
+
+    def test_regime_transition_causes_controlled_revision(self):
+        state = _state(self._result())
+        action = select_action(
+            state,
+            previous_strategy="STANDARD_MODEL",
+            previous_predictability=0.70,
+        )
+        self.assertEqual(action["action"], "MICRO_REVISION")
 
     def test_information_value_is_not_fabricated(self):
         state = _state(self._result())
