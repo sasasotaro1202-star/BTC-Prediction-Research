@@ -127,5 +127,37 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         self.assertEqual(out["probability"], [1/3, 1/3, 1/3])
 
 
+    def test_retrieval_probability_is_json_serializable(self):
+        state = {
+            "disagreement": {"std_probability": 0.1, "probability_range": 0.1, "js_divergence": 0.01,
+                             "pairwise_class_disagreement": 0.1, "flip_rate": 0.0,
+                             "disagreement_velocity": 0.0, "disagreement_acceleration": 0.0},
+            "drift": {"feature_drift": 0.1, "prediction_drift": 0.1, "drift_score": 0.1},
+            "predictability": {"global": 0.6, "velocity": 0.0, "acceleration": 0.0},
+            "uncertainty": {"total": 0.4},
+            "error_correlation": {"mean_abs_error_correlation": 0.2},
+            "feature_reliability": {"global": 0.9},
+            "source_reliability": 0.9,
+            "information_shock": {"shock_score": 0.1},
+            "prediction_momentum": {"velocity": 0.0, "acceleration": 0.0},
+            "regime_transition": {"stay_probability": 1.0},
+            "hard_negative_density": 0.2,
+            "meta_label": {"reliability": 0.6},
+        }
+        import json
+        out = _retrieval(state, [{
+            "state": state,
+            "y": ["DOWN", "FLAT", "UP"],
+            "soft": {"accuracy": 0.5},
+        }, {
+            "state": state,
+            "y": ["UP", "DOWN", "FLAT"],
+            "soft": {"accuracy": 0.5},
+        }])
+        json.dumps(out)
+        self.assertIsInstance(out["probability"], list)
+        self.assertEqual(len(out["probability"]), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
