@@ -516,7 +516,10 @@ def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_
     if use_drift:
         adaptive_strength *= 0.35 + 0.65 * (1.0 - state["drift"]["drift_score"])
     adaptive_strength *= 0.35 + 0.65 * (1.0 - state["uncertainty"]["total"])
-    adaptive_strength *= 0.35 + 0.65 * state["source_reliability"]["reliability"]
+    source_reliability = state["source_reliability"]
+    if isinstance(source_reliability, dict):
+        source_reliability = source_reliability.get("reliability", 0.0)
+    adaptive_strength *= 0.35 + 0.65 * float(source_reliability)
     if use_retrieval:
         adaptive_strength *= 0.70 + 0.30 * state["retrieval"]["success_similarity"]
     adaptive_strength = float(np.clip(adaptive_strength, 0.15, 1.0))
