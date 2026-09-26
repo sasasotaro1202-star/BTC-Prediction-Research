@@ -666,6 +666,7 @@ def evaluate(horizon):
     points = _window_points(len(rows))
     blocks = []
     prior_weights = None
+    prior_selective_scores = []
     holdout_cut = max(12, int(len(points) * (1.0 - FINAL_HOLDOUT_FRAC)))
     frozen_failure_models = None
     frozen_predict_model = None
