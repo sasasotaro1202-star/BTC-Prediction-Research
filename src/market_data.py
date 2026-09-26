@@ -476,7 +476,7 @@ def resilient_1m_series(limit: int = 120):
         payload = parallel["bybit"]
         if isinstance(payload, Exception):
             raise payload
-        by_raw = payload
+        by_raw = closed_bybit(payload) if isinstance(payload, dict) else payload
         by = _latest_contiguous_suffix(by_raw, 40)
         by_current = _latest_row(by_raw)
         # If kline data is empty/fragmented, obtain the current linear ticker once.
