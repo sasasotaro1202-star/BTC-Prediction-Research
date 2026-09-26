@@ -445,7 +445,7 @@ def _failure_state(state, quality, failure_models, hazard_models, priors=None):
     for e in EXPERTS:
         m = failure_models.get(e)
         if m is None:
-            risks[e] = float(_clip01(expert_priors.get(e), 0.5))
+            risks[e] = float(np.clip(float(expert_priors.get(e, 0.5)), 0.0, 1.0))
         else:
             x = np.concatenate([_numeric_state(state), [quality[e]]]).reshape(1, -1)
             risks[e] = float(m.predict_proba(x)[0, 1])
@@ -456,7 +456,7 @@ def _failure_state(state, quality, failure_models, hazard_models, priors=None):
         hazard[h] = (
             float(m.predict_proba(x)[0, 1])
             if m is not None
-            else float(_clip01(hazard_priors.get(str(h)), 0.5))
+            else float(np.clip(float(hazard_priors.get(str(h), 0.5)), 0.0, 1.0))
         )
     cumulative = [0.0, hazard[1], max(hazard[1], hazard[2]), max(hazard[2], hazard[3])]
     p1 = np.clip(cumulative[1], 0.0, 1.0)
