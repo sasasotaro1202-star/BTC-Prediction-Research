@@ -80,13 +80,16 @@ def predicted_prior(history):
 
 
 def adjust_probs(probs, target_prior, model_prior, gamma):
-    """Apply a bounded class-logit offset; gamma=0 is exactly the raw model."""
-    p = _norm(probs)
+    """Apply a bounded class-logit offset while preserving input array rank."""
+    raw = np.asarray(probs, dtype=float)
+    was_1d = raw.ndim == 1
+    p = _norm(raw)
+    p2 = p.reshape(1, -1) if p.ndim == 1 else p
     target = np.clip(np.asarray(target_prior, dtype=float), 1e-8, 1.0)
     reference = np.clip(np.asarray(model_prior, dtype=float), 1e-8, 1.0)
     offset = np.log(target / reference)
-    out = p * np.exp(float(gamma) * offset)
-    return _norm(out)
+    out = _norm(p2 * np.exp(float(gamma) * offset))
+    return out[0] if was_1d else out
 
 
 def _history_ready(rows, block_start):
