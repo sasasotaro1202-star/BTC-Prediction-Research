@@ -1,1 +1,105 @@
-from src.btc_decision_object_v18 import PredictionDecisionObject\nfrom src.btc_decision_adapter_v18 import build_decision_from_situation_card\nimport pytest\n\n\ndef _events():\n    return [\n        {\n            "event_id": "a",\n            "source": "hyperliquid",\n            "event_type": "trade",\n            "event_time_ms": 900,\n            "available_at_ms": 950,\n            "retrieved_at_ms": 950,\n            "payload_sha256": "ha",\n            "payload": {"px": "1", "sz": "1"},\n        },\n        {\n            "event_id": "b",\n            "source": "bitget",\n            "event_type": "l2_book",\n            "event_time_ms": 800,\n            "available_at_ms": 925,\n            "retrieved_at_ms": 930,\n            "payload_sha256": "hb",\n            "payload": {"bids": [["1", "1"]], "asks": [["2", "1"]]},\n        },\n    ]\n\n\ndef _card():\n    return {\n        "prediction_cutoff_ms": 1_000,\n        "used_event_ids": ["a", "b"],\n        "freshness_ms": 100,\n    }\n\n\ndef test_adapter_preserves_probability_and_builds_verified_pit():\n    obj = build_decision_from_situation_card(\n        cutoff_ms=1_000,\n        probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n        situation_card=_card(),\n        events=_events(),\n    )\n    assert isinstance(obj, PredictionDecisionObject)\n    assert obj.probability == {"up": 0.4, "flat": 0.2, "down": 0.4}\n    assert obj.pit_status == "verified"\n    assert len(obj.provenance) == 2\n    assert max(p["available_at_ms"] for p in obj.provenance) == 950\n    obj.require_verified_pit()\n\n\ndef test_missing_event_provenance_fails_closed():\n    with pytest.raises(ValueError, match="situation_card_missing_event_provenance"):\n        build_decision_from_situation_card(\n            cutoff_ms=1_000,\n            probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n            situation_card=_card(),\n            events=_events()[:1],\n        )\n\n\ndef test_future_shadow_information_is_rejected():\n    events = _events()\n    events[0] = {**events[0], "available_at_ms": 1_001}\n    with pytest.raises(ValueError, match="future_shadow_information"):\n        build_decision_from_situation_card(\n            cutoff_ms=1_000,\n            probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n            situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": ["a"]},\n            events=events,\n        )\n\n\ndef test_empty_card_is_deferred_not_verified():\n    obj = build_decision_from_situation_card(\n        cutoff_ms=1_000,\n        probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n        situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": []},\n        events=[],\n    )\n    assert obj.pit_status == "deferred"\n    with pytest.raises(ValueError, match="pit_not_verified"):\n        obj.require_verified_pit()\n\n\ndef test_cutoff_mismatch_is_rejected():\n    with pytest.raises(ValueError, match="situation_card_cutoff_mismatch"):\n        build_decision_from_situation_card(\n            cutoff_ms=1_000,\n            probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n            situation_card={"prediction_cutoff_ms": 999, "used_event_ids": []},\n            events=[],\n        )\n\n\ndef test_duplicate_used_ids_are_rejected():\n    with pytest.raises(ValueError, match="duplicate_situation_event_ids"):\n        build_decision_from_situation_card(\n            cutoff_ms=1_000,\n            probability={"up": 0.4, "flat": 0.2, "down": 0.4},\n            situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": ["a", "a"]},\n            events=_events(),\n        )
+from src.btc_decision_object_v18 import PredictionDecisionObject
+from src.btc_decision_adapter_v18 import build_decision_from_situation_card
+import pytest
+
+
+def _events():
+    return [
+        {
+            "event_id": "a",
+            "source": "hyperliquid",
+            "event_type": "trade",
+            "event_time_ms": 900,
+            "available_at_ms": 950,
+            "retrieved_at_ms": 950,
+            "payload_sha256": "ha",
+            "payload": {"px": "1", "sz": "1"},
+        },
+        {
+            "event_id": "b",
+            "source": "bitget",
+            "event_type": "l2_book",
+            "event_time_ms": 800,
+            "available_at_ms": 925,
+            "retrieved_at_ms": 930,
+            "payload_sha256": "hb",
+            "payload": {"bids": [["1", "1"]], "asks": [["2", "1"]]},
+        },
+    ]
+
+
+def _card():
+    return {
+        "prediction_cutoff_ms": 1_000,
+        "used_event_ids": ["a", "b"],
+        "freshness_ms": 100,
+    }
+
+
+def test_adapter_preserves_probability_and_builds_verified_pit():
+    obj = build_decision_from_situation_card(
+        cutoff_ms=1_000,
+        probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+        situation_card=_card(),
+        events=_events(),
+    )
+    assert isinstance(obj, PredictionDecisionObject)
+    assert obj.probability == {"up": 0.4, "flat": 0.2, "down": 0.4}
+    assert obj.pit_status == "verified"
+    assert len(obj.provenance) == 2
+    assert max(p["available_at_ms"] for p in obj.provenance) == 950
+    obj.require_verified_pit()
+
+
+def test_missing_event_provenance_fails_closed():
+    with pytest.raises(ValueError, match="situation_card_missing_event_provenance"):
+        build_decision_from_situation_card(
+            cutoff_ms=1_000,
+            probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+            situation_card=_card(),
+            events=_events()[:1],
+        )
+
+
+def test_future_shadow_information_is_rejected():
+    events = _events()
+    events[0] = {**events[0], "available_at_ms": 1_001}
+    with pytest.raises(ValueError, match="future_shadow_information"):
+        build_decision_from_situation_card(
+            cutoff_ms=1_000,
+            probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+            situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": ["a"]},
+            events=events,
+        )
+
+
+def test_empty_card_is_deferred_not_verified():
+    obj = build_decision_from_situation_card(
+        cutoff_ms=1_000,
+        probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+        situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": []},
+        events=[],
+    )
+    assert obj.pit_status == "deferred"
+    with pytest.raises(ValueError, match="pit_not_verified"):
+        obj.require_verified_pit()
+
+
+def test_cutoff_mismatch_is_rejected():
+    with pytest.raises(ValueError, match="situation_card_cutoff_mismatch"):
+        build_decision_from_situation_card(
+            cutoff_ms=1_000,
+            probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+            situation_card={"prediction_cutoff_ms": 999, "used_event_ids": []},
+            events=[],
+        )
+
+
+def test_duplicate_used_ids_are_rejected():
+    with pytest.raises(ValueError, match="duplicate_situation_event_ids"):
+        build_decision_from_situation_card(
+            cutoff_ms=1_000,
+            probability={"up": 0.4, "flat": 0.2, "down": 0.4},
+            situation_card={"prediction_cutoff_ms": 1_000, "used_event_ids": ["a", "a"]},
+            events=_events(),
+        )
