@@ -111,9 +111,13 @@ jobs:
           obj=json.loads(Path('data/historical_research/innovative_experiment_registry.json').read_text(encoding='utf-8'))
           if obj.get('research_only') is not True or obj.get('production_changed') is not False:
               raise SystemExit('v2 contract violation: research-only/production mutation')
-          for h, r in obj.get('horizons', {}).items():
+          horizons=obj.get('horizons', {})
+          if set(horizons) != {'5m', '10m'}:
+              raise SystemExit(f'v2 horizon set incomplete: {sorted(horizons)}')
+          for h in ('5m', '10m'):
+              r=horizons[h]
               if r.get('status') != 'OK':
-                  continue
+                  raise SystemExit(f'{h}: v2 OOS did not complete: {r.get("status")} {r.get("reason","")}')
               audit=r.get('meta_leakage_policy', {})
               required=(
                   'failure_labels_require_future_window_completion_before_meta_fit',
