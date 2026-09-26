@@ -472,3 +472,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+# V13 E2E trigger marker: policy layer remains research-only and fail-closed.
