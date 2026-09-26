@@ -10,6 +10,7 @@ from src.maximum_future_generalization_v6 import (
     _causal_current_snapshot,
     _numeric_state,
     _smoothed_binary_rate,
+    _failure_state,
     _retrieval,
 )
 
@@ -167,6 +168,38 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         self.assertLess(low_n, 0.7)
         high_n = _smoothed_binary_rate([1, 1, 1, 1, 1, 0, 0, 0, 0, 0])
         self.assertAlmostEqual(high_n, 0.5)
+
+
+    def test_failure_state_gates_low_sample_risk_toward_neutral(self):
+        state = {
+            "feature_reliability": {"global": 0.9},
+            "disagreement": {
+                "std_probability": 0.1,
+                "pairwise_class_disagreement": 0.1,
+                "prediction_entropy": 0.9,
+            },
+            "drift": {"drift_score": 0.1},
+            "information_shock": {"shock_score": 0.1},
+            "regime_transition": {"stay_probability": 0.8},
+            "prediction_momentum": {"persistence": 0.8},
+            "meta_label": {"reliability": 0.7},
+            "uncertainty": {"total": 0.2},
+            "retrieval": {"success_similarity": 0.8},
+        }
+        quality = {e: 1.0 for e in ("logreg", "extra_trees", "hgb", "lightgbm")}
+        failure = {"logreg": None, "extra_trees": None, "hgb": None, "lightgbm": None}
+        hazard = {1: None, 2: None, 3: None}
+        out = _failure_state(
+            state, quality, failure, hazard,
+            {
+                "failure_prior_by_expert": {e: 1.0 for e in quality},
+                "failure_prior_counts": {e: 1 for e in quality},
+                "hazard_prior_by_horizon": {"1": 1.0, "2": 1.0, "3": 1.0},
+                "hazard_samples": {"1": 1, "2": 1, "3": 1},
+            },
+        )
+        self.assertTrue(all(0.5 < v < 1.0 for v in out["by_expert"].values()))
+        self.assertTrue(all(0.0 < v < 0.2 for v in out["evidence_reliability_by_expert"].values()))
 
 
 if __name__ == "__main__":
