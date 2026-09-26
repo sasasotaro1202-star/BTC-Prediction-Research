@@ -958,13 +958,16 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
     # Freeze meta/calibration state at the end of development.
     train = _purged_train(dev_rows, holdout[0]["created"])
     panel, models = _fit_and_predict(train, holdout)
-    d = _panel_stats(panel, dev_blocks[-1]["panel"])
+    current_rows, current_panel = _causal_current_snapshot(holdout, panel)
+    d = _panel_stats(current_panel, dev_blocks[-1]["panel"])
     prior_rows = dev_rows[-TEST_BLOCK:]
-    f_rel = _feature_reliability(holdout, prior_rows)
-    s_rel = _source_reliability(holdout, dev_blocks)
-    i_shock = _information_shock(holdout, prior_rows)
-    p_momentum = _prediction_momentum(panel, dev_blocks[-1]["panel"], dev_blocks[-2]["panel"])
-    regime = _block_regime(holdout)
+    f_rel = _feature_reliability(current_rows, prior_rows)
+    s_rel = _source_reliability(current_rows, dev_blocks)
+    i_shock = _information_shock(current_rows, prior_rows)
+    p_momentum = _prediction_momentum(
+        current_panel, dev_blocks[-1]["panel"], dev_blocks[-2]["panel"]
+    )
+    regime = _block_regime(current_rows)
     state = {
         "disagreement": d,
         "error_correlation": _error_corr(dev_blocks),
@@ -994,6 +997,16 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
             "drift_score": float(np.clip(0.55 * (1.0 - f_rel["global"]) + 0.45 * i_shock["update_rate"], 0.0, 1.0)),
         },
         "uncertainty": {"total": 0.5},
+    }
+    holdout_cf = _counterfactual_stability(
+        models, np.asarray([current_rows[0]["x"]], dtype=float)
+    )
+    state["counterfactual_stability"] = {
+        **holdout_cf,
+        "instability": (
+            float(np.clip(1.0 - float(holdout_cf.get("stability", 1.0)), 0.0, 1.0))
+            if holdout_cf.get("stability") is not None else None
+        ),
     }
     state["uncertainty"] = _uncertainty(state)
     quality = {
@@ -1070,7 +1083,8 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
         "coverage": _conformal_eval(full_cal, y, _conformal_from_blocks(dev_blocks)),
         "weights": weights.tolist(),
         "temperature": t,
-        "counterfactual": _counterfactual_stability(models, np.asarray([r["x"] for r in holdout], dtype=float)),
+        "counterfactual": holdout_cf,
+        "causal_state_scope": "first_prediction_row_of_frozen_holdout",
         "stress": None,
         "prediction_policy": policy_holdout,
     }
