@@ -1070,7 +1070,8 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
     state["meta_label"] = _meta_label(state, meta_model)
     state["retrieval"] = _retrieval(state, dev_blocks)
     state["uncertainty"] = _uncertainty(state)
-    failure_state = _failure_state(state, quality, failure_models, hazard_models, meta_stats)    policy_variants = {}
+    failure_state = _failure_state(state, quality, failure_models, hazard_models, meta_stats)
+    policy_variants = {}
     for name in (
         "soft_ensemble", "adaptive_ensemble", "three_layers_regime",
         "three_layers_retrieval", "full_architecture",
