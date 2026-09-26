@@ -24,11 +24,11 @@ def _load(path: Path) -> dict:
 
 
 def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
-    """Score only settled predictions that pass the canonical strict-PIT contract.
+    """Score settled Binance-primary predictions that pass the canonical strict-PIT contract.
 
-    Legacy/pre-contract/unknown-venue rows are deliberately excluded so the
-    monitoring baseline reflects the current production input domain rather than
-    mixing incompatible historical cohorts.
+    Legacy/pre-contract/unknown-venue and fallback-venue rows are deliberately
+    excluded so the monitoring baseline exactly matches the production Champion
+    input domain used by the OOS comparison gate.
     """
     if horizon not in {"5m", "10m"}:
         raise ValueError(f"unsupported horizon: {horizon}")
@@ -77,6 +77,11 @@ def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
         except (TypeError, ValueError, json.JSONDecodeError):
             scenario = {}
         if strict_pit_provenance_reason(scenario, created_at) is not None:
+            continue
+        # Performance monitoring must match the production Champion domain:
+        # Binance-primary predictions only. Fallback venue rows remain useful
+        # research observations but must not alter the production baseline.
+        if scenario.get("production_mode") != "binance_primary":
             continue
         try:
             probs = [float(p_up), float(p_down), float(p_flat)]
