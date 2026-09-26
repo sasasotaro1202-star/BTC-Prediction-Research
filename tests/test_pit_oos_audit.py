@@ -10,6 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import pit_oos_audit  # noqa: E402
+from pit_history import HISTORY_RETENTION, record_pit_history  # noqa: E402
 from model_compare import strict_pit_provenance_reason  # noqa: E402
 
 
