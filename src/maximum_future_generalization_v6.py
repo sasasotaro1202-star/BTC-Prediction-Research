@@ -1013,10 +1013,10 @@ def evaluate(horizon, max_rows=9000):
         "three_layers", "three_layers_error_corr", "three_layers_regime",
         "three_layers_retrieval", "full_architecture",
     ]
-    summary = {n: _aggregate(blocks[:-max(2, int(len(blocks)*FINAL_HOLDOUT_FRAC))], n) for n in names}
     dev_cut = max(2, int(len(blocks) * (1.0 - FINAL_HOLDOUT_FRAC)))
     dev_blocks = blocks[:dev_cut]
     descriptive_hold_blocks = blocks[dev_cut:]
+    summary = {n: _aggregate(dev_blocks, n) for n in names}
     baseline = summary["soft_ensemble"]
     full = summary["full_architecture"]
     deltas = {
