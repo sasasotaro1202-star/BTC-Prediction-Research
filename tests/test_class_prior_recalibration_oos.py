@@ -1,11 +1,17 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from src.class_prior_recalibration_oos import (
     CLASSES,
     _history_ready,
     adjust_probs,
     empirical_prior,
+    MIN_ROWS,
+    MIN_OOS_BLOCKS,
+    TEST_BLOCK,
+    MIN_HISTORY,
+    evaluate,
 )
 
 
@@ -42,6 +48,21 @@ class TestClassPriorRecalibration(unittest.TestCase):
         self.assertEqual(len(prior), 3)
         self.assertAlmostEqual(float(prior.sum()), 1.0, places=9)
         self.assertGreater(float(prior[1]), 0.0)
+
+
+    def test_research_defers_before_small_sample_tuning(self):
+        self.assertGreaterEqual(
+            MIN_ROWS,
+            ((MIN_HISTORY + (MIN_OOS_BLOCKS * TEST_BLOCK)) / (1.0 - 0.20)),
+        )
+        with patch(
+            "src.class_prior_recalibration_oos.load_primary_production_strict_rows",
+            return_value=[self._row(i, "DOWN") for i in range(MIN_ROWS - 1)],
+        ):
+            result = evaluate("5m")
+        self.assertEqual(result["status"], "DEFERRED")
+        self.assertEqual(result["promotion_evidence_eligible"], False)
+        self.assertEqual(result["reason"], "insufficient_strict_binance_primary_rows")
 
     def test_history_is_strictly_causal(self):
         rows = [
