@@ -1,0 +1,202 @@
+name: BTC Ultimate Final V13 — Maximum Future-Generalization E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '29 2 * * *'
+  push:
+    paths:
+      - 'ci/v13_e2e_trigger'
+
+concurrency:
+  group: btc-ultimate-final-v13-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install free dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Preflight compile and full tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python -m compileall -q src scripts tests
+          PYTHONPATH=src:. python -m pytest -q tests
+
+      - name: Restore prediction database
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          PYTHONPATH=src:. python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+
+      - name: Run V13 core — V6 future-generalization controller
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/maximum_future_generalization_v6_registry.json
+          PYTHONPATH=src:. python src/maximum_future_generalization_v6.py
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/maximum_future_generalization_v6_registry.json')
+          obj=json.loads(p.read_text())
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('V13 core production-safety contract failed')
+          horizons=obj.get('horizons',{})
+          if set(horizons) != {'5m','10m'}:
+              raise SystemExit(f'incomplete V13 horizons: {sorted(horizons)}')
+          for h in ('5m','10m'):
+              r=horizons[h]
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: core OOS status={r.get("status")} reason={r.get("reason","")}')
+          print('V13 core: BOTH horizons OK')
+          PY
+
+      - name: Run V13 prediction policy controller
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/prediction_policy_oos.json
+          PYTHONPATH=src:. python src/prediction_policy_oos.py
+          test -s data/historical_research/prediction_policy_oos.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/prediction_policy_oos.json').read_text())
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('V13 policy production-safety contract failed')
+          if obj.get('status') != 'IMPLEMENTED_EXECUTED_RESEARCH_ONLY':
+              raise SystemExit(f'unexpected V13 policy status: {obj.get("status")}')
+          print('V13 policy controller: EXECUTED / research-only')
+          PY
+
+      - name: PIT audit — fail closed but preserve evidence
+        id: pit
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=src:. python src/pit_oos_audit.py
+          status=$?
+          set -e
+          printf '%s\n' "$status" > data/historical_research/v13_pit_exit_code.txt
+          echo "PIT exit code: $status"
+          exit "$status"
+
+      - name: Leakage and research-input audit — fail closed but preserve evidence
+        id: leakage
+        shell: bash
+        run: |
+          set +e
+          PYTHONPATH=src:. python src/research_input_audit.py
+          status=$?
+          set -e
+          printf '%s\n' "$status" > data/historical_research/v13_research_input_exit_code.txt
+          echo "Research-input audit exit code: $status"
+          exit "$status"
+
+      - name: Production artifact integrity audit
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/production_artifact_audit.py
+          test -s data/historical_research/production_artifact_audit.json
+
+      - name: Validate artifacts, promotion HOLD, and evidence state
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+          test -s data/historical_research/prediction_policy_oos.json
+          python -m json.tool data/historical_research/maximum_future_generalization_v6_registry.json >/dev/null
+          python -m json.tool data/historical_research/prediction_policy_oos.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/historical_research')
+          obj=json.loads((root/'maximum_future_generalization_v6_registry.json').read_text())
+          for h in ('5m','10m'):
+              r=obj.get('horizons',{}).get(h,{})
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: missing completed core evidence')
+              if r.get('production_changed') is not False:
+                  raise SystemExit(f'{h}: production mutation')
+              if r.get('promotion',{}).get('decision') != 'HOLD':
+                  raise SystemExit(f'{h}: unsafe promotion decision {r.get("promotion",{}).get("decision")}')
+              p=r.get('prediction_policy_oos',{})
+              if p.get('frozen_holdout_used_for_selection') is not False:
+                  raise SystemExit(f'{h}: frozen holdout contamination')
+          print('V13 artifact/promotion contract: VERIFIED / HOLD / production unchanged')
+          PY
+
+      - name: Generate V13 E2E report
+        if: always()
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/historical_research')
+          reg=json.loads((root/'maximum_future_generalization_v6_registry.json').read_text()) if (root/'maximum_future_generalization_v6_registry.json').exists() else {}
+          policy=json.loads((root/'prediction_policy_oos.json').read_text()) if (root/'prediction_policy_oos.json').exists() else {}
+          lines=['# BTC Ultimate Final V13 E2E','',f"Generated: {reg.get('generated_at_utc','UNAVAILABLE')}","Production changed: false",""]
+          for h in ('5m','10m'):
+              r=reg.get('horizons',{}).get(h,{})
+              lines += [f'## {h}', f"Core status: {r.get('status')}", f"Core reason: {r.get('reason','') or 'OK'}"]
+              if r.get('status')=='OK':
+                  d=r.get('deltas_vs_soft',{})
+                  lines += [
+                      f"Accuracy Δ: {d.get('accuracy')}",
+                      f"LogLoss Δ: {d.get('logloss')}",
+                      f"Brier Δ: {d.get('brier')}",
+                      f"ECE Δ: {d.get('ece')}",
+                      f"Predictability: {r.get('predictability',{})}",
+                      f"Future failure: {r.get('failure_monitoring',{}).get('latest_failure_risk')}",
+                      f"Time-to-failure: {r.get('failure_monitoring',{}).get('latest_failure_risk',{}).get('expected_time_to_failure_blocks')}",
+                      f"Regime transition: {r.get('regime_transition',{})}",
+                      f"Retrieval: {r.get('retrieval',{})}",
+                      f"Uncertainty: {r.get('uncertainty',{})}",
+                      f"Robustness: {r.get('robustness',{})}",
+                      f"Promotion: {r.get('promotion',{})}",
+                      ''
+                  ]
+          lines += ['## V13 Policy', f"Status: {policy.get('status')}", f"OOS policy value status: {policy.get('oos_policy_value_status')}"]
+          (root/'btc_ultimate_final_v13_e2e_report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          PY
+          test -s data/historical_research/btc_ultimate_final_v13_e2e_report.md
+
+      - name: Upload V13 E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-ultimate-final-v13-e2e
+          path: |
+            data/historical_research/maximum_future_generalization_v6_registry.json
+            data/historical_research/maximum_future_generalization_*.json
+            data/historical_research/prediction_policy_oos.json
+            data/historical_research/production_artifact_audit.json
+            data/historical_research/pit_oos_audit.json
+            data/historical_research/research_input_audit.json
+            data/historical_research/btc_ultimate_final_v13_e2e_report.md
+          if-no-files-found: warn
+          retention-days: 14
