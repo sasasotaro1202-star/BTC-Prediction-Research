@@ -1,27 +1,31 @@
 """Research-only causal class-prior recalibration for BTC 5m/10m probabilities.
 
-The live Champion is intentionally untouched.  The experiment tests whether the
+The live Champion is intentionally untouched. The experiment tests whether the
 large observed under-frequency of FLAT is partly a probability-prior mismatch.
 For every unseen OOS block, the adjustment is fitted only from labels that had
-already settled before that block began.  The final holdout uses a policy frozen
+already settled before that block began. The final holdout uses a policy frozen
 on development data and is descriptive only.
 """
 from __future__ import annotations
 
 import json
-import math
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 
-from model_compare import (
-    CLASSES,
-    load_primary_production_strict_rows,
-    metrics,
-    prediction_precedes_target,
-)
+try:
+    from model_compare import (
+        CLASSES,
+        load_primary_production_strict_rows,
+        metrics,
+    )
+except ModuleNotFoundError:
+    from src.model_compare import (
+        CLASSES,
+        load_primary_production_strict_rows,
+        metrics,
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "class_prior_recalibration_oos.json"
