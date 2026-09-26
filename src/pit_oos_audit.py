@@ -10,6 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from db import DB, init_db
+from pit_history import record_pit_history
 
 OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
@@ -93,7 +94,12 @@ def audit() -> dict:
             "violations": ["prediction_database_missing_or_empty"],
             "violation_count": 1,
             "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         }
+        try:
+            result["history"] = record_pit_history(result, OUT.parent / "pit_history")
+        except Exception as exc:
+            result["history"] = {"status": "FAILED", "error": f"{type(exc).__name__}:{exc}"}
         OUT.parent.mkdir(parents=True, exist_ok=True)
         OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
         return result
@@ -330,7 +336,12 @@ def audit() -> dict:
         "violations": violations[:100],
         "violation_count": len(violations),
         "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
+    try:
+        result["history"] = record_pit_history(result, OUT.parent / "pit_history")
+    except Exception as exc:
+        result["history"] = {"status": "FAILED", "error": f"{type(exc).__name__}:{exc}"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
