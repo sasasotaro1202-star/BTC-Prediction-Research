@@ -20,6 +20,7 @@ REPORT = EVIDENCE / "ultimate_final_v13_report.json"
 LEDGER = EVIDENCE / "ultimate_final_v13_ledger.json"
 LEAKAGE = EVIDENCE / "ultimate_final_v13_leakage_audit.json"
 CONTRACT = EVIDENCE / "ultimate_final_v13_prediction_contract.json"
+ROLLBACK = EVIDENCE / "rollback_safety.json"
 HORIZONS = ("5m", "10m")
 EPS = 1e-12
 
@@ -243,6 +244,7 @@ def build_report() -> dict[str, Any]:
     robust = _json(EVIDENCE / "robustness_oos_report.json") or {}
     artifact_audit = _json(EVIDENCE / "production_artifact_audit.json") or {}
     research_input = _json(EVIDENCE / "research_input_audit.json") or {}
+    rollback = _json(ROLLBACK) or {}
 
     horizon_oos_ok = all(
         performance[h]["status"] == "OK" for h in HORIZONS
@@ -267,8 +269,9 @@ def build_report() -> dict[str, Any]:
         "oos": horizon_oos_ok,
         "frozen_holdout": holdout_ok,
         "robustness": bool(robust) and not robustness_partial,
-        "artifact_integrity": bool(artifact_audit),
+        "artifact_integrity": isinstance(artifact_audit.get("artifacts"), list) and len(artifact_audit.get("artifacts")) == 2,
         "research_input": research_input.get("ok") is True,
+        "rollback": rollback.get("status") == "PASS" and rollback.get("production_mutated") is False,
         "shadow": shadow_live,
         "production_changed": registry.get("production_changed") is False,
     }
@@ -296,13 +299,13 @@ def build_report() -> dict[str, Any]:
         "prediction_contract_errors": contract_errors,
         "leakage_audit": leakage,
         "core_three_layers": {
-            "model_disagreement": registry.get("horizons", {}).get("5m", {}).get("error_correlation"),
+            "model_disagreement": registry.get("horizons", {}).get("5m", {}).get("disagreement"),
             "predictability": registry.get("horizons", {}).get("5m", {}).get("predictability"),
             "future_model_failure": registry.get("horizons", {}).get("5m", {}).get("failure_monitoring"),
         },
         "future_layers": {
             "time_to_failure": registry.get("horizons", {}).get("5m", {}).get("failure_monitoring"),
-            "drift": registry.get("horizons", {}).get("5m", {}).get("information_shock"),
+            "drift": registry.get("horizons", {}).get("5m", {}).get("drift"),
             "retrieval": registry.get("horizons", {}).get("5m", {}).get("retrieval"),
             "uncertainty": registry.get("horizons", {}).get("5m", {}).get("uncertainty"),
             "adaptive_compute": registry.get("horizons", {}).get("5m", {}).get("adaptive_compute"),
@@ -318,6 +321,7 @@ def build_report() -> dict[str, Any]:
             "promotion_candidate": False,
             "adopted": False,
             "hold": not required_for_performance_success,
+            "rollback_verified": verification["rollback"],
         },
     }
 
