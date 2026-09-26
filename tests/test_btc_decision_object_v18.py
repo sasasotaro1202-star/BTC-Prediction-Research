@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from src.btc_decision_object_v18 import PredictionDecisionObject, build_research_decision
@@ -60,14 +62,9 @@ def test_verified_pit_requires_provenance():
 
 
 def test_probability_mismatch_is_rejected():
+    obj = _base()
     with pytest.raises(ValueError, match="probability_distribution_mismatch"):
-        _base(
-            # builder creates the distribution from probability, so construct directly.
-            probability={"up": 0.5, "down": 0.5},
-            provenance=({"source": "binance", "available_at_ms": 999},),
-        ).__class__(
-            **{**_base().__dict__, "probability": {"up": 0.5, "down": 0.5}}
-        )
+        replace(obj, probability={"up": 0.5, "down": 0.5})
 
 
 def test_next_update_before_prediction_is_rejected():
