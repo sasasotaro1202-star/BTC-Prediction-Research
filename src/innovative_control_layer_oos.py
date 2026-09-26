@@ -877,14 +877,18 @@ def evaluate(horizon):
 
     names = ("soft_ensemble", "adaptive_ensemble", "disagreement_model", "predictability_model", "future_failure_predictor", "drift_aware_router", "full_architecture")
     summary = {}
+    dev_weights = [int(b["n"]) for b in dev_blocks]
+    dev_total_n = sum(dev_weights)
+    if dev_total_n <= 0:
+        return {"status": "DEFERRED", "reason": "empty_development_blocks", "n": len(rows), "blocks": len(blocks)}
     for name in names:
         m = [b[name] for b in dev_blocks]
         summary[name] = {
-            "n": int(sum(x["n"] for x in m)),
-            "accuracy": float(sum(x["n"] * x["accuracy"] for x in m) / sum(x["n"] for x in m)),
-            "logloss": float(sum(x["n"] * x["logloss"] for x in m) / sum(x["n"] for x in m)),
-            "brier": float(sum(x["n"] * x["brier"] for x in m) / sum(x["n"] for x in m)),
-            "ece": float(sum(x["n"] * x["calibration_error"] for x in m) / sum(x["n"] for x in m)),
+            "n": int(dev_total_n),
+            "accuracy": float(sum(w * x["accuracy"] for w, x in zip(dev_weights, m)) / dev_total_n),
+            "logloss": float(sum(w * x["logloss"] for w, x in zip(dev_weights, m)) / dev_total_n),
+            "brier": float(sum(w * x["brier"] for w, x in zip(dev_weights, m)) / dev_total_n),
+            "ece": float(sum(w * x["calibration_error"] for w, x in zip(dev_weights, m)) / dev_total_n),
             "blocks": len(m),
         }
     full = summary["full_architecture"]
@@ -925,14 +929,18 @@ def evaluate(horizon):
 
     # Offline shadow/challenger replay: same frozen block decisions, no live mutation.
     holdout_result = {}
+    hold_weights = [int(b["n"]) for b in hold_blocks]
+    hold_total_n = sum(hold_weights)
+    if hold_total_n <= 0:
+        return {"status": "DEFERRED", "reason": "empty_holdout_blocks", "n": len(rows), "blocks": len(blocks)}
     for name in ("soft_ensemble", "full_architecture"):
         hs = [b[name] for b in hold_blocks]
         holdout_result[name] = {
-            "n": int(sum(x["n"] for x in hs)),
-            "accuracy": float(sum(x["n"] * x["accuracy"] for x in hs) / sum(x["n"] for x in hs)),
-            "logloss": float(sum(x["n"] * x["logloss"] for x in hs) / sum(x["n"] for x in hs)),
-            "brier": float(sum(x["n"] * x["brier"] for x in hs) / sum(x["n"] for x in hs)),
-            "ece": float(sum(x["n"] * x["calibration_error"] for x in hs) / sum(x["n"] for x in hs)),
+            "n": int(hold_total_n),
+            "accuracy": float(sum(w * x["accuracy"] for w, x in zip(hold_weights, hs)) / hold_total_n),
+            "logloss": float(sum(w * x["logloss"] for w, x in zip(hold_weights, hs)) / hold_total_n),
+            "brier": float(sum(w * x["brier"] for w, x in zip(hold_weights, hs)) / hold_total_n),
+            "ece": float(sum(w * x["calibration_error"] for w, x in zip(hold_weights, hs)) / hold_total_n),
         }
     shadow = {
         "status": "OFFLINE_REPLAY_ONLY",
