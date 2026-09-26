@@ -96,6 +96,7 @@ BOOTSTRAP_REPS = 1000
 EPS = 1e-8
 EMBARGO_MINUTES = 60
 CONFORMAL_ALPHA = 0.10
+FAILURE_PRIOR_STRENGTH = 4.0
 
 
 def utc_now():
@@ -337,6 +338,14 @@ def _safe_binary(X, y):
     return model
 
 
+def _smoothed_binary_rate(labels, strength=FAILURE_PRIOR_STRENGTH):
+    """Prequential empirical prior with explicit shrinkage toward 0.5."""
+    n = len(labels)
+    if n == 0:
+        return 0.5
+    return float((sum(map(int, labels)) + 0.5 * strength) / (n + strength))
+
+
 def _meta_training(blocks, before_index):
     usable = blocks[:before_index]
     predict_pairs = []
@@ -388,6 +397,14 @@ def _meta_training(blocks, before_index):
         "meta_label_samples": len(meta_pairs),
         "failure_samples": {e: len(failure_pairs[e]) for e in EXPERTS},
         "hazard_samples": {str(h): len(hazard_pairs[h]) for h in (1, 2, 3)},
+        "failure_prior_by_expert": {
+            e: _smoothed_binary_rate([y for _, y in failure_pairs[e]])
+            for e in EXPERTS
+        },
+        "hazard_prior_by_horizon": {
+            str(h): _smoothed_binary_rate([y for _, y in hazard_pairs[h]])
+            for h in (1, 2, 3)
+        },
     }
 
 
@@ -420,12 +437,15 @@ def _predictability(state, predict_model, history):
     }
 
 
-def _failure_state(state, quality, failure_models, hazard_models):
+def _failure_state(state, quality, failure_models, hazard_models, priors=None):
+    priors = priors if isinstance(priors, dict) else {}
+    expert_priors = priors.get("failure_prior_by_expert", {})
+    hazard_priors = priors.get("hazard_prior_by_horizon", {})
     risks = {}
     for e in EXPERTS:
         m = failure_models.get(e)
         if m is None:
-            risks[e] = 0.5
+            risks[e] = float(_clip01(expert_priors.get(e), 0.5))
         else:
             x = np.concatenate([_numeric_state(state), [quality[e]]]).reshape(1, -1)
             risks[e] = float(m.predict_proba(x)[0, 1])
@@ -433,7 +453,11 @@ def _failure_state(state, quality, failure_models, hazard_models):
     x = _numeric_state(state).reshape(1, -1)
     for h in (1, 2, 3):
         m = hazard_models.get(h)
-        hazard[h] = float(m.predict_proba(x)[0, 1]) if m is not None else 0.5
+        hazard[h] = (
+            float(m.predict_proba(x)[0, 1])
+            if m is not None
+            else float(_clip01(hazard_priors.get(str(h)), 0.5))
+        )
     cumulative = [0.0, hazard[1], max(hazard[1], hazard[2]), max(hazard[2], hazard[3])]
     p1 = np.clip(cumulative[1], 0.0, 1.0)
     p2 = np.clip(cumulative[2] - cumulative[1], 0.0, 1.0)
@@ -847,7 +871,7 @@ def _development(rows):
             },
             "uncertainty": {"total": 0.5},
         }
-        predict_model, meta_model, failure_models, hazard_models, meta_counts = _meta_training(blocks, len(blocks))
+        predict_model, meta_model, failure_models, hazard_models, meta_stats = _meta_training(blocks, len(blocks))
         state["predictability"] = _predictability(state, predict_model, blocks)
         state["meta_label"] = _meta_label(state, meta_model)
         state["retrieval"] = _retrieval(state, blocks)
@@ -858,7 +882,7 @@ def _development(rows):
             for e in EXPERTS
         }
         # Current-block labels are not used in quality/failure/meta state.
-        failure_state = _failure_state(state, quality, failure_models, hazard_models)
+        failure_state = _failure_state(state, quality, failure_models, hazard_models, meta_stats)
         route_specs = [
             "soft_ensemble", "adaptive_ensemble", "disagreement_model",
             "predictability_model", "future_failure_predictor",
@@ -1041,13 +1065,12 @@ def _holdout_frozen(dev_blocks, dev_rows, holdout):
         for e in EXPERTS
     }
     # Reconstruct frozen meta models using development blocks only.
-    predict_model, meta_model, failure_models, hazard_models, _ = _meta_training(dev_blocks, len(dev_blocks))
+    predict_model, meta_model, failure_models, hazard_models, meta_stats = _meta_training(dev_blocks, len(dev_blocks))
     state["predictability"] = _predictability(state, predict_model, dev_blocks)
     state["meta_label"] = _meta_label(state, meta_model)
     state["retrieval"] = _retrieval(state, dev_blocks)
     state["uncertainty"] = _uncertainty(state)
-    failure_state = _failure_state(state, quality, failure_models, hazard_models)
-    policy_variants = {}
+    failure_state = _failure_state(state, quality, failure_models, hazard_models, meta_stats)    policy_variants = {}
     for name in (
         "soft_ensemble", "adaptive_ensemble", "three_layers_regime",
         "three_layers_retrieval", "full_architecture",
