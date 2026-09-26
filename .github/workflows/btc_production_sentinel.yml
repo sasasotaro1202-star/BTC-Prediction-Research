@@ -101,10 +101,83 @@ jobs:
             age=$((now-epoch))
           fi
 
-          echo "main_sha=$main_sha active_live=$active latest_live_head=${head:-none} age=${age}s"
+          # A successful Live Cycle can still be a safe DEFERRED run when critical
+          # market data was unavailable. Treating that run as a healthy heartbeat
+          # creates a recovery blind spot: the next sentinel waits until the normal
+          # heartbeat timeout even after the Binance cache has recovered. Check the
+          # durable cycle status plus the dedicated kline cache before deciding.
+          live_status_json=""
+          if live_status_raw="$(retry_api "/repos/${REPO}/contents/data/live_cycle_status.json?ref=main")"; then
+            live_status_b64="$(jq -r ".content // empty" <<<"$live_status_raw")"
+            if [ -n "$live_status_b64" ]; then
+              if decoded_status="$(printf "%s" "$live_status_b64" | base64 -d 2>/dev/null)"; then
+                live_status_json="$decoded_status"
+              else
+                echo "WARN: live_cycle_status.json base64 decoding failed; deferred-cache recovery disabled for this generation." >&2
+              fi
+            fi
+          else
+            echo "WARN: live_cycle_status.json could not be read; deferred-cache recovery disabled for this generation." >&2
+          fi
+          cycle_mode=""
+          if [ -n "$live_status_json" ]; then
+            if cycle_mode="$(jq -r ".mode // empty" <<<"$live_status_json" 2>/dev/null)"; then
+              :
+            else
+              cycle_mode=""
+              echo "WARN: live_cycle_status.json JSON parsing failed; deferred-cache recovery disabled for this generation." >&2
+            fi
+          fi
 
-          if [ "$active" -eq 0 ] && { [ "$age" -ge 300 ] || [ "$head" != "$main_sha" ]; }; then
-            echo "Production heartbeat stale; dispatching one Live Cycle from current main."
+          cache_fresh=0
+          cache_event_ms=0
+          if cache_raw="$(retry_api "/repos/${REPO}/contents/data/binance_ws_1m.json?ref=binance-ws-cache")"; then
+            cache_b64="$(jq -r ".content // empty" <<<"$cache_raw")"
+            cache_json=""
+            if [ -n "$cache_b64" ]; then
+              if decoded_cache="$(printf "%s" "$cache_b64" | base64 -d 2>/dev/null)"; then
+                cache_json="$decoded_cache"
+              else
+                echo "WARN: dedicated Binance kline cache base64 decoding failed; deferred-cache recovery disabled for this generation." >&2
+              fi
+            fi
+            cache_event_ms="$(jq -r ".rows[-1].event_time_ms // 0" <<<"$cache_json" 2>/dev/null || echo 0)"
+            cache_retrieved_ms="$(jq -r ".rows[-1].retrieved_at_ms // 0" <<<"$cache_json" 2>/dev/null || echo 0)"
+            if [[ "$cache_event_ms" =~ ^[0-9]+$ ]] && [[ "$cache_retrieved_ms" =~ ^[0-9]+$ ]] && [ "$cache_event_ms" -gt 0 ] && [ "$cache_retrieved_ms" -ge "$cache_event_ms" ]; then
+              cache_age_ms=$((now*1000-cache_event_ms))
+              if [ "$cache_age_ms" -ge 0 ] && [ "$cache_age_ms" -le 180000 ]; then
+                cache_fresh=1
+              fi
+            fi
+          else
+            echo "WARN: dedicated Binance kline cache could not be read; deferred-cache recovery disabled for this generation." >&2
+          fi
+
+          deferred_cache_recovery=0
+          deferred_completed_ms=0
+          if [ "$cycle_mode" = "deferred" ] && [ -n "$live_status_json" ]; then
+            deferred_completed_utc="$(jq -r ".completed_at_utc // empty" <<<"$live_status_json" 2>/dev/null || echo "")"
+            if [ -n "$deferred_completed_utc" ]; then
+              if deferred_completed_epoch="$(date -d "$deferred_completed_utc" +%s 2>/dev/null)"; then
+                deferred_completed_ms=$((deferred_completed_epoch*1000))
+              fi
+            fi
+          fi
+          # Recover only when a verified fresh kline checkpoint arrived after the
+          # deferred cycle completed. This prevents an unavailable secondary input
+          # from causing an indefinite 5-minute dispatch/defer loop.
+          if [ "$cycle_mode" = "deferred" ] && [ "$cache_fresh" -eq 1 ] && [ "$deferred_completed_ms" -gt 0 ] && [ "$cache_event_ms" -gt "$deferred_completed_ms" ]; then
+            deferred_cache_recovery=1
+          fi
+
+          echo "main_sha=$main_sha active_live=$active latest_live_head=${head:-none} age=${age}s cycle_mode=${cycle_mode:-unknown} cache_fresh=$cache_fresh cache_event_ms=$cache_event_ms deferred_completed_ms=$deferred_completed_ms"
+
+          if [ "$active" -eq 0 ] && { [ "$age" -ge 300 ] || [ "$head" != "$main_sha" ] || [ "$deferred_cache_recovery" -eq 1 ]; }; then
+            if [ "$deferred_cache_recovery" -eq 1 ]; then
+              echo "Deferred Live Cycle detected with a fresh Binance kline cache; dispatching immediate recovery from current main."
+            else
+              echo "Production heartbeat stale; dispatching one Live Cycle from current main."
+            fi
             if gh api --method POST "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/dispatches" -f ref=main >/dev/null 2>&1; then
               echo "Live Cycle recovery dispatch accepted."
             else
@@ -112,7 +185,7 @@ jobs:
               exit 1
             fi
           else
-            echo "Production heartbeat healthy or Live Cycle already active."
+            echo "Production heartbeat healthy, recovery conditions not met, or Live Cycle already active."
           fi
 
       - name: Spawn next sentinel generation
