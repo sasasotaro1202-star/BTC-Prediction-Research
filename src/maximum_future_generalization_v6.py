@@ -662,6 +662,22 @@ def _stress(block, models):
     return {"status": "OK", "scenarios": shifts}
 
 
+def _binary_calibration(scores, outcomes):
+    if len(scores) < 8:
+        return {"status": "DEFERRED", "n": len(scores)}
+    p = np.clip(np.asarray(scores, dtype=float), EPS, 1.0 - EPS)
+    y = np.asarray(outcomes, dtype=float)
+    brier = float(np.mean((p - y) ** 2))
+    logloss = float(-np.mean(y * np.log(p) + (1.0 - y) * np.log(1.0 - p)))
+    ece = 0.0
+    for i in range(5):
+        lo, hi = i / 5.0, (i + 1) / 5.0
+        mask = (p >= lo) & ((p < hi) if hi < 1.0 else (p <= hi))
+        if mask.any():
+            ece += float(mask.mean()) * abs(float(p[mask].mean()) - float(y[mask].mean()))
+    return {"status":"OK","n":int(len(y)),"brier":brier,"logloss":logloss,"ece":float(ece)}
+
+
 def _compute_tier(score, drift, failure):
     if drift >= 0.75 or failure >= 0.75:
         return "HARD_STRESS"
@@ -1090,8 +1106,28 @@ def evaluate(horizon, max_rows=9000):
             "detected_failure_cases": len(leads),
             "false_alarm_count": false_alarms,
             "latest_failure_risk": dev_blocks[-1]["failure_state"],
+            "mean_risk_calibration": _binary_calibration(
+                [b["failure_state"]["mean"] for b in dev_blocks[:-FUTURE_WINDOW]],
+                [
+                    int(any(
+                        (
+                            np.mean([x["metrics"][e]["logloss"] for x in dev_blocks[i + 1:i + 1 + FUTURE_WINDOW]])
+                            - np.mean([x["metrics"][e]["logloss"] for x in dev_blocks[max(0, i - PAST_WINDOW + 1):i + 1]])
+                        ) >= 0.05
+                        or (
+                            np.mean([x["metrics"][e]["accuracy"] for x in dev_blocks[i + 1:i + 1 + FUTURE_WINDOW]])
+                            - np.mean([x["metrics"][e]["accuracy"] for x in dev_blocks[max(0, i - PAST_WINDOW + 1):i + 1]])
+                        ) <= -0.05
+                        for e in EXPERTS
+                    )) for i in range(len(dev_blocks) - FUTURE_WINDOW)
+                ],
+            ),
         },
         "predictability": dev_blocks[-1]["state"]["predictability"],
+        "predictability_calibration": _binary_calibration(
+            [b["state"]["predictability"]["global"] for b in dev_blocks[:-1]],
+            [int(dev_blocks[i + 1]["soft"]["accuracy"] >= 0.45) for i in range(len(dev_blocks) - 1)],
+        ),
         "error_correlation": dev_blocks[-1]["state"]["error_correlation"],
         "feature_reliability": dev_blocks[-1]["state"]["feature_reliability"],
         "source_reliability": dev_blocks[-1]["state"]["source_reliability_detail"],
@@ -1116,9 +1152,21 @@ def evaluate(horizon, max_rows=9000):
             "note": "research experts are refit causally per OOS block; production model age tracked separately",
         },
         "uncertainty_decomposition": dev_blocks[-1]["state"]["uncertainty"],
+        "hidden_state": {
+            "momentum": float(np.clip(
+                0.5 + dev_blocks[-1]["state"]["prediction_momentum"]["velocity"], 0.0, 1.0
+            )),
+            "stress": float(np.clip(
+                0.5 * dev_blocks[-1]["state"]["information_shock"]["shock_score"]
+                + 0.5 * dev_blocks[-1]["state"]["drift"]["drift_score"], 0.0, 1.0
+            )),
+            "uncertainty": float(dev_blocks[-1]["state"]["uncertainty"]["total"]),
+            "method": "deterministic_observation_state_proxy; not_causal_latent_state_claim",
+        },
         "multi_horizon_consistency_hook": {
-            "status": "COMPUTED_CROSS_HORIZON_IN_WORKFLOW",
+            "status": "PENDING_CROSS_HORIZON_ALIGNMENT",
             "horizon": horizon,
+            "note": "cross-horizon alignment requires matched 5m/10m OOS timestamps and is not used for routing in this run",
         },
         "robustness": {
             "status": "PARTIAL",
