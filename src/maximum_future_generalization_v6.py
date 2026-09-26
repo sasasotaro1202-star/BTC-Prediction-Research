@@ -498,6 +498,20 @@ def _uncertainty(state):
     }
 
 
+def _retrieval_view(state):
+    """Return a schema-safe retrieval view without treating missing evidence as success."""
+    value = state.get("retrieval")
+    if isinstance(value, dict):
+        return value
+    return {
+        "failure_similarity": 0.5,
+        "success_similarity": 0.5,
+        "probability": [1 / 3, 1 / 3, 1 / 3],
+        "neighbors": [],
+        "status": "DEGRADED_NEUTRAL_FALLBACK",
+    }
+
+
 def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_predictability=True,
                    use_failure=True, use_drift=True, use_error_correlation=True,
                    use_retrieval=True, previous=None):
@@ -525,7 +539,7 @@ def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_
         source_reliability = source_reliability.get("reliability", 0.0)
     adaptive_strength *= 0.35 + 0.65 * float(source_reliability)
     if use_retrieval:
-        adaptive_strength *= 0.70 + 0.30 * state["retrieval"]["success_similarity"]
+        adaptive_strength *= 0.70 + 0.30 * _retrieval_view(state)["success_similarity"]
     adaptive_strength = float(np.clip(adaptive_strength, 0.15, 1.0))
     w = adaptive_strength * q + (1.0 - adaptive_strength) * np.full(len(EXPERTS), 1.0 / len(EXPERTS))
     if previous is not None:
@@ -720,7 +734,7 @@ def _evaluate_variant(state, panel, quality, failure_state, previous_weights, na
         w = _route_weights(state, quality, failure_state, previous=previous_weights, **specs[name])
     probs = _route_probs(panel, w)
     if retrieval_mix > 0.0:
-        rp = np.asarray(state["retrieval"]["probability"], dtype=float)
+        rp = np.asarray(_retrieval_view(state)["probability"], dtype=float)
         probs = _norm((1.0 - retrieval_mix) * probs + retrieval_mix * rp)
     return probs, w
 
