@@ -28,8 +28,8 @@ class PromotionGateTests(unittest.TestCase):
 
     def _cal(self):
         return {
-            "5m": {"horizon": "5m", "temperature": 1.0, "model_version": "v5", "n_settled": 300, "fit_logloss": 0.5, "holdout_logloss": 0.5},
-            "10m": {"horizon": "10m", "temperature": 1.0, "model_version": "v5", "n_settled": 300, "fit_logloss": 0.5, "holdout_logloss": 0.5},
+            "5m": {"horizon": "5m", "temperature": 1.0, "model_version": "v5", "n_settled": 300, "fit_logloss": 0.5, "holdout_logloss": 0.5, "model_sha256": "a"*64, "_current_model_sha256": "a"*64},
+            "10m": {"horizon": "10m", "temperature": 1.0, "model_version": "v5", "n_settled": 300, "fit_logloss": 0.5, "holdout_logloss": 0.5, "model_sha256": "a"*64, "_current_model_sha256": "a"*64},
         }
 
     def _accepted_blends(self):
@@ -64,6 +64,22 @@ class PromotionGateTests(unittest.TestCase):
         cal["5m"]["n_settled"] = 0
         cal["5m"]["fit_logloss"] = None
         cal["5m"]["holdout_logloss"] = None
+        result = evaluate_promotion({"status": "PASS"}, self._robust(), self._accepted_blends(), self._pit(), cal, {"ok": True})
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("calibration_evidence_invalid_or_missing", result["reason"])
+
+    def test_stale_calibration_model_binding_blocks_promotion(self):
+        cal = self._cal()
+        cal["5m"]["_current_model_sha256"] = "b" * 64
+        result = evaluate_promotion({"status": "PASS"}, self._robust(), self._accepted_blends(), self._pit(), cal, {"ok": True})
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("calibration_evidence_invalid_or_missing", result["reason"])
+
+    def test_missing_calibration_model_binding_blocks_promotion(self):
+        cal = self._cal()
+        del cal["10m"]["model_sha256"]
         result = evaluate_promotion({"status": "PASS"}, self._robust(), self._accepted_blends(), self._pit(), cal, {"ok": True})
         self.assertFalse(result["promotion_allowed"])
         self.assertEqual(result["production_safety_gate"], "HOLD")

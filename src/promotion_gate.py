@@ -6,6 +6,7 @@ production model files.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,24 @@ from typing import Any
 HORIZONS = ("5m", "10m")
 POLICY = "no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence"
 MIN_CALIBRATION_ROWS = 300
+
+
+def _valid_sha256(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+        return True
+    except ValueError:
+        return False
+
+
+def _calibration_model_binding_ok(item: dict[str, Any]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    stored = item.get("model_sha256")
+    current = item.get("_current_model_sha256")
+    return _valid_sha256(stored) and _valid_sha256(current) and stored == current
 
 
 def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dict[str, dict[str, Any]], pit: dict[str, Any] | None = None, calibrations: dict[str, dict[str, Any]] | None = None, research_input: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -65,6 +84,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
                 and int(item.get("n_settled", 0)) >= MIN_CALIBRATION_ROWS
                 and item.get("fit_logloss") is not None
                 and item.get("holdout_logloss") is not None
+                and _calibration_model_binding_ok(item)
             )
         except (TypeError, ValueError):
             calibration_ok = False
@@ -103,6 +123,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         "candidate_status": {h: blends.get(h, {}).get("status", "missing") for h in HORIZONS},
         "pit_oos_verified": pit_ok,
         "calibration_verified": calibration_ok,
+        "calibration_model_binding_verified": all(_calibration_model_binding_ok(calibrations.get(h, {})) for h in HORIZONS),
         "research_input_audit_verified": research_input_ok,
         "policy": POLICY,
     }
@@ -173,6 +194,15 @@ def run(root: Path) -> dict[str, Any]:
     for horizon in HORIZONS:
         cpath = root / "models" / f"{horizon}.calibration.json"
         calibrations[horizon] = json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
+        model_path = root / "models" / f"{horizon}.joblib"
+        current_hash = None
+        if model_path.is_file():
+            digest = hashlib.sha256()
+            with model_path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            current_hash = digest.hexdigest()
+        calibrations[horizon]["_current_model_sha256"] = current_hash
     blends = {}
     for horizon in HORIZONS:
         path = root / "models" / f"{horizon}.blend.json"
