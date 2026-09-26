@@ -109,10 +109,23 @@ def _softmax(values):
 
 
 def _numeric_state(state):
+    """Build the causal meta-state vector.
+
+    Retrieval and meta-label values can be unavailable while constructing a
+    bootstrap/query state (and retrieval itself must not recursively depend on
+    its own output). Use explicit neutral priors only for those missing
+    components; fully materialized OOS blocks retain their measured values.
+    """
     d = state["disagreement"]
     drift = state["drift"]
     pred = state["predictability"]
     un = state["uncertainty"]
+    retrieval = state.get("retrieval")
+    if not isinstance(retrieval, dict):
+        retrieval = {}
+    meta_label = state.get("meta_label")
+    if not isinstance(meta_label, dict):
+        meta_label = {}
     return np.asarray([
         d["std_probability"],
         d["probability_range"],
@@ -134,9 +147,9 @@ def _numeric_state(state):
         pred["velocity"],
         pred["acceleration"],
         state["regime_transition"]["stay_probability"],
-        state["retrieval"]["failure_similarity"],
+        float(retrieval.get("failure_similarity", 0.5)),
         un["total"],
-        state["meta_label"]["reliability"],
+        float(meta_label.get("reliability", 0.5)),
         state["hard_negative_density"],
     ], dtype=float)
 
