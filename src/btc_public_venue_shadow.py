@@ -252,11 +252,27 @@ def validate_event_set(events: list[dict[str, Any]], cutoff_ms: int | None = Non
             accepted.append(event)
         except (KeyError, TypeError, ValueError):
             rejected += 1
+    lags = sorted(
+        int(event["available_at_ms"]) - int(event["event_time_ms"])
+        for event in accepted
+    )
+    source_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    for event in accepted:
+        source_counts[str(event["source"])] = source_counts.get(str(event["source"]), 0) + 1
+        type_counts[str(event["event_type"])] = type_counts.get(str(event["event_type"]), 0) + 1
+    p95_index = max(0, min(len(lags) - 1, math.ceil(len(lags) * 0.95) - 1)) if lags else None
+    event_times = [int(event["event_time_ms"]) for event in accepted]
     return {
         "accepted": len(accepted), "rejected": rejected,
         "future": future, "duplicates": duplicates,
-        "sources": sorted({e["source"] for e in accepted}),
-        "event_types": sorted({e["event_type"] for e in accepted}),
+        "sources": sorted(source_counts),
+        "event_types": sorted(type_counts),
+        "source_counts": dict(sorted(source_counts.items())),
+        "event_type_counts": dict(sorted(type_counts.items())),
+        "availability_lag_ms_max": max(lags) if lags else None,
+        "availability_lag_ms_p95": lags[p95_index] if p95_index is not None else None,
+        "event_time_span_ms": max(event_times) - min(event_times) if event_times else None,
     }
 
 
