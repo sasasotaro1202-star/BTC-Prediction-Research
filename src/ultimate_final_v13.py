@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -149,7 +150,7 @@ def _build_prediction_contract(registry: dict[str, Any]) -> dict[str, Any]:
         "valid_until": (now + timedelta(minutes=5)).isoformat(),
         "data_snapshot": {
             "source": "existing_run_scoped_OOS_evidence",
-            "commit": registry.get("generated_at_utc"),
+            "commit": os.environ.get("GITHUB_SHA", ""),
         },
         "model_version": "maximum_future_generalization_v6_under_v13_contract",
         "strategy": policy["strategy"],
