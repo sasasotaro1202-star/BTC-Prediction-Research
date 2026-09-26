@@ -30,7 +30,11 @@ jobs:
       - name: Run public venue shadow capture
         run: |
           set -euo pipefail
-          python -m src.btc_public_venue_shadow             --duration-seconds "${{ inputs.duration_seconds }}"             --output data/shadow/btc_public_venue_events.json
+          export DURATION_SECONDS="${{ inputs.duration_seconds || '60' }}"
+          case "$DURATION_SECONDS" in
+            ''|*[!0-9.]*) exit 1 ;;
+          esac
+          python -m src.btc_public_venue_shadow --duration-seconds "$DURATION_SECONDS" --output data/shadow/btc_public_venue_events.json
       - name: Validate artifact
         run: |
           set -euo pipefail
