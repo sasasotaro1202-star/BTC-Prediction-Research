@@ -492,6 +492,12 @@ def resilient_1m_series(limit: int = 120):
             except Exception:
                 by_current = None
         status["bybit_futures"] = "ok" if by else ("ok_current_only" if by_current else "non_contiguous_or_insufficient")
+        if by:
+            # Keep a causal diagnostic when Bybit rows exist but are too old for
+            # the live fallback. This must not block Coinbase/Kraken recovery.
+            fresh_by_probe = _fresh_closed_candle_suffix(by, 40)
+            if not fresh_by_probe:
+                status["bybit_fallback"] = "stale_or_insufficient"
         if not by and by_current:
             by = [by_current]
     except Exception as e:
