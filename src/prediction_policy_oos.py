@@ -576,9 +576,16 @@ def build_policy_record(horizon: str, result: dict[str, Any]) -> dict[str, Any]:
         output["format"],
         action["action"],
     )
+    oos_evidence = result.get("prediction_policy_oos", {})
+    measured_oos = (
+        isinstance(oos_evidence, dict)
+        and oos_evidence.get("development", {}).get("status") == "MEASURED_DEV_OOS"
+        and oos_evidence.get("frozen_holdout", {}).get("status") == "FROZEN_HOLDOUT_EVALUATED"
+        and oos_evidence.get("frozen_holdout_used_for_selection") is False
+    )
     return {
         "horizon": horizon,
-        "status": "IMPLEMENTED_NOT_OOS_VERIFIED",
+        "status": "MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT" if measured_oos else "IMPLEMENTED_NOT_OOS_VERIFIED",
         "research_only": True,
         "production_changed": False,
         "state": state,
