@@ -29,12 +29,8 @@ def test_high_priority_direct_sources_are_free_and_pit_bounded():
     assert all(source.pit in {"low", "medium"} for source in sources)
 
 
-def test_production_gate_is_conservative():
-    eligible = {source.source_id for source in production_eligible_now()}
-    assert "hyperliquid_ws" in eligible
-    assert "bitget_public_ws" in eligible
-    assert "farside_btc_etf" not in eligible
-    assert "cme_voi" not in eligible
+def test_production_gate_is_fail_closed_without_evidence():
+    assert production_eligible_now() == ()
 
 
 def test_source_lookup():
