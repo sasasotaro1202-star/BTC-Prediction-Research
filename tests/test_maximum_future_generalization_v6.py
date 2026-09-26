@@ -9,6 +9,7 @@ from src.maximum_future_generalization_v6 import (
     _compute_tier,
     _causal_current_snapshot,
     _numeric_state,
+    _smoothed_binary_rate,
     _retrieval,
 )
 
@@ -157,6 +158,15 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         json.dumps(out)
         self.assertIsInstance(out["probability"], list)
         self.assertEqual(len(out["probability"]), 3)
+
+
+    def test_failure_prior_is_shrunk_and_prequential(self):
+        self.assertAlmostEqual(_smoothed_binary_rate([]), 0.5)
+        low_n = _smoothed_binary_rate([1])
+        self.assertGreater(low_n, 0.5)
+        self.assertLess(low_n, 0.7)
+        high_n = _smoothed_binary_rate([1, 1, 1, 1, 1, 0, 0, 0, 0, 0])
+        self.assertAlmostEqual(high_n, 0.5)
 
 
 if __name__ == "__main__":
