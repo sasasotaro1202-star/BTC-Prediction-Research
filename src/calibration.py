@@ -110,19 +110,20 @@ def _current_registry_version(con, horizon):
 
 def _settled_rows(con, horizon, actual_col, model_version):
     # Calibration must not pool incompatible model generations. Predictions store
-    # both horizon registry versions in one field, so match the relevant prefix.
+    # both horizon registry versions in one pipe-delimited field, so match the
+    # exact horizon/version segment regardless of segment order.
     if horizon not in ('5m', '10m') or not model_version:
         return []
     prob_suffix=horizon  # 5m -> p_up_5m; never append another 'm'.
-    prefix=f'{horizon}:{model_version}|%'
+    segment=f'{horizon}:{model_version}'
     raw = con.execute(
         f'''SELECT p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},{actual_col},scenario_json
             FROM predictions
             WHERE {actual_col} IS NOT NULL
-              AND model_version LIKE ?
+              AND ('|' || model_version || '|') LIKE ?
               AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
             ORDER BY created_at_utc''',
-        (prefix,)
+        (f'%|{segment}|%',)
     ).fetchall()
     # Production calibration is a Binance-primary benchmark. Fallback venue
     # predictions remain useful observation data, but mixing them into the
