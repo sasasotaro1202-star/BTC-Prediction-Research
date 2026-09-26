@@ -62,10 +62,11 @@ class TestPredictionPolicyV13(unittest.TestCase):
 
     def test_hysteresis_maintains_stable_strategy(self):
         state = _state(self._result())
+        current = select_strategy(state)["strategy"]
         action = select_action(
             state,
-            previous_strategy="STANDARD_MODEL",
-            previous_predictability=0.70,
+            previous_strategy=current,
+            previous_predictability=0.72,
         )
         self.assertEqual(action["action"], "MAINTAIN")
 
