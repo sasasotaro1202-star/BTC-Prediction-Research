@@ -109,6 +109,10 @@ def _softmax(values):
 def _numeric_state(state):
     d = state["disagreement"]
     drift = state["drift"]
+    retrieval = state.get("retrieval") or {
+        "failure_similarity": 0.5,
+        "success_similarity": 0.5,
+    }
     pred = state["predictability"]
     un = state["uncertainty"]
     return np.asarray([
@@ -132,7 +136,7 @@ def _numeric_state(state):
         pred["velocity"],
         pred["acceleration"],
         state["regime_transition"]["stay_probability"],
-        state["retrieval"]["failure_similarity"],
+        float(retrieval.get("failure_similarity", 0.5)),
         un["total"],
         state["meta_label"]["reliability"],
         state["hard_negative_density"],
@@ -1199,6 +1203,30 @@ def evaluate(horizon, max_rows=9000):
         },
         "promotion": promotion,
         "artifacts_expected": True,
+        # JSON-safe OOS substrate for v13 policy/output/revision ablations.
+        # Labels are already resolved OOS labels; no model objects or raw panels
+        # are persisted here.
+        "policy_source": [
+            {
+                "index": int(b["index"]),
+                "test_start": b["test_start"],
+                "test_end": b["test_end"],
+                "n": int(b["n"]),
+                "y": list(b["y"]),
+                "state": b["state"],
+                "variants": {
+                    name: {
+                        "probs": np.asarray(item["probs"], dtype=float).tolist(),
+                        "weights": np.asarray(item["weights"], dtype=float).tolist(),
+                    }
+                    for name, item in b["variants"].items()
+                },
+                "calibrated": np.asarray(b["calibrated"], dtype=float).tolist(),
+                "calibration_temperature": float(b["calibration_temperature"]),
+                "selective_score_rows": list(map(float, b["selective_score_rows"])),
+            }
+            for b in blocks
+        ],
     }
 
 
@@ -1232,6 +1260,12 @@ def write_artifacts(result):
         "_shadow_results.json": result.get("shadow", {}),
         "_challenger_results.json": result.get("offline_holdout", {}),
         "_promotion_gate.json": result.get("promotion", {}),
+        "_policy_source.json": {
+            "schema_version": 1,
+            "research_only": True,
+            "pit_source": "prequential_archive_oos",
+            "source_rows": result.get("policy_source", []),
+        },
         "_fallback_config.json": {
             "research_only": True,
             "policy": "full=>reduced=>soft_equal=>verified_baseline",
