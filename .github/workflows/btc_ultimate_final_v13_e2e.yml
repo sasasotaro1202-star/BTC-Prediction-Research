@@ -311,15 +311,39 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/historical_research/btc_ultimate_final_v13_run.json
           if ! git diff --cached --quiet; then git commit -m 'Record V13 E2E run completion'; fi
+          # Research outputs are intentionally left as uncommitted working-tree
+          # evidence. Stash them before rebasing the immutable run ledger so
+          # concurrent research commits cannot make rebase fail with unstaged
+          # changes.
+          git stash push --include-untracked --message 'v13-runtime-artifacts' >/dev/null || true
+          pushed=0
           for attempt in 1 2 3 4 5; do
-            if git fetch --prune origin main && git rebase origin/main && git push origin HEAD:main; then exit 0; fi
+            if git fetch --prune origin main && git rebase origin/main && git push origin HEAD:main; then
+              pushed=1
+              break
+            fi
             if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then git rebase --abort; fi
             git reset --hard origin/main
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p=Path('data/historical_research/btc_ultimate_final_v13_run.json')
+          payload={
+              "schema_version":1,
+              "experiment":"btc_ultimate_final_v13_e2e",
+              "status":os.environ.get("JOB_STATUS","unknown").upper(),
+              "run_id":os.environ.get("GITHUB_RUN_ID",""),
+              "commit":os.environ.get("GITHUB_SHA",""),
+              "completed_at_utc":datetime.now(timezone.utc).isoformat(),
+          }
+          p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          PY
             git add data/historical_research/btc_ultimate_final_v13_run.json
             if ! git diff --cached --quiet; then git commit -m 'Record V13 E2E run completion'; fi
             sleep $((2 * attempt))
           done
-          exit 1
+          if [ "$pushed" -ne 1 ]; then exit 1; fi
       - name: Upload V13 E2E evidence
         if: always()
         uses: actions/upload-artifact@v6
