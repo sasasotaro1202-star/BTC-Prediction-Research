@@ -1,3 +1,4 @@
+# V13 E2E trigger: source-level runtime regression verification
 """Maximum Future-Generalization Predictive Control System (research-only).
 
 This module expands the v2 controller into a guarded v6 experiment. It keeps
