@@ -204,11 +204,21 @@ class TestCalibration(unittest.TestCase):
             'model_version': 'bootstrap.example.v1',
             'n_settled': 500,
             'temperature': 1.1,
+            'model_sha256': 'a' * 64,
         }
-        self.assertTrue(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500, None))
-        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '10m', 'bootstrap.example.v1', 500))
-        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v2', 500))
-        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 501))
+        sha = 'a' * 64
+        self.assertTrue(
+            calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500, sha)
+        )
+        self.assertFalse(
+            calibration._can_reuse_cached_calibration(cached, '10m', 'bootstrap.example.v1', 500, sha)
+        )
+        self.assertFalse(
+            calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v2', 500, sha)
+        )
+        self.assertFalse(
+            calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 501, sha)
+        )
 
     def test_saved_calibration_binds_model_artifact_hash(self):
         import hashlib
@@ -240,7 +250,7 @@ class TestCalibration(unittest.TestCase):
             'n_settled': 500,
             'temperature': 'not-a-number',
         }
-        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500))
+        self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500, None))
 
 
 if __name__ == '__main__':
