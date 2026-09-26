@@ -157,3 +157,57 @@ For the existing 5m/10m BTC system, the next research frontier is not
 Each source should first enter:
 DISCOVERY -> ACQUISITION -> PIT VALIDATION -> SHADOW -> CHRONOLOGICAL OOS
 before any production feature adoption.
+
+## 9. Newly verified candidates (2026-09-27 research pass)
+
+The following were re-checked against current public documentation/pages during
+the 2026-09-27 expansion pass. They remain research-only until project-local PIT
+capture and chronological OOS evidence exist.
+
+| Source | Newly confirmed detail | Free status | PIT notes |
+|---|---|---|---|
+| Kraken Futures WS | Public `book` feed is available for futures products | Public | Preserve exchange timestamps and sequence semantics |
+| Binance Options | Public REST exposes option OI, mark/IV/Greeks, orderbook and option klines | Public | Contract-list and timestamp snapshots must be retained |
+| Farside BTC ETF | Daily issuer-level and total BTC ETF flow table is publicly visible | Public web | The represented business date is not itself an availability timestamp |
+| U.S. Treasury | Daily nominal and real Treasury yield curves are publicly downloadable as CSV/XML | Public | Model availability from publication timing, not just rate date |
+| mempool.space | REST + WebSocket expose mempool, blocks, fees, historical price and address/tx tracking | Public, rate-limited | Cache aggressively and fail closed on HTTP 429 / missing timestamps |
+| BRK / Bitview | Free hosted Bitcoin analytics with thousands of locally computed metrics | Public | Prefer locally reproducible point-in-time snapshots |
+
+### 9.1 New implementation references
+
+Recent open-source references relevant to the Event Layer:
+
+- `jose-donato/crypto-orderbook`: multi-exchange real-time orderbooks,
+  liquidity aggregation and exchange-level statistics.
+- `bokiko/btc-liquidations`: Binance/Bybit/OKX/Hyperliquid/Aevo liquidation
+  monitoring with reconnect logic.
+- `KhavrTrading/flowex`: Binance/Bybit/Bitget streaming plus a 75-field
+  orderbook metric layer.
+- `juitindev/crypto-market-data-pipeline`: typed Binance kline/depth/trade/
+  liquidation ingestion with explicit validation and reconnect patterns.
+
+These repositories are implementation references only; their data must be
+re-ingested through the project's own provenance and PIT controls before use.
+
+### 9.2 Expansion priority update
+
+The current frontier should additionally track:
+
+1. **Cross-venue liquidity topology**: not only imbalance, but the persistence
+   and withdrawal of liquidity across venues and price bands.
+2. **Liquidation cascades**: event clustering, direction, notional, acceleration,
+   recovery time and cross-venue propagation.
+3. **Options surface state**: IV term structure, skew, gamma/vega concentration,
+   OI by expiry/strike and changes around spot.
+4. **Capital-flow state**: ETF flows, stablecoin supply changes, exchange flows
+   and CME positioning, with separate publication/availability timestamps.
+5. **Network congestion shocks**: mempool size, fee pressure and confirmation
+   dynamics as regime/context variables.
+6. **Macro/risk-state changes**: nominal/real yields and event proximity, kept as
+   slower state variables rather than assumed 5m/10m predictors.
+
+No candidate above should enter production solely because it is broad, free, or
+available in real time. Required path remains:
+DISCOVERY -> ACQUISITION -> PROVENANCE/PIT -> SHADOW -> CHRONOLOGICAL OOS ->
+ROBUSTNESS/CALIBRATION -> LIMITED PRODUCTION -> STABLE.
+
