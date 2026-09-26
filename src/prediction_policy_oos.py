@@ -130,13 +130,19 @@ def evaluate_policy_case(
         if selected not in variants:
             raise ValueError(f"missing_policy_variant:{selected}")
         probs = variants[selected].get("probs")
+    covered = (
+        strategy["strategy"] != "ABSTAIN"
+        and output["format"] != "ABSTAIN"
+    )
+    if not covered:
+        probs = None
     return {
         "state": state,
         "strategy_selection": strategy,
         "output_selection": output,
         "action_selection": action,
-        "variant": selected,
-        "covered": strategy["strategy"] != "ABSTAIN",
+        "variant": selected if strategy["strategy"] != "ABSTAIN" else None,
+        "covered": covered,
         "probs": probs,
     }
 
