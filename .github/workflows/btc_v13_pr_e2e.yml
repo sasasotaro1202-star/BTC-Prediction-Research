@@ -1,0 +1,159 @@
+name: BTC V13 Research PR E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'requirements.txt'
+      - '.github/workflows/**'
+      - 'data/predictions.db.gz'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-v13-pr-e2e-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install free dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and focused contract tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python -m compileall -q src tests
+          PYTHONPATH=src:. python -m unittest -q             tests/test_maximum_future_generalization_v6.py             tests/test_prediction_policy_oos.py             tests/test_v13_policy_ablation_oos.py
+
+      - name: Restore prediction database
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          PYTHONPATH=src:. python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+
+      - name: Run V6 chronological OOS
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/maximum_future_generalization_v6.py
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+          python -m json.tool data/historical_research/maximum_future_generalization_v6_registry.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: V6 failed: {r.get("reason")}')
+              if r.get('production_changed') is not False:
+                  raise SystemExit(f'{h}: production mutation')
+          print('V6 E2E: OK / research-only / production unchanged')
+          PY
+
+      - name: Run V13 prediction policy
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/prediction_policy_oos.py
+          test -s data/historical_research/prediction_policy_oos.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/prediction_policy_oos.json').read_text())
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('V13 policy safety contract failed')
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') not in {'IMPLEMENTED_NOT_OOS_VERIFIED','BLOCKED'}:
+                  raise SystemExit(f'{h}: unexpected policy status')
+          print('V13 policy controller: EXECUTED / research-only')
+          PY
+
+      - name: Run V13 policy OOS ablation
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/v13_policy_ablation_oos.py
+          test -s data/historical_research/v13_policy_ablation_oos.json
+          test -s data/historical_research/v13_prediction_ledger.jsonl
+          test -s data/historical_research/v13_status_registry.json
+          test -s data/historical_research/v13_policy_ablation_oos.md
+          python -m json.tool data/historical_research/v13_policy_ablation_oos.json >/dev/null
+          python -m json.tool data/historical_research/v13_status_registry.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/v13_policy_ablation_oos.json').read_text())
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('V13 policy OOS safety contract failed')
+          if obj.get('production_policy') != 'RESEARCH_ONLY_NO_AUTO_PROMOTION':
+              raise SystemExit('V13 promotion policy mismatch')
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: V13 policy OOS failed: {r.get("reason")}')
+              if r.get('final_holdout_protected') is not True:
+                  raise SystemExit(f'{h}: frozen holdout is not protected')
+          print('V13 policy OOS: OK / frozen-holdout-protected / research-only')
+          PY
+
+      - name: Run strict PIT audit
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/pit_oos_audit.py
+          test -s data/historical_research/pit_oos_audit.json
+          python -m json.tool data/historical_research/pit_oos_audit.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/pit_oos_audit.json').read_text())
+          if obj.get('status') != 'PASS':
+              raise SystemExit(f'PIT audit not PASS: {obj.get("status")}')
+          print('PIT audit: PASS')
+          PY
+
+      - name: Validate artifacts and write report
+        if: always()
+        run: |
+          set -euo pipefail
+          for f in data/historical_research/*v13*.json data/historical_research/maximum_future_generalization_v6_registry.json data/historical_research/pit_oos_audit.json; do
+            test -s "$f" || exit 1
+            python -m json.tool "$f" >/dev/null
+          done
+
+      - name: Upload V13 E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-v13-pr-e2e-evidence
+          path: |
+            data/historical_research/*v13*.json
+            data/historical_research/v13_prediction_ledger.jsonl
+            data/historical_research/v13_policy_ablation_oos.md
+            data/historical_research/maximum_future_generalization_v6_registry.json
+            data/historical_research/maximum_future_generalization_*.json
+            data/historical_research/pit_oos_audit.json
+          if-no-files-found: error
+          retention-days: 14

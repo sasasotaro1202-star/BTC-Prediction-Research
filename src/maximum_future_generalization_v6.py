@@ -109,6 +109,10 @@ def _softmax(values):
 def _numeric_state(state):
     d = state["disagreement"]
     drift = state["drift"]
+    retrieval = state.get("retrieval") or {
+        "failure_similarity": 0.5,
+        "success_similarity": 0.5,
+    }
     pred = state["predictability"]
     un = state["uncertainty"]
     return np.asarray([
@@ -132,7 +136,7 @@ def _numeric_state(state):
         pred["velocity"],
         pred["acceleration"],
         state["regime_transition"]["stay_probability"],
-        state["retrieval"]["failure_similarity"],
+        float(retrieval.get("failure_similarity", 0.5)),
         un["total"],
         state["meta_label"]["reliability"],
         state["hard_negative_density"],
@@ -494,6 +498,20 @@ def _uncertainty(state):
     }
 
 
+def _retrieval_view(state):
+    """Return a schema-safe retrieval view without treating missing evidence as success."""
+    value = state.get("retrieval")
+    if isinstance(value, dict):
+        return value
+    return {
+        "failure_similarity": 0.5,
+        "success_similarity": 0.5,
+        "probability": [1 / 3, 1 / 3, 1 / 3],
+        "neighbors": [],
+        "status": "DEGRADED_NEUTRAL_FALLBACK",
+    }
+
+
 def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_predictability=True,
                    use_failure=True, use_drift=True, use_error_correlation=True,
                    use_retrieval=True, previous=None):
@@ -521,7 +539,7 @@ def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_
         source_reliability = source_reliability.get("reliability", 0.0)
     adaptive_strength *= 0.35 + 0.65 * float(source_reliability)
     if use_retrieval:
-        adaptive_strength *= 0.70 + 0.30 * state["retrieval"]["success_similarity"]
+        adaptive_strength *= 0.70 + 0.30 * _retrieval_view(state)["success_similarity"]
     adaptive_strength = float(np.clip(adaptive_strength, 0.15, 1.0))
     w = adaptive_strength * q + (1.0 - adaptive_strength) * np.full(len(EXPERTS), 1.0 / len(EXPERTS))
     if previous is not None:
@@ -716,7 +734,7 @@ def _evaluate_variant(state, panel, quality, failure_state, previous_weights, na
         w = _route_weights(state, quality, failure_state, previous=previous_weights, **specs[name])
     probs = _route_probs(panel, w)
     if retrieval_mix > 0.0:
-        rp = np.asarray(state["retrieval"]["probability"], dtype=float)
+        rp = np.asarray(_retrieval_view(state)["probability"], dtype=float)
         probs = _norm((1.0 - retrieval_mix) * probs + retrieval_mix * rp)
     return probs, w
 
@@ -1199,6 +1217,30 @@ def evaluate(horizon, max_rows=9000):
         },
         "promotion": promotion,
         "artifacts_expected": True,
+        # JSON-safe OOS substrate for v13 policy/output/revision ablations.
+        # Labels are already resolved OOS labels; no model objects or raw panels
+        # are persisted here.
+        "policy_source": [
+            {
+                "index": int(b["index"]),
+                "test_start": b["test_start"],
+                "test_end": b["test_end"],
+                "n": int(b["n"]),
+                "y": list(b["y"]),
+                "state": b["state"],
+                "variants": {
+                    name: {
+                        "probs": np.asarray(item["probs"], dtype=float).tolist(),
+                        "weights": np.asarray(item["weights"], dtype=float).tolist(),
+                    }
+                    for name, item in b["variants"].items()
+                },
+                "calibrated": np.asarray(b["calibrated"], dtype=float).tolist(),
+                "calibration_temperature": float(b["calibration_temperature"]),
+                "selective_score_rows": list(map(float, b["selective_score_rows"])),
+            }
+            for b in blocks
+        ],
     }
 
 
@@ -1232,6 +1274,12 @@ def write_artifacts(result):
         "_shadow_results.json": result.get("shadow", {}),
         "_challenger_results.json": result.get("offline_holdout", {}),
         "_promotion_gate.json": result.get("promotion", {}),
+        "_policy_source.json": {
+            "schema_version": 1,
+            "research_only": True,
+            "pit_source": "prequential_archive_oos",
+            "source_rows": result.get("policy_source", []),
+        },
         "_fallback_config.json": {
             "research_only": True,
             "policy": "full=>reduced=>soft_equal=>verified_baseline",
