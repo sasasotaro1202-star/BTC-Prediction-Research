@@ -13,6 +13,8 @@ on:
       - "tests/test_class_prior_recalibration_oos.py"
       - "tests/test_market_data_fallback_chain.py"
       - "src/rollback_safety.py"
+      - "src/ultimate_final_v13_meta_control.py"
+      - "tests/test_ultimate_final_v13_meta_control.py"
       - "tests/test_rollback_safety.py"
       - ".github/workflows/btc_ultimate_final_v13.yml"
   workflow_dispatch:
@@ -148,6 +150,15 @@ jobs:
           test -s data/historical_research/ultimate_final_v13_report.json
           test -s data/historical_research/ultimate_final_v13_leakage_audit.json
           test -s data/historical_research/ultimate_final_v13_prediction_contract.json
+      - name: Generate V13 meta-control
+        run: |
+          set -euo pipefail
+          python src/ultimate_final_v13_meta_control.py
+          test -s data/historical_research/ultimate_final_v13_meta_control.json
+          test -s data/historical_research/ultimate_final_v13_prediction_strategy.json
+          test -s data/historical_research/ultimate_final_v13_prediction_trajectory.json
+          test -s data/historical_research/ultimate_final_v13_active_information.json
+          test -s data/historical_research/ultimate_final_v13_failure_memory.json
       - name: Promotion safety gate
         run: python src/promotion_gate.py
       - name: Artifact integrity
@@ -171,6 +182,7 @@ jobs:
             "verification": r.get("verification"),
             "performance": r.get("performance"),
             "promotion_candidate": r.get("status_catalog",{}).get("promotion_candidate"),
+            "meta_control_artifact": "ultimate_final_v13_meta_control.json",
           }, indent=2, sort_keys=True))
           PY
       - name: Upload V13 final report
