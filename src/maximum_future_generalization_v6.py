@@ -698,6 +698,27 @@ def _fit_and_predict(train_rows, test_rows):
     return panel, models
 
 
+def _causal_current_snapshot(rows, panel):
+    """Return only the first prediction-time snapshot from an OOS block.
+
+    Block-level routing must not inspect later observations inside the same
+    test block. Using the first row/probability vector keeps the state
+    generation point-in-time safe while preserving the block OOS structure.
+    """
+    if not rows:
+        raise ValueError("empty_current_block")
+    if any(e not in panel for e in EXPERTS):
+        raise ValueError("incomplete_model_panel")
+    current_rows = [rows[0]]
+    current_panel = {}
+    for expert in EXPERTS:
+        arr = np.asarray(panel[expert], dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != 3 or len(arr) < 1:
+            raise ValueError(f"invalid_panel_for:{expert}")
+        current_panel[expert] = arr[:1].copy()
+    return current_rows, current_panel
+
+
 def _evaluate_variant(state, panel, quality, failure_state, previous_weights, name, retrieval_mix=0.0):
     specs = {
         "soft_ensemble": dict(use_disagreement=False, use_predictability=False, use_failure=False, use_drift=False, use_error_correlation=False, use_retrieval=False),
@@ -765,18 +786,19 @@ def _development(rows):
             continue
 
         panel, models = _fit_and_predict(train, test)
+        current_rows, current_panel = _causal_current_snapshot(test, panel)
         raw_metrics = {e: metrics([r["y"] for r in test], panel[e]) for e in EXPERTS}
         soft_probs = _norm(np.mean(np.stack(list(panel.values()), axis=0), axis=0))
         soft_metrics = metrics([r["y"] for r in test], soft_probs)
         prior_panel = blocks[-1]["panel"] if blocks else None
         prior2_panel = blocks[-2]["panel"] if len(blocks) >= 2 else None
-        d = _panel_stats(panel, prior_panel)
+        d = _panel_stats(current_panel, prior_panel)
         prior_rows = dev_rows[max(0, start - TEST_BLOCK):start]
-        f_rel = _feature_reliability(test, prior_rows)
-        s_rel = _source_reliability(test, blocks)
-        i_shock = _information_shock(test, prior_rows)
-        p_momentum = _prediction_momentum(panel, prior_panel, prior2_panel)
-        regime = _block_regime(test)
+        f_rel = _feature_reliability(current_rows, prior_rows)
+        s_rel = _source_reliability(current_rows, blocks)
+        i_shock = _information_shock(current_rows, prior_rows)
+        p_momentum = _prediction_momentum(current_panel, prior_panel, prior2_panel)
+        regime = _block_regime(current_rows)
         r_trans = _regime_transition(regime, blocks)
         state = {
             "disagreement": d,
@@ -836,7 +858,17 @@ def _development(rows):
             calibrated = full_raw
 
         invariant = _invariant_features(blocks, len(test[0]["x"]))
-        cf = _counterfactual_stability(models, np.asarray([r["x"] for r in test], dtype=float))
+        cf = _counterfactual_stability(
+            models, np.asarray([current_rows[0]["x"]], dtype=float)
+        )
+        causal_cf = {
+            **cf,
+            "instability": (
+                float(np.clip(1.0 - float(cf.get("stability", 1.0)), 0.0, 1.0))
+                if cf.get("stability") is not None else None
+            ),
+        }
+        state["counterfactual_stability"] = causal_cf
         b = {
             "index": len(blocks),
             "test_start": test[0]["created"],
@@ -862,8 +894,9 @@ def _development(rows):
             "failure_state": failure_state,
             "meta_counts": meta_counts,
             "invariant": invariant,
-            "counterfactual": cf,
+            "counterfactual": causal_cf,
             "source_outcomes": {},
+            "causal_state_scope": "first_prediction_row_of_oos_block",
             "selective_score_rows": (
                 0.45 * calibrated.max(axis=1)
                 + 0.25 * state["predictability"]["global"]
@@ -1053,6 +1086,12 @@ def evaluate(horizon, max_rows=9000):
             "n_rows": len(rows),
             "required": MIN_TRAIN + TEST_BLOCK * 13,
             "production_changed": False,
+            "promotion": {
+                "eligible": False,
+                "promotion_allowed": False,
+                "decision": "HOLD",
+                "reason": "research evidence deferred: insufficient archive rows",
+            },
         }
 
     blocks, dev_rows, holdout = _development(rows)
@@ -1064,6 +1103,12 @@ def evaluate(horizon, max_rows=9000):
             "n_rows": len(rows),
             "blocks": len(blocks),
             "production_changed": False,
+            "promotion": {
+                "eligible": False,
+                "promotion_allowed": False,
+                "decision": "HOLD",
+                "reason": "research evidence deferred: insufficient chronological OOS blocks",
+            },
         }
 
     names = [
