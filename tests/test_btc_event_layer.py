@@ -185,6 +185,18 @@ class TestBTCEventLayer(unittest.TestCase):
                 strict_pit=True,
             )
 
+    def test_event_availability_cannot_precede_event_time(self):
+        with self.assertRaisesRegex(ValueError, "event_time_after_availability"):
+            make_event(
+                source="test",
+                venue="test",
+                event_type="x",
+                event_time_ms=3_000,
+                available_at_ms=2_000,
+                retrieved_at_ms=4_000,
+                payload={},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
