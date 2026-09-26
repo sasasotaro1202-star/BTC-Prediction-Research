@@ -24,6 +24,7 @@ class TestBTCEventLayer(unittest.TestCase):
         }
         event = event_from_binance_kline(row)
         self.assertEqual(event["event_type"], "kline_1m")
+        self.assertEqual(event["source"], "binance_ws")
         self.assertEqual(event["available_at_ms"], 3_000)
         self.assertEqual(event["payload"]["taker_sell_base"], 4.0)
         self.assertAlmostEqual(event["payload"]["taker_imbalance"], 0.2)
@@ -197,6 +198,27 @@ class TestBTCEventLayer(unittest.TestCase):
                 payload={},
             )
 
+
+    def test_rest_seed_cache_is_not_mislabeled_as_websocket(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from scripts.build_btc_event_situation_card import load_events
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "kline.json").write_text(json.dumps({
+                "schema_version": 1,
+                "source": "Binance USD-M Futures WebSocket",
+                "recovery_epoch_ms": 2_500,
+                "rows": [{
+                    "open_time_ms": 1_000, "open": 100, "high": 101, "low": 99,
+                    "close": 100.5, "volume": 5, "taker_buy_base": 3,
+                    "event_time_ms": 2_000, "retrieved_at_ms": 2_500,
+                }],
+            }), encoding="utf-8")
+            events = load_events(root / "kline.json", root / "missing.json")
+            self.assertEqual(events[0]["source"], "binance_futures_rest_seed")
 
 if __name__ == "__main__":
     unittest.main()
