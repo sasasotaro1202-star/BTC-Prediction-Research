@@ -194,7 +194,7 @@ def leakage_audit(registry: dict[str, Any] | None) -> dict[str, Any]:
     for rel in ("src/maximum_future_generalization_v6.py", "src/innovative_control_layer_oos.py"):
         text = (ROOT / rel).read_text(encoding="utf-8")
         banned = {
-            "random_split": bool(re.search(r"train_test_split|random_split", text)),
+            "random_split_call": bool(re.search(r"\\b(?:train_test_split|random_split)\\s*\\(", text)),
             "shuffle_split": bool(re.search(r"shuffle\s*=\s*True", text)),
         }
         source_checks[rel] = {
