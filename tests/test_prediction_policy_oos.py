@@ -238,5 +238,41 @@ class TestPredictionPolicyV13(unittest.TestCase):
         )
 
 
+    def test_abstain_output_is_not_counted_as_covered(self):
+        block = {
+            "index": 0,
+            "y": ["DOWN"],
+            "state": {
+                "predictability": {"global": 0.19, "velocity": 0.0, "acceleration": 0.0},
+                "uncertainty": {"total": 0.40},
+                "regime_transition": {
+                    "current": "RANGE", "next_regime": "RANGE",
+                    "next_probability": {"RANGE": 1.0}, "stay_probability": 1.0,
+                },
+                "information_shock": {"shock_score": 0.0},
+                "prediction_momentum": {"velocity": 0.0, "acceleration": 0.0, "reversal": 0.0},
+                "counterfactual_stability": {"instability": 0.0},
+                "hidden_state": {"stress": 0.0},
+                "feature_reliability": {"global": 0.9},
+                "source_reliability": 0.9,
+                "error_correlation": {"mean_abs_error_correlation": 0.2},
+                "hard_negative_density": 0.1,
+                "drift": {"feature_drift": 0.1, "prediction_drift": 0.0, "drift_score": 0.1},
+            },
+            "failure_state": {"mean": 0.20, "max": 0.20, "expected_time_to_failure_blocks": 2.0},
+            "variants": {
+                "soft_ensemble": {"probs": [[0.60, 0.20, 0.20]]},
+                "three_layers_regime": {"probs": [[0.55, 0.20, 0.25]]},
+                "three_layers_retrieval": {"probs": [[0.50, 0.20, 0.30]]},
+                "adaptive_ensemble": {"probs": [[0.55, 0.20, 0.25]]},
+                "full_architecture": {"probs": [[0.50, 0.20, 0.30]]},
+            },
+        }
+        case = evaluate_policy_case(block)
+        self.assertEqual(case["output_selection"]["format"], "ABSTAIN")
+        self.assertFalse(case["covered"])
+        self.assertIsNone(case["probs"])
+
+
 if __name__ == "__main__":
     unittest.main()
