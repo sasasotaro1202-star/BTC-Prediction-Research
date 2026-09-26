@@ -571,8 +571,11 @@ def resilient_1m_series(limit: int = 120):
             fut = fresh_by
             status["price_feature_fallback"] = "bybit"
         else:
-            status["price_feature_fallback"] = "none"
-    elif len(fut) < 40:
+            # Do not stop the fallback chain on stale/fragmented Bybit data.
+            # Continue to source-native Coinbase/Kraken recovery and remain
+            # fail-closed if those sources also cannot provide fresh history.
+            status["bybit_fallback"] = "stale_or_insufficient"
+    if len(fut) < 40:
         try:
             cb = _fresh_closed_candle_suffix(
                 coinbase_rows(min(300, max(120, limit))), 40
