@@ -1002,6 +1002,9 @@ jobs:
           for path in \
             data/historical_research/bootstrap_status.json \
             data/historical_research/research_health.json \
+            data/historical_research/research_input_audit.json \
+            data/historical_research/production_artifact_audit.json \
+            data/historical_research/pit_oos_audit.json \
             data/historical_research/venue_drift.json \
             data/historical_research/flat_diagnostic.json \
             data/historical_research/performance_snapshot.json \
@@ -1024,6 +1027,9 @@ jobs:
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
             if [ -f data/historical_research/bootstrap_status.json ]; then cp data/historical_research/bootstrap_status.json /tmp/btc_local_bootstrap_status.json; fi
+            if [ -f data/historical_research/research_input_audit.json ]; then cp data/historical_research/research_input_audit.json /tmp/btc_local_research_input_audit.json; fi
+            if [ -f data/historical_research/production_artifact_audit.json ]; then cp data/historical_research/production_artifact_audit.json /tmp/btc_local_production_artifact_audit.json; fi
+            if [ -f data/historical_research/pit_oos_audit.json ]; then cp data/historical_research/pit_oos_audit.json /tmp/btc_local_pit_oos_audit.json; fi
             if [ -d data/historical_research/pit_history ]; then rm -rf /tmp/btc_local_pit_history && cp -R data/historical_research/pit_history /tmp/btc_local_pit_history; fi
             if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
@@ -1072,6 +1078,9 @@ jobs:
               mkdir -p data/historical_research
               cp /tmp/btc_local_bootstrap_status.json data/historical_research/bootstrap_status.json
             fi
+            if [ -f /tmp/btc_local_research_input_audit.json ]; then cp /tmp/btc_local_research_input_audit.json data/historical_research/research_input_audit.json; fi
+            if [ -f /tmp/btc_local_production_artifact_audit.json ]; then cp /tmp/btc_local_production_artifact_audit.json data/historical_research/production_artifact_audit.json; fi
+            if [ -f /tmp/btc_local_pit_oos_audit.json ]; then cp /tmp/btc_local_pit_oos_audit.json data/historical_research/pit_oos_audit.json; fi
             if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
             if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
             if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
@@ -1085,6 +1094,9 @@ jobs:
             for path in \
               data/historical_research/bootstrap_status.json \
               data/historical_research/research_health.json \
+              data/historical_research/research_input_audit.json \
+              data/historical_research/production_artifact_audit.json \
+              data/historical_research/pit_oos_audit.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
               data/experience/experience_summary.json; do
