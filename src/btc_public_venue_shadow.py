@@ -87,6 +87,18 @@ def parse_hyperliquid_message(message: Any, retrieved_at_ms: int,
         )
         return [event] if event else []
 
+    if channel == "activeAssetCtx" and isinstance(data, dict) and data.get("coin") == coin:
+        ctx = data.get("ctx")
+        if not isinstance(ctx, dict) or not _num(ctx.get("markPx")):
+            return []
+        event = normalize_event(
+            "hyperliquid", "hyperliquid_perp", "asset_context",
+            int(ctx.get("timestamp", data.get("time", 0))),
+            retrieved_at_ms,
+            {"coin": coin, "ctx": ctx},
+        )
+        return [event] if event else []
+
     if channel == "trades" and isinstance(data, list):
         out = []
         for trade in data:
@@ -167,18 +179,18 @@ def parse_bitget_message(message: Any, retrieved_at_ms: int,
     return out
 
 
-async def _app_ping(ws: Any) -> None:
+async def _app_ping(ws: Any, mode: str) -> None:
     while True:
         await asyncio.sleep(25)
         try:
-            await ws.send("ping")
+            await ws.send(json.dumps({"method": "ping"}) if mode == "hyperliquid" else "ping")
         except Exception:
             return
 
 
 async def capture_socket(url: str, subscription: dict[str, Any],
                          parser: Callable[[Any, int], list[dict[str, Any]]],
-                         duration_seconds: float) -> list[dict[str, Any]]:
+                         duration_seconds: float, heartbeat_mode: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     try:
         async with websockets.connect(
@@ -186,7 +198,7 @@ async def capture_socket(url: str, subscription: dict[str, Any],
             close_timeout=5, max_size=4_000_000,
         ) as ws:
             await ws.send(json.dumps(subscription, separators=(",", ":")))
-            ping_task = asyncio.create_task(_app_ping(ws))
+            ping_task = asyncio.create_task(_app_ping(ws, heartbeat_mode))
             deadline = time.monotonic() + max(1.0, duration_seconds)
             try:
                 while time.monotonic() < deadline:
@@ -215,9 +227,11 @@ async def capture_socket(url: str, subscription: dict[str, Any],
 async def collect_shadow(duration_seconds: float = 60.0) -> list[dict[str, Any]]:
     jobs = [
         (HYPERLIQUID_WS, {"method": "subscribe", "subscription": {"type": "l2Book", "coin": "BTC"}},
-         parse_hyperliquid_message),
+         parse_hyperliquid_message, "hyperliquid"),
         (HYPERLIQUID_WS, {"method": "subscribe", "subscription": {"type": "trades", "coin": "BTC"}},
-         parse_hyperliquid_message),
+         parse_hyperliquid_message, "hyperliquid"),
+        (HYPERLIQUID_WS, {"method": "subscribe", "subscription": {"type": "activeAssetCtx", "coin": "BTC"}},
+         parse_hyperliquid_message, "hyperliquid"),
         (BITGET_WS, {"op": "subscribe", "args": [
             {"instType": "usdt-futures", "topic": "books5", "symbol": "BTCUSDT"},
             {"instType": "usdt-futures", "topic": "publicTrade", "symbol": "BTCUSDT"},
@@ -225,8 +239,8 @@ async def collect_shadow(duration_seconds: float = 60.0) -> list[dict[str, Any]]
         ]}, parse_bitget_message),
     ]
     groups = await asyncio.gather(*(
-        capture_socket(url, subscription, parser, duration_seconds)
-        for url, subscription, parser in jobs
+        capture_socket(url, subscription, parser, duration_seconds, heartbeat)
+        for url, subscription, parser, heartbeat in jobs
     ))
     events = [event for group in groups for event in group]
     events.sort(key=lambda e: (e["event_time_ms"], e["event_id"]))
