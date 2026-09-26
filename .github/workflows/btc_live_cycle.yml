@@ -788,6 +788,9 @@ jobs:
           audit_path = Path("data/historical_research/pit_oos_audit.json")
           history_dir = Path("data/historical_research/pit_history")
           if not audit_path.is_file():
+              if os.environ.get("BTC_LIVE_DEFERRED") == "1":
+                  print("PIT audit unavailable because live prediction was safely DEFERRED; no PIT snapshot is fabricated.")
+                  raise SystemExit(0)
               raise SystemExit("PIT audit output missing; refusing to record history")
           result = json.loads(audit_path.read_text(encoding="utf-8"))
           if not isinstance(result, dict):
