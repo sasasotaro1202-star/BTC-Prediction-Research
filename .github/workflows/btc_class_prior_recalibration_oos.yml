@@ -1,0 +1,86 @@
+name: BTC Class-Prior Recalibration OOS
+
+# Research-only: tests whether severe FLAT under-frequency is partly a
+# probability-prior mismatch. No production mutation or promotion is possible.
+on:
+  schedule:
+    - cron: '13 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/class_prior_recalibration_oos.py'
+      - 'src/model_compare.py'
+      - 'tests/test_class_prior_recalibration_oos.py'
+      - '.github/workflows/btc_class_prior_recalibration_oos.yml'
+
+concurrency:
+  group: btc-class-prior-recalibration-oos
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile experiment and test
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m unittest -q tests/test_class_prior_recalibration_oos.py
+      - name: Run causal class-prior OOS experiment
+        run: |
+          set -euo pipefail
+          python src/class_prior_recalibration_oos.py
+          test -s data/historical_research/class_prior_recalibration_oos.json
+      - name: Verify research-only and frozen-holdout contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/class_prior_recalibration_oos.json').read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('class-prior experiment must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('class-prior experiment changed production')
+          for horizon, result in obj.get('horizons', {}).items():
+              if result.get('status') == 'OK':
+                  if result.get('final_holdout_protected') is not True:
+                      raise SystemExit(f'{horizon}: final holdout is not protected')
+                  if result.get('final_holdout_used_for_selection') is not False:
+                      raise SystemExit(f'{horizon}: final holdout was used for selection')
+          print('class-prior recalibration OOS contract: VERIFIED')
+          PY
+      - name: Upload evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-class-prior-recalibration-oos
+          path: data/historical_research/class_prior_recalibration_oos.json
+          if-no-files-found: error
+          retention-days: 14
