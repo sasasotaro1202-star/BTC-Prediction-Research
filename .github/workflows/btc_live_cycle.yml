@@ -971,6 +971,7 @@ jobs:
             data/experience/experience_summary.json; do
             if [ -f "$path" ]; then git add -- "$path"; fi
           done
+          if [ -d data/historical_research/pit_history ]; then git add -- data/historical_research/pit_history; fi
           for path in models/*.json models/*.joblib; do
             if [ -f "$path" ]; then git add -- "$path"; fi
           done
@@ -985,6 +986,7 @@ jobs:
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
             if [ -f data/historical_research/bootstrap_status.json ]; then cp data/historical_research/bootstrap_status.json /tmp/btc_local_bootstrap_status.json; fi
+            if [ -d data/historical_research/pit_history ]; then rm -rf /tmp/btc_local_pit_history && cp -R data/historical_research/pit_history /tmp/btc_local_pit_history; fi
             if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
             if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
             if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
@@ -1019,6 +1021,15 @@ jobs:
             # run/prediction that just completed. Restore it after rebasing so
             # a conflict cannot silently roll the status back to an older run.
             if [ -f /tmp/btc_local_live_cycle_status.json ]; then cp /tmp/btc_local_live_cycle_status.json data/live_cycle_status.json; fi
+            if [ -d /tmp/btc_local_pit_history ]; then
+              mkdir -p data/historical_research/pit_history
+              for local_history in /tmp/btc_local_pit_history/pit_*.json; do
+                if [ -f "$local_history" ]; then
+                  target_history="data/historical_research/pit_history/$(basename "$local_history")"
+                  if [ ! -e "$target_history" ]; then cp "$local_history" "$target_history"; fi
+                fi
+              done
+            fi
             if [ -f /tmp/btc_local_bootstrap_status.json ]; then
               mkdir -p data/historical_research
               cp /tmp/btc_local_bootstrap_status.json data/historical_research/bootstrap_status.json
@@ -1041,6 +1052,7 @@ jobs:
               data/experience/experience_summary.json; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
+            if [ -d data/historical_research/pit_history ]; then git add -- data/historical_research/pit_history; fi
             for path in models/*.json models/*.joblib; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
