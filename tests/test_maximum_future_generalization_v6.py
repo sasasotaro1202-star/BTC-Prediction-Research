@@ -7,6 +7,7 @@ from src.maximum_future_generalization_v6 import (
     _bootstrap_ci,
     _conformal_eval,
     _compute_tier,
+    _causal_current_snapshot,
 )
 
 
@@ -53,6 +54,20 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         out = _conformal_eval(probs, ["DOWN", "FLAT"], {"q": 0.9, "alpha": 0.1})
         self.assertIn("coverage", out)
         self.assertIn("mean_set_size", out)
+
+    def test_causal_current_snapshot_excludes_later_block_rows(self):
+        rows = [
+            {"x": [1.0, 2.0, 3.0]},
+            {"x": [9.0, 9.0, 9.0]},
+        ]
+        panel = self._panel()
+        panel = {k: v[:2] for k, v in panel.items()}
+        current_rows, current_panel = _causal_current_snapshot(rows, panel)
+        self.assertEqual(current_rows, [rows[0]])
+        for values in current_panel.values():
+            self.assertEqual(values.shape, (1, 3))
+        self.assertTrue(np.array_equal(current_panel["logreg"][0], panel["logreg"][0]))
+
 
     def test_compute_tier_is_deterministic(self):
         self.assertEqual(_compute_tier(0.9, 0.1, 0.1), "STANDARD")
