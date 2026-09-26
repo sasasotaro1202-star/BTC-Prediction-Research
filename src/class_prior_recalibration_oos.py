@@ -9,7 +9,7 @@ on development data and is descriptive only.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -329,7 +329,7 @@ def main():
         "production_changed": False,
         "promotion_evidence_eligible": False,
         "horizons": {h: evaluate(h) for h in HORIZONS},
-        "generated_at_utc": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
