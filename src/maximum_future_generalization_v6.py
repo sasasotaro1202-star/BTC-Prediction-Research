@@ -943,7 +943,7 @@ def _development(rows):
             "calibration_temperature": t,
             "state": state,
             "failure_state": failure_state,
-            "meta_counts": meta_counts,
+            "meta_counts": meta_stats,
             "invariant": invariant,
             "counterfactual": causal_cf,
             "source_outcomes": {},
