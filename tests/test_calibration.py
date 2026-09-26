@@ -65,11 +65,15 @@ class TestCalibration(unittest.TestCase):
             root = Path(td)
             model_dir = root / "models"
             model_dir.mkdir()
+            (model_dir / "10m.joblib").write_bytes(b"model-generation-a")
+            import hashlib
+            model_sha256 = hashlib.sha256(b"model-generation-a").hexdigest()
             cached = {
                 "horizon": "10m",
                 "temperature": 0.8,
                 "n_settled": 2153,
                 "model_version": "bootstrap.bootstrap_rf",
+                "model_sha256": model_sha256,
             }
             (model_dir / "10m.calibration.json").write_text(json.dumps(cached), encoding="utf-8")
             db = root / "predictions.db"
@@ -82,7 +86,7 @@ class TestCalibration(unittest.TestCase):
                 # Helper uses the same artifact shape as production and must return
                 # true without requiring fresh rows.
                 obj = calibration_module._calibration_state(model_dir / "10m.calibration.json")
-                self.assertTrue(calibration_module._can_reuse_cached_calibration(obj, "10m", "bootstrap.bootstrap_rf", 2153))
+                self.assertTrue(calibration_module._can_reuse_cached_calibration(obj, "10m", "bootstrap.bootstrap_rf", 2153, model_sha256))
 
     def test_save_temperature_skips_semantically_unchanged_artifact(self):
         import json
@@ -102,6 +106,7 @@ class TestCalibration(unittest.TestCase):
                 "fit_logloss": None,
                 "holdout_logloss": None,
                 "holdout_fraction": 0.25,
+                "model_sha256": None,
                 "updated_at_utc": "2026-01-01T00:00:00+00:00",
             }), encoding="utf-8")
             before = path.read_text(encoding="utf-8")
@@ -179,6 +184,20 @@ class TestCalibration(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertIsNone(con.sql)
 
+    def test_cache_reuse_rejects_mismatched_model_artifact_hash(self):
+        cached = {
+            'horizon': '5m',
+            'model_version': 'bootstrap.example.v1',
+            'n_settled': 500,
+            'temperature': 1.1,
+            'model_sha256': 'a' * 64,
+        }
+        self.assertFalse(
+            calibration._can_reuse_cached_calibration(
+                cached, '5m', 'bootstrap.example.v1', 500, 'b' * 64
+            )
+        )
+
     def test_cache_reuse_requires_same_generation_and_sample_count(self):
         cached = {
             'horizon': '5m',
@@ -186,10 +205,29 @@ class TestCalibration(unittest.TestCase):
             'n_settled': 500,
             'temperature': 1.1,
         }
-        self.assertTrue(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500))
+        self.assertTrue(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500, None))
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '10m', 'bootstrap.example.v1', 500))
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v2', 500))
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 501))
+
+    def test_saved_calibration_binds_model_artifact_hash(self):
+        import hashlib
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            model_dir = Path(td)
+            payload = b"generation-x"
+            (model_dir / "5m.joblib").write_bytes(payload)
+            expected = hashlib.sha256(payload).hexdigest()
+            with patch.object(calibration_module, "MODEL_DIR", model_dir):
+                calibration_module.save_temperature(
+                    "5m", 1.0, 300, 0.9, 0.95, 0.25, "bootstrap.example.v1"
+                )
+            obj = json.loads((model_dir / "5m.calibration.json").read_text(encoding="utf-8"))
+            self.assertEqual(obj["model_sha256"], expected)
 
     def test_uses_canonical_root_model_directory(self):
         self.assertEqual(calibration.MODEL_DIR, ROOT / 'models')
