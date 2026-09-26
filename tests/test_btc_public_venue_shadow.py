@@ -58,3 +58,13 @@ def test_situation_card_respects_prediction_cutoff():
     assert card["event_count"] == 2
     assert card["trade_imbalance"]["bitget"] == 1.0
     assert future_trade["event_id"] not in card["used_event_ids"]
+
+
+def test_validation_reports_provenance_quality_metrics():
+    event = normalize_event("x", "venue-a", "trade", 100, 110, {"p": 1})
+    result = validate_event_set([event], cutoff_ms=120)
+    assert result["source_counts"] == {"x": 1}
+    assert result["event_type_counts"] == {"trade": 1}
+    assert result["availability_lag_ms_max"] == 10
+    assert result["availability_lag_ms_p95"] == 10
+    assert result["event_time_span_ms"] == 0
