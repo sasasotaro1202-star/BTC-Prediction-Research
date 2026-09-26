@@ -70,6 +70,44 @@ class TestPredictionPolicyV13(unittest.TestCase):
         )
         self.assertEqual(action["action"], "MAINTAIN")
 
+    def test_abstain_policy_case_has_no_model_variant(self):
+        state = {
+            "predictability": {"global": 0.01, "velocity": 0.0, "acceleration": 0.0},
+            "uncertainty": {"total": 0.98},
+            "regime_transition": {
+                "current": "RANGE",
+                "next_regime": "RANGE",
+                "next_probability": {"RANGE": 1.0},
+                "stay_probability": 1.0,
+            },
+            "information_shock": {"shock_score": 0.0, "update_rate": 0.0},
+            "prediction_momentum": {"velocity": 0.0, "acceleration": 0.0, "reversal": 0.0},
+            "counterfactual_stability": {"instability": 0.0},
+            "feature_reliability": {"global": 0.9},
+            "source_reliability": 0.9,
+            "error_correlation": {"mean_abs_error_correlation": 0.2},
+            "hard_negative_density": 0.1,
+            "drift": {"feature_drift": 0.1, "prediction_drift": 0.0, "drift_score": 0.1},
+        }
+        block = {
+            "index": 0,
+            "y": ["DOWN"],
+            "state": state,
+            "failure_state": {
+                "mean": 0.95,
+                "max": 0.99,
+                "expected_time_to_failure_blocks": 1.0,
+            },
+            "variants": {
+                "soft_ensemble": {"probs": [[0.6, 0.2, 0.2]]},
+            },
+        }
+        case = evaluate_policy_case(block)
+        self.assertEqual(case["strategy_selection"]["strategy"], "ABSTAIN")
+        self.assertIsNone(case["variant"])
+        self.assertIsNone(case["probs"])
+        self.assertFalse(case["covered"])
+
     def test_information_value_is_not_fabricated(self):
         state = _state(self._result())
         ranked = rank_information_sources(state)
