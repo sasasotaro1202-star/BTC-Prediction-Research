@@ -286,6 +286,22 @@ jobs:
           PY
           test -s data/historical_research/btc_ultimate_final_v13_e2e_report.md
 
+      - name: Upload V13 E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-ultimate-final-v13-e2e
+          path: |
+            data/historical_research/maximum_future_generalization_v6_registry.json
+            data/historical_research/maximum_future_generalization_*.json
+            data/historical_research/prediction_policy_oos.json
+            data/historical_research/production_artifact_audit.json
+            data/historical_research/pit_oos_audit.json
+            data/historical_research/research_input_audit.json
+            data/historical_research/btc_ultimate_final_v13_e2e_report.md
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Record V13 run completion
         if: always()
         shell: bash
@@ -344,18 +360,3 @@ jobs:
             sleep $((2 * attempt))
           done
           if [ "$pushed" -ne 1 ]; then exit 1; fi
-      - name: Upload V13 E2E evidence
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: btc-ultimate-final-v13-e2e
-          path: |
-            data/historical_research/maximum_future_generalization_v6_registry.json
-            data/historical_research/maximum_future_generalization_*.json
-            data/historical_research/prediction_policy_oos.json
-            data/historical_research/production_artifact_audit.json
-            data/historical_research/pit_oos_audit.json
-            data/historical_research/research_input_audit.json
-            data/historical_research/btc_ultimate_final_v13_e2e_report.md
-          if-no-files-found: warn
-          retention-days: 14
