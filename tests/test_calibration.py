@@ -126,7 +126,7 @@ class TestCalibration(unittest.TestCase):
         self.assertNotIn('p_up_5mm', con.sql)
         self.assertNotIn('p_down_5mm', con.sql)
         self.assertNotIn('p_flat_5mm', con.sql)
-        self.assertEqual(con.params, ('5m:bootstrap.example.v1|%',))
+        self.assertEqual(con.params, ('%|5m:bootstrap.example.v1|%',))
 
     def test_settled_rows_excludes_fallback_venue_from_production_calibration(self):
         rows = [
@@ -149,7 +149,24 @@ class TestCalibration(unittest.TestCase):
         )
         self.assertIn('p_up_10m', con.sql)
         self.assertNotIn('p_up_10mm', con.sql)
-        self.assertEqual(con.params, ('10m:bootstrap.example.v1|%',))
+        self.assertEqual(con.params, ('%|10m:bootstrap.example.v1|%',))
+
+    def test_settled_rows_matches_10m_segment_in_combined_model_version(self):
+        rows = [
+            (0.80, 0.10, 0.10, 'DOWN', '{"production_mode":"binance_primary"}'),
+            (0.10, 0.20, 0.70, 'UP', '{"production_mode":"coinbase_fallback"}'),
+        ]
+        con = _FakeConnection(rows)
+        out = calibration._settled_rows(
+            con, '10m', 'actual_direction_10m', 'bootstrap.example.v1'
+        )
+        self.assertEqual(
+            out,
+            [
+                (0.80, 0.10, 0.10, 'DOWN'),
+            ],
+        )
+        self.assertEqual(con.params, ('%|10m:bootstrap.example.v1|%',))
 
     def test_invalid_horizon_returns_no_rows_without_query(self):
         con = _FakeConnection()
