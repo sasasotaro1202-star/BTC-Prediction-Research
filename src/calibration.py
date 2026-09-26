@@ -1,4 +1,4 @@
-import json, math, sqlite3
+import hashlib, json, math, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
@@ -9,6 +9,18 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / 'models'
 MIN_CALIBRATION = 300
 HOLDOUT_FRACTION = 0.25
+
+
+def _model_artifact_sha256(horizon):
+    path = MODEL_DIR / f"{horizon}.joblib"
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
 
 
 def multiclass_metrics(rows, horizon):
@@ -88,6 +100,7 @@ def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout
         'fit_logloss':None if fit_logloss is None else float(fit_logloss),
         'holdout_logloss':None if eval_logloss is None else float(eval_logloss),
         'holdout_fraction':float(holdout_fraction),
+        'model_sha256':_model_artifact_sha256(horizon),
         'updated_at_utc':datetime.now(timezone.utc).isoformat()
     }
     try:
@@ -165,15 +178,17 @@ def _frozen_model_temperature(horizon, model_version):
         return None
 
 
-def _can_reuse_cached_calibration(cached, horizon, model_version, n_settled):
-    if not isinstance(cached, dict):
+def _can_reuse_cached_calibration(cached, horizon, model_version, n_settled, model_sha256):
+    if not isinstance(cached, dict) or not isinstance(model_sha256, str) or len(model_sha256) != 64:
         return False
     try:
+        int(model_sha256, 16)
         return (
             cached.get('horizon') == horizon
             and cached.get('model_version') == model_version
             and int(cached.get('n_settled', -1)) == int(n_settled)
             and 0.5 <= float(cached.get('temperature', 1.0)) <= 3.0
+            and cached.get('model_sha256') == model_sha256
         )
     except (TypeError, ValueError):
         return False
@@ -187,6 +202,7 @@ def calibration():
         with sqlite3.connect(DB) as con:
             model_version=_current_registry_version(con,horizon_name)
             rows=_settled_rows(con,horizon_name,actual_col,model_version)
+            model_sha256 = _model_artifact_sha256(horizon_name)
             if not rows:
                 # Never destroy a previously verified calibration just because
                 # the current calibration window has temporarily produced zero
@@ -199,7 +215,7 @@ def calibration():
                     and int(cached.get("n_settled", 0)) > 0
                     and _can_reuse_cached_calibration(
                         cached, horizon_name, model_version,
-                        int(cached.get("n_settled", -1)),
+                        int(cached.get("n_settled", -1)), model_sha256,
                     )
                 ):
                     print(
@@ -249,7 +265,7 @@ def calibration():
                 continue
             path=MODEL_DIR/f'{horizon_name}.calibration.json'
             cached=_calibration_state(path)
-            if _can_reuse_cached_calibration(cached,horizon_name,model_version,len(rows)):
+            if _can_reuse_cached_calibration(cached,horizon_name,model_version,len(rows),model_sha256):
                 print(horizon_name,': calibration unchanged; reusing cached temperature',cached.get('temperature'),'n_settled',len(rows),'model_version',model_version)
                 continue
             acc,ll,brier,ece=multiclass_metrics(rows,horizon_name)
