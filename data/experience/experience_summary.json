@@ -1,13 +1,13 @@
 {
-  "generated_at_utc": "2026-09-26T20:40:16.888819+00:00",
+  "generated_at_utc": "2026-09-26T20:43:51.250282+00:00",
   "horizons": {
     "10m": {
       "cases": {
         "confidence_bucket": {
           "0.33-0.40": {
-            "accuracy": 0.32432432432432434,
-            "avg_confidence": 0.3797949268619031,
-            "n": 37
+            "accuracy": 0.3157894736842105,
+            "avg_confidence": 0.37949233841382346,
+            "n": 38
           },
           "0.40-0.50": {
             "accuracy": 0.46153846153846156,
@@ -101,6 +101,11 @@
             "avg_confidence": 0.44345753066188914,
             "n": 11
           },
+          "5": {
+            "accuracy": 0.2,
+            "avg_confidence": 0.45328714462268255,
+            "n": 10
+          },
           "6": {
             "accuracy": 0.5454545454545454,
             "avg_confidence": 0.49617515323263267,
@@ -124,9 +129,9 @@
         },
         "model_version": {
           "5m:bootstrap.bootstrap_rf|10m:bootstrap.bootstrap_rf": {
-            "accuracy": 0.43617021276595747,
-            "avg_confidence": 0.6222396987806217,
-            "n": 188
+            "accuracy": 0.43386243386243384,
+            "avg_confidence": 0.6208960843205912,
+            "n": 189
           },
           "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1": {
             "accuracy": 0.46153846153846156,
@@ -146,9 +151,9 @@
             "n": 211
           },
           "UP": {
-            "accuracy": 0.41007194244604317,
-            "avg_confidence": 0.5777103821263663,
-            "n": 139
+            "accuracy": 0.40714285714285714,
+            "avg_confidence": 0.5762145691528557,
+            "n": 140
           }
         },
         "production_mode": {
@@ -158,9 +163,9 @@
             "n": 132
           },
           "binance_primary": {
-            "accuracy": 0.4457831325301205,
-            "avg_confidence": 0.438043441934684,
-            "n": 83
+            "accuracy": 0.44047619047619047,
+            "avg_confidence": 0.43721312198111484,
+            "n": 84
           },
           "coinbase_fallback": {
             "accuracy": 0.46153846153846156,
@@ -170,9 +175,9 @@
         },
         "regime": {
           "RANGE": {
-            "accuracy": 0.40932642487046633,
-            "avg_confidence": 0.5186078442075798,
-            "n": 193
+            "accuracy": 0.4072164948453608,
+            "avg_confidence": 0.5178330438035967,
+            "n": 194
           },
           "TREND": {
             "accuracy": 0.5,
@@ -247,11 +252,11 @@
           "n": 100
         },
         "1000": {
-          "accuracy": 0.4245810055865922,
+          "accuracy": 0.4233983286908078,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.62,
-              "n": 150
+              "hit_rate": 0.6158940397350994,
+              "n": 151
             },
             "FLAT": {
               "hit_rate": 0.03125,
@@ -272,17 +277,17 @@
               "n": 8
             },
             "UP": {
-              "accuracy": 0.41007194244604317,
-              "n": 139
+              "accuracy": 0.40714285714285714,
+              "n": 140
             }
           },
-          "n": 358
+          "n": 359
         },
         "300": {
-          "accuracy": 0.45,
+          "accuracy": 0.44666666666666666,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.6666666666666666,
+              "hit_rate": 0.6589147286821705,
               "n": 129
             },
             "FLAT": {
@@ -296,26 +301,26 @@
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.4574468085106383,
-              "n": 188
+              "accuracy": 0.45454545454545453,
+              "n": 187
             },
             "FLAT": {
               "accuracy": 0.25,
               "n": 8
             },
             "UP": {
-              "accuracy": 0.4519230769230769,
-              "n": 104
+              "accuracy": 0.44761904761904764,
+              "n": 105
             }
           },
           "n": 300
         },
         "5000": {
-          "accuracy": 0.4245810055865922,
+          "accuracy": 0.4233983286908078,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.62,
-              "n": 150
+              "hit_rate": 0.6158940397350994,
+              "n": 151
             },
             "FLAT": {
               "hit_rate": 0.03125,
@@ -336,19 +341,19 @@
               "n": 8
             },
             "UP": {
-              "accuracy": 0.41007194244604317,
-              "n": 139
+              "accuracy": 0.40714285714285714,
+              "n": 140
             }
           },
-          "n": 358
+          "n": 359
         }
       },
       "total": {
-        "accuracy": 0.4245810055865922,
+        "accuracy": 0.4233983286908078,
         "by_actual": {
           "DOWN": {
-            "hit_rate": 0.62,
-            "n": 150
+            "hit_rate": 0.6158940397350994,
+            "n": 151
           },
           "FLAT": {
             "hit_rate": 0.03125,
@@ -369,24 +374,24 @@
             "n": 8
           },
           "UP": {
-            "accuracy": 0.41007194244604317,
-            "n": 139
+            "accuracy": 0.40714285714285714,
+            "n": 140
           }
         },
-        "n": 358
+        "n": 359
       },
       "weak_cases_for_research": [
+        {
+          "accuracy": 0.3157894736842105,
+          "case": "0.33-0.40",
+          "dimension": "confidence_bucket",
+          "n": 38
+        },
         {
           "accuracy": 0.323943661971831,
           "case": "[\"order-book imbalance\"]",
           "dimension": "warning",
           "n": 71
-        },
-        {
-          "accuracy": 0.32432432432432434,
-          "case": "0.33-0.40",
-          "dimension": "confidence_bucket",
-          "n": 37
         }
       ]
     },
@@ -399,9 +404,9 @@
             "n": 86
           },
           "0.40-0.50": {
-            "accuracy": 0.41134751773049644,
-            "avg_confidence": 0.433574475479764,
-            "n": 141
+            "accuracy": 0.4084507042253521,
+            "avg_confidence": 0.433849043067215,
+            "n": 142
           },
           "0.50-0.60": {
             "accuracy": 0.2631578947368421,
@@ -491,9 +496,9 @@
             "n": 11
           },
           "5": {
-            "accuracy": 0.4,
-            "avg_confidence": 0.4215854331593488,
-            "n": 10
+            "accuracy": 0.36363636363636365,
+            "avg_confidence": 0.42621976404466316,
+            "n": 11
           },
           "6": {
             "accuracy": 0.5454545454545454,
@@ -518,9 +523,9 @@
         },
         "model_version": {
           "5m:bootstrap.bootstrap_rf|10m:bootstrap.bootstrap_rf": {
-            "accuracy": 0.390625,
-            "avg_confidence": 0.54029282429155,
-            "n": 192
+            "accuracy": 0.38860103626943004,
+            "avg_confidence": 0.5399418929371783,
+            "n": 193
           },
           "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1": {
             "accuracy": 0.35664335664335667,
@@ -540,9 +545,9 @@
             "n": 192
           },
           "FLAT": {
-            "accuracy": 0.5833333333333334,
-            "avg_confidence": 0.44428205469105164,
-            "n": 36
+            "accuracy": 0.5675675675675675,
+            "avg_confidence": 0.44504640653447747,
+            "n": 37
           },
           "UP": {
             "accuracy": 0.3283582089552239,
@@ -557,9 +562,9 @@
             "n": 132
           },
           "binance_primary": {
-            "accuracy": 0.47126436781609193,
-            "avg_confidence": 0.4259010429239829,
-            "n": 87
+            "accuracy": 0.4659090909090909,
+            "avg_confidence": 0.4264312932645945,
+            "n": 88
           },
           "coinbase_fallback": {
             "accuracy": 0.35664335664335667,
@@ -569,9 +574,9 @@
         },
         "regime": {
           "RANGE": {
-            "accuracy": 0.4010152284263959,
-            "avg_confidence": 0.4723542570808823,
-            "n": 197
+            "accuracy": 0.398989898989899,
+            "avg_confidence": 0.47235531170622036,
+            "n": 198
           },
           "TREND": {
             "accuracy": 0.34057971014492755,
@@ -617,12 +622,12 @@
           "accuracy": 0.44,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.5,
-              "n": 30
+              "hit_rate": 0.4838709677419355,
+              "n": 31
             },
             "FLAT": {
-              "hit_rate": 0.53125,
-              "n": 32
+              "hit_rate": 0.5483870967741935,
+              "n": 31
             },
             "UP": {
               "hit_rate": 0.3157894736842105,
@@ -631,12 +636,12 @@
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.3,
-              "n": 50
+              "accuracy": 0.30612244897959184,
+              "n": 49
             },
             "FLAT": {
-              "accuracy": 0.5862068965517241,
-              "n": 29
+              "accuracy": 0.5666666666666667,
+              "n": 30
             },
             "UP": {
               "accuracy": 0.5714285714285714,
@@ -646,11 +651,11 @@
           "n": 100
         },
         "1000": {
-          "accuracy": 0.356353591160221,
+          "accuracy": 0.35537190082644626,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.5614035087719298,
-              "n": 114
+              "hit_rate": 0.5565217391304348,
+              "n": 115
             },
             "FLAT": {
               "hit_rate": 0.16535433070866143,
@@ -667,21 +672,21 @@
               "n": 192
             },
             "FLAT": {
-              "accuracy": 0.5833333333333334,
-              "n": 36
+              "accuracy": 0.5675675675675675,
+              "n": 37
             },
             "UP": {
               "accuracy": 0.3283582089552239,
               "n": 134
             }
           },
-          "n": 362
+          "n": 363
         },
         "300": {
-          "accuracy": 0.37666666666666665,
+          "accuracy": 0.37333333333333335,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.5625,
+              "hit_rate": 0.5520833333333334,
               "n": 96
             },
             "FLAT": {
@@ -695,12 +700,12 @@
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.3312883435582822,
-              "n": 163
+              "accuracy": 0.3271604938271605,
+              "n": 162
             },
             "FLAT": {
-              "accuracy": 0.5833333333333334,
-              "n": 36
+              "accuracy": 0.5675675675675675,
+              "n": 37
             },
             "UP": {
               "accuracy": 0.37623762376237624,
@@ -710,11 +715,11 @@
           "n": 300
         },
         "5000": {
-          "accuracy": 0.356353591160221,
+          "accuracy": 0.35537190082644626,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.5614035087719298,
-              "n": 114
+              "hit_rate": 0.5565217391304348,
+              "n": 115
             },
             "FLAT": {
               "hit_rate": 0.16535433070866143,
@@ -731,23 +736,23 @@
               "n": 192
             },
             "FLAT": {
-              "accuracy": 0.5833333333333334,
-              "n": 36
+              "accuracy": 0.5675675675675675,
+              "n": 37
             },
             "UP": {
               "accuracy": 0.3283582089552239,
               "n": 134
             }
           },
-          "n": 362
+          "n": 363
         }
       },
       "total": {
-        "accuracy": 0.356353591160221,
+        "accuracy": 0.35537190082644626,
         "by_actual": {
           "DOWN": {
-            "hit_rate": 0.5614035087719298,
-            "n": 114
+            "hit_rate": 0.5565217391304348,
+            "n": 115
           },
           "FLAT": {
             "hit_rate": 0.16535433070866143,
@@ -764,15 +769,15 @@
             "n": 192
           },
           "FLAT": {
-            "accuracy": 0.5833333333333334,
-            "n": 36
+            "accuracy": 0.5675675675675675,
+            "n": 37
           },
           "UP": {
             "accuracy": 0.3283582089552239,
             "n": 134
           }
         },
-        "n": 362
+        "n": 363
       },
       "weak_cases_for_research": [
         {
@@ -822,5 +827,5 @@
   "schema_version": 1,
   "source": "post_settlement_predictions",
   "status": "OK",
-  "total_experiences": 720
+  "total_experiences": 722
 }
