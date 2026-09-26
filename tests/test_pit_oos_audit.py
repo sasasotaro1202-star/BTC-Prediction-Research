@@ -581,5 +581,44 @@ class TestPITOOSAudit(unittest.TestCase):
             self.assertEqual(result["coverage"]["5m"]["situation_meta_rows_needed"], 2998)
             self.assertEqual(result["coverage"]["10m"]["online_expert_rows_needed"], 138)
 
+
+    def test_pit_history_records_once_per_15_minute_bucket(self):
+        with tempfile.TemporaryDirectory() as td:
+            history_dir = Path(td) / "pit_history"
+            base = datetime(2026, 9, 26, 3, 8, tzinfo=timezone.utc)
+            result = {
+                "generated_at_utc": base.isoformat(),
+                "status": "PASS",
+                "pit_verified": True,
+                "verified_primary_predictions": 400,
+            }
+            first = record_pit_history(result, history_dir)
+            second = record_pit_history(
+                {**result, "generated_at_utc": (base + timedelta(minutes=5)).isoformat()},
+                history_dir,
+            )
+            self.assertEqual(first["status"], "RECORDED")
+            self.assertEqual(second["status"], "SKIPPED_EXISTING_BUCKET")
+            self.assertEqual(len(list(history_dir.glob("pit_*.json"))), 1)
+            saved = json.loads(next(history_dir.glob("pit_*.json")).read_text())
+            self.assertEqual(saved["history"]["bucket_start_utc"], "2026-09-26T03:00:00+00:00")
+
+
+    def test_pit_history_retention_is_bounded(self):
+        with tempfile.TemporaryDirectory() as td:
+            history_dir = Path(td) / "pit_history"
+            base = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+            for i in range(HISTORY_RETENTION + 3):
+                result = {
+                    "generated_at_utc": (base + timedelta(minutes=15 * i)).isoformat(),
+                    "status": "PASS",
+                    "pit_verified": True,
+                    "verified_primary_predictions": 400,
+                }
+                record_pit_history(result, history_dir)
+            files = sorted(history_dir.glob("pit_*.json"))
+            self.assertEqual(len(files), HISTORY_RETENTION)
+            self.assertNotIn("pit_20260920T0000Z.json", {p.name for p in files})
+
 if __name__ == "__main__":
     unittest.main()
