@@ -33,12 +33,15 @@ def load_events(kline_path: Path, depth_path: Path) -> list[dict]:
     if kline_path.is_file():
         obj = _load_json(kline_path)
         rows = obj.get("rows", []) if isinstance(obj, dict) else []
+        if not isinstance(obj, dict):
+            raise ValueError("binance_kline_cache_envelope_invalid")
+        source = "binance_futures_rest_seed" if "recovery_epoch_ms" in obj else "binance_ws"
         if not isinstance(rows, list):
             raise ValueError("binance_kline_cache_rows_invalid")
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError("binance_kline_cache_row_invalid")
-            events.append(event_from_binance_kline(row))
+            events.append(event_from_binance_kline(row, source=source))
 
     if depth_path.is_file():
         obj = _load_json(depth_path)
