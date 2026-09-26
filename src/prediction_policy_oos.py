@@ -617,6 +617,24 @@ def validate_record(record: dict[str, Any]) -> None:
             raise ValueError(f"non-finite state field: {key}")
 
 
+def policy_oos_value_status(records: dict[str, Any]) -> str:
+    """Return the policy-level OOS evidence state from frozen record metadata."""
+    if not records:
+        return "UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION"
+    measured = all(
+        isinstance(v, dict)
+        and v.get("oos_evidence", {}).get("development", {}).get("status") == "MEASURED_DEV_OOS"
+        and v.get("oos_evidence", {}).get("frozen_holdout", {}).get("status") == "FROZEN_HOLDOUT_EVALUATED"
+        and v.get("oos_evidence", {}).get("frozen_holdout_used_for_selection") is False
+        for v in records.values()
+    )
+    return (
+        "MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT"
+        if measured
+        else "UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION"
+    )
+
+
 def main() -> None:
     if not REGISTRY.is_file() or REGISTRY.stat().st_size <= 0:
         raise SystemExit("v6 registry missing; refusing to synthesize v13 policy evidence")
@@ -654,16 +672,7 @@ def main() -> None:
         "research_only": True,
         "production_changed": False,
         "status": "IMPLEMENTED_EXECUTED_RESEARCH_ONLY",
-        "oos_policy_value_status": (
-            "MEASURED_DEV_OOS_AND_FROZEN_HOLDOUT"
-            if all(
-                isinstance(v, dict)
-                and v.get("prediction_policy_oos", {}).get("development", {}).get("status") == "MEASURED_DEV_OOS"
-                and v.get("prediction_policy_oos", {}).get("frozen_holdout", {}).get("status") == "FROZEN_HOLDOUT_EVALUATED"
-                for v in records.values()
-            )
-            else "UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION"
-        ),
+        "oos_policy_value_status": policy_oos_value_status(records),
         "horizons": records,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
