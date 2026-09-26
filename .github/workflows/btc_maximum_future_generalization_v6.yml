@@ -1,0 +1,234 @@
+name: BTC Maximum Future Generalization V6
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/maximum_future_generalization_v6.py'
+      - 'tests/test_maximum_future_generalization_v6.py'
+      - '.github/workflows/btc_maximum_future_generalization_v6.yml'
+      - 'src/innovative_control_layer_oos.py'
+      - 'src/model_compare.py'
+      - 'src/runtime_production_model.py'
+      - 'src/label_policy.py'
+      - 'requirements.txt'
+  workflow_dispatch:
+  schedule:
+    - cron: '47 */6 * * *'
+
+concurrency:
+  group: btc-maximum-future-generalization-v6
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  preflight_tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install free dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Preflight compile and tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python -m compileall -q src tests
+          PYTHONPATH=src:. python -m unittest -q tests/test_maximum_future_generalization_v6.py
+
+  research_e2e:
+    needs: preflight_tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install free dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore prediction database
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          PYTHONPATH=src:. python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
+      - name: Record v6 run start
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p=Path('data/historical_research/maximum_future_generalization_v6_run.json')
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(json.dumps({
+              'schema_version':1,
+              'experiment':'maximum_future_generalization_predictive_control_v6',
+              'status':'RUNNING',
+              'run_id':os.environ.get('GITHUB_RUN_ID',''),
+              'commit':os.environ.get('GITHUB_SHA',''),
+              'started_at_utc':datetime.now(timezone.utc).isoformat()
+          },indent=2,sort_keys=True)+'
+')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/maximum_future_generalization_v6_run.json
+          git commit -m 'Record BTC v6 research run start'
+          for attempt in 1 2 3 4 5; do
+            if git fetch --prune origin main && git rebase origin/main && git push origin HEAD:main; then exit 0; fi
+            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+              git rebase --abort
+            fi
+            git reset --hard origin/main
+            git add data/historical_research/maximum_future_generalization_v6_run.json
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record BTC v6 research run start'
+            fi
+            sleep $((2 * attempt))
+          done
+          exit 1
+      - name: Run Maximum Future Generalization V6
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/maximum_future_generalization_v6.py
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+      - name: PIT audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
+          if obj.get('production_changed') is not False:
+              raise SystemExit('production mutation detected')
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') == 'OK':
+                  p=r.get('pit_policy',{})
+                  if not all(p.get(k) is True for k in (
+                      'archive_rows_closed','created_before_target',
+                      'training_target_before_embargo'
+                  )):
+                      raise SystemExit(f'{h}: PIT contract failure')
+          print('V6 PIT audit: PASS')
+          PY
+      - name: Leakage and meta-leakage audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('status') != 'OK':
+                  continue
+              m=r.get('meta_leakage_policy',{})
+              required=(
+                  'future_labels_not_used_for_current_state',
+                  'failure_labels_require_future_window_completion',
+                  'meta_models_fit_only_on_prior_blocks',
+                  'quality_prior_excludes_current_block',
+                  'calibration_uses_prior_oos_only',
+                  'frozen_holdout_used_for_selection',
+              )
+              if not all(m.get(k) is True for k in required):
+                  raise SystemExit(f'{h}: meta-leakage audit failure')
+          print('V6 leakage/meta-leakage audit: PASS')
+          PY
+      - name: Artifact integrity
+        run: |
+          set -euo pipefail
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+          for f in data/historical_research/maximum_future_generalization_*_*.json; do
+            test -s "$f"
+            python -m json.tool "$f" >/dev/null
+          done
+          git diff --check
+      - name: Record v6 run completion
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p=Path('data/historical_research/maximum_future_generalization_v6_run.json')
+          existing=json.loads(p.read_text()) if p.is_file() else {}
+          existing.update({
+              'status':os.environ.get('JOB_STATUS','unknown').upper(),
+              'completed_at_utc':datetime.now(timezone.utc).isoformat(),
+              'run_id':os.environ.get('GITHUB_RUN_ID',''),
+              'commit':os.environ.get('GITHUB_SHA',''),
+          })
+          p.write_text(json.dumps(existing,indent=2,sort_keys=True)+'
+')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/maximum_future_generalization_v6_run.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record BTC v6 research run completion'
+          fi
+          for attempt in 1 2 3 4 5; do
+            if git fetch --prune origin main && git rebase origin/main && git push origin HEAD:main; then exit 0; fi
+            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+              git rebase --abort
+            fi
+            git reset --hard origin/main
+            git add data/historical_research/maximum_future_generalization_v6_run.json
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record BTC v6 research run completion'
+            fi
+            sleep $((2 * attempt))
+          done
+          exit 1
+      - name: Upload V6 evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-maximum-future-generalization-v6
+          path: data/historical_research/maximum_future_generalization_*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  promotion_gate:
+    needs: research_e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify research-only gate
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/maximum_future_generalization_v6_registry.json')
+          if not p.is_file():
+              raise SystemExit('v6 registry absent on main checkout')
+          obj=json.loads(p.read_text())
+          for h,r in obj.get('horizons',{}).items():
+              if r.get('production_changed') is not False:
+                  raise SystemExit(f'{h}: production mutation')
+              if r.get('promotion',{}).get('decision') != 'HOLD':
+                  raise SystemExit(f'{h}: unexpected promotion decision')
+          print('V6 promotion gate: HOLD / research-only verified')
+          PY
