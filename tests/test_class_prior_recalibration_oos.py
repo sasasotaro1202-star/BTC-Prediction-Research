@@ -35,8 +35,9 @@ class TestClassPriorRecalibration(unittest.TestCase):
             gamma=1.0,
         )
         self.assertEqual(CLASSES, ["DOWN", "FLAT", "UP"])
+        self.assertEqual(adjusted.shape, (1, 3))
         self.assertAlmostEqual(float(adjusted.sum()), 1.0, places=9)
-        self.assertGreater(float(adjusted[1]), float(raw[0][1]))
+        self.assertGreater(float(adjusted[0, 1]), float(raw[0][1]))
 
     def test_empirical_prior_uses_smoothing(self):
         history = [

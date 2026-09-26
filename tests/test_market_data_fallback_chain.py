@@ -20,11 +20,9 @@ class TestMarketDataFallbackChain(unittest.TestCase):
         stale_bybit = _rows(40, latest_age_minutes=120)
         fresh_coinbase = _rows(120, latest_age_minutes=1)
         fresh_spot = _rows(40, latest_age_minutes=1)
-        bybit_payload = {"result": {"list": stale_bybit}}
-
         def fake_parallel(calls):
             return {
-                "bybit": bybit_payload,
+                "bybit": stale_bybit,
                 "binance_spot": fresh_spot,
                 "binance_futures": RuntimeError("binance futures unavailable"),
             }

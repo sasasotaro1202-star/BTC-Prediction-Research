@@ -776,6 +776,17 @@ jobs:
         run: python src/research_health.py
       - name: Run strict research input audit
         run: python src/research_input_audit.py
+      - name: Run strict PIT/OOS audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${BTC_LIVE_DEFERRED:-0}" = "1" ]; then
+            echo "PIT/OOS audit skipped because live prediction was safely DEFERRED; no PIT snapshot is fabricated."
+            exit 0
+          fi
+          python src/pit_oos_audit.py
+          test -s data/historical_research/pit_oos_audit.json
+
       - name: Record bounded PIT audit history
         shell: bash
         run: |
