@@ -108,7 +108,11 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: btc-v13-audit-evidence
-          path: data/historical_research/*audit*.json
+          path: |
+            data/historical_research/production_artifact_audit.json
+            data/historical_research/research_input_audit.json
+            data/historical_research/pit_oos_audit.json
+            data/historical_research/robustness_oos_report.json
           retention-days: 3
 
   finalize:
