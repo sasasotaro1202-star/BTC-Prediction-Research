@@ -202,16 +202,17 @@ jobs:
               if r.get('status') != 'OK':
                   raise SystemExit(f'{h}: leakage audit blocked because core OOS is not OK')
               m=r.get('meta_leakage_policy',{})
-              required=(
+              required_true=(
                   'future_labels_not_used_for_current_state',
                   'failure_labels_require_future_window_completion',
                   'meta_models_fit_only_on_prior_blocks',
                   'quality_prior_excludes_current_block',
                   'calibration_uses_prior_oos_only',
-                  'frozen_holdout_used_for_selection',
               )
-              if not all(m.get(k) is True for k in required):
+              if not all(m.get(k) is True for k in required_true):
                   raise SystemExit(f'{h}: meta-leakage audit failure')
+              if m.get('frozen_holdout_used_for_selection') is not False:
+                  raise SystemExit(f'{h}: frozen holdout selection flag must be false')
           print('V13 leakage/meta-leakage audit: PASS')
           PY
       - name: Generate v6 report
