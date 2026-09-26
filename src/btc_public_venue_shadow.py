@@ -87,18 +87,6 @@ def parse_hyperliquid_message(message: Any, retrieved_at_ms: int,
         )
         return [event] if event else []
 
-    if channel == "activeAssetCtx" and isinstance(data, dict) and data.get("coin") == coin:
-        ctx = data.get("ctx")
-        if not isinstance(ctx, dict) or not _num(ctx.get("markPx")):
-            return []
-        event = normalize_event(
-            "hyperliquid", "hyperliquid_perp", "asset_context",
-            int(ctx.get("timestamp", data.get("time", 0))),
-            retrieved_at_ms,
-            {"coin": coin, "ctx": ctx},
-        )
-        return [event] if event else []
-
     if channel == "trades" and isinstance(data, list):
         out = []
         for trade in data:
@@ -230,13 +218,11 @@ async def collect_shadow(duration_seconds: float = 60.0) -> list[dict[str, Any]]
          parse_hyperliquid_message, "hyperliquid"),
         (HYPERLIQUID_WS, {"method": "subscribe", "subscription": {"type": "trades", "coin": "BTC"}},
          parse_hyperliquid_message, "hyperliquid"),
-        (HYPERLIQUID_WS, {"method": "subscribe", "subscription": {"type": "activeAssetCtx", "coin": "BTC"}},
-         parse_hyperliquid_message, "hyperliquid"),
         (BITGET_WS, {"op": "subscribe", "args": [
             {"instType": "usdt-futures", "topic": "books5", "symbol": "BTCUSDT"},
             {"instType": "usdt-futures", "topic": "publicTrade", "symbol": "BTCUSDT"},
             {"instType": "usdt-futures", "topic": "liquidation"},
-        ]}, parse_bitget_message),
+        ]}, parse_bitget_message, "bitget"),
     ]
     groups = await asyncio.gather(*(
         capture_socket(url, subscription, parser, duration_seconds, heartbeat)
