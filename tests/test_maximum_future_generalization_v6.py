@@ -8,6 +8,8 @@ from src.maximum_future_generalization_v6 import (
     _conformal_eval,
     _compute_tier,
     _causal_current_snapshot,
+    _numeric_state,
+    _retrieval,
 )
 
 
@@ -74,6 +76,36 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         self.assertEqual(_compute_tier(0.2, 0.2, 0.2), "ENSEMBLE")
         self.assertEqual(_compute_tier(0.4, 0.8, 0.2), "HARD_STRESS")
         self.assertEqual(_compute_tier(0.4, 0.2, 0.8), "HARD_STRESS")
+
+
+    def test_retrieval_query_state_bootstrap_is_safe(self):
+        state = {
+            "disagreement": {
+                "std_probability": 0.1,
+                "probability_range": 0.2,
+                "js_divergence": 0.03,
+                "pairwise_class_disagreement": 0.1,
+                "flip_rate": 0.0,
+                "disagreement_velocity": 0.0,
+                "disagreement_acceleration": 0.0,
+            },
+            "drift": {"feature_drift": 0.1, "prediction_drift": 0.1, "drift_score": 0.1},
+            "predictability": {"global": 0.5, "velocity": 0.0, "acceleration": 0.0},
+            "uncertainty": {"total": 0.5},
+            "error_correlation": {"mean_abs_error_correlation": 0.2},
+            "feature_reliability": {"global": 0.9},
+            "source_reliability": 0.9,
+            "information_shock": {"shock_score": 0.1},
+            "prediction_momentum": {"velocity": 0.0, "acceleration": 0.0},
+            "regime_transition": {"stay_probability": 1.0},
+            "hard_negative_density": 0.2,
+        }
+        vec = _numeric_state(state)
+        self.assertEqual(vec.shape, (24,))
+        self.assertTrue(np.isfinite(vec).all())
+        out = _retrieval(state, [])
+        self.assertEqual(out["neighbors"], [])
+        self.assertEqual(out["probability"], [1/3, 1/3, 1/3])
 
 
 if __name__ == "__main__":
