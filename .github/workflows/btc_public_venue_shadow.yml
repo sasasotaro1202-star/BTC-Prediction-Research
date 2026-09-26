@@ -1,10 +1,12 @@
 name: BTC Public Venue Shadow
 
 on:
+  schedule:
+    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
       duration_seconds:
-        description: "Bounded capture duration"
+        description: "Bounded capture duration (minutes are intentionally short to control Actions usage)"
         required: false
         default: "60"
         type: string
