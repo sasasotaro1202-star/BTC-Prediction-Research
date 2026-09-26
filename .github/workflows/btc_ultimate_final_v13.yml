@@ -1,0 +1,172 @@
+name: BTC Ultimate Final V13
+
+on:
+  push:
+    branches: ["research/**"]
+    paths:
+      - "src/ultimate_final_v13.py"
+      - "tests/test_ultimate_final_v13.py"
+      - "src/maximum_future_generalization_v6.py"
+      - "src/innovative_control_layer_oos.py"
+      - "src/class_prior_recalibration_oos.py"
+      - "src/market_data.py"
+      - "tests/test_class_prior_recalibration_oos.py"
+      - "tests/test_market_data_fallback_chain.py"
+      - ".github/workflows/btc_ultimate_final_v13.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: btc-ultimate-final-v13-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  preflight:
+    name: Preflight + full tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+      - name: Full unit/integration test suite
+        run: python -m pytest -q tests
+      - name: Diff check
+        run: git diff --check
+
+  v6_oos:
+    name: Chronological OOS / WFO / frozen holdout
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Run v6 control
+        run: |
+          set -euo pipefail
+          python src/maximum_future_generalization_v6.py
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
+      - name: Upload OOS evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-v13-v6-evidence
+          path: data/historical_research/maximum_future_generalization*.json
+          retention-days: 3
+
+  audits:
+    name: PIT / robustness / integrity
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+      - name: Production artifact audit
+        run: python src/production_artifact_audit.py
+      - name: Research input audit
+        run: python src/research_input_audit.py
+      - name: Strict PIT/OOS audit
+        run: python src/pit_oos_audit.py
+      - name: Robustness OOS
+        run: python src/robustness_oos.py
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-v13-audit-evidence
+          path: data/historical_research/*audit*.json
+          retention-days: 3
+
+  finalize:
+    name: V13 contract / report / promotion gate
+    needs: [v6_oos, audits]
+    if: ${{ needs.v6_oos.result == 'success' && needs.audits.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v6
+        with:
+          name: btc-v13-v6-evidence
+          path: data/historical_research
+      - uses: actions/download-artifact@v6
+        with:
+          name: btc-v13-audit-evidence
+          path: data/historical_research
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Generate V13 report
+        run: |
+          set -euo pipefail
+          python src/ultimate_final_v13.py
+          test -s data/historical_research/ultimate_final_v13_report.json
+          test -s data/historical_research/ultimate_final_v13_leakage_audit.json
+          test -s data/historical_research/ultimate_final_v13_prediction_contract.json
+      - name: Promotion safety gate
+        run: python src/promotion_gate.py
+      - name: Artifact integrity
+        run: |
+          set -euo pipefail
+          for f in             data/historical_research/ultimate_final_v13_report.json             data/historical_research/ultimate_final_v13_ledger.json             data/historical_research/ultimate_final_v13_leakage_audit.json             data/historical_research/ultimate_final_v13_prediction_contract.json             data/historical_research/promotion_gate.json
+          do
+            test -s "$f"
+            python -m json.tool "$f" >/dev/null
+          done
+      - name: Final status
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/ultimate_final_v13_report.json")
+          r=json.loads(p.read_text())
+          print(json.dumps({
+            "completion_status": r.get("completion_status"),
+            "performance_success": r.get("performance_success"),
+            "verification": r.get("verification"),
+            "performance": r.get("performance"),
+            "promotion_candidate": r.get("status_catalog",{}).get("promotion_candidate"),
+          }, indent=2, sort_keys=True))
+          PY
+      - name: Upload V13 final report
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-ultimate-final-v13-report
+          path: data/historical_research/ultimate_final_v13_*.json
+          retention-days: 30
