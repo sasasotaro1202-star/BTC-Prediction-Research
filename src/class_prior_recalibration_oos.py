@@ -32,10 +32,11 @@ OUT = ROOT / "data" / "historical_research" / "class_prior_recalibration_oos.jso
 
 HORIZONS = ("5m", "10m")
 FINAL_HOLDOUT_FRAC = 0.20
-MIN_ROWS = 60
-MIN_HISTORY = 30
-TEST_BLOCK = 10
-MIN_TUNING_ROWS = 10
+MIN_ROWS = 400
+MIN_HISTORY = 100
+TEST_BLOCK = 25
+MIN_TUNING_ROWS = 30
+MIN_OOS_BLOCKS = 8
 SMOOTHING = 3.0
 GAMMA_GRID = tuple(float(x) for x in np.arange(0.0, 1.51, 0.25))
 
@@ -218,11 +219,13 @@ def evaluate(horizon):
     holdout = rows[dev_end:]
     blocks = _evaluate_blocks(development)
 
-    if not blocks:
+    if len(blocks) < MIN_OOS_BLOCKS:
         return {
             "status": "DEFERRED",
             "reason": "insufficient_causal_oos_blocks",
             "n": len(rows),
+            "minimum_oos_blocks": MIN_OOS_BLOCKS,
+            "observed_oos_blocks": len(blocks),
             "development_n": len(development),
             "holdout_n": len(holdout),
             "promotion_evidence_eligible": False,
