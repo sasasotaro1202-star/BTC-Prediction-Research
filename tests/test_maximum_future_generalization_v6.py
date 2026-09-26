@@ -57,6 +57,25 @@ class TestMaximumFutureGeneralizationV6(unittest.TestCase):
         self.assertIn("coverage", out)
         self.assertIn("mean_set_size", out)
 
+    def test_route_weights_accepts_bootstrap_state_without_retrieval(self):
+        state = {
+            "error_correlation": {"by_expert": {e: 0.2 for e in (
+                "logreg", "extra_trees", "hgb", "lightgbm"
+            )}},
+            "disagreement": {"pairwise_class_disagreement": 0.2},
+            "predictability": {"global": 0.7},
+            "drift": {"drift_score": 0.2},
+            "uncertainty": {"total": 0.2},
+            "source_reliability": 0.9,
+        }
+        failure = {"by_expert": {e: 0.3 for e in (
+            "logreg", "extra_trees", "hgb", "lightgbm"
+        )}}
+        quality = {e: 1.0 for e in failure["by_expert"]}
+        w = _route_weights(state, quality, failure)
+        self.assertTrue(np.isclose(w.sum(), 1.0))
+        self.assertTrue(np.all(np.isfinite(w)))
+
     def test_causal_current_snapshot_excludes_later_block_rows(self):
         rows = [
             {"x": [1.0, 2.0, 3.0]},
