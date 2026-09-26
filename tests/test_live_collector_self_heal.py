@@ -120,6 +120,20 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('for attempt in 1 2 3 4 5 6; do', block)
         self.assertIn('raise SystemExit(f"Binance Futures REST recovery insufficient contiguous rows: {suffix}")', block)
 
+    def test_self_heal_health_check_heredoc_has_real_newline_before_condition(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
+        start = workflow.index('      - name: Self-heal stale Binance WS collector')
+        end = workflow.index('      - name: Load latest Binance depth cache', start)
+        block = workflow[start:end]
+        self.assertIn(
+            '# Start collector recovery with a 60s margin before the 180s prediction hard cutoff.\n          if suffix < 40',
+            block,
+        )
+        self.assertNotIn(
+            '# Start collector recovery with a 60s margin before the 180s prediction hard cutoff.\\n          if suffix < 40',
+            block,
+        )
+
     def test_self_heal_health_check_failure_is_captured_under_set_e(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Self-heal stale Binance WS collector')
