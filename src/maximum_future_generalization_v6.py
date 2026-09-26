@@ -484,7 +484,8 @@ def _retrieval(state, blocks):
     return {
         "failure_similarity": failure_sim,
         "success_similarity": float(1.0 - failure_sim),
-        "probability": _norm(probs),
+        # Persist plain Python values at the JSON artifact boundary.
+        "probability": _norm(probs).reshape(-1).tolist(),
         "neighbors": [{"block": int(x[3]), "similarity": float(x[0]), "failure_rate": float(x[1])} for x in chosen],
     }
 
