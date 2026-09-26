@@ -11,6 +11,8 @@ on:
       - 'src/model_compare.py'
       - 'src/runtime_production_model.py'
       - 'src/label_policy.py'
+      - 'src/prediction_policy_oos.py'
+      - 'tests/test_prediction_policy_oos.py'
       - 'requirements.txt'
   workflow_dispatch:
   schedule:
@@ -45,6 +47,7 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src:. python -m compileall -q src tests
           PYTHONPATH=src:. python -m unittest -q tests/test_maximum_future_generalization_v6.py
+          PYTHONPATH=src:. python -m unittest -q tests/test_prediction_policy_oos.py
 
   research_e2e:
     needs: preflight_tests
@@ -109,6 +112,23 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src:. python src/maximum_future_generalization_v6.py
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
+      - name: Run v13 prediction policy controller
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/prediction_policy_oos.py
+          test -s data/historical_research/prediction_policy_oos.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/prediction_policy_oos.json')
+          obj=json.loads(p.read_text())
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('v13 policy layer attempted production mutation')
+          if obj.get('oos_policy_value_status') != 'UNVERIFIED_UNTIL_POLICY_LEVEL_ABLATION':
+              raise SystemExit('v13 policy value must remain explicitly unverified')
+          print('V13 prediction policy controller: EXECUTED / research-only / OOS-value-unverified')
+          PY
+
       - name: PIT audit
         run: |
           set -euo pipefail
@@ -194,6 +214,8 @@ jobs:
           (root/'maximum_future_generalization_v6_report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
           PY
           test -s data/historical_research/maximum_future_generalization_v6_report.md
+          test -s data/historical_research/prediction_policy_oos.json
+          python -m json.tool data/historical_research/prediction_policy_oos.json >/dev/null
 
       - name: Artifact integrity
         run: |
@@ -212,6 +234,7 @@ jobs:
           path: |
             data/historical_research/maximum_future_generalization_*.json
             data/historical_research/maximum_future_generalization_v6_report.md
+            data/historical_research/prediction_policy_oos.json
           if-no-files-found: error
           retention-days: 14
 
