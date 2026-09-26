@@ -210,12 +210,11 @@ def direct_high_priority_sources() -> tuple[Source, ...]:
 
 
 def production_eligible_now() -> tuple[Source, ...]:
-    # Intentional conservative gate: "free" alone is insufficient.
-    return tuple(
-        source
-        for source in SOURCES
-        if source.access == "public_free"
-        and source.pit == "low"
-        and source.realtime
-        and not source.key_required
-    )
+    """Return sources cleared for production.
+
+    This catalog has no runtime capture/OOS evidence fields, so no source can
+    be production-eligible from catalog metadata alone. Actual promotion must
+    consume project-generated provenance, PIT, chronological OOS, robustness,
+    calibration, and operational evidence.
+    """
+    return tuple()
