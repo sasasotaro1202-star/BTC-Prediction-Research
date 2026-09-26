@@ -62,10 +62,18 @@ jobs:
             status_head=$(jq -r '.head_sha // ""' "$live_status_file" 2>/dev/null || echo "")
             status_epoch=$(date -d "$status_completed" +%s 2>/dev/null || echo 0)
             status_age=$((now - status_epoch))
-            if [ "$status_epoch" -gt 0 ] && [ "$status_age" -ge 300 ] && [ "$status_head" != "$main_sha" ]; then
+            # live_cycle_status is written before the final conflict-safe state merge.
+            # Therefore its execution head can legitimately differ from current main
+            # after the cycle commits state. Heartbeat freshness must be based on time;
+            # workflow-run inspection below remains authoritative for stale code/run detection.
+            if [ "$status_epoch" -gt 0 ] && [ "$status_age" -ge 300 ]; then
               live_status_stale=1
             fi
-            echo "Live status heartbeat: completed=${status_completed:-none} head=${status_head:-unknown} age=${status_age}s stale=${live_status_stale}"
+            head_note="execution_head_current"
+            if [ -n "$main_sha" ] && [ -n "$status_head" ] && [ "$status_head" != "$main_sha" ]; then
+              head_note="execution_head_differs_from_state_head_expected_after_state_merge"
+            fi
+            echo "Live status heartbeat: completed=${status_completed:-none} head=${status_head:-unknown} age=${status_age}s stale=${live_status_stale} head_note=${head_note}"
           else
             echo "WARN: unable to read live_cycle_status heartbeat; workflow-run inspection remains authoritative." >&2
           fi
