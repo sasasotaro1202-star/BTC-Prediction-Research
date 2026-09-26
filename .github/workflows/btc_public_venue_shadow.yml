@@ -1,0 +1,55 @@
+name: BTC Public Venue Shadow
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: "Bounded capture duration"
+        required: false
+        default: "60"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Run public venue shadow capture
+        run: |
+          set -euo pipefail
+          python -m src.btc_public_venue_shadow             --duration-seconds "${{ inputs.duration_seconds }}"             --output data/shadow/btc_public_venue_events.json
+      - name: Validate artifact
+        run: |
+          set -euo pipefail
+          test -s data/shadow/btc_public_venue_events.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/shadow/btc_public_venue_events.json")
+          obj = json.loads(p.read_text())
+          if obj.get("event_count", 0) <= 0:
+              raise SystemExit("empty_shadow_capture")
+          validation = obj.get("validation", {})
+          if validation.get("future", 0) or validation.get("rejected", 0):
+              raise SystemExit("invalid_pit_events_present")
+          print("shadow_events=", obj["event_count"])
+          print("sources=", validation.get("sources", []))
+          print("types=", validation.get("event_types", []))
+          PY
+      - name: Upload research artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-public-venue-shadow-${{ github.run_id }}
+          path: data/shadow/btc_public_venue_events.json
+          retention-days: 14
