@@ -9,6 +9,7 @@ from src.innovative_control_layer_oos import (
     _bootstrap_ci,
     _coverage_metrics,
     _route_weights,
+    _past_quality_logloss,
     disagreement_features,
 )
 
@@ -28,6 +29,17 @@ class TestInnovativeControlLayer(unittest.TestCase):
         self.assertIn("pairwise_disagreement", out)
         self.assertGreaterEqual(out["pairwise_disagreement"], 0.0)
         self.assertLessEqual(out["pairwise_disagreement"], 1.0)
+
+    def test_first_block_quality_prior_never_uses_current_labels(self):
+        current = {
+            "logreg": {"logloss": 0.01},
+            "extra_trees": {"logloss": 0.02},
+            "hgb": {"logloss": 0.03},
+            "lightgbm": {"logloss": 0.04},
+        }
+        out = _past_quality_logloss([], current)
+        for value in out.values():
+            self.assertAlmostEqual(value, float(np.log(3.0)), places=9)
 
     def test_soft_router_weights_are_normalized_and_smoothed(self):
         q = {e: 1.0 for e in ("logreg", "extra_trees", "hgb", "lightgbm")}

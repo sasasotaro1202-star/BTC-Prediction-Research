@@ -416,6 +416,20 @@ def _fit_meta_models(blocks, before_index):
     }
 
 
+def _past_quality_logloss(blocks, current_metrics):
+    if not blocks:
+        # No past OOS evidence exists yet. Never use current-block labels as a
+        # quality prior; use the neutral three-class log-loss prior instead.
+        return {e: float(math.log(3.0)) for e in EXPERTS}
+    return {
+        e: float(np.mean([
+            blocks[j]["metrics"][e]["logloss"]
+            for j in range(max(0, len(blocks) - PAST_WINDOW), len(blocks))
+        ]))
+        for e in EXPERTS
+    }
+
+
 def _quality_weights(quality_logloss):
     vals = np.asarray([-quality_logloss[e] for e in EXPERTS], dtype=float)
     vals -= vals.max()
@@ -704,13 +718,7 @@ def evaluate(horizon):
             recent_calibration=recent_cal,
             older_calibration=older_cal,
         )
-        quality_logloss = {
-            e: float(np.mean([
-                blocks[j]["metrics"][e]["logloss"]
-                for j in range(max(0, len(blocks) - PAST_WINDOW), len(blocks))
-            ])) if blocks else float(metrics_now[e]["logloss"])
-            for e in EXPERTS
-        }
+        quality_logloss = _past_quality_logloss(blocks, metrics_now)
         provisional_state = {
             "disagreement": disagreement,
             "drift": drift,
