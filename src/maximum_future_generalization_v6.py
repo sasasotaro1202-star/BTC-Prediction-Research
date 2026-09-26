@@ -118,41 +118,46 @@ def _numeric_state(state):
     its own output). Use explicit neutral priors only for those missing
     components; fully materialized OOS blocks retain their measured values.
     """
-    d = state["disagreement"]
-    drift = state["drift"]
-    pred = state["predictability"]
-    un = state["uncertainty"]
-    retrieval = state.get("retrieval")
+    d = state.get("disagreement") or {}
+    drift = state.get("drift") or {}
+    pred = state.get("predictability") or {}
+    un = state.get("uncertainty") or {}
+    retrieval = state.get("retrieval") or {}
     if not isinstance(retrieval, dict):
         retrieval = {}
-    meta_label = state.get("meta_label")
+    meta_label = state.get("meta_label") or {}
     if not isinstance(meta_label, dict):
         meta_label = {}
+    error_corr = state.get("error_correlation") or {}
+    feature_rel = state.get("feature_reliability") or {}
+    info_shock = state.get("information_shock") or {}
+    momentum = state.get("prediction_momentum") or {}
+    transition = state.get("regime_transition") or {}
     return np.asarray([
-        d["std_probability"],
-        d["probability_range"],
-        d["js_divergence"],
-        d["pairwise_class_disagreement"],
-        d["flip_rate"],
-        d["disagreement_velocity"],
-        d["disagreement_acceleration"],
-        state["error_correlation"]["mean_abs_error_correlation"],
-        drift["feature_drift"],
-        drift["prediction_drift"],
-        drift["drift_score"],
-        state["feature_reliability"]["global"],
-        state["source_reliability"],
-        state["information_shock"]["shock_score"],
-        state["prediction_momentum"]["velocity"],
-        state["prediction_momentum"]["acceleration"],
-        pred["global"],
-        pred["velocity"],
-        pred["acceleration"],
-        state["regime_transition"]["stay_probability"],
+        float(d.get("std_probability", 0.5)),
+        float(d.get("probability_range", 0.5)),
+        float(d.get("js_divergence", 0.0)),
+        float(d.get("pairwise_class_disagreement", 0.5)),
+        float(d.get("flip_rate", 0.0)),
+        float(d.get("disagreement_velocity", 0.0)),
+        float(d.get("disagreement_acceleration", 0.0)),
+        float(error_corr.get("mean_abs_error_correlation", 0.5)),
+        float(drift.get("feature_drift", 0.0)),
+        float(drift.get("prediction_drift", 0.0)),
+        float(drift.get("drift_score", 0.0)),
+        float(feature_rel.get("global", 0.5)),
+        float(state.get("source_reliability", 0.5)),
+        float(info_shock.get("shock_score", 0.0)),
+        float(momentum.get("velocity", 0.0)),
+        float(momentum.get("acceleration", 0.0)),
+        float(pred.get("global", 0.5)),
+        float(pred.get("velocity", 0.0)),
+        float(pred.get("acceleration", 0.0)),
+        float(transition.get("stay_probability", 0.5)),
         float(retrieval.get("failure_similarity", 0.5)),
-        un["total"],
+        float(un.get("total", 0.5)),
         float(meta_label.get("reliability", 0.5)),
-        state["hard_negative_density"],
+        float(state.get("hard_negative_density", 0.5)),
     ], dtype=float)
 
 
