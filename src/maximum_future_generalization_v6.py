@@ -536,7 +536,14 @@ def _route_weights(state, quality, failure_state, *, use_disagreement=True, use_
         source_reliability = source_reliability.get("reliability", 0.0)
     adaptive_strength *= 0.35 + 0.65 * float(source_reliability)
     if use_retrieval:
-        adaptive_strength *= 0.70 + 0.30 * state["retrieval"]["success_similarity"]
+        retrieval = state.get("retrieval")
+        if not isinstance(retrieval, dict):
+            # Explicit neutral prior for bootstrap/query states where retrieval
+            # is not yet materialized. Never treats missing retrieval as evidence.
+            retrieval = {"success_similarity": 0.5}
+        adaptive_strength *= 0.70 + 0.30 * float(
+            retrieval.get("success_similarity", 0.5)
+        )
     adaptive_strength = float(np.clip(adaptive_strength, 0.15, 1.0))
     w = adaptive_strength * q + (1.0 - adaptive_strength) * np.full(len(EXPERTS), 1.0 / len(EXPERTS))
     if previous is not None:
@@ -752,7 +759,12 @@ def _evaluate_variant(state, panel, quality, failure_state, previous_weights, na
         w = _route_weights(state, quality, failure_state, previous=previous_weights, **specs[name])
     probs = _route_probs(panel, w)
     if retrieval_mix > 0.0:
-        rp = np.asarray(state["retrieval"]["probability"], dtype=float)
+        retrieval = state.get("retrieval")
+        rp = (
+            np.asarray(retrieval.get("probability"), dtype=float)
+            if isinstance(retrieval, dict) and retrieval.get("probability") is not None
+            else np.full(3, 1.0 / 3.0, dtype=float)
+        )
         probs = _norm((1.0 - retrieval_mix) * probs + retrieval_mix * rp)
     return probs, w
 
