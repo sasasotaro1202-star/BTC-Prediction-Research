@@ -92,29 +92,33 @@ jobs:
           print('V13 policy controller: EXECUTED / research-only')
           PY
 
-      - name: PIT audit — fail closed but preserve evidence
-        id: pit
+      - name: Run PIT and leakage audits independently
+        id: safety_audits
         shell: bash
         run: |
           set +e
           PYTHONPATH=src:. python src/pit_oos_audit.py
-          status=$?
-          set -e
-          printf '%s\n' "$status" > data/historical_research/v13_pit_exit_code.txt
-          echo "PIT exit code: $status"
-          exit "$status"
-
-      - name: Leakage and research-input audit — fail closed but preserve evidence
-        id: leakage
-        shell: bash
-        run: |
-          set +e
+          pit_status=$?
           PYTHONPATH=src:. python src/research_input_audit.py
-          status=$?
+          leakage_status=$?
           set -e
-          printf '%s\n' "$status" > data/historical_research/v13_research_input_exit_code.txt
-          echo "Research-input audit exit code: $status"
-          exit "$status"
+          python - <<PY
+          import json
+          from pathlib import Path
+          payload = {
+              "schema_version": 1,
+              "pit_exit_code": int(${pit_status}),
+              "leakage_exit_code": int(${leakage_status}),
+              "fail_closed": True,
+          }
+          p=Path("data/historical_research/v13_safety_audit_exit_codes.json")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(json.dumps(payload, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+          print(json.dumps(payload, sort_keys=True))
+          PY
+          # Preserve every audit result; the explicit final safety gate below
+          # converts any non-zero audit code into the workflow failure state.
+          exit 0
 
       - name: Production artifact integrity audit
         run: |
@@ -149,6 +153,54 @@ jobs:
           print('V13 artifact/promotion contract: VERIFIED / HOLD / production unchanged')
           PY
 
+      - name: Final fail-closed V13 safety gate
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/historical_research')
+          failures=[]
+          reg_path=root/'maximum_future_generalization_v6_registry.json'
+          policy_path=root/'prediction_policy_oos.json'
+          codes_path=root/'v13_safety_audit_exit_codes.json'
+          if not reg_path.is_file():
+              failures.append('missing_v13_core_registry')
+          else:
+              obj=json.loads(reg_path.read_text())
+              if obj.get('production_changed') is not False:
+                  failures.append('production_changed')
+              horizons=obj.get('horizons',{})
+              for h in ('5m','10m'):
+                  r=horizons.get(h,{})
+                  if r.get('status') != 'OK':
+                      failures.append(f'{h}:core_status={r.get("status")}')
+                  if r.get('promotion',{}).get('decision') != 'HOLD':
+                      failures.append(f'{h}:promotion_not_hold')
+                  if r.get('prediction_policy_oos',{}).get('frozen_holdout_used_for_selection') is not False:
+                      failures.append(f'{h}:holdout_selection_contamination')
+          if not policy_path.is_file():
+              failures.append('missing_v13_policy_output')
+          else:
+              pobj=json.loads(policy_path.read_text())
+              if pobj.get('status') != 'IMPLEMENTED_EXECUTED_RESEARCH_ONLY':
+                  failures.append('policy_not_executed')
+          if not codes_path.is_file():
+              failures.append('missing_safety_audit_exit_codes')
+          else:
+              codes=json.loads(codes_path.read_text())
+              if int(codes.get('pit_exit_code',1)) != 0:
+                  failures.append(f'pit_audit_exit={codes.get("pit_exit_code")}')
+              if int(codes.get('leakage_exit_code',1)) != 0:
+                  failures.append(f'leakage_audit_exit={codes.get("leakage_exit_code")}')
+          if failures:
+              print('V13 FINAL SAFETY GATE: FAIL')
+              print(json.dumps(failures, indent=2))
+              raise SystemExit(1)
+          print('V13 FINAL SAFETY GATE: PASS / research-only / production unchanged')
+          PY
+
       - name: Generate V13 E2E report
         if: always()
         run: |
@@ -180,7 +232,8 @@ jobs:
                       f"Promotion: {r.get('promotion',{})}",
                       ''
                   ]
-          lines += ['## V13 Policy', f"Status: {policy.get('status')}", f"OOS policy value status: {policy.get('oos_policy_value_status')}"]
+          codes=(json.loads((root/'v13_safety_audit_exit_codes.json').read_text()) if (root/'v13_safety_audit_exit_codes.json').exists() else {})
+          lines += ['## V13 Policy', f"Status: {policy.get('status')}", f"OOS policy value status: {policy.get('oos_policy_value_status')}", f"PIT audit exit: {codes.get('pit_exit_code','UNAVAILABLE')}", f"Leakage audit exit: {codes.get('leakage_exit_code','UNAVAILABLE')}"]
           (root/'btc_ultimate_final_v13_e2e_report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
           PY
           test -s data/historical_research/btc_ultimate_final_v13_e2e_report.md
