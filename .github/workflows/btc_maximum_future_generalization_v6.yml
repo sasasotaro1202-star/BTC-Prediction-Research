@@ -1,4 +1,4 @@
-name: BTC Maximum Future Generalization V6
+name: BTC Ultimate Final V13 — Maximum Future-Generalization Predictive Intelligence
 
 on:
   push:
@@ -45,9 +45,8 @@ jobs:
       - name: Preflight compile and tests
         run: |
           set -euo pipefail
-          PYTHONPATH=src:. python -m compileall -q src tests
-          PYTHONPATH=src:. python -m unittest -q tests/test_maximum_future_generalization_v6.py
-          PYTHONPATH=src:. python -m unittest -q tests/test_prediction_policy_oos.py
+          PYTHONPATH=src:. python -m compileall -q src tests scripts
+          PYTHONPATH=src:. python -m pytest -q tests
 
   research_e2e:
     needs: preflight_tests
@@ -112,6 +111,21 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src:. python src/maximum_future_generalization_v6.py
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
+          horizons=obj.get('horizons', {})
+          if set(horizons) != {'5m', '10m'}:
+              raise SystemExit(f'V13 horizon set incomplete: {sorted(horizons)}')
+          for h in ('5m','10m'):
+              r=horizons[h]
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: V13 core OOS incomplete: {r.get("status")} {r.get("reason","")}')
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('V13 core mutated production or lost research-only contract')
+          print('V13 core: BOTH horizons OK / research-only / production unchanged')
+          PY
       - name: Run v13 prediction policy controller
         run: |
           set -euo pipefail
@@ -161,15 +175,18 @@ jobs:
           obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
           if obj.get('production_changed') is not False:
               raise SystemExit('production mutation detected')
-          for h,r in obj.get('horizons',{}).items():
-              if r.get('status') == 'OK':
-                  p=r.get('pit_policy',{})
-                  if not all(p.get(k) is True for k in (
-                      'archive_rows_closed','created_before_target',
-                      'training_target_before_embargo'
-                  )):
-                      raise SystemExit(f'{h}: PIT contract failure')
-          print('V6 PIT audit: PASS')
+          horizons=obj.get('horizons',{})
+          for h in ('5m','10m'):
+              r=horizons[h]
+              if r.get('status') != 'OK':
+                  raise SystemExit(f'{h}: PIT audit blocked because core OOS is not OK')
+              p=r.get('pit_policy',{})
+              if not all(p.get(k) is True for k in (
+                  'archive_rows_closed','created_before_target',
+                  'training_target_before_embargo'
+              )):
+                  raise SystemExit(f'{h}: PIT contract failure')
+          print('V13 PIT audit: PASS')
           PY
       - name: Leakage and meta-leakage audit
         run: |
@@ -178,9 +195,11 @@ jobs:
           import json
           from pathlib import Path
           obj=json.loads(Path('data/historical_research/maximum_future_generalization_v6_registry.json').read_text())
-          for h,r in obj.get('horizons',{}).items():
+          horizons=obj.get('horizons',{})
+          for h in ('5m','10m'):
+              r=horizons[h]
               if r.get('status') != 'OK':
-                  continue
+                  raise SystemExit(f'{h}: leakage audit blocked because core OOS is not OK')
               m=r.get('meta_leakage_policy',{})
               required=(
                   'future_labels_not_used_for_current_state',
@@ -192,7 +211,7 @@ jobs:
               )
               if not all(m.get(k) is True for k in required):
                   raise SystemExit(f'{h}: meta-leakage audit failure')
-          print('V6 leakage/meta-leakage audit: PASS')
+          print('V13 leakage/meta-leakage audit: PASS')
           PY
       - name: Generate v6 report
         run: |
