@@ -38,3 +38,23 @@ def test_validation_deduplicates_and_rejects_future():
     assert result["accepted"] == 1
     assert result["duplicates"] == 1
     assert result["future"] == 1
+
+def test_situation_card_respects_prediction_cutoff():
+    from src.btc_public_venue_shadow import derive_situation_card
+    hl_book = normalize_event("hyperliquid", "hyperliquid_perp", "l2_book", 1000, 1001, {
+        "coin": "BTC", "levels": [
+            [{"px": "100", "sz": "2", "n": 1}],
+            [{"px": "101", "sz": "1", "n": 1}],
+        ]
+    })
+    bg_trade = normalize_event("bitget", "bitget_usdt_futures", "trade", 1010, 1011, {
+        "symbol": "BTCUSDT", "side": "buy", "price": "100.5", "size": "3", "ts": 1010
+    })
+    future_trade = normalize_event("bitget", "bitget_usdt_futures", "trade", 2000, 2001, {
+        "symbol": "BTCUSDT", "side": "sell", "price": "100.5", "size": "9", "ts": 2000
+    })
+    assert hl_book and bg_trade and future_trade
+    card = derive_situation_card([hl_book, bg_trade, future_trade], cutoff_ms=1500, window_ms=1000)
+    assert card["event_count"] == 2
+    assert card["trade_imbalance"]["bitget"] == 1.0
+    assert future_trade["event_id"] not in card["used_event_ids"]
