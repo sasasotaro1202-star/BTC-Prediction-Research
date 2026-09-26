@@ -776,6 +776,29 @@ jobs:
         run: python src/research_health.py
       - name: Run strict research input audit
         run: python src/research_input_audit.py
+      - name: Record bounded PIT audit history
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="src:scripts" python - <<'PY'
+          import json
+          from pathlib import Path
+          from pit_history import record_pit_history
+
+          audit_path = Path("data/historical_research/pit_oos_audit.json")
+          history_dir = Path("data/historical_research/pit_history")
+          if not audit_path.is_file():
+              raise SystemExit("PIT audit output missing; refusing to record history")
+          result = json.loads(audit_path.read_text(encoding="utf-8"))
+          if not isinstance(result, dict):
+              raise SystemExit("PIT audit output must be an object")
+          if not result.get("generated_at_utc"):
+              raise SystemExit("PIT audit output missing generated_at_utc")
+          recorded = record_pit_history(result, history_dir)
+          if recorded.get("status") not in {"RECORDED", "SKIPPED_EXISTING_BUCKET"}:
+              raise SystemExit("unexpected PIT history status: " + repr(recorded.get("status")))
+          print(json.dumps(recorded, ensure_ascii=False, sort_keys=True))
+          PY
       - name: Audit Coinbase Binance Bybit venue distribution drift
         run: python src/venue_drift.py
       - name: Diagnose FLAT disappearance by prediction pipeline stage
