@@ -38,9 +38,22 @@ try:
 except ImportError:
     LGBMClassifier = None
 
-from label_policy import CLASSES
-from model_compare import load_archive_research_rows, load_primary_production_strict_rows, metrics
-from runtime_production_model import resolve_production_model
+try:
+    from label_policy import CLASSES
+    from model_compare import (
+        load_archive_research_rows,
+        load_primary_production_strict_rows,
+        metrics,
+    )
+    from runtime_production_model import resolve_production_model
+except ModuleNotFoundError:
+    from src.label_policy import CLASSES
+    from src.model_compare import (
+        load_archive_research_rows,
+        load_primary_production_strict_rows,
+        metrics,
+    )
+    from src.runtime_production_model import resolve_production_model
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "historical_research"
