@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-ultimate-final-v13-${{ github.ref }}
+  group: btc-ultimate-final-v13-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:
