@@ -579,9 +579,9 @@ def _period_breakdown(block_results):
         part = block_results[lo:hi]
         out[name] = {
             "blocks": len(part),
-            "full_vs_soft_accuracy_delta": float(np.mean([x["full"]["accuracy"] - x["soft_ensemble"]["accuracy"] for x in part])),
-            "full_vs_soft_logloss_delta": float(np.mean([x["full"]["logloss"] - x["soft_ensemble"]["logloss"] for x in part])),
-            "full_vs_soft_brier_delta": float(np.mean([x["full"]["brier"] - x["soft_ensemble"]["brier"] for x in part])),
+            "full_vs_soft_accuracy_delta": float(np.mean([x["full_architecture"]["accuracy"] - x["soft_ensemble"]["accuracy"] for x in part])),
+            "full_vs_soft_logloss_delta": float(np.mean([x["full_architecture"]["logloss"] - x["soft_ensemble"]["logloss"] for x in part])),
+            "full_vs_soft_brier_delta": float(np.mean([x["full_architecture"]["brier"] - x["soft_ensemble"]["brier"] for x in part])),
         }
     return out
 
