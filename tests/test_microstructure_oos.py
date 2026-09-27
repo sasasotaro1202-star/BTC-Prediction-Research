@@ -61,8 +61,20 @@ class MicrostructureOOSTests(unittest.TestCase):
             "market_flow_v2_no_oi_bybit_oi": list(BASE_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
             "full_stack_no_oi_bybit_oi": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
         }
-        self.assertEqual(set(expected), {"binance_micro", "market_flow_v2", "full_stack", "cross_venue"})
+        self.assertEqual(
+            set(expected),
+            {
+                "binance_micro",
+                "market_flow_v2",
+                "full_stack",
+                "cross_venue",
+                "binance_core_bybit_oi",
+                "market_flow_v2_no_oi_bybit_oi",
+                "full_stack_no_oi_bybit_oi",
+            },
+        )
         self.assertEqual(len(expected["full_stack"]), 33)
+        self.assertEqual(len(expected["full_stack_no_oi_bybit_oi"]), 33)
 
     def _scenario(self):
         return {
