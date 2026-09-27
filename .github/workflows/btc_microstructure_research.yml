@@ -68,8 +68,21 @@ jobs:
               raise SystemExit('microstructure lane reports production mutation')
           if obj.get('final_holdout_protected') is not True:
               raise SystemExit('microstructure holdout protection missing')
+          expected_variants = (
+              'binance_core',
+              'binance_micro',
+              'market_flow_v2_no_oi',
+              'market_flow_v2',
+              'full_stack_no_oi',
+              'full_stack',
+              'cross_venue_no_oi',
+              'cross_venue',
+              'binance_core_bybit_oi',
+              'market_flow_v2_no_oi_bybit_oi',
+              'full_stack_no_oi_bybit_oi',
+          )
           for h, result in obj.get('horizons', {}).items():
-              for variant in ('binance_micro', 'market_flow_v2', 'full_stack', 'cross_venue'):
+              for variant in expected_variants:
                   item=result.get(variant,{})
                   if item.get('status') not in {'OK','DEFERRED'}:
                       raise SystemExit(f'{h}/{variant}: invalid status')
