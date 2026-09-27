@@ -90,6 +90,7 @@ class MicrostructureOOSTests(unittest.TestCase):
             "data_quality": {
                 "bybit_depth": "ok",
                 "bybit_futures": "ok_current_only",
+                "bybit_oi": "ok",
                 "binance_taker_window_transport": "websocket_closed_klines",
                 "binance_taker_window_event_time_ms": 1_790_035_259_000,
                 "binance_taker_window_retrieved_at_ms": 1_790_035_259_500,
@@ -115,6 +116,13 @@ class MicrostructureOOSTests(unittest.TestCase):
                         "retrieved_at": "2026-09-22T00:00:59.500000+00:00",
                         "prediction_cutoff": "2026-09-22T00:00:59.500000+00:00",
                         "event_time": "2026-09-22T00:00:59+00:00",
+                    },
+                    "bybit_ticker": {
+                        "status": "ok",
+                        "available_at": "2026-09-22T00:00:00+00:00",
+                        "retrieved_at": "2026-09-22T00:00:00+00:00",
+                        "prediction_cutoff": "2026-09-22T00:00:00+00:00",
+                        "fields": ["openInterest"],
                     }
                 }
             },
