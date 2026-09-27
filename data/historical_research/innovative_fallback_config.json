@@ -1,0 +1,12 @@
+{
+  "policy": "soft_global_fallback_on_meta_failure",
+  "production_eligible": false,
+  "rules": [
+    "PIT_FAIL=>ABSTAIN",
+    "META_MODEL_UNAVAILABLE=>SOFT_EQUAL",
+    "EXTREME_PROBABILITY=>SOFT_EQUAL_AND_CALIBRATE",
+    "SEVERE_DRIFT=>SOFTEN_WEIGHTS",
+    "ARTIFACT_OR_SCHEMA_MISMATCH=>ABSTAIN"
+  ],
+  "schema_version": 1
+}\n
