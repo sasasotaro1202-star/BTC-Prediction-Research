@@ -1,61 +1,45 @@
 name: BTC 24H Autonomous Research
 
-# GitHub-hosted jobs have a 6-hour execution limit. Four scheduled research
-# slots provide a restartable 24-hour research cycle without a long-running
-# job exceeding the runner limit.
+# Research-only 24H marathon modeled after the project's other long-running
+# prediction systems: sequential restartable stages, checkpoint artifacts,
+# non-cancelling concurrency, and a separate reliability watchdog.
 #
-# UTC: 01:07 / 07:07 / 13:07 / 19:07
-# JST: 10:07 / 16:07 / 22:07 / 04:07
+# Each job stays below the GitHub-hosted runner's 6-hour limit.
+# The full workflow envelope is below 24 hours.
 #
-# Research-only: no production adoption, no final-holdout tuning, no Champion
-# registry mutation is permitted by this workflow.
+# A daily schedule is intentional: if a previous run is still active, the next
+# run queues. The watchdog prevents missed/failed/stuck runs from creating gaps.
 
 on:
   schedule:
-    - cron: '7 1 * * *'
-    - cron: '7 7 * * *'
-    - cron: '7 13 * * *'
-    - cron: '7 19 * * *'
+    - cron: '5 0 * * *'
   workflow_dispatch:
-
-concurrency:
-  group: btc-24h-autonomous-research-slot
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: btc-24h-autonomous-research-main
+  cancel-in-progress: false
+
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  TRIGGER_SCHEDULE: ${{ github.event.schedule || '' }}
 
 jobs:
-  research:
+  stage1_maximum:
+    name: "24H Stage 1 - Maximum Future Generalization"
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
-      - name: Checkout current main
-        uses: actions/checkout@v7
-
-      - name: Resolve six-hour research slot
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            case "$TRIGGER_SCHEDULE" in
-              '7 1 * * *') slot="maximum" ;;
-              '7 7 * * *') slot="historical" ;;
-              '7 13 * * *') slot="challenger" ;;
-              '7 19 * * *') slot="robustness" ;;
-              *) echo "Unexpected schedule: $TRIGGER_SCHEDULE" >&2; exit 1 ;;
-            esac
-          else
-            slot="maximum"
-          fi
-          echo "BTC_RESEARCH_SLOT=$slot" >> "$GITHUB_ENV"
-          echo "Selected slot: $slot"
-
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
       - name: Restore prediction state
         shell: bash
         run: |
@@ -65,158 +49,272 @@ jobs:
           from pathlib import Path
           from src.state_archive import restore_db
           restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
-          print("Prediction state restored.")
           PY
-          test -s data/predictions.db
-
-      - name: Install research dependencies
-        shell: bash
+      - name: Snapshot production boundary
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
-              exit 0
-            fi
-            echo "Dependency installation attempt $attempt failed" >&2
-            sleep $((15 * attempt))
-          done
-          exit 1
-
+          python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+          from src.prediction_state_guard import prediction_table_fingerprint
+          with sqlite3.connect("data/predictions.db") as con:
+              registry={h:(con.execute("SELECT production_version FROM model_registry WHERE horizon=?",(h,)).fetchone() or [None])[0] for h in ("5m","10m")}
+          Path("/tmp/btc24_before.json").write_text(json.dumps({"registry":registry,"prediction_fingerprint":prediction_table_fingerprint(Path("data/predictions.db"))},sort_keys=True),encoding="utf-8")
+          PY
       - name: Compile research code
         run: python -m compileall -q src scripts tests
-
-      - name: Snapshot Champion registry
-        shell: bash
+      - name: Run maximum future-generalization research
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 330m python src/maximum_future_generalization_v6.py
+          test -s data/historical_research/maximum_future_generalization_v6.json
+      - name: Verify research-only boundary
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import os
-          import sqlite3
+          import json, sqlite3
           from pathlib import Path
-
+          from src.prediction_state_guard import prediction_table_fingerprint
+          obj=json.loads(Path("data/historical_research/maximum_future_generalization_v6.json").read_text())
+          if obj.get("research_only") is not True or obj.get("production_changed") is True:
+              raise SystemExit("stage 1 research safety contract failed")
+          before=json.loads(Path("/tmp/btc24_before.json").read_text())
           with sqlite3.connect("data/predictions.db") as con:
-              registry = {
-                  h: (con.execute(
-                      "SELECT production_version FROM model_registry WHERE horizon=?",
-                      (h,),
-                  ).fetchone() or [None])[0]
-                  for h in ("5m", "10m")
-              }
-
-          payload = {
-              "schema_version": 1,
-              "research_only": True,
-              "production_changed": False,
-              "github_sha": os.environ["GITHUB_SHA"],
-              "github_run_id": int(os.environ["GITHUB_RUN_ID"]),
-              "slot": os.environ["BTC_RESEARCH_SLOT"],
-              "champion_registry_before": registry,
-          }
-          out = Path("data/historical_research/btc_24h_slot_manifest.json")
-          out.parent.mkdir(parents=True, exist_ok=True)
-          out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-          print(json.dumps(payload, sort_keys=True))
+              after={h:(con.execute("SELECT production_version FROM model_registry WHERE horizon=?",(h,)).fetchone() or [None])[0] for h in ("5m","10m")}
+          if before["prediction_fingerprint"] != prediction_table_fingerprint(Path("data/predictions.db")) or before["registry"] != after:
+              raise SystemExit("production state mutated during stage 1")
+          print("stage 1 production boundary: VERIFIED")
           PY
-
-      - name: Run selected research slot
-        shell: bash
-        run: |
-          set -euo pipefail
-          run_one() {
-            label="$1"
-            seconds="$2"
-            command="$3"
-            echo "=== BTC 24H: $label ==="
-            timeout --signal=TERM --kill-after=60 "$seconds" bash -lc "$command"
-          }
-
-          case "$BTC_RESEARCH_SLOT" in
-            maximum)
-              run_one "maximum future generalization" 20400 "python src/maximum_future_generalization_v6.py"
-              ;;
-            historical)
-              run_one "historical walk-forward" 20400 "python scripts/historical_research_spot_fallback.py"
-              ;;
-            challenger)
-              run_one "rolling challenger" 10200 "python src/rolling_challenger_oos.py"
-              run_one "adaptive ensemble" 10200 "python src/adaptive_ensemble_oos.py"
-              ;;
-            robustness)
-              run_one "calibration frozen replay" 6600 "python src/calibration_frozen_replay_oos.py"
-              run_one "uncertainty layer" 6600 "python src/uncertainty_layer_oos.py"
-              run_one "microstructure OOS" 6600 "python src/microstructure_oos.py"
-              ;;
-            *)
-              echo "Invalid research slot: $BTC_RESEARCH_SLOT" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Verify evidence and protect production boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import sqlite3
-          from pathlib import Path
-
-          evidence = Path("data/historical_research")
-          expected = {
-              "maximum": ["maximum_future_generalization_v6.json"],
-              "historical": ["report.json"],
-              "challenger": ["rolling_challenger_oos.json", "adaptive_ensemble_oos.json"],
-              "robustness": [
-                  "calibration_frozen_replay_oos.json",
-                  "uncertainty_layer_oos.json",
-                  "microstructure_oos.json",
-              ],
-          }
-          slot = __import__("os").environ["BTC_RESEARCH_SLOT"]
-          for filename in expected[slot]:
-              path = evidence / filename
-              if not path.is_file() or path.stat().st_size <= 0:
-                  raise SystemExit(f"missing expected evidence: {path}")
-              obj = json.loads(path.read_text(encoding="utf-8"))
-              if not isinstance(obj, dict):
-                  raise SystemExit(f"evidence root is not an object: {path}")
-              if obj.get("research_only") is not True:
-                  raise SystemExit(f"research_only contract failed: {path}")
-              if obj.get("production_changed") is True:
-                  raise SystemExit(f"production_changed=true: {path}")
-
-          manifest = json.loads(
-              (evidence / "btc_24h_slot_manifest.json").read_text(encoding="utf-8")
-          )
-          with sqlite3.connect("data/predictions.db") as con:
-              after = {
-                  h: (con.execute(
-                      "SELECT production_version FROM model_registry WHERE horizon=?",
-                      (h,),
-                  ).fetchone() or [None])[0]
-                  for h in ("5m", "10m")
-              }
-          if after != manifest["champion_registry_before"]:
-              raise SystemExit(
-                  f"Champion registry changed: before={manifest['champion_registry_before']} after={after}"
-              )
-          print("24H research safety boundary: VERIFIED")
-          PY
-
-      - name: Upload 24H research evidence
+      - name: Upload stage 1 checkpoint
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: btc-24h-research-evidence
+          name: btc-24h-stage-1-${{ github.run_id }}
+          path: data/historical_research/maximum_future_generalization_v6.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  stage2_historical:
+    name: "24H Stage 2 - Historical Walk-Forward"
+    needs: stage1_maximum
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+      - name: Compile research code
+        run: python -m compileall -q src scripts tests
+      - name: Run historical walk-forward research
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 340m python scripts/historical_research_spot_fallback.py
+          test -s data/historical_research/report.json
+      - name: Verify historical evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("data/historical_research/report.json").read_text())
+          for h in ("5m","10m"):
+              if int(r.get("horizons",{}).get(h,{}).get("samples",0)) <= 0:
+                  raise SystemExit(f"historical evidence incomplete: {h}")
+          print("stage 2 historical evidence: VERIFIED")
+          PY
+      - name: Upload stage 2 checkpoint
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-24h-stage-2-${{ github.run_id }}
+          path: data/historical_research/report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  stage3_challenger:
+    name: "24H Stage 3 - Rolling Challenger + Adaptive Ensemble"
+    needs: stage2_historical
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+      - name: Compile research code
+        run: python -m compileall -q src scripts tests
+      - name: Run rolling challenger
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 160m python src/rolling_challenger_oos.py
+          test -s data/historical_research/rolling_challenger_oos.json
+      - name: Run adaptive ensemble
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 160m python src/adaptive_ensemble_oos.py
+          test -s data/historical_research/adaptive_ensemble_oos.json
+      - name: Verify research-only outputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ("rolling_challenger_oos.json","adaptive_ensemble_oos.json"):
+              obj=json.loads((Path("data/historical_research")/name).read_text())
+              if obj.get("research_only") is not True or obj.get("production_changed") is True:
+                  raise SystemExit(f"research safety contract failed: {name}")
+          print("stage 3 research boundary: VERIFIED")
+          PY
+      - name: Upload stage 3 checkpoint
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-24h-stage-3-${{ github.run_id }}
           path: |
-            data/historical_research/btc_24h_slot_manifest.json
-            data/historical_research/maximum_future_generalization_v6.json
-            data/historical_research/report.json
             data/historical_research/rolling_challenger_oos.json
             data/historical_research/adaptive_ensemble_oos.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  stage4_robustness:
+    name: "24H Stage 4 - Calibration + Uncertainty + Microstructure"
+    needs: stage3_challenger
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore prediction state
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+      - name: Compile research code
+        run: python -m compileall -q src scripts tests
+      - name: Run frozen calibration replay
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 110m python src/calibration_frozen_replay_oos.py
+          test -s data/historical_research/calibration_frozen_replay_oos.json
+      - name: Run uncertainty layer
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 100m python src/uncertainty_layer_oos.py
+          test -s data/historical_research/uncertainty_layer_oos.json
+      - name: Run microstructure OOS
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60 120m python src/microstructure_oos.py
+          test -s data/historical_research/microstructure_oos.json
+      - name: Verify research-only outputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ("calibration_frozen_replay_oos.json","uncertainty_layer_oos.json","microstructure_oos.json"):
+              obj=json.loads((Path("data/historical_research")/name).read_text())
+              if obj.get("research_only") is not True or obj.get("production_changed") is True:
+                  raise SystemExit(f"research safety contract failed: {name}")
+          print("stage 4 research boundary: VERIFIED")
+          PY
+      - name: Download all stage checkpoints
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          pattern: btc-24h-stage-*-${{ github.run_id }}
+          path: data/historical_research/24h_checkpoints
+          merge-multiple: true
+      - name: Write final 24H checkpoint
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload={
+              "schema_version":1,
+              "research_only":True,
+              "production_changed":False,
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_sha":os.environ["GITHUB_SHA"],
+              "stage_results":{
+                  "stage1":"${{ needs.stage1_maximum.result }}",
+                  "stage2":"${{ needs.stage2_historical.result }}",
+                  "stage3":"${{ needs.stage3_challenger.result }}",
+                  "stage4":"${{ job.status }}",
+              },
+          }
+          p=Path("data/historical_research/24h_final_checkpoint.json")
+          p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          print(json.dumps(payload,sort_keys=True))
+          PY
+      - name: Upload final checkpoint
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-24h-final-${{ github.run_id }}
+          path: |
             data/historical_research/calibration_frozen_replay_oos.json
             data/historical_research/uncertainty_layer_oos.json
             data/historical_research/microstructure_oos.json
-          if-no-files-found: ignore
-          retention-days: 7
+            data/historical_research/24h_final_checkpoint.json
+            data/historical_research/24h_checkpoints/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail the marathon if any stage failed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.stage1_maximum.result }}" != "success" ] ||
+             [ "${{ needs.stage2_historical.result }}" != "success" ] ||
+             [ "${{ needs.stage3_challenger.result }}" != "success" ] ||
+             [ "${{ needs.stage4_robustness.result }}" != "success" ]; then
+            echo "BTC 24H marathon finished with one or more failed stages; evidence was preserved."
+            exit 1
+          fi
+          echo "BTC 24H marathon: all stages succeeded."
