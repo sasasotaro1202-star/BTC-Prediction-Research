@@ -218,22 +218,23 @@ class TestPredictGenerationBinding(unittest.TestCase):
 
 
 class TestBybitOpenInterestCapture(unittest.TestCase):
-    def test_bybit_oi_collection_is_research_only_and_validated(self):
+    def test_bybit_oi_parser_accepts_valid_btcusdt_snapshot(self):
         ticker = {
             "retCode": 0,
             "time": 1790035259500,
             "result": {"list": [{"symbol": "BTCUSDT", "openInterest": "12345.6"}]},
         }
-        rows = ticker["result"]["list"]
-        oi = float(rows[0]["openInterest"])
-        self.assertTrue(oi > 0)
+        self.assertAlmostEqual(predict.extract_bybit_open_interest(ticker), 12345.6)
 
-    def test_bybit_oi_is_not_present_when_ticker_field_is_invalid(self):
+    def test_bybit_oi_parser_rejects_wrong_symbol(self):
+        ticker = {"result": {"list": [{"symbol": "ETHUSDT", "openInterest": "12345.6"}]}}
+        with self.assertRaisesRegex(ValueError, "symbol_mismatch"):
+            predict.extract_bybit_open_interest(ticker)
+
+    def test_bybit_oi_parser_rejects_invalid_value(self):
         ticker = {"result": {"list": [{"symbol": "BTCUSDT", "openInterest": "not-a-number"}]}}
-        with self.assertRaises(ValueError):
-            oi = float(ticker["result"]["list"][0]["openInterest"])
-            if oi <= 0:
-                raise ValueError("invalid")
+        with self.assertRaisesRegex(ValueError, "open_interest_invalid"):
+            predict.extract_bybit_open_interest(ticker)
 
 class TestPredictBlendSafety(unittest.TestCase):
     def test_unvalidated_context_agreement_cannot_add_live_blend_weight(self):
