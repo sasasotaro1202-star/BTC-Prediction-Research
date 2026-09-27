@@ -79,6 +79,24 @@ def imbalance(book,levels=25):
     bids=bids[:levels]; asks=asks[:levels]; b=sum(float(x[1]) for x in bids); a=sum(float(x[1]) for x in asks)
     if not math.isfinite(b) or not math.isfinite(a) or b+a<=0: raise ValueError('order_book_nonfinite_or_empty')
     return (b-a)/(b+a)
+def extract_bybit_open_interest(ticker):
+    """Extract a positive Bybit BTCUSDT open-interest snapshot for research storage."" "
+    if not isinstance(ticker, dict):
+        raise ValueError("bybit_ticker_not_object")
+    result = ticker.get("result")
+    rows = result.get("list", []) if isinstance(result, dict) else []
+    if not rows or not isinstance(rows[0], dict):
+        raise ValueError("bybit_ticker_missing_rows")
+    symbol = str(rows[0].get("symbol", "")).upper()
+    if symbol != "BTCUSDT":
+        raise ValueError("bybit_ticker_symbol_mismatch")
+    try:
+        oi = float(rows[0]["openInterest"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("bybit_open_interest_invalid") from exc
+    if not math.isfinite(oi) or oi <= 0:
+        raise ValueError("bybit_open_interest_invalid")
+    return oi
 def structural(f,m):
     vol=max(.00025,f['volatility_10m'])
     score=(2.2*f['ret_1m']+1.6*f['ret_3m']+f['ret_5m']+.45*f['ret_10m']+.35*f['ret_15m']+.20*f['ret_30m'])/vol
