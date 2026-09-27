@@ -590,8 +590,6 @@ def main():
             raise ValueError("invalid_bybit_open_interest")
         m["bybit_oi"] = oi
         status["bybit_oi"] = "ok"
-        if isinstance(ticker, dict) and ticker.get("time") is not None:
-            status["bybit_oi_event_time_ms"] = int(ticker["time"])
     except Exception as exc:
         status["bybit_oi"] = f"error:{type(exc).__name__}"
     funding_result = market_calls.get("bybit_funding")
