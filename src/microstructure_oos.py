@@ -345,6 +345,78 @@ def load_variants(horizon: str):
     return variants
 
 
+def coverage_diagnostics(horizon: str) -> dict:
+    """Explain strict-PIT microstructure coverage without changing eligibility."""
+    base = load_primary_production_strict_rows(horizon)
+    diagnostics = {
+        "strict_primary_rows": len(base),
+        "strict_primary_first_created": min((str(r["created"]) for r in base), default=None),
+        "strict_primary_last_created": max((str(r["created"]) for r in base), default=None),
+        "field_presence": {
+            name: 0 for name in (*BINANCE_MICRO, *MARKET_FLOW_V2, *EXTENDED_FEATURES, *CROSS_VENUE)
+        },
+        "variant_coverage": {},
+    }
+
+    scenario_by_id = {}
+    ids = [int(r["id"]) for r in base if str(r["id"]).isdigit()]
+    if ids:
+        with sqlite3.connect(DB) as con:
+            placeholders = ",".join("?" for _ in ids)
+            rows = con.execute(
+                f"SELECT prediction_id, feature_json, scenario_json FROM predictions "
+                f"WHERE prediction_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+            scenario_by_id = {
+                int(r[0]): {"feature_json": r[1], "scenario": _safe_json(r[2])}
+                for r in rows
+            }
+
+    for row in base:
+        record = scenario_by_id.get(int(row["id"]), {})
+        scenario = record.get("scenario") if isinstance(record, dict) else {}
+        feature_json = record.get("feature_json") if isinstance(record, dict) else "{}"
+        micro = scenario.get("microstructure") if isinstance(scenario, dict) else {}
+        if isinstance(micro, dict):
+            for key in (*BINANCE_MICRO, *MARKET_FLOW_V2, *CROSS_VENUE):
+                raw_key = "oi" if key == "oi_log1p" else key
+                if _finite(micro.get(raw_key)) is not None:
+                    diagnostics["field_presence"][key] += 1
+        extra = _extended_from_feature_json(feature_json)
+        if extra is not None:
+            for key in EXTENDED_FEATURES:
+                diagnostics["field_presence"][key] += 1
+
+    total = len(base)
+    counts = {
+        "binance_micro": 0,
+        "market_flow_v2": 0,
+        "full_stack": 0,
+        "cross_venue": 0,
+    }
+    for row in base:
+        record = scenario_by_id.get(int(row["id"]), {})
+        scenario = record.get("scenario") if isinstance(record, dict) else {}
+        feature_json = record.get("feature_json") if isinstance(record, dict) else "{}"
+        micro_ok = _micro_from_scenario(scenario) is not None
+        flow_ok = _market_flow_from_scenario(scenario, created_at=row["created"]) is not None
+        extra_ok = _extended_from_feature_json(feature_json) is not None
+        cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
+        counts["binance_micro"] += int(micro_ok)
+        counts["market_flow_v2"] += int(micro_ok and flow_ok)
+        counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
+        counts["cross_venue"] += int(cross_ok)
+
+    for name, count in counts.items():
+        diagnostics["variant_coverage"][name] = {
+            "complete_rows": count,
+            "missing_rows": max(0, total - count),
+            "coverage_ratio": float(count / total) if total else 0.0,
+        }
+    return diagnostics
+
+
 def factories():
     out = {
         "logreg": lambda: Pipeline([
@@ -574,10 +646,12 @@ def main():
     }
     for h in HORIZONS:
         variants = load_variants(h)
+        coverage = coverage_diagnostics(h)
         family_count = max(1, len(factories()) * 4)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
+            "coverage_diagnostics": coverage,
             "binance_micro_rows": len(variants["binance_micro"]),
             "market_flow_v2_rows": len(variants["market_flow_v2"]),
             "full_stack_rows": len(variants["full_stack"]),
