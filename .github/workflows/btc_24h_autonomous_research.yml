@@ -1,0 +1,218 @@
+name: BTC 24H Autonomous Research
+
+# GitHub-hosted jobs have a 6-hour execution limit. Four scheduled research
+# slots provide a restartable 24-hour research cycle without a long-running
+# job exceeding the runner limit.
+#
+# UTC: 01:07 / 07:07 / 13:07 / 19:07
+# JST: 10:07 / 16:07 / 22:07 / 04:07
+#
+# Research-only: no production adoption, no final-holdout tuning, no Champion
+# registry mutation is permitted by this workflow.
+
+on:
+  schedule:
+    - cron: '7 1,7,13,19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-24h-autonomous-research-slot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  SLOT_TIMEOUT_SECONDS: 20400
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v7
+
+      - name: Resolve six-hour research slot
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            case "$(date -u +%H)" in
+              01) slot="maximum" ;;
+              07) slot="historical" ;;
+              13) slot="challenger" ;;
+              19) slot="robustness" ;;
+              *) echo "Unexpected scheduled hour" >&2; exit 1 ;;
+            esac
+          else
+            slot="maximum"
+          fi
+          echo "BTC_RESEARCH_SLOT=$slot" >> "$GITHUB_ENV"
+          echo "Selected slot: $slot"
+
+      - name: Restore prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          print("Prediction state restored.")
+          PY
+          test -s data/predictions.db
+
+      - name: Install research dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m pip install --retries 5 --timeout 60 -r requirements.txt; then
+              exit 0
+            fi
+            echo "Dependency installation attempt $attempt failed" >&2
+            sleep $((15 * attempt))
+          done
+          exit 1
+
+      - name: Compile research code
+        run: python -m compileall -q src scripts tests
+
+      - name: Snapshot Champion registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          with sqlite3.connect("data/predictions.db") as con:
+              registry = {
+                  h: (con.execute(
+                      "SELECT production_version FROM model_registry WHERE horizon=?",
+                      (h,),
+                  ).fetchone() or [None])[0]
+                  for h in ("5m", "10m")
+              }
+
+          payload = {
+              "schema_version": 1,
+              "research_only": True,
+              "production_changed": False,
+              "github_sha": os.environ["GITHUB_SHA"],
+              "github_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "slot": os.environ["BTC_RESEARCH_SLOT"],
+              "champion_registry_before": registry,
+          }
+          out = Path("data/historical_research/btc_24h_slot_manifest.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+          print(json.dumps(payload, sort_keys=True))
+          PY
+
+      - name: Run selected research slot
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_one() {
+            label="$1"
+            command="$2"
+            echo "=== BTC 24H: $label ==="
+            timeout --signal=TERM --kill-after=60 "$SLOT_TIMEOUT_SECONDS" bash -lc "$command"
+          }
+
+          case "$BTC_RESEARCH_SLOT" in
+            maximum)
+              run_one "maximum future generalization" "python src/maximum_future_generalization_v6.py"
+              ;;
+            historical)
+              run_one "historical walk-forward" "python scripts/historical_research_spot_fallback.py"
+              ;;
+            challenger)
+              run_one "rolling challenger" "python src/rolling_challenger_oos.py"
+              run_one "adaptive ensemble" "python src/adaptive_ensemble_oos.py"
+              ;;
+            robustness)
+              run_one "calibration frozen replay" "python src/calibration_frozen_replay_oos.py"
+              run_one "uncertainty layer" "python src/uncertainty_layer_oos.py"
+              run_one "microstructure OOS" "python src/microstructure_oos.py"
+              ;;
+            *)
+              echo "Invalid research slot: $BTC_RESEARCH_SLOT" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify evidence and protect production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          evidence = Path("data/historical_research")
+          expected = {
+              "maximum": ["maximum_future_generalization_v6.json"],
+              "historical": ["report.json"],
+              "challenger": ["rolling_challenger_oos.json", "adaptive_ensemble_oos.json"],
+              "robustness": [
+                  "calibration_frozen_replay_oos.json",
+                  "uncertainty_layer_oos.json",
+                  "microstructure_oos.json",
+              ],
+          }
+          slot = __import__("os").environ["BTC_RESEARCH_SLOT"]
+          for filename in expected[slot]:
+              path = evidence / filename
+              if not path.is_file() or path.stat().st_size <= 0:
+                  raise SystemExit(f"missing expected evidence: {path}")
+              obj = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(obj, dict):
+                  raise SystemExit(f"evidence root is not an object: {path}")
+              if obj.get("research_only") is not True:
+                  raise SystemExit(f"research_only contract failed: {path}")
+              if obj.get("production_changed") is True:
+                  raise SystemExit(f"production_changed=true: {path}")
+
+          manifest = json.loads(
+              (evidence / "btc_24h_slot_manifest.json").read_text(encoding="utf-8")
+          )
+          with sqlite3.connect("data/predictions.db") as con:
+              after = {
+                  h: (con.execute(
+                      "SELECT production_version FROM model_registry WHERE horizon=?",
+                      (h,),
+                  ).fetchone() or [None])[0]
+                  for h in ("5m", "10m")
+              }
+          if after != manifest["champion_registry_before"]:
+              raise SystemExit(
+                  f"Champion registry changed: before={manifest['champion_registry_before']} after={after}"
+              )
+          print("24H research safety boundary: VERIFIED")
+          PY
+
+      - name: Upload 24H research evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-24h-research-evidence
+          path: |
+            data/historical_research/btc_24h_slot_manifest.json
+            data/historical_research/maximum_future_generalization_v6.json
+            data/historical_research/report.json
+            data/historical_research/rolling_challenger_oos.json
+            data/historical_research/adaptive_ensemble_oos.json
+            data/historical_research/calibration_frozen_replay_oos.json
+            data/historical_research/uncertainty_layer_oos.json
+            data/historical_research/microstructure_oos.json
+          if-no-files-found: ignore
+          retention-days: 7
