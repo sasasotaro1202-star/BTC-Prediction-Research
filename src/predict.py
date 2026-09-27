@@ -436,6 +436,12 @@ def main():
     except Exception as exc:
         status['bybit_depth']=f'error:{type(exc).__name__}'
 
+    bybit_ticker_result = None
+    try:
+        bybit_ticker_result = bybit_mark_price()
+    except Exception:
+        bybit_ticker_result = None
+
     # Bybit is a secondary cross-venue signal. It is useful when available,
     # but an outage must not block an otherwise valid production prediction.
     # Prefer the latest closed candle when available; otherwise query the
@@ -472,7 +478,7 @@ def main():
         status['bybit_futures']='ok_current_only' if len(by) == 1 else status.get('bybit_futures','ok')
     else:
         try:
-            ticker=bybit_mark_price()
+            ticker=bybit_ticker_result
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
                 row=rows[0]
@@ -574,6 +580,21 @@ def main():
     except Exception as exc:
         status['binance_taker']=f'error:{type(exc).__name__}'
 
+    # Research-only Bybit open-interest capture. This is collected for future
+    # OOS testing but is not included in the Production Champion input vector.
+    try:
+        ticker = bybit_ticker_result
+        rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
+        row = rows[0] if rows else {}
+        oi = float(row.get("openInterest"))
+        if not (math.isfinite(oi) and oi > 0):
+            raise ValueError("invalid_bybit_open_interest")
+        m["bybit_oi"] = oi
+        status["bybit_oi"] = "ok"
+        if isinstance(ticker, dict) and ticker.get("time") is not None:
+            status["bybit_oi_event_time_ms"] = int(ticker["time"])
+    except Exception as exc:
+        status["bybit_oi"] = f"error:{type(exc).__name__}"
     funding_result = market_calls.get("bybit_funding")
     try:
         if isinstance(funding_result, Exception):
@@ -724,6 +745,17 @@ def main():
     # a trustworthy source-native event/publication timestamp. Never borrow the
     # Binance candle timestamp for another venue: that would falsely imply PIT
     # alignment. Keep event_time explicitly unknown until the adapter supplies it.
+    source_provenance['bybit_ticker']={
+        'information_origin':'Bybit',
+        'event_time':_iso_ms(status.get('bybit_oi_event_time_ms')),
+        'available_at':retrieved if status.get('bybit_oi') == 'ok' else None,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'prediction_cutoff':retrieved if status.get('bybit_oi') == 'ok' else None,
+        'revision_time':None,
+        'status':status.get('bybit_oi'),
+        'fields':['openInterest'],
+    }
     for source_key in ('bybit_futures','bybit_depth','bybit_funding'):
         source_provenance[source_key]={
             'information_origin':'Bybit',
