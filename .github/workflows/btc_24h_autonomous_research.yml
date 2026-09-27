@@ -85,12 +85,19 @@ jobs:
               raise SystemExit("production state mutated during stage 1")
           print("stage 1 production boundary: VERIFIED")
           PY
+      - name: Preserve stage 1 boundary snapshot
+        if: always()
+        run: |
+          set -euo pipefail
+          cp /tmp/btc24_before.json data/historical_research/24h_stage1_before.json
       - name: Upload stage 1 checkpoint
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: btc-24h-stage-1-${{ github.run_id }}
-          path: data/historical_research/maximum_future_generalization_v6.json
+          path: |
+            data/historical_research/maximum_future_generalization_v6.json
+            data/historical_research/24h_stage1_before.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -318,3 +325,116 @@ jobs:
             exit 1
           fi
           echo "BTC 24H marathon: all stages succeeded."
+
+  finalize:
+    name: "24H Final Evidence Reconciliation"
+    needs: [stage1_maximum, stage2_historical, stage3_challenger, stage4_robustness]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download available stage evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          pattern: btc-24h-stage-*
+          path: data/historical_research/24h_reconcile/stages
+          merge-multiple: true
+      - name: Download final stage evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          pattern: btc-24h-final-*
+          path: data/historical_research/24h_reconcile/final
+          merge-multiple: true
+      - name: Reconcile immutable 24H evidence
+        if: always()
+        env:
+          S1: ${{ needs.stage1_maximum.result }}
+          S2: ${{ needs.stage2_historical.result }}
+          S3: ${{ needs.stage3_challenger.result }}
+          S4: ${{ needs.stage4_robustness.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          root = Path("data/historical_research/24h_reconcile")
+          files = sorted(p.as_posix() for p in root.rglob("*.json")) if root.exists() else []
+          stages = {
+              "stage1_maximum": os.environ["S1"],
+              "stage2_historical": os.environ["S2"],
+              "stage3_challenger": os.environ["S3"],
+              "stage4_robustness": os.environ["S4"],
+          }
+
+          required_names = {
+              "maximum_future_generalization_v6.json",
+              "report.json",
+              "rolling_challenger_oos.json",
+              "adaptive_ensemble_oos.json",
+              "calibration_frozen_replay_oos.json",
+              "uncertainty_layer_oos.json",
+              "microstructure_oos.json",
+              "24h_final_checkpoint.json",
+              "24h_stage1_before.json",
+          }
+          present_names = {Path(f).name for f in files}
+          missing = sorted(required_names - present_names)
+
+          safety_failures = []
+          json_files = list(root.rglob("*.json")) if root.exists() else []
+          for path in json_files:
+              try:
+                  obj = json.loads(path.read_text(encoding="utf-8"))
+              except Exception:
+                  continue
+              if obj.get("production_changed") is True:
+                  safety_failures.append(str(path))
+
+          status = "COMPLETED" if all(v == "success" for v in stages.values()) and not missing and not safety_failures else "PARTIAL_OR_BLOCKED"
+          payload = {
+              "schema_version": 1,
+              "status": status,
+              "research_only": True,
+              "production_changed": False,
+              "github_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "github_sha": os.environ["GITHUB_SHA"],
+              "stage_results": stages,
+              "required_evidence_missing": missing,
+              "safety_claim_failures": safety_failures,
+              "evidence_file_count": len(files),
+          }
+          out = root / "24h_run_status.json"
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          if safety_failures:
+              raise SystemExit("research evidence reported production_changed=true")
+          PY
+      - name: Upload reconciled evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-24h-reconciled-${{ github.run_id }}
+          path: data/historical_research/24h_reconcile/**
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce complete marathon evidence
+        if: always()
+        env:
+          S1: ${{ needs.stage1_maximum.result }}
+          S2: ${{ needs.stage2_historical.result }}
+          S3: ${{ needs.stage3_challenger.result }}
+          S4: ${{ needs.stage4_robustness.result }}
+        run: |
+          set -euo pipefail
+          test "$S1" = success
+          test "$S2" = success
+          test "$S3" = success
+          test "$S4" = success
