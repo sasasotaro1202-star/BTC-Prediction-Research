@@ -438,22 +438,36 @@ def coverage_diagnostics(horizon: str) -> dict:
 
     total = len(base)
     counts = {
+        "binance_core": 0,
         "binance_micro": 0,
+        "market_flow_v2_no_oi": 0,
         "market_flow_v2": 0,
+        "full_stack_no_oi": 0,
         "full_stack": 0,
+        "cross_venue_no_oi": 0,
         "cross_venue": 0,
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]), {})
         scenario = record.get("scenario") if isinstance(record, dict) else {}
         feature_json = record.get("feature_json") if isinstance(record, dict) else "{}"
+        micro_obj = scenario.get("microstructure") if isinstance(scenario, dict) else None
+        core_ok = bool(
+            isinstance(micro_obj, dict)
+            and all(_finite(micro_obj.get(k)) is not None for k in BINANCE_MICRO_CORE)
+        )
         micro_ok = _micro_from_scenario(scenario) is not None
         flow_ok = _market_flow_from_scenario(scenario, created_at=row["created"]) is not None
         extra_ok = _extended_from_feature_json(feature_json) is not None
         cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
+        cross_core_ok = bool(core_ok and cross_ok)
+        counts["binance_core"] += int(core_ok)
         counts["binance_micro"] += int(micro_ok)
+        counts["market_flow_v2_no_oi"] += int(core_ok and flow_ok)
         counts["market_flow_v2"] += int(micro_ok and flow_ok)
+        counts["full_stack_no_oi"] += int(core_ok and flow_ok and extra_ok)
         counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
+        counts["cross_venue_no_oi"] += int(cross_core_ok)
         counts["cross_venue"] += int(cross_ok)
 
     for name, count in counts.items():
