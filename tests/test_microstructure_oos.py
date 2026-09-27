@@ -4,9 +4,11 @@ from src.microstructure_oos import (
     BASE_FEATURES,
     BINANCE_MICRO,
     BINANCE_MICRO_CORE,
+    BYBIT_OI,
     CROSS_VENUE,
     EXTENDED_FEATURES,
     MARKET_FLOW_V2,
+    _bybit_oi_from_scenario,
     _extended_from_feature_json,
     _market_flow_from_scenario,
     _micro_from_scenario,
@@ -35,6 +37,9 @@ class MicrostructureOOSTests(unittest.TestCase):
         ))
         self.assertEqual(len(BINANCE_MICRO), len(BINANCE_MICRO_CORE) + 1)
 
+    def test_bybit_oi_variant_schema(self):
+        self.assertEqual(BYBIT_OI, ("bybit_oi_log1p",))
+
     def test_feature_variant_manifest_includes_oi_independent_paths(self):
         variants = {
             "binance_core": list(BINANCE_MICRO_CORE),
@@ -52,6 +57,9 @@ class MicrostructureOOSTests(unittest.TestCase):
             "market_flow_v2": list(BASE_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2),
             "full_stack": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2),
             "cross_venue": list(BASE_FEATURES + BINANCE_MICRO + CROSS_VENUE),
+            "binance_core_bybit_oi": list(BASE_FEATURES + BINANCE_MICRO_CORE + BYBIT_OI),
+            "market_flow_v2_no_oi_bybit_oi": list(BASE_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
+            "full_stack_no_oi_bybit_oi": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
         }
         self.assertEqual(set(expected), {"binance_micro", "market_flow_v2", "full_stack", "cross_venue"})
         self.assertEqual(len(expected["full_stack"]), 33)
@@ -99,6 +107,25 @@ class MicrostructureOOSTests(unittest.TestCase):
                 }
             },
         }
+
+    def test_bybit_oi_requires_own_source_provenance(self):
+        values = _bybit_oi_from_scenario(self._scenario(), created_at="2026-09-22T00:00:00+00:00")
+        self.assertEqual(set(values), set(BYBIT_OI))
+        self.assertAlmostEqual(values["bybit_oi_log1p"], __import__("math").log1p(1000000.0))
+        scenario = self._scenario()
+        del scenario["provenance"]["sources"]["bybit_ticker"]
+        self.assertIsNone(_bybit_oi_from_scenario(scenario, created_at="2026-09-22T00:00:00+00:00"))
+
+    def test_bybit_oi_rejects_source_available_after_cutoff(self):
+        scenario = self._scenario()
+        scenario["provenance"]["sources"]["bybit_ticker"] = {
+            "status": "ok",
+            "available_at": "2026-09-22T00:00:02+00:00",
+            "retrieved_at": "2026-09-22T00:00:01+00:00",
+            "prediction_cutoff": "2026-09-22T00:00:01+00:00",
+            "fields": ["openInterest"],
+        }
+        self.assertIsNone(_bybit_oi_from_scenario(scenario, created_at="2026-09-22T00:00:02+00:00"))
 
     def test_binance_microstructure_is_complete_case_without_imputation(self):
         values = _micro_from_scenario(self._scenario(), cross_venue=False)
