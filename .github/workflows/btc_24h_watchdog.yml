@@ -79,14 +79,17 @@ jobs:
           age_hours = (now - datetime.fromisoformat(raw.replace("Z", "+00:00"))).total_seconds() / 3600.0
           conclusion = latest.get("conclusion")
 
-          if conclusion == "failure" and age_hours >= 1:
+          if conclusion == "failure" and age_hours >= (10 / 60):
               print(f"LAST_FAILURE|age_hours={age_hours:.2f}")
               print("ACTION=DISPATCH")
-          elif age_hours >= 24:
-              print(f"NO_RECENT_RUN|age_hours={age_hours:.2f}")
+          elif conclusion == "cancelled" and age_hours >= (10 / 60):
+              print(f"LAST_CANCELLED|age_hours={age_hours:.2f}")
+              print("ACTION=DISPATCH")
+          elif age_hours >= (10 / 60):
+              print(f"CONTINUOUS_CHAIN|last_conclusion={conclusion}|age_hours={age_hours:.2f}")
               print("ACTION=DISPATCH")
           else:
-              print(f"HEALTHY|last_conclusion={conclusion}|age_hours={age_hours:.2f}")
+              print(f"RECENT_COMPLETION|last_conclusion={conclusion}|age_hours={age_hours:.2f}")
               print("ACTION=WAIT")
           PY
 
