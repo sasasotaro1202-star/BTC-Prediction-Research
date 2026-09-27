@@ -74,6 +74,11 @@ BINANCE_MICRO = (
     "funding_binance",
     "oi_log1p",
 )
+BINANCE_MICRO_CORE = (
+    "book_imbalance",
+    "taker_imbalance",
+    "funding_binance",
+)
 MARKET_FLOW_V2 = (
     "vwap_distance_5m",
     "vwap_distance_15m",
@@ -268,9 +273,13 @@ def load_variants(horizon: str):
     if not base:
         return {
             "base": [],
+            "binance_core": [],
             "binance_micro": [],
+            "market_flow_v2_no_oi": [],
             "market_flow_v2": [],
+            "full_stack_no_oi": [],
             "full_stack": [],
+            "cross_venue_no_oi": [],
             "cross_venue": [],
         }
 
@@ -288,7 +297,17 @@ def load_variants(horizon: str):
                 for r in rows
             }
 
-    variants = {"base": [], "binance_micro": [], "market_flow_v2": [], "full_stack": [], "cross_venue": []}
+    variants = {
+        "base": [],
+        "binance_core": [],
+        "binance_micro": [],
+        "market_flow_v2_no_oi": [],
+        "market_flow_v2": [],
+        "full_stack_no_oi": [],
+        "full_stack": [],
+        "cross_venue_no_oi": [],
+        "cross_venue": [],
+    }
     for row in base:
         record = scenario_by_id.get(int(row["id"]))
         scenario = record.get("scenario") if isinstance(record, dict) else None
@@ -305,6 +324,16 @@ def load_variants(horizon: str):
         base_row = {**common, "x": list(row["x"])}
         variants["base"].append(base_row)
 
+        micro_obj = scenario.get("microstructure") if isinstance(scenario, dict) else None
+        core = None
+        if isinstance(micro_obj, dict):
+            candidate = {k: _finite(micro_obj.get(k)) for k in BINANCE_MICRO_CORE}
+            if all(v is not None for v in candidate.values()):
+                core = candidate
+                variants["binance_core"].append(
+                    {**common, "x": list(row["x"]) + [core[k] for k in BINANCE_MICRO_CORE]}
+                )
+
         micro = _micro_from_scenario(scenario, cross_venue=False)
         if micro is not None:
             variants["binance_micro"].append(
@@ -312,6 +341,15 @@ def load_variants(horizon: str):
             )
 
         flow = _market_flow_from_scenario(scenario, created_at=row["created"])
+        if core is not None and flow is not None:
+            variants["market_flow_v2_no_oi"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [core[k] for k in BINANCE_MICRO_CORE]
+                    + [flow[k] for k in MARKET_FLOW_V2],
+                }
+            )
         if micro is not None and flow is not None:
             variants["market_flow_v2"].append(
                 {
@@ -324,6 +362,16 @@ def load_variants(horizon: str):
 
         extra = _extended_from_feature_json(feature_json)
 
+        if core is not None and flow is not None and extra is not None:
+            variants["full_stack_no_oi"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [extra[k] for k in EXTENDED_FEATURES]
+                    + [core[k] for k in BINANCE_MICRO_CORE]
+                    + [flow[k] for k in MARKET_FLOW_V2],
+                }
+            )
         if micro is not None and flow is not None and extra is not None:
             variants["full_stack"].append(
                 {
@@ -336,6 +384,10 @@ def load_variants(horizon: str):
             )
 
         cross = _micro_from_scenario(scenario, cross_venue=True)
+        if core is not None and cross is not None:
+            variants["cross_venue_no_oi"].append(
+                {**common, "x": list(row["x"]) + [core[k] for k in BINANCE_MICRO_CORE] + [cross[k] for k in CROSS_VENUE]}
+            )
         if cross is not None:
             variants["cross_venue"].append(
                 {**common, "x": list(row["x"]) + [cross[k] for k in BINANCE_MICRO + CROSS_VENUE]}
@@ -390,22 +442,36 @@ def coverage_diagnostics(horizon: str) -> dict:
 
     total = len(base)
     counts = {
+        "binance_core": 0,
         "binance_micro": 0,
+        "market_flow_v2_no_oi": 0,
         "market_flow_v2": 0,
+        "full_stack_no_oi": 0,
         "full_stack": 0,
+        "cross_venue_no_oi": 0,
         "cross_venue": 0,
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]), {})
         scenario = record.get("scenario") if isinstance(record, dict) else {}
         feature_json = record.get("feature_json") if isinstance(record, dict) else "{}"
+        micro_obj = scenario.get("microstructure") if isinstance(scenario, dict) else None
+        core_ok = bool(
+            isinstance(micro_obj, dict)
+            and all(_finite(micro_obj.get(k)) is not None for k in BINANCE_MICRO_CORE)
+        )
         micro_ok = _micro_from_scenario(scenario) is not None
         flow_ok = _market_flow_from_scenario(scenario, created_at=row["created"]) is not None
         extra_ok = _extended_from_feature_json(feature_json) is not None
         cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
+        cross_core_ok = bool(core_ok and cross_ok)
+        counts["binance_core"] += int(core_ok)
         counts["binance_micro"] += int(micro_ok)
+        counts["market_flow_v2_no_oi"] += int(core_ok and flow_ok)
         counts["market_flow_v2"] += int(micro_ok and flow_ok)
+        counts["full_stack_no_oi"] += int(core_ok and flow_ok and extra_ok)
         counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
+        counts["cross_venue_no_oi"] += int(cross_core_ok)
         counts["cross_venue"] += int(cross_ok)
 
     for name, count in counts.items():
@@ -635,11 +701,15 @@ def main():
         "final_holdout_protected": True,
         "policy": "strict_primary_pit_microstructure_complete_case_no_imputation_purged_embargoed_chronological_oos",
         "feature_variants": {
+            "binance_core": list(BINANCE_MICRO_CORE),
             "binance_micro": list(BINANCE_MICRO),
+            "market_flow_v2_no_oi": list(BINANCE_MICRO_CORE + MARKET_FLOW_V2),
             "market_flow_v2": list(BINANCE_MICRO + MARKET_FLOW_V2),
+            "full_stack_no_oi": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2),
             "full_stack": list(
                 BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO + MARKET_FLOW_V2
             ),
+            "cross_venue_no_oi": list(BINANCE_MICRO_CORE + CROSS_VENUE),
             "cross_venue": list(BINANCE_MICRO + CROSS_VENUE),
         },
         "horizons": {},
@@ -647,23 +717,39 @@ def main():
     for h in HORIZONS:
         variants = load_variants(h)
         coverage = coverage_diagnostics(h)
-        family_count = max(1, len(factories()) * 4)
+        family_count = max(1, len(factories()) * 8)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
             "coverage_diagnostics": coverage,
+            "binance_core_rows": len(variants["binance_core"]),
             "binance_micro_rows": len(variants["binance_micro"]),
+            "market_flow_v2_no_oi_rows": len(variants["market_flow_v2_no_oi"]),
             "market_flow_v2_rows": len(variants["market_flow_v2"]),
+            "full_stack_no_oi_rows": len(variants["full_stack_no_oi"]),
             "full_stack_rows": len(variants["full_stack"]),
+            "cross_venue_no_oi_rows": len(variants["cross_venue_no_oi"]),
             "cross_venue_rows": len(variants["cross_venue"]),
+            "binance_core": evaluate_variant(
+                h, variants["binance_core"], corrected_alpha=corrected_alpha
+            ),
             "binance_micro": evaluate_variant(
                 h, variants["binance_micro"], corrected_alpha=corrected_alpha
+            ),
+            "market_flow_v2_no_oi": evaluate_variant(
+                h, variants["market_flow_v2_no_oi"], corrected_alpha=corrected_alpha
             ),
             "market_flow_v2": evaluate_variant(
                 h, variants["market_flow_v2"], corrected_alpha=corrected_alpha
             ),
+            "full_stack_no_oi": evaluate_variant(
+                h, variants["full_stack_no_oi"], corrected_alpha=corrected_alpha
+            ),
             "full_stack": evaluate_variant(
                 h, variants["full_stack"], corrected_alpha=corrected_alpha
+            ),
+            "cross_venue_no_oi": evaluate_variant(
+                h, variants["cross_venue_no_oi"], corrected_alpha=corrected_alpha
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha

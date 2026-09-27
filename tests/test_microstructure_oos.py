@@ -3,6 +3,7 @@ import unittest
 from src.microstructure_oos import (
     BASE_FEATURES,
     BINANCE_MICRO,
+    BINANCE_MICRO_CORE,
     CROSS_VENUE,
     EXTENDED_FEATURES,
     MARKET_FLOW_V2,
@@ -27,6 +28,23 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertEqual(out["variant_coverage"]["binance_micro"]["complete_rows"], 0)
         self.assertEqual(out["variant_coverage"]["binance_micro"]["coverage_ratio"], 0.0)
         self.assertEqual(out["field_presence"]["book_imbalance"], 0)
+
+    def test_oi_independent_variant_schema_and_feature_counts(self):
+        self.assertEqual(BINANCE_MICRO_CORE, (
+            "book_imbalance", "taker_imbalance", "funding_binance"
+        ))
+        self.assertEqual(len(BINANCE_MICRO), len(BINANCE_MICRO_CORE) + 1)
+
+    def test_feature_variant_manifest_includes_oi_independent_paths(self):
+        variants = {
+            "binance_core": list(BINANCE_MICRO_CORE),
+            "market_flow_v2_no_oi": list(BINANCE_MICRO_CORE + MARKET_FLOW_V2),
+            "cross_venue_no_oi": list(BINANCE_MICRO_CORE + CROSS_VENUE),
+        }
+        self.assertEqual(len(variants["binance_core"]), 3)
+        self.assertNotIn("oi_log1p", variants["binance_core"])
+        self.assertNotIn("oi_log1p", variants["market_flow_v2_no_oi"])
+        self.assertNotIn("oi_log1p", variants["cross_venue_no_oi"])
 
     def test_feature_variant_manifest_matches_output_variants(self):
         expected = {
