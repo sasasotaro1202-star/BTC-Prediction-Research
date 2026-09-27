@@ -1,0 +1,118 @@
+name: BTC 24H Research Watchdog
+
+# Lightweight recovery controller inspired by the soccer/baseball/stock
+# automation watchdogs in the related research projects.
+#
+# It never edits production artifacts. It only cancels stale 24H marathon
+# queue entries and dispatches a fresh main-branch marathon when continuity
+# has been lost.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-24h-research-watchdog
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reconcile BTC 24H marathon
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=30" > /tmp/btc24_runs.json
+
+          python - <<'PY' > /tmp/btc24_decision
+          import json
+          from datetime import datetime, timezone
+
+          runs = json.load(open("/tmp/btc24_runs.json", encoding="utf-8")).get("workflow_runs", [])
+          now = datetime.now(timezone.utc)
+          active_statuses = {"queued", "pending", "in_progress", "waiting", "requested"}
+
+          active = [r for r in runs if r.get("status") in active_statuses]
+
+          stale_active = []
+          for r in active:
+              status = r.get("status")
+              raw = r.get("run_started_at") if status == "in_progress" else r.get("updated_at") or r.get("created_at")
+              if not raw:
+                  continue
+              dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+              age_minutes = (now - dt).total_seconds() / 60.0
+              if status in {"queued", "pending"} and age_minutes >= 30:
+                  stale_active.append((r, age_minutes, "queue"))
+              elif status == "in_progress" and age_minutes >= 1500:
+                  stale_active.append((r, age_minutes, "active"))
+
+          if stale_active:
+              for r, age, kind in stale_active:
+                  print(f"STALE|{r['id']}|{kind}|{age:.1f}")
+              print("ACTION=RECOVER_STALE")
+              raise SystemExit(0)
+
+          if active:
+              print(f"ACTIVE|{len(active)}")
+              print("ACTION=WAIT")
+              raise SystemExit(0)
+
+          completed = [r for r in runs if r.get("status") == "completed"]
+          if not completed:
+              print("NO_COMPLETED_RUN")
+              print("ACTION=DISPATCH")
+              raise SystemExit(0)
+
+          latest = max(completed, key=lambda r: r.get("updated_at") or r.get("created_at") or "")
+          raw = latest.get("updated_at") or latest.get("created_at")
+          age_hours = (now - datetime.fromisoformat(raw.replace("Z", "+00:00"))).total_seconds() / 3600.0
+          conclusion = latest.get("conclusion")
+
+          if conclusion == "failure" and age_hours >= 1:
+              print(f"LAST_FAILURE|age_hours={age_hours:.2f}")
+              print("ACTION=DISPATCH")
+          elif age_hours >= 24:
+              print(f"NO_RECENT_RUN|age_hours={age_hours:.2f}")
+              print("ACTION=DISPATCH")
+          else:
+              print(f"HEALTHY|last_conclusion={conclusion}|age_hours={age_hours:.2f}")
+              print("ACTION=WAIT")
+          PY
+
+          cat /tmp/btc24_decision
+          action="$(awk -F= '/^ACTION=/{print $2}' /tmp/btc24_decision | tail -1)"
+
+          if [ "$action" = "WAIT" ]; then
+            exit 0
+          fi
+
+          if [ "$action" = "RECOVER_STALE" ]; then
+            while IFS='|' read -r tag run_id kind age; do
+              [ "$tag" = "STALE" ] || continue
+              echo "Cancelling stale BTC 24H run: id=$run_id kind=$kind age_minutes=$age"
+              gh run cancel "$run_id" --repo "$REPO"
+            done < /tmp/btc24_decision
+          fi
+
+          for attempt in 1 2 3 4; do
+            if gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
+              echo "BTC 24H marathon dispatch: OK"
+              exit 0
+            fi
+            echo "dispatch attempt $attempt failed; retrying" >&2
+            sleep $((attempt * 5))
+          done
+
+          echo "BTC 24H watchdog could not recover marathon" >&2
+          exit 1
