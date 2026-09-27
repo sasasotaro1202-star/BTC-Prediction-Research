@@ -603,11 +603,7 @@ def main():
         ticker = market_calls.get("bybit_ticker")
         if isinstance(ticker, Exception):
             raise ticker
-        rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
-        row = rows[0] if rows else {}
-        oi = float(row.get("openInterest"))
-        if not (math.isfinite(oi) and oi > 0):
-            raise ValueError("invalid_bybit_open_interest")
+        oi = extract_bybit_open_interest(ticker)
         m["bybit_oi"] = oi
         status["bybit_oi"] = "ok"
     except Exception as exc:
