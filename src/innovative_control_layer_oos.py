@@ -1115,6 +1115,27 @@ def write_outputs(result):
         }, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+def _write_experiment_manifest():
+    artifact_suffixes = (
+        "oos",
+        "ablation",
+        "statistical_validation",
+        "stress_test",
+        "selective_policy",
+        "shadow_results",
+        "disagreement_features",
+        "predictability_model",
+        "future_failure_model",
+        "drift_detector",
+        "dynamic_router",
+        "calibration_artifact",
+    )
+    artifacts = [
+        f"innovative_control_{horizon}_{suffix}.json"
+        for horizon in HORIZONS
+        for suffix in artifact_suffixes
+    ]
     (OUT_DIR / "innovative_experiment_manifest.json").write_text(
         json.dumps({
             "schema_version": 1,
@@ -1127,24 +1148,10 @@ def write_outputs(result):
             "seed": SEED,
             "frozen_holdout_frac": FINAL_HOLDOUT_FRAC,
             "production_changed": False,
-            "artifacts": [
-                f"innovative_control_{horizon}_oos.json",
-                f"innovative_control_{horizon}_ablation.json",
-                f"innovative_control_{horizon}_statistical_validation.json",
-                f"innovative_control_{horizon}_stress_test.json",
-                f"innovative_control_{horizon}_selective_policy.json",
-                f"innovative_control_{horizon}_shadow_results.json",
-                f"innovative_control_{horizon}_disagreement_features.json",
-                f"innovative_control_{horizon}_predictability_model.json",
-                f"innovative_control_{horizon}_future_failure_model.json",
-                f"innovative_control_{horizon}_drift_detector.json",
-                f"innovative_control_{horizon}_dynamic_router.json",
-                f"innovative_control_{horizon}_calibration_artifact.json",
-            ],
+            "artifacts": artifacts,
         }, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1175,6 +1182,8 @@ def main():
     for result in outputs.values():
         if result.get("status") == "OK":
             write_outputs(result)
+    if all(result.get("status") == "OK" for result in outputs.values()):
+        _write_experiment_manifest()
     print(json.dumps(aggregate, indent=2, sort_keys=True))
 
 

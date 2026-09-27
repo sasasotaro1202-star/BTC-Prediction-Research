@@ -12,6 +12,7 @@ from src.innovative_control_layer_oos import (
     _past_quality_logloss,
     _stress_test,
     disagreement_features,
+    _write_experiment_manifest,
     write_outputs,
 )
 
@@ -91,33 +92,42 @@ class TestInnovativeControlLayer(unittest.TestCase):
         self.assertAlmostEqual(out["early"]["full_vs_soft_logloss_delta"], -0.1)
         self.assertAlmostEqual(out["early"]["full_vs_soft_brier_delta"], -0.1)
 
-    def test_write_outputs_manifest_uses_result_horizon(self):
+    def test_experiment_manifest_lists_all_horizons(self):
         import src.innovative_control_layer_oos as module
 
+        sample = {
+            "oos_summary": {},
+            "deltas_vs_soft": {},
+            "period_breakdown": {},
+            "statistical_validation": {},
+            "stress_test": {},
+            "selective_prediction": {},
+            "shadow": {},
+            "promotion": {},
+            "blocks_detail": [],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             previous = module.OUT_DIR
             module.OUT_DIR = Path(tmp)
             try:
-                write_outputs({
-                    "horizon": "5m",
-                    "oos_summary": {},
-                    "deltas_vs_soft": {},
-                    "period_breakdown": {},
-                    "statistical_validation": {},
-                    "stress_test": {},
-                    "selective_prediction": {},
-                    "shadow": {},
-                    "promotion": {},
-                    "blocks_detail": [],
-                })
+                for horizon in ("5m", "10m"):
+                    result = dict(sample)
+                    result["horizon"] = horizon
+                    write_outputs(result)
+                _write_experiment_manifest()
                 manifest = json.loads(
                     (Path(tmp) / "innovative_experiment_manifest.json").read_text(
                         encoding="utf-8"
                     )
                 )
                 artifacts = manifest["artifacts"]
-                self.assertEqual(len(artifacts), 12)
-                self.assertTrue(all("_5m_" in name for name in artifacts))
+                self.assertEqual(len(artifacts), 24)
+                self.assertEqual(manifest["horizons"], ["5m", "10m"])
+                for horizon in ("5m", "10m"):
+                    self.assertEqual(
+                        sum(f"_{horizon}_" in name for name in artifacts),
+                        12,
+                    )
                 self.assertFalse(any("{h}" in name for name in artifacts))
                 self.assertTrue(all((Path(tmp) / name).is_file() for name in artifacts))
             finally:
