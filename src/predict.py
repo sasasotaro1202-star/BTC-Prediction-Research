@@ -402,6 +402,7 @@ def main():
         "bybit_depth": bybit_depth,
         "binance_oi": binance_oi,
         "bybit_funding": bybit_funding,
+        "bybit_ticker": bybit_mark_price,
     }
     if ws_book is None:
         market_call_defs["binance_depth"] = binance_depth
@@ -435,12 +436,6 @@ def main():
         status['bybit_depth']='ok'
     except Exception as exc:
         status['bybit_depth']=f'error:{type(exc).__name__}'
-
-    bybit_ticker_result = None
-    try:
-        bybit_ticker_result = bybit_mark_price()
-    except Exception:
-        bybit_ticker_result = None
 
     # Bybit is a secondary cross-venue signal. It is useful when available,
     # but an outage must not block an otherwise valid production prediction.
@@ -478,7 +473,9 @@ def main():
         status['bybit_futures']='ok_current_only' if len(by) == 1 else status.get('bybit_futures','ok')
     else:
         try:
-            ticker=bybit_ticker_result
+            ticker=market_calls.get("bybit_ticker")
+            if isinstance(ticker, Exception):
+                raise ticker
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
                 row=rows[0]
@@ -583,7 +580,9 @@ def main():
     # Research-only Bybit open-interest capture. This is collected for future
     # OOS testing but is not included in the Production Champion input vector.
     try:
-        ticker = bybit_ticker_result
+        ticker = market_calls.get("bybit_ticker")
+        if isinstance(ticker, Exception):
+            raise ticker
         rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
         row = rows[0] if rows else {}
         oi = float(row.get("openInterest"))
