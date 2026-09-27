@@ -12,7 +12,10 @@ name: BTC 24H Autonomous Research
 
 on:
   schedule:
-    - cron: '7 1,7,13,19 * * *'
+    - cron: '7 1 * * *'
+    - cron: '7 7 * * *'
+    - cron: '7 13 * * *'
+    - cron: '7 19 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +28,6 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  SLOT_TIMEOUT_SECONDS: 20400
 
 jobs:
   research:
@@ -40,12 +42,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            case "$(date -u +%H)" in
-              01) slot="maximum" ;;
-              07) slot="historical" ;;
-              13) slot="challenger" ;;
-              19) slot="robustness" ;;
-              *) echo "Unexpected scheduled hour" >&2; exit 1 ;;
+            case "$GITHUB_EVENT_SCHEDULE" in
+              '7 1 * * *') slot="maximum" ;;
+              '7 7 * * *') slot="historical" ;;
+              '7 13 * * *') slot="challenger" ;;
+              '7 19 * * *') slot="robustness" ;;
+              *) echo "Unexpected schedule: $GITHUB_EVENT_SCHEDULE" >&2; exit 1 ;;
             esac
           else
             slot="maximum"
@@ -122,26 +124,27 @@ jobs:
           set -euo pipefail
           run_one() {
             label="$1"
-            command="$2"
+            seconds="$2"
+            command="$3"
             echo "=== BTC 24H: $label ==="
-            timeout --signal=TERM --kill-after=60 "$SLOT_TIMEOUT_SECONDS" bash -lc "$command"
+            timeout --signal=TERM --kill-after=60 "$seconds" bash -lc "$command"
           }
 
           case "$BTC_RESEARCH_SLOT" in
             maximum)
-              run_one "maximum future generalization" "python src/maximum_future_generalization_v6.py"
+              run_one "maximum future generalization" 20400 "python src/maximum_future_generalization_v6.py"
               ;;
             historical)
-              run_one "historical walk-forward" "python scripts/historical_research_spot_fallback.py"
+              run_one "historical walk-forward" 20400 "python scripts/historical_research_spot_fallback.py"
               ;;
             challenger)
-              run_one "rolling challenger" "python src/rolling_challenger_oos.py"
-              run_one "adaptive ensemble" "python src/adaptive_ensemble_oos.py"
+              run_one "rolling challenger" 10200 "python src/rolling_challenger_oos.py"
+              run_one "adaptive ensemble" 10200 "python src/adaptive_ensemble_oos.py"
               ;;
             robustness)
-              run_one "calibration frozen replay" "python src/calibration_frozen_replay_oos.py"
-              run_one "uncertainty layer" "python src/uncertainty_layer_oos.py"
-              run_one "microstructure OOS" "python src/microstructure_oos.py"
+              run_one "calibration frozen replay" 6600 "python src/calibration_frozen_replay_oos.py"
+              run_one "uncertainty layer" 6600 "python src/uncertainty_layer_oos.py"
+              run_one "microstructure OOS" 6600 "python src/microstructure_oos.py"
               ;;
             *)
               echo "Invalid research slot: $BTC_RESEARCH_SLOT" >&2
