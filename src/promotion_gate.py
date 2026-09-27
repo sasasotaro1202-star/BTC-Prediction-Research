@@ -163,13 +163,13 @@ def _production_artifact_bindings_ok(root: Path, artifacts: Any) -> bool:
 
 
 def _production_integrity_from_evidence(root: Path) -> dict[str, Any]:
-    evidence = root / "data" / "historical_research"
     """Construct a fail-closed production safety verdict from artifacts produced in this run.
-    
+
     Older runners may not materialize production_integrity.json. In that case,
     derive the verdict only from independently validated artifact and PIT reports.
     Never infer PASS from file existence alone.
     """
+    evidence = root / "data" / "historical_research"
     explicit = evidence / "production_integrity.json"
     if explicit.exists():
         obj = json.loads(explicit.read_text(encoding="utf-8"))
