@@ -28,6 +28,7 @@ permissions:
 env:
   PYTHONUNBUFFERED: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  TRIGGER_SCHEDULE: ${{ github.event.schedule || '' }}
 
 jobs:
   research:
@@ -42,12 +43,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            case "$GITHUB_EVENT_SCHEDULE" in
+            case "$TRIGGER_SCHEDULE" in
               '7 1 * * *') slot="maximum" ;;
               '7 7 * * *') slot="historical" ;;
               '7 13 * * *') slot="challenger" ;;
               '7 19 * * *') slot="robustness" ;;
-              *) echo "Unexpected schedule: $GITHUB_EVENT_SCHEDULE" >&2; exit 1 ;;
+              *) echo "Unexpected schedule: $TRIGGER_SCHEDULE" >&2; exit 1 ;;
             esac
           else
             slot="maximum"
