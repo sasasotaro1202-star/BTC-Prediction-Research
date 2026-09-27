@@ -83,6 +83,7 @@ class MicrostructureOOSTests(unittest.TestCase):
                 "taker_imbalance": -0.05,
                 "funding_binance": 0.0001,
                 "oi": 1000000.0,
+                "bybit_oi": 1000000.0,
                 "cross_exchange_gap": 0.0002,
                 "spot_futures_gap": -0.0001,
                 "bybit_book_imbalance": 0.15,
