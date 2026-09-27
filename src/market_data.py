@@ -751,8 +751,21 @@ def bybit_funding():
     return _bybit("funding/history", {"category": "linear", "symbol": "BTCUSDT", "limit": 1})
 
 
+BYBIT_PUBLIC_MARK_PRICE_HOSTS = ("api.bybit.com", "api.bytick.com")
+
+
 def bybit_mark_price():
-    return _bybit("tickers", {"category": "linear", "symbol": "BTCUSDT"})
+    """Fetch the public BTCUSDT ticker with same-product host failover."""
+    params = {"category": "linear", "symbol": "BTCUSDT"}
+    last = None
+    for host in BYBIT_PUBLIC_MARK_PRICE_HOSTS:
+        try:
+            return _get(f"https://{host}/v5/market/tickers?{urlencode(params)}")
+        except Exception as exc:
+            last = exc
+    if last is not None:
+        raise last
+    raise RuntimeError("bybit_public_mark_price_hosts_empty")
 
 
 def target_close_binance(target_iso: str):
