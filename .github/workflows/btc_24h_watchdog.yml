@@ -32,12 +32,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=30" > /tmp/btc24_runs.json
+          MAIN_SHA="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          echo "BTC 24H watchdog main SHA: $MAIN_SHA"
+          gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=50" > /tmp/btc24_runs.json
 
-          python - <<'PY' > /tmp/btc24_decision
-          import json
+          python - "$MAIN_SHA" <<'PY' > /tmp/btc24_decision
+          import json, sys
           from datetime import datetime, timezone
 
+          main_sha = sys.argv[1]
           runs = json.load(open("/tmp/btc24_runs.json", encoding="utf-8")).get("workflow_runs", [])
           now = datetime.now(timezone.utc)
           active_statuses = {"queued", "pending", "in_progress", "waiting", "requested"}
@@ -59,18 +62,23 @@ jobs:
 
           if stale_active:
               for r, age, kind in stale_active:
-                  print(f"STALE|{r['id']}|{kind}|{age:.1f}")
+                  print(f"STALE|{r['id']}|{kind}|{age:.1f}|sha={r.get('head_sha')}")
               print("ACTION=RECOVER_STALE")
               raise SystemExit(0)
 
           if active:
-              print(f"ACTIVE|{len(active)}")
+              current = [r for r in active if r.get("head_sha") == main_sha]
+              old = [r for r in active if r.get("head_sha") != main_sha]
+              print(f"ACTIVE|current_main={len(current)}|other_sha={len(old)}")
               print("ACTION=WAIT")
               raise SystemExit(0)
 
-          completed = [r for r in runs if r.get("status") == "completed"]
+          completed = [
+              r for r in runs
+              if r.get("status") == "completed" and r.get("head_sha") == main_sha
+          ]
           if not completed:
-              print("NO_COMPLETED_RUN")
+              print(f"NO_COMPLETED_RUN_FOR_CURRENT_MAIN|sha={main_sha}")
               print("ACTION=DISPATCH")
               raise SystemExit(0)
 
@@ -79,11 +87,25 @@ jobs:
           age_hours = (now - datetime.fromisoformat(raw.replace("Z", "+00:00"))).total_seconds() / 3600.0
           conclusion = latest.get("conclusion")
 
-          if conclusion == "failure" and age_hours >= (10 / 60):
-              print(f"LAST_FAILURE|age_hours={age_hours:.2f}")
-              print("ACTION=DISPATCH")
-          elif conclusion == "cancelled" and age_hours >= (10 / 60):
-              print(f"LAST_CANCELLED|age_hours={age_hours:.2f}")
+          recent_failures = []
+          for r in completed:
+              raw_r = r.get("updated_at") or r.get("created_at")
+              if not raw_r:
+                  continue
+              age_r = (now - datetime.fromisoformat(raw_r.replace("Z", "+00:00"))).total_seconds() / 3600.0
+              if age_r <= 6 and r.get("conclusion") in {"failure", "cancelled", "timed_out"}:
+                  recent_failures.append(r)
+
+          # Circuit breaker: related projects hold after repeated recent failures
+          # instead of creating an unbounded failure/re-dispatch loop.
+          if len(recent_failures) >= 3 and age_hours < 6:
+              print(f"FAILURE_CIRCUIT_BREAKER|recent_failures={len(recent_failures)}|age_hours={age_hours:.2f}")
+              print("ACTION=HOLD")
+          elif conclusion not in {"success", "failure", "cancelled", "timed_out"}:
+              print(f"UNKNOWN_COMPLETION_STATE|conclusion={conclusion!r}")
+              print("ACTION=HOLD")
+          elif conclusion in {"failure", "cancelled", "timed_out"} and age_hours >= (10 / 60):
+              print(f"LAST_NON_SUCCESS|conclusion={conclusion}|age_hours={age_hours:.2f}")
               print("ACTION=DISPATCH")
           elif age_hours >= (10 / 60):
               print(f"CONTINUOUS_CHAIN|last_conclusion={conclusion}|age_hours={age_hours:.2f}")
@@ -96,7 +118,7 @@ jobs:
           cat /tmp/btc24_decision
           action="$(awk -F= '/^ACTION=/{print $2}' /tmp/btc24_decision | tail -1)"
 
-          if [ "$action" = "WAIT" ]; then
+          if [ "$action" = "WAIT" ] || [ "$action" = "HOLD" ]; then
             exit 0
           fi
 
