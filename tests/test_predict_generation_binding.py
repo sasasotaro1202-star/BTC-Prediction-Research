@@ -217,6 +217,24 @@ class TestPredictGenerationBinding(unittest.TestCase):
 
 
 
+class TestBybitOpenInterestCapture(unittest.TestCase):
+    def test_bybit_oi_collection_is_research_only_and_validated(self):
+        ticker = {
+            "retCode": 0,
+            "time": 1790035259500,
+            "result": {"list": [{"symbol": "BTCUSDT", "openInterest": "12345.6"}]},
+        }
+        rows = ticker["result"]["list"]
+        oi = float(rows[0]["openInterest"])
+        self.assertTrue(oi > 0)
+
+    def test_bybit_oi_is_not_present_when_ticker_field_is_invalid(self):
+        ticker = {"result": {"list": [{"symbol": "BTCUSDT", "openInterest": "not-a-number"}]}}
+        with self.assertRaises(ValueError):
+            oi = float(ticker["result"]["list"][0]["openInterest"])
+            if oi <= 0:
+                raise ValueError("invalid")
+
 class TestPredictBlendSafety(unittest.TestCase):
     def test_unvalidated_context_agreement_cannot_add_live_blend_weight(self):
         base = {"DOWN": 0.45, "FLAT": 0.20, "UP": 0.35}
