@@ -273,9 +273,13 @@ def load_variants(horizon: str):
     if not base:
         return {
             "base": [],
+            "binance_core": [],
             "binance_micro": [],
+            "market_flow_v2_no_oi": [],
             "market_flow_v2": [],
+            "full_stack_no_oi": [],
             "full_stack": [],
+            "cross_venue_no_oi": [],
             "cross_venue": [],
         }
 
@@ -713,7 +717,7 @@ def main():
     for h in HORIZONS:
         variants = load_variants(h)
         coverage = coverage_diagnostics(h)
-        family_count = max(1, len(factories()) * 4)
+        family_count = max(1, len(factories()) * 8)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
