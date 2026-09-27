@@ -79,6 +79,26 @@ def imbalance(book,levels=25):
     bids=bids[:levels]; asks=asks[:levels]; b=sum(float(x[1]) for x in bids); a=sum(float(x[1]) for x in asks)
     if not math.isfinite(b) or not math.isfinite(a) or b+a<=0: raise ValueError('order_book_nonfinite_or_empty')
     return (b-a)/(b+a)
+def extract_bybit_open_interest(ticker):
+    """Extract a positive Bybit BTCUSDT open-interest snapshot for research storage."""
+    if not isinstance(ticker, dict):
+        raise ValueError("bybit_ticker_not_object")
+    result = ticker.get("result")
+    rows = result.get("list", []) if isinstance(result, dict) else []
+    if not rows or not isinstance(rows[0], dict):
+        raise ValueError("bybit_ticker_missing_rows")
+    symbol = str(rows[0].get("symbol", "")).upper()
+    if symbol != "BTCUSDT":
+        raise ValueError("bybit_ticker_symbol_mismatch")
+    try:
+        oi = float(rows[0]["openInterest"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("bybit_open_interest_invalid") from exc
+    if not math.isfinite(oi) or oi <= 0:
+        raise ValueError("bybit_open_interest_invalid")
+    return oi
+
+
 def structural(f,m):
     vol=max(.00025,f['volatility_10m'])
     score=(2.2*f['ret_1m']+1.6*f['ret_3m']+f['ret_5m']+.45*f['ret_10m']+.35*f['ret_15m']+.20*f['ret_30m'])/vol
@@ -402,6 +422,7 @@ def main():
         "bybit_depth": bybit_depth,
         "binance_oi": binance_oi,
         "bybit_funding": bybit_funding,
+        "bybit_ticker": bybit_mark_price,
     }
     if ws_book is None:
         market_call_defs["binance_depth"] = binance_depth
@@ -472,7 +493,9 @@ def main():
         status['bybit_futures']='ok_current_only' if len(by) == 1 else status.get('bybit_futures','ok')
     else:
         try:
-            ticker=bybit_mark_price()
+            ticker=market_calls.get("bybit_ticker")
+            if isinstance(ticker, Exception):
+                raise ticker
             rows=ticker.get('result',{}).get('list',[]) if isinstance(ticker,dict) else []
             if rows:
                 row=rows[0]
@@ -574,6 +597,21 @@ def main():
     except Exception as exc:
         status['binance_taker']=f'error:{type(exc).__name__}'
 
+    # Research-only Bybit open-interest capture. This is collected for future
+    # OOS testing but is not included in the Production Champion input vector.
+    try:
+        ticker = market_calls.get("bybit_ticker")
+        if isinstance(ticker, Exception):
+            raise ticker
+        rows = ticker.get("result", {}).get("list", []) if isinstance(ticker, dict) else []
+        row = rows[0] if rows else {}
+        oi = float(row.get("openInterest"))
+        if not (math.isfinite(oi) and oi > 0):
+            raise ValueError("invalid_bybit_open_interest")
+        m["bybit_oi"] = oi
+        status["bybit_oi"] = "ok"
+    except Exception as exc:
+        status["bybit_oi"] = f"error:{type(exc).__name__}"
     funding_result = market_calls.get("bybit_funding")
     try:
         if isinstance(funding_result, Exception):
@@ -724,6 +762,17 @@ def main():
     # a trustworthy source-native event/publication timestamp. Never borrow the
     # Binance candle timestamp for another venue: that would falsely imply PIT
     # alignment. Keep event_time explicitly unknown until the adapter supplies it.
+    source_provenance['bybit_ticker']={
+        'information_origin':'Bybit',
+        'event_time':_iso_ms(status.get('bybit_oi_event_time_ms')),
+        'available_at':retrieved if status.get('bybit_oi') == 'ok' else None,
+        'publication_time':None,
+        'retrieved_at':retrieved,
+        'prediction_cutoff':retrieved if status.get('bybit_oi') == 'ok' else None,
+        'revision_time':None,
+        'status':status.get('bybit_oi'),
+        'fields':['openInterest'],
+    }
     for source_key in ('bybit_futures','bybit_depth','bybit_funding'):
         source_provenance[source_key]={
             'information_origin':'Bybit',
