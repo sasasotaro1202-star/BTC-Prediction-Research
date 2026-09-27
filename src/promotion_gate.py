@@ -129,7 +129,41 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
     }
 
 
-def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
+def _sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _production_artifact_bindings_ok(root: Path, artifacts: Any) -> bool:
+    if not isinstance(artifacts, list) or len(artifacts) != len(HORIZONS):
+        return False
+    seen: set[str] = set()
+    for item in artifacts:
+        if not isinstance(item, dict):
+            return False
+        horizon = item.get("horizon")
+        if horizon not in HORIZONS or horizon in seen:
+            return False
+        model_sha = _sha256_file(root / "models" / f"{horizon}.joblib")
+        metadata_sha = _sha256_file(root / "models" / f"{horizon}.json")
+        if (
+            model_sha is None
+            or metadata_sha is None
+            or item.get("model_sha256") != model_sha
+            or item.get("metadata_sha256") != metadata_sha
+        ):
+            return False
+        seen.add(horizon)
+    return seen == set(HORIZONS)
+
+
+def _production_integrity_from_evidence(root: Path) -> dict[str, Any]:
+    evidence = root / "data" / "historical_research"
     """Construct a fail-closed production safety verdict from artifacts produced in this run.
     
     Older runners may not materialize production_integrity.json. In that case,
@@ -152,13 +186,9 @@ def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
     pit = json.loads(pit_path.read_text(encoding="utf-8"))
     artifacts = artifact.get("artifacts")
     artifact_ok = (
-        isinstance(artifacts, list)
-        and len(artifacts) == len(HORIZONS)
+        _production_artifact_bindings_ok(root, artifacts)
         and all(
-            item.get("horizon") in HORIZONS
-            and item.get("runtime_model_reload_ok") is True
-            and len(str(item.get("model_sha256", ""))) == 64
-            and len(str(item.get("metadata_sha256", ""))) == 64
+            item.get("runtime_model_reload_ok") is True
             and item.get("runtime_classes") == ["DOWN", "FLAT", "UP"]
             and int(item.get("runtime_feature_count", -1)) > 0
             for item in artifacts
@@ -183,7 +213,7 @@ def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
 
 def run(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
-    prod = _production_integrity_from_evidence(evidence)
+    prod = _production_integrity_from_evidence(root)
     robust = json.loads((evidence / "robustness_oos_report.json").read_text(encoding="utf-8"))
     pit_path = evidence / "pit_oos_audit.json"
     pit = json.loads(pit_path.read_text(encoding="utf-8")) if pit_path.exists() else None
