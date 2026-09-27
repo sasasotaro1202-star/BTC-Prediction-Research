@@ -1,10 +1,10 @@
 name: BTC PIT OOS Audit
 
-# The audit is periodic and runs immediately when its own PIT contract changes.
-# It does not rerun on routine 5-minute state archive updates.
+# The audit runs every 15 minutes so immutable PIT history grows at the same
+# cadence as the history buckets. It also runs immediately when its own PIT contract changes.
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '2,17,32,47 * * * *'
   push:
     branches: [main]
     paths:
