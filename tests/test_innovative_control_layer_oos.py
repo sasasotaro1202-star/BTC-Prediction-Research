@@ -78,6 +78,17 @@ class TestInnovativeControlLayer(unittest.TestCase):
         self.assertEqual(out["status"], "OK")
         self.assertIn("disagreement_spike", out["scenarios"])
 
+    def test_period_breakdown_uses_full_architecture_key(self):
+        from src.innovative_control_layer_oos import _period_breakdown
+        block = {
+            "full_architecture": {"accuracy": 0.4, "logloss": 1.1, "brier": 0.7},
+            "soft_ensemble": {"accuracy": 0.3, "logloss": 1.2, "brier": 0.8},
+        }
+        out = _period_breakdown([block] * 3)
+        self.assertIn("early", out)
+        self.assertAlmostEqual(out["early"]["full_vs_soft_accuracy_delta"], 0.1)
+        self.assertAlmostEqual(out["early"]["full_vs_soft_logloss_delta"], -0.1)
+        self.assertAlmostEqual(out["early"]["full_vs_soft_brier_delta"], -0.1)
 
 if __name__ == "__main__":
     unittest.main()
