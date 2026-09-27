@@ -10,10 +10,24 @@ from src.microstructure_oos import (
     _market_flow_from_scenario,
     _micro_from_scenario,
     _strict_primary_sources_ok,
+    coverage_diagnostics,
 )
 
 
 class MicrostructureOOSTests(unittest.TestCase):
+    def test_coverage_diagnostics_is_non_mutating_and_exposes_ratios(self):
+        from unittest.mock import patch
+
+        with patch(
+            "src.microstructure_oos.load_primary_production_strict_rows",
+            return_value=[],
+        ):
+            out = coverage_diagnostics("5m")
+        self.assertEqual(out["strict_primary_rows"], 0)
+        self.assertEqual(out["variant_coverage"]["binance_micro"]["complete_rows"], 0)
+        self.assertEqual(out["variant_coverage"]["binance_micro"]["coverage_ratio"], 0.0)
+        self.assertEqual(out["field_presence"]["book_imbalance"], 0)
+
     def test_feature_variant_manifest_matches_output_variants(self):
         expected = {
             "binance_micro": list(BASE_FEATURES + BINANCE_MICRO),
