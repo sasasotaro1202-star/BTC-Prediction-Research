@@ -284,7 +284,7 @@ jobs:
                   "stage1":"${{ needs.stage1_maximum.result }}",
                   "stage2":"${{ needs.stage2_historical.result }}",
                   "stage3":"${{ needs.stage3_challenger.result }}",
-                  "stage4":"running-finalization",
+                  "stage4":"finalization-reached",
               },
           }
           p=Path("data/historical_research/24h_final_checkpoint.json")
