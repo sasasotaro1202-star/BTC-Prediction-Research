@@ -114,7 +114,7 @@ jobs:
               "run_id": int(os.environ["RUN_ID"]),
               "sha": os.environ["SHA"],
           }
-          Path("data/historical_research/stage1_maximum_success_checkpoint.json").write_text(
+          Path("data/historical_research/stage1_success_checkpoint.json").write_text(
               json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
@@ -197,7 +197,7 @@ jobs:
               "run_id": int(os.environ["RUN_ID"]),
               "sha": os.environ["SHA"],
           }
-          Path("data/historical_research/stage2_historical_success_checkpoint.json").write_text(
+          Path("data/historical_research/stage2_success_checkpoint.json").write_text(
               json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
@@ -285,7 +285,7 @@ jobs:
               "run_id": int(os.environ["RUN_ID"]),
               "sha": os.environ["SHA"],
           }
-          Path("data/historical_research/stage3_challenger_success_checkpoint.json").write_text(
+          Path("data/historical_research/stage3_success_checkpoint.json").write_text(
               json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
@@ -380,7 +380,7 @@ jobs:
               "run_id": int(os.environ["RUN_ID"]),
               "sha": os.environ["SHA"],
           }
-          Path("data/historical_research/stage4_robustness_success_checkpoint.json").write_text(
+          Path("data/historical_research/stage4_success_checkpoint.json").write_text(
               json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
