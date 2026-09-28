@@ -21,3 +21,27 @@ def test_24h_success_checkpoints_bind_actual_run_metadata():
     assert workflow.count('"run_id": int(os.environ["RUN_ID"])') == 4
     assert workflow.count('"sha": os.environ["SHA"]') == 4
     assert "printf '%s\n' '{" not in workflow
+
+def test_24h_removes_stale_research_outputs_before_each_stage():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    for name in (
+        'maximum_future_generalization_v6.json',
+        'report.json',
+        'rolling_challenger_oos.json',
+        'adaptive_ensemble_oos.json',
+        'calibration_frozen_replay_oos.json',
+        'uncertainty_layer_oos.json',
+        'microstructure_oos.json',
+    ):
+        assert f'rm -f data/historical_research/{name}' in workflow
+
+
+def test_24h_reconcile_validates_checkpoint_identity():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert 'checkpoint_integrity_failures' in workflow
+    assert 'current_run_id = int(os.environ["GITHUB_RUN_ID"])' in workflow
+    assert 'current_sha = os.environ["GITHUB_SHA"]' in workflow
+    assert 'obj.get("status") != "SUCCESS"' in workflow
+    assert 'obj.get("research_only") is not True' in workflow
+    assert 'obj.get("production_changed") is not False' in workflow
+    assert 'obj.get("sha") != current_sha' in workflow
