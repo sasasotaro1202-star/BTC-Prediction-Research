@@ -336,6 +336,17 @@ def _validate_persisted_provenance(scenario, now):
                 raise ValueError(f"prediction_source_provenance_timezone_required:{key}")
             if source_available > source_cutoff or source_retrieved > source_cutoff or source_cutoff > decision_dt + timedelta(seconds=1):
                 raise ValueError(f"prediction_source_provenance_temporal_violation:{key}")
+            event_value = item.get("event_time")
+            if event_value is None:
+                if item.get("temporal_basis") != "retrieval_snapshot" or source_available != source_retrieved:
+                    raise ValueError(f"prediction_source_event_time_missing_without_snapshot_basis:{key}")
+            else:
+                try:
+                    source_event = datetime.fromisoformat(str(event_value).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    raise ValueError(f"prediction_source_event_time_invalid:{key}")
+                if source_event.tzinfo is None or source_event > source_available:
+                    raise ValueError(f"prediction_source_event_time_invalid_order:{key}")
             valid_sources += 1
     if valid_sources == 0:
         raise ValueError("prediction_provenance_no_valid_sources")
@@ -771,6 +782,7 @@ def main():
         'prediction_cutoff':retrieved if status.get('bybit_oi') == 'ok' else None,
         'revision_time':None,
         'status':status.get('bybit_oi'),
+        'temporal_basis':'retrieval_snapshot',
         'fields':['openInterest'],
     }
     for source_key in ('bybit_futures','bybit_depth','bybit_funding'):
@@ -782,6 +794,7 @@ def main():
             'retrieved_at':retrieved,
             'prediction_cutoff':retrieved if status.get(source_key) in {'ok','ok_current_only'} else None,
             'revision_time':None,
+            'temporal_basis':'retrieval_snapshot',
             'status':status.get(source_key),
         }
     if use_coinbase_fallback:
