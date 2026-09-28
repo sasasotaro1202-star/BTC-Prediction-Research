@@ -69,3 +69,17 @@ def test_24h_reconcile_binds_checkpoint_stage_to_filename():
     assert '"stage3_success_checkpoint.json": "stage3_challenger"' in workflow
     assert '"stage4_success_checkpoint.json": "stage4_robustness"' in workflow
     assert 'obj.get("stage") != expected_stage' in workflow
+
+def test_24h_stage1_uses_actual_maximum_future_generalization_registry():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert 'maximum_future_generalization_v6_registry.json' in workflow
+    assert 'test -s data/historical_research/maximum_future_generalization_v6_registry.json' in workflow
+    assert 'test -s data/historical_research/maximum_future_generalization_v6.json' not in workflow
+
+
+def test_24h_stage3_runtime_budget_matches_standalone_lane():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert '180m python src/rolling_challenger_oos.py' in workflow
+    assert '140m python src/adaptive_ensemble_oos.py' in workflow
+    assert '160m python src/rolling_challenger_oos.py' not in workflow
+    assert '160m python src/adaptive_ensemble_oos.py' not in workflow
