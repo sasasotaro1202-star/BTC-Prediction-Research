@@ -171,6 +171,7 @@ class TestPredictGenerationBinding(unittest.TestCase):
                 "prediction_cutoff": stamp,
                 "sources": {
                     "binance_futures": {
+                        "event_time": stamp,
                         "available_at": stamp,
                         "retrieved_at": stamp,
                         "prediction_cutoff": stamp,
