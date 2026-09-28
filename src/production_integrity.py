@@ -178,17 +178,26 @@ def check_db() -> dict:
                 if not isinstance(source,dict):
                     fail(f"source provenance malformed: {source_name}")
                 if source.get("status") == "ok":
-                    for key in ("event_time","available_at","retrieved_at"):
+                    for key in ("available_at","retrieved_at"):
                         if not source.get(key):
                             fail(f"successful source missing provenance: {source_name}:{key}")
                     try:
-                        se=datetime.fromisoformat(str(source["event_time"]).replace("Z","+00:00"))
                         sa=datetime.fromisoformat(str(source["available_at"]).replace("Z","+00:00"))
                         sr=datetime.fromisoformat(str(source["retrieved_at"]).replace("Z","+00:00"))
                     except (TypeError,ValueError):
                         fail(f"source provenance timestamps invalid: {source_name}")
-                    if not (se <= sa <= sr <= cutoff):
+                    if not (sa <= sr <= cutoff):
                         fail(f"source provenance ordering invalid: {source_name}")
+                    event_value = source.get("event_time")
+                    if event_value:
+                        try:
+                            se=datetime.fromisoformat(str(event_value).replace("Z","+00:00"))
+                        except (TypeError,ValueError):
+                            fail(f"source provenance event_time invalid: {source_name}")
+                        if not (se <= sa):
+                            fail(f"source provenance event ordering invalid: {source_name}")
+                    elif source.get("temporal_basis") != "retrieval_snapshot" or sa != sr:
+                        fail(f"successful source missing event-time basis: {source_name}")
         degraded = row[8] == "DEGRADED_NO_FRESH_DATA"
         if degraded:
             if float(row[1]) != 0.0:
