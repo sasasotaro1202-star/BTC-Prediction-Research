@@ -90,6 +90,12 @@ jobs:
         run: |
           set -euo pipefail
           cp /tmp/btc24_before.json data/historical_research/24h_stage1_before.json
+      - name: Write success-only stage 1 checkpoint
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"schema_version":1,"stage":"stage1_maximum","status":"SUCCESS","research_only":true,"production_changed":false,"run_id":"${{ github.run_id }}","sha":"${{ github.sha }}"}' > data/historical_research/stage1_success_checkpoint.json
       - name: Upload stage 1 checkpoint
         if: always()
         uses: actions/upload-artifact@v6
@@ -98,6 +104,7 @@ jobs:
           path: |
             data/historical_research/maximum_future_generalization_v6.json
             data/historical_research/24h_stage1_before.json
+            data/historical_research/stage1_success_checkpoint.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -144,12 +151,20 @@ jobs:
                   raise SystemExit(f"historical evidence incomplete: {h}")
           print("stage 2 historical evidence: VERIFIED")
           PY
+      - name: Write success-only stage 2 checkpoint
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"schema_version":1,"stage":"stage2_historical","status":"SUCCESS","research_only":true,"production_changed":false,"run_id":"${{ github.run_id }}","sha":"${{ github.sha }}"}' > data/historical_research/stage2_success_checkpoint.json
       - name: Upload stage 2 checkpoint
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: btc-24h-stage-2-${{ github.run_id }}
-          path: data/historical_research/report.json
+          path: |
+            data/historical_research/report.json
+            data/historical_research/stage2_success_checkpoint.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -201,6 +216,12 @@ jobs:
                   raise SystemExit(f"research safety contract failed: {name}")
           print("stage 3 research boundary: VERIFIED")
           PY
+      - name: Write success-only stage 3 checkpoint
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"schema_version":1,"stage":"stage3_challenger","status":"SUCCESS","research_only":true,"production_changed":false,"run_id":"${{ github.run_id }}","sha":"${{ github.sha }}"}' > data/historical_research/stage3_success_checkpoint.json
       - name: Upload stage 3 checkpoint
         if: always()
         uses: actions/upload-artifact@v6
@@ -209,6 +230,7 @@ jobs:
           path: |
             data/historical_research/rolling_challenger_oos.json
             data/historical_research/adaptive_ensemble_oos.json
+            data/historical_research/stage3_success_checkpoint.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -265,6 +287,12 @@ jobs:
                   raise SystemExit(f"research safety contract failed: {name}")
           print("stage 4 research boundary: VERIFIED")
           PY
+      - name: Write success-only stage 4 checkpoint
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"schema_version":1,"stage":"stage4_robustness","status":"SUCCESS","research_only":true,"production_changed":false,"run_id":"${{ github.run_id }}","sha":"${{ github.sha }}"}' > data/historical_research/stage4_success_checkpoint.json
       - name: Download all stage checkpoints
         if: always()
         continue-on-error: true
@@ -309,6 +337,7 @@ jobs:
             data/historical_research/uncertainty_layer_oos.json
             data/historical_research/microstructure_oos.json
             data/historical_research/24h_final_checkpoint.json
+            data/historical_research/stage4_success_checkpoint.json
             data/historical_research/24h_checkpoints/**
           if-no-files-found: warn
           retention-days: 14
@@ -384,6 +413,10 @@ jobs:
               "microstructure_oos.json",
               "24h_final_checkpoint.json",
               "24h_stage1_before.json",
+              "stage1_success_checkpoint.json",
+              "stage2_success_checkpoint.json",
+              "stage3_success_checkpoint.json",
+              "stage4_success_checkpoint.json",
           }
           present_names = {Path(f).name for f in files}
           missing = sorted(required_names - present_names)
