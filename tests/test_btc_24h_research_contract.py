@@ -22,6 +22,17 @@ def test_24h_success_checkpoints_bind_actual_run_metadata():
     assert workflow.count('"sha": os.environ["SHA"]') == 4
     assert "printf '%s\n' '{" not in workflow
 
+def test_24h_checkpoint_creation_paths_match_reconciliation_contract():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    for name in (
+        'stage1_success_checkpoint.json',
+        'stage2_success_checkpoint.json',
+        'stage3_success_checkpoint.json',
+        'stage4_success_checkpoint.json',
+    ):
+        assert f'Path("data/historical_research/{name}")' in workflow
+        assert f'"{name}",' in workflow
+
 def test_24h_removes_stale_research_outputs_before_each_stage():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     for name in (
