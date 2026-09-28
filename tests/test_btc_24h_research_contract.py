@@ -41,7 +41,7 @@ def test_24h_checkpoint_creation_paths_match_reconciliation_contract():
 def test_24h_removes_stale_research_outputs_before_each_stage():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     for name in (
-        'maximum_future_generalization_v6.json',
+        'maximum_future_generalization_v6_registry.json',
         'report.json',
         'rolling_challenger_oos.json',
         'adaptive_ensemble_oos.json',
