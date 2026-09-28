@@ -66,12 +66,12 @@ jobs:
       - name: Remove stale stage 1 evidence
         run: |
           set -euo pipefail
-          rm -f data/historical_research/maximum_future_generalization_v6.json
+          rm -f data/historical_research/maximum_future_generalization_v6_registry.json
       - name: Run maximum future-generalization research
         run: |
           set -euo pipefail
           timeout --signal=TERM --kill-after=60 330m python src/maximum_future_generalization_v6.py
-          test -s data/historical_research/maximum_future_generalization_v6.json
+          test -s data/historical_research/maximum_future_generalization_v6_registry.json
       - name: Verify research-only boundary
         run: |
           set -euo pipefail
@@ -79,7 +79,7 @@ jobs:
           import json, sqlite3
           from pathlib import Path
           from src.prediction_state_guard import prediction_table_fingerprint
-          obj=json.loads(Path("data/historical_research/maximum_future_generalization_v6.json").read_text())
+          obj=json.loads(Path("data/historical_research/maximum_future_generalization_v6_registry.json").read_text())
           if obj.get("research_only") is not True or obj.get("production_changed") is True:
               raise SystemExit("stage 1 research safety contract failed")
           before=json.loads(Path("/tmp/btc24_before.json").read_text())
@@ -124,7 +124,7 @@ jobs:
         with:
           name: btc-24h-stage-1-${{ github.run_id }}
           path: |
-            data/historical_research/maximum_future_generalization_v6.json
+            data/historical_research/maximum_future_generalization_v6_registry.json
             data/historical_research/24h_stage1_before.json
             data/historical_research/stage1_success_checkpoint.json
           if-no-files-found: warn
@@ -246,12 +246,12 @@ jobs:
       - name: Run rolling challenger
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=60 160m python src/rolling_challenger_oos.py
+          timeout --signal=TERM --kill-after=60 180m python src/rolling_challenger_oos.py
           test -s data/historical_research/rolling_challenger_oos.json
       - name: Run adaptive ensemble
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=60 160m python src/adaptive_ensemble_oos.py
+          timeout --signal=TERM --kill-after=60 140m python src/adaptive_ensemble_oos.py
           test -s data/historical_research/adaptive_ensemble_oos.json
       - name: Verify research-only outputs
         run: |
@@ -495,7 +495,7 @@ jobs:
           }
 
           required_names = {
-              "maximum_future_generalization_v6.json",
+              "maximum_future_generalization_v6_registry.json",
               "report.json",
               "rolling_challenger_oos.json",
               "adaptive_ensemble_oos.json",
