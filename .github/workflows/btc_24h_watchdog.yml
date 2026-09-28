@@ -130,14 +130,28 @@ jobs:
             done < /tmp/btc24_decision
           fi
 
+          dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           for attempt in 1 2 3 4; do
-            if gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
-              echo "BTC 24H marathon dispatch: OK"
-              exit 0
+            if ! gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
+              echo "dispatch attempt $attempt failed; retrying" >&2
+              sleep $((attempt * 5))
+              continue
             fi
-            echo "dispatch attempt $attempt failed; retrying" >&2
+
+            echo "BTC 24H dispatch command accepted; verifying run creation..."
+            for check in 1 2 3 4 5 6; do
+              sleep 5
+              created="$(gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=20"                 --jq '[.workflow_runs[] | select(.head_sha == "'$MAIN_SHA'") | select(.created_at >= "'$dispatch_started_at'")] | sort_by(.created_at) | reverse | .[0] // empty')"
+              if [ -n "$created" ]; then
+                run_id="$(printf '%s' "$created" | jq -r '.id')"
+                run_status="$(printf '%s' "$created" | jq -r '.status')"
+                echo "BTC 24H marathon dispatch verified: run_id=$run_id status=$run_status sha=$MAIN_SHA"
+                exit 0
+              fi
+            done
+            echo "dispatch verification failed for attempt $attempt; retrying" >&2
             sleep $((attempt * 5))
           done
 
-          echo "BTC 24H watchdog could not recover marathon" >&2
+          echo "BTC 24H watchdog could not verify a newly created current-main marathon run" >&2
           exit 1
