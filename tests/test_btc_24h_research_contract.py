@@ -56,3 +56,11 @@ def test_24h_reconcile_validates_checkpoint_identity():
     assert 'obj.get("research_only") is not True' in workflow
     assert 'obj.get("production_changed") is not False' in workflow
     assert 'obj.get("sha") != current_sha' in workflow
+
+def test_24h_reconcile_binds_checkpoint_stage_to_filename():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert '"stage1_success_checkpoint.json": "stage1_maximum"' in workflow
+    assert '"stage2_success_checkpoint.json": "stage2_historical"' in workflow
+    assert '"stage3_success_checkpoint.json": "stage3_challenger"' in workflow
+    assert '"stage4_success_checkpoint.json": "stage4_robustness"' in workflow
+    assert 'obj.get("stage") != expected_stage' in workflow
