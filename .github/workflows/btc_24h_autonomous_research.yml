@@ -63,6 +63,10 @@ jobs:
           PY
       - name: Compile research code
         run: python -m compileall -q src scripts tests
+      - name: Remove stale stage 1 evidence
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/maximum_future_generalization_v6.json
       - name: Run maximum future-generalization research
         run: |
           set -euo pipefail
@@ -152,6 +156,10 @@ jobs:
           PY
       - name: Compile research code
         run: python -m compileall -q src scripts tests
+      - name: Remove stale stage 2 evidence
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/report.json
       - name: Run historical walk-forward research
         run: |
           set -euo pipefail
@@ -230,6 +238,11 @@ jobs:
           PY
       - name: Compile research code
         run: python -m compileall -q src scripts tests
+      - name: Remove stale stage 3 evidence
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/rolling_challenger_oos.json
+          rm -f data/historical_research/adaptive_ensemble_oos.json
       - name: Run rolling challenger
         run: |
           set -euo pipefail
@@ -314,6 +327,12 @@ jobs:
           PY
       - name: Compile research code
         run: python -m compileall -q src scripts tests
+      - name: Remove stale stage 4 evidence
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/calibration_frozen_replay_oos.json
+          rm -f data/historical_research/uncertainty_layer_oos.json
+          rm -f data/historical_research/microstructure_oos.json
       - name: Run frozen calibration replay
         run: |
           set -euo pipefail
@@ -493,6 +512,33 @@ jobs:
           present_names = {Path(f).name for f in files}
           missing = sorted(required_names - present_names)
 
+          checkpoint_integrity_failures = []
+          current_run_id = int(os.environ["GITHUB_RUN_ID"])
+          current_sha = os.environ["GITHUB_SHA"]
+          checkpoint_paths = [root / name for name in (
+              "stage1_success_checkpoint.json",
+              "stage2_success_checkpoint.json",
+              "stage3_success_checkpoint.json",
+              "stage4_success_checkpoint.json",
+          )]
+          for checkpoint in checkpoint_paths:
+              if not checkpoint.exists():
+                  continue
+              try:
+                  obj = json.loads(checkpoint.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  checkpoint_integrity_failures.append(f"{checkpoint.name}:invalid_json:{exc}")
+                  continue
+              if (
+                  obj.get("schema_version") != 1
+                  or obj.get("status") != "SUCCESS"
+                  or obj.get("research_only") is not True
+                  or obj.get("production_changed") is not False
+                  or int(obj.get("run_id", -1)) != current_run_id
+                  or obj.get("sha") != current_sha
+              ):
+                  checkpoint_integrity_failures.append(f"{checkpoint.name}:metadata_mismatch")
+
           safety_failures = []
           json_files = list(root.rglob("*.json")) if root.exists() else []
           for path in json_files:
@@ -503,7 +549,12 @@ jobs:
               if obj.get("production_changed") is True:
                   safety_failures.append(str(path))
 
-          status = "COMPLETED" if all(v == "success" for v in stages.values()) and not missing and not safety_failures else "PARTIAL_OR_BLOCKED"
+          status = "COMPLETED" if (
+              all(v == "success" for v in stages.values())
+              and not missing
+              and not checkpoint_integrity_failures
+              and not safety_failures
+          ) else "PARTIAL_OR_BLOCKED"
           payload = {
               "schema_version": 1,
               "status": status,
@@ -513,6 +564,7 @@ jobs:
               "github_sha": os.environ["GITHUB_SHA"],
               "stage_results": stages,
               "required_evidence_missing": missing,
+              "checkpoint_integrity_failures": checkpoint_integrity_failures,
               "safety_claim_failures": safety_failures,
               "evidence_file_count": len(files),
           }
@@ -520,6 +572,8 @@ jobs:
           out.parent.mkdir(parents=True, exist_ok=True)
           out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(payload, indent=2, sort_keys=True))
+          if checkpoint_integrity_failures:
+              raise SystemExit("success checkpoint metadata is not bound to this run")
           if safety_failures:
               raise SystemExit("research evidence reported production_changed=true")
           PY
