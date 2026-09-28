@@ -515,13 +515,14 @@ jobs:
           checkpoint_integrity_failures = []
           current_run_id = int(os.environ["GITHUB_RUN_ID"])
           current_sha = os.environ["GITHUB_SHA"]
-          checkpoint_paths = [root / name for name in (
-              "stage1_success_checkpoint.json",
-              "stage2_success_checkpoint.json",
-              "stage3_success_checkpoint.json",
-              "stage4_success_checkpoint.json",
-          )]
-          for checkpoint in checkpoint_paths:
+          checkpoint_expectations = {
+              "stage1_success_checkpoint.json": "stage1_maximum",
+              "stage2_success_checkpoint.json": "stage2_historical",
+              "stage3_success_checkpoint.json": "stage3_challenger",
+              "stage4_success_checkpoint.json": "stage4_robustness",
+          }
+          for checkpoint_name, expected_stage in checkpoint_expectations.items():
+              checkpoint = root / checkpoint_name
               if not checkpoint.exists():
                   continue
               try:
@@ -534,6 +535,7 @@ jobs:
                   or obj.get("status") != "SUCCESS"
                   or obj.get("research_only") is not True
                   or obj.get("production_changed") is not False
+                  or obj.get("stage") != expected_stage
                   or int(obj.get("run_id", -1)) != current_run_id
                   or obj.get("sha") != current_sha
               ):
