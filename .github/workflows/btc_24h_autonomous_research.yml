@@ -437,11 +437,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ needs.stage1_maximum.result }}" != "success" ] ||
-             [ "${{ needs.stage2_historical.result }}" != "success" ] ||
-             [ "${{ needs.stage3_challenger.result }}" != "success" ] ||
-             [ "${{ needs.stage4_robustness.result }}" != "success" ] ||
-          then
+          if [[ "${{ needs.stage1_maximum.result }}" != "success" ||
+                "${{ needs.stage2_historical.result }}" != "success" ||
+                "${{ needs.stage3_challenger.result }}" != "success" ||
+                "${{ needs.stage4_robustness.result }}" != "success" ]]; then
             echo "BTC 24H marathon finished with one or more failed stages; evidence was preserved."
             exit 1
           fi

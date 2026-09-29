@@ -83,3 +83,9 @@ def test_24h_stage3_runtime_budget_matches_standalone_lane():
     assert '140m python src/adaptive_ensemble_oos.py' in workflow
     assert '160m python src/rolling_challenger_oos.py' not in workflow
     assert '160m python src/adaptive_ensemble_oos.py' not in workflow
+
+def test_24h_fail_step_uses_valid_multiline_bash_condition():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert 'if [[ "${{ needs.stage1_maximum.result }}" != "success" ||' in workflow
+    assert '"${{ needs.stage4_robustness.result }}" != "success" ]]; then' in workflow
+    assert '] ||\n          then' not in workflow
