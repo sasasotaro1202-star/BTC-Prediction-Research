@@ -1,123 +1,125 @@
 from pathlib import Path
+from unittest import TestCase, main
 from unittest.mock import patch
 import tempfile
 from src import btc_data_frontier_autoselect as mod
 
-def test_gap_is_fail_closed_without_audit():
-    with tempfile.TemporaryDirectory() as td:
-        with patch.object(mod,"ROOT",Path(td)):
-            assert mod.current_gap()["gap"]==300
-            assert mod.current_gap()["pit_verified"] is False
 
-def test_selection_prefers_free_sources_and_diversifies():
-    frontier={"source_state":{},"candidates":{},"history":[]}
-    selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
-    assert selected
-    families={s.family for s in mod.SOURCES if s.source_id in selected}
-    assert len(families)>=4
-    assert all(s.access in {"public_free","free_limited"} for s in mod.SOURCES if s.source_id in selected)
+class TestBTCDataFrontierAutoSelect(TestCase):
+    def test_gap_is_fail_closed_without_audit(self):
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(mod,"ROOT",Path(td)):
+                self.assertEqual(mod.current_gap()["gap"],300)
+                self.assertFalse(mod.current_gap()["pit_verified"])
 
-def test_probe_failure_never_becomes_success():
-    with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
-        result=mod.probe("mempool_space")
-    assert result["status"]=="ERROR"
-    assert "payload" not in result
+    def test_selection_prefers_free_sources_and_diversifies(self):
+        frontier={"source_state":{},"candidates":{},"history":[]}
+        selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
+        self.assertTrue(selected)
+        families={s.family for s in mod.SOURCES if s.source_id in selected}
+        self.assertGreaterEqual(len(families),4)
+        self.assertTrue(all(s.access in {"public_free","free_limited"} for s in mod.SOURCES if s.source_id in selected))
 
-def test_probe_snapshot_uses_retrieval_basis_when_source_time_unknown():
-    with patch.object(mod,"_get",return_value={"foo":"bar"}):
-        result=mod.probe("mempool_space")
-    assert result["status"]=="OK"
-    assert result["temporal_basis"]=="retrieval_snapshot"
-    assert result["available_at"]==result["retrieved_at"]
+    def test_probe_failure_never_becomes_success(self):
+        with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
+            result=mod.probe("mempool_space")
+        self.assertEqual(result["status"],"ERROR")
+        self.assertNotIn("payload",result)
 
-def test_discovery_candidate_is_never_production_eligible():
-    with patch.object(mod,"_get",return_value={"items":[{"full_name":"example/btc-data","html_url":"https://github.com/example/btc-data"}]}):
-        rows, failures=mod.discover_public_sources()
-    assert rows[0]["pit_status"]=="UNVERIFIED"
-    assert rows[0]["production_eligible"] is False
-    assert not failures
+    def test_probe_snapshot_uses_retrieval_basis_when_source_time_unknown(self):
+        with patch.object(mod,"_get",return_value={"foo":"bar"}):
+            result=mod.probe("mempool_space")
+        self.assertEqual(result["status"],"OK")
+        self.assertEqual(result["temporal_basis"],"retrieval_snapshot")
+        self.assertEqual(result["available_at"],result["retrieved_at"])
 
-def test_current_gap_keeps_collection_active_for_secondary_coverage():
-    with tempfile.TemporaryDirectory() as td:
-        root=Path(td)
-        (root/"data/historical_research").mkdir(parents=True,exist_ok=True)
-        (root/"data/historical_research/pit_oos_audit.json").write_text(
-            '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
-            encoding="utf-8",
-        )
-        with patch.object(mod,"ROOT",root):
-            gap=mod.current_gap()
-        assert gap["gap"] == 0
-        assert gap["situation_meta_ready_min"] == 136
-        assert gap["online_expert_ready_min"] == 136
+    def test_discovery_candidate_is_never_production_eligible(self):
+        with patch.object(mod,"_get",return_value={"items":[{"full_name":"example/btc-data","html_url":"https://github.com/example/btc-data"}]}):
+            rows, failures=mod.discover_public_sources()
+        self.assertEqual(rows[0]["pit_status"],"UNVERIFIED")
+        self.assertFalse(rows[0]["production_eligible"])
+        self.assertEqual(failures,[])
 
-def test_discovery_errors_are_recorded():
-    with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
-        rows, failures=mod.discover_public_sources()
-    assert rows == []
-    assert failures
+    def test_current_gap_keeps_collection_active_for_secondary_coverage(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            (hist/"pit_oos_audit.json").write_text(
+                '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
+                encoding="utf-8",
+            )
+            with patch.object(mod,"ROOT",root):
+                gap=mod.current_gap()
+            self.assertEqual(gap["gap"],0)
+            self.assertEqual(gap["situation_meta_ready_min"],136)
+            self.assertEqual(gap["online_expert_ready_min"],136)
 
-def test_select_sources_can_select_unverified_discovered_candidates():
-    frontier={"source_state":{},"candidates":{
-        "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin dataset","description":"historical API timestamp","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
-    }}
-    selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
-    assert "github:test/btc" in selected
+    def test_discovery_errors_are_recorded(self):
+        with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
+            rows, failures=mod.discover_public_sources()
+        self.assertEqual(rows,[])
+        self.assertTrue(failures)
 
-def test_workflow_continuously_recovers_missing_data():
-    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
-    assert 'cron: "*/15 * * * *"' in workflow
-    assert "actions: write" in workflow
-    assert "dispatch_verified()" in workflow
-    assert "dispatch verification failed" in workflow
-    assert "btc_live_cycle.yml 300" in workflow
-    assert "btc_binance_ws_collector.yml 900" in workflow
+    def test_select_sources_can_select_unverified_discovered_candidates(self):
+        frontier={"source_state":{},"candidates":{
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin dataset","description":"historical API timestamp","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+        }}
+        selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
+        self.assertIn("github:test/btc",selected)
 
-def test_workflow_uses_run_state_and_avoids_snapshot_commit_churn():
-    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
-    assert "data/historical_research/data_frontier_run.json" in workflow
-    assert "git add data/historical_research/data_frontier.json" in workflow
-    assert "git add data/historical_research/data_frontier.json data/historical_research/source_snapshots/" not in workflow
+    def test_workflow_continuously_recovers_missing_data(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn('cron: "*/15 * * * *"',workflow)
+        self.assertIn("actions: write",workflow)
+        self.assertIn("dispatch_verified()",workflow)
+        self.assertIn("dispatch verification failed",workflow)
+        self.assertIn("btc_live_cycle.yml 300",workflow)
+        self.assertIn("btc_binance_ws_collector.yml 900",workflow)
 
-def test_github_discovery_uses_auth_token():
-    seen = {}
-    def fake_get(url, method="GET", body=None, token=None):
-        if "api.github.com/search/repositories" in url:
-            seen["github_token"] = token
-        return {"items": []}
-    with patch.object(mod, "_get", side_effect=fake_get):
-        with patch.dict(__import__("os").environ, {"GITHUB_TOKEN": "test-token"}):
-            rows, failures = mod.discover_public_sources()
-    assert rows == []
-    assert seen["github_token"] == "test-token"
-    assert not failures
+    def test_workflow_uses_run_state_and_avoids_snapshot_commit_churn(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn("data/historical_research/data_frontier_run.json",workflow)
+        self.assertIn("git add data/historical_research/data_frontier.json",workflow)
+        self.assertNotIn("git add data/historical_research/data_frontier.json data/historical_research/source_snapshots/",workflow)
 
-def test_contract_runner_discovers_frontier_tests():
-    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
-    assert "python -m unittest discover -s tests -p 'test_btc_data_frontier_autoselect.py' -v" in workflow
-    assert "python -m unittest tests.test_btc_data_frontier_autoselect -v" not in workflow
+    def test_github_discovery_uses_auth_token(self):
+        seen={}
+        def fake_get(url,method="GET",body=None,token=None):
+            if "api.github.com/search/repositories" in url:
+                seen["github_token"]=token
+            return {"items":[]}
+        with patch.object(mod,"_get",side_effect=fake_get):
+            with patch.dict(__import__("os").environ,{"GITHUB_TOKEN":"test-token"}):
+                rows, failures=mod.discover_public_sources()
+        self.assertEqual(rows,[])
+        self.assertEqual(seen["github_token"],"test-token")
+        self.assertEqual(failures,[])
+
+    def test_selector_state_is_persistent_across_cycles(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            (hist/"data_frontier.json").write_text(
+                '{"schema_version":1,"candidates":{}}',encoding="utf-8"
+            )
+            (hist/"data_frontier_state.json").write_text(
+                '{"schema_version":1,"source_state":{"mempool_space":{"successful_probes":7,"consecutive_failures":0}},"history":[{"cycle":12}]}',
+                encoding="utf-8",
+            )
+            with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",hist/"data_frontier.json"), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
+                frontier=mod.load_frontier()
+            self.assertEqual(frontier["source_state"]["mempool_space"]["successful_probes"],7)
+            self.assertEqual(frontier["history"][-1]["cycle"],12)
+
+    def test_workflow_persists_selector_state_on_dedicated_branch(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn("btc-data-frontier-state",workflow)
+        self.assertIn("Persist frontier selector state",workflow)
+        self.assertIn("data/historical_research/data_frontier_state.json",workflow)
+        self.assertIn("refusing to discard selection memory",workflow)
 
 
-def test_selector_state_is_persistent_across_cycles():
-    with tempfile.TemporaryDirectory() as td:
-        root=Path(td)
-        hist=root/"data/historical_research"
-        hist.mkdir(parents=True,exist_ok=True)
-        (hist/"data_frontier.json").write_text(
-            '{"schema_version":1,"candidates":{}}',encoding="utf-8"
-        )
-        (hist/"data_frontier_state.json").write_text(
-            '{"schema_version":1,"source_state":{"mempool_space":{"successful_probes":7,"consecutive_failures":0}},"history":[{"cycle":12}]}',
-            encoding="utf-8",
-        )
-        with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",hist/"data_frontier.json"), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
-            frontier=mod.load_frontier()
-        assert frontier["source_state"]["mempool_space"]["successful_probes"]==7
-        assert frontier["history"][-1]["cycle"]==12
-
-def test_workflow_persists_selector_state_on_dedicated_branch():
-    workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
-    assert "btc-data-frontier-state" in workflow
-    assert "Persist frontier selector state" in workflow
-    assert "data/historical_research/data_frontier_state.json" in workflow
-    assert "refusing to discard selection memory" in workflow
+if __name__=="__main__":
+    main()
