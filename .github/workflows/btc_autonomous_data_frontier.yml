@@ -25,6 +25,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: {ref: main, fetch-depth: 0}
+      - name: Load persistent selector state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/data_frontier_state.json
+          if git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+            if git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > data/historical_research/data_frontier_state.json 2>/dev/null; then
+              echo "Loaded persistent frontier selector state."
+            else
+              echo "State branch exists but no state file is published yet; starting selector state fresh."
+            fi
+          else
+            echo "WARN: frontier selector state branch unavailable; selection starts from local evidence only."
+          fi
       - uses: actions/setup-python@v7
         with: {python-version: "3.12"}
       - name: Compile
@@ -99,9 +113,40 @@ jobs:
           path: |
             data/historical_research/data_frontier.json
             data/historical_research/source_snapshots/
+            data/historical_research/data_frontier_state.json
             data_frontier_run.json
           if-no-files-found: error
           retention-days: 14
+      - name: Persist frontier selector state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/historical_research/data_frontier_state.json
+          if ! git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+            echo "ERROR: frontier selector state branch cannot be fetched; refusing to discard selection memory." >&2
+            exit 1
+          fi
+          git switch --detach origin/btc-data-frontier-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/historical_research/data_frontier_state.json
+          if git diff --cached --quiet; then
+            echo "Selector state unchanged."
+            exit 0
+          fi
+          git commit -m "chore: persist autonomous BTC frontier selector state"
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:btc-data-frontier-state; then
+              echo "Persistent selector state published."
+              exit 0
+            fi
+            git fetch --no-tags --depth=1 origin btc-data-frontier-state
+            git rebase origin/btc-data-frontier-state
+            sleep $((attempt * 2))
+          done
+          echo "ERROR: selector state branch publish failed after bounded retries." >&2
+          exit 1
+
       - name: Persist newly discovered frontier candidates
         run: |
           set -euo pipefail

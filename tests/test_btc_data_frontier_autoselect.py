@@ -96,3 +96,28 @@ def test_contract_runner_discovers_frontier_tests():
     workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
     assert "python -m unittest discover -s tests -p 'test_btc_data_frontier_autoselect.py' -v" in workflow
     assert "python -m unittest tests.test_btc_data_frontier_autoselect -v" not in workflow
+
+
+def test_selector_state_is_persistent_across_cycles():
+    with tempfile.TemporaryDirectory() as td:
+        root=Path(td)
+        hist=root/"data/historical_research"
+        hist.mkdir(parents=True,exist_ok=True)
+        (hist/"data_frontier.json").write_text(
+            '{"schema_version":1,"candidates":{}}',encoding="utf-8"
+        )
+        (hist/"data_frontier_state.json").write_text(
+            '{"schema_version":1,"source_state":{"mempool_space":{"successful_probes":7,"consecutive_failures":0}},"history":[{"cycle":12}]}',
+            encoding="utf-8",
+        )
+        with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",hist/"data_frontier.json"), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
+            frontier=mod.load_frontier()
+        assert frontier["source_state"]["mempool_space"]["successful_probes"]==7
+        assert frontier["history"][-1]["cycle"]==12
+
+def test_workflow_persists_selector_state_on_dedicated_branch():
+    workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+    assert "btc-data-frontier-state" in workflow
+    assert "Persist frontier selector state" in workflow
+    assert "data/historical_research/data_frontier_state.json" in workflow
+    assert "refusing to discard selection memory" in workflow
