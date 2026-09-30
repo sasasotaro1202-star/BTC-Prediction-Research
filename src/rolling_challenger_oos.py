@@ -34,8 +34,20 @@ except ModuleNotFoundError:
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "rolling_challenger_oos.json"
-MAX_ROWS = 12000
+def _positive_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer: {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive: {value}")
+    return value
+
+
+MAX_ROWS = _positive_env_int("ROLLING_MAX_ROWS", 12000)
 FINAL_HOLDOUT_FRAC = 0.20
+TEST_BLOCK = _positive_env_int("ROLLING_TEST_BLOCK", 25)
 PURGE = {"5m": 5, "10m": 10}
 EMBARGO = {"5m": 60, "10m": 60}
 ALPHA = 0.05
