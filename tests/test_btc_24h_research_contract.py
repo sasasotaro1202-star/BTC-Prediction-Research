@@ -99,3 +99,8 @@ def test_24h_rolling_config_is_recorded_by_research_script():
     assert '"evaluation_config"' in script
     assert '"max_rows": MAX_ROWS' in script
     assert '"test_block": TEST_BLOCK' in script
+
+def test_24h_stage4_does_not_self_reference_its_own_needs_result():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert 'needs.stage4_robustness.result' not in workflow
+    assert 'Stage results are enforced centrally by the finalize job' in workflow

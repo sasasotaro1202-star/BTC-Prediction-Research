@@ -255,3 +255,63 @@ class TestCalibration(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_zero_settled_reuse_path_passes_current_model_hash(self):
+        import hashlib
+        import json
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model_dir = root / "models"
+            model_dir.mkdir()
+            registry_version = "bootstrap.example.v1"
+            for horizon in ("5m", "10m"):
+                payload = f"model-{horizon}".encode()
+                (model_dir / f"{horizon}.joblib").write_bytes(payload)
+                sha = hashlib.sha256(payload).hexdigest()
+                (model_dir / f"{horizon}.calibration.json").write_text(
+                    json.dumps({
+                        "horizon": horizon,
+                        "temperature": 0.8,
+                        "n_settled": 500,
+                        "model_version": registry_version,
+                        "model_sha256": sha,
+                    }),
+                    encoding="utf-8",
+                )
+
+            db = root / "predictions.db"
+            with sqlite3.connect(db) as con:
+                con.execute(
+                    "CREATE TABLE model_registry (horizon TEXT PRIMARY KEY, production_version TEXT, updated_at_utc TEXT)"
+                )
+                con.executemany(
+                    "INSERT INTO model_registry VALUES (?, ?, ?)",
+                    [
+                        ("5m", registry_version, "2026-09-22T00:00:00+00:00"),
+                        ("10m", registry_version, "2026-09-22T00:00:00+00:00"),
+                    ],
+                )
+                con.execute(
+                    """CREATE TABLE predictions (
+                        p_up_5m REAL, p_down_5m REAL, p_flat_5m REAL,
+                        actual_direction_5m TEXT,
+                        p_up_10m REAL, p_down_10m REAL, p_flat_10m REAL,
+                        actual_direction_10m TEXT,
+                        model_version TEXT, scenario_json TEXT
+                    )"""
+                )
+
+            with patch.object(calibration_module, "DB", db),                  patch.object(calibration_module, "MODEL_DIR", model_dir),                  patch.object(calibration_module, "init_db", lambda: None):
+                calibration_module.calibration()
+
+            for horizon in ("5m", "10m"):
+                saved = json.loads(
+                    (model_dir / f"{horizon}.calibration.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(saved["temperature"], 0.8)
+                self.assertEqual(saved["model_version"], registry_version)
