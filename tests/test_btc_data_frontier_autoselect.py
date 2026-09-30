@@ -61,3 +61,12 @@ def test_select_sources_can_select_unverified_discovered_candidates():
     }}
     selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
     assert "github:test/btc" in selected
+
+def test_workflow_continuously_recovers_missing_data():
+    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+    assert 'cron: "*/15 * * * *"' in workflow
+    assert "actions: write" in workflow
+    assert "dispatch_verified()" in workflow
+    assert "dispatch verification failed" in workflow
+    assert "btc_live_cycle.yml 300" in workflow
+    assert "btc_binance_ws_collector.yml 900" in workflow

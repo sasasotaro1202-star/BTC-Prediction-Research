@@ -2,8 +2,9 @@ name: BTC Autonomous Data Frontier
 on:
   workflow_dispatch:
   schedule:
-    - cron: "11 */3 * * *"
+    - cron: "*/15 * * * *"
 permissions:
+  actions: write
   contents: write
 concurrency:
   group: btc-autonomous-data-frontier
@@ -42,6 +43,46 @@ jobs:
               if row.get("production_eligible") is not False: raise SystemExit("unverified candidate became production eligible")
           print({"cycle":last.get("cycle"),"gap":last.get("gap"),"selected":last.get("selected_source_ids"),"discovered":len(p.get("candidates",{}))})
           PY
+      - name: Recover missing verified primary data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actions_state="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path("data/historical_research/data_frontier.json").read_text(encoding="utf-8"))
+          print(json.dumps((obj.get("last_run") or {}).get("actions") or {}, sort_keys=True))
+          PY
+          )"
+          need_live="$(jq -r '.collect_live // false' <<<"$actions_state")"
+          need_ws="$(jq -r '.warm_binance_ws // false' <<<"$actions_state")"
+          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          dispatch_verified() {
+            workflow="$1"
+            threshold="$2"
+            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20")"
+            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress") | select(.head_sha==$sha)] | length' --arg sha "$main_sha" <<<"$response")"
+            latest="$(jq -r --arg sha "$main_sha" '[.workflow_runs[]? | select(.status=="completed" and .head_sha==$sha and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.id] | @tsv' <<<"$response")"
+            updated="$(cut -f1 <<<"$latest")"
+            latest_id="$(cut -f2 <<<"$latest")"
+            if [ -z "$updated" ]; then age=999999999; else age=$(( $(date -u +%s) - $(date -d "$updated" +%s) )); fi
+            echo "${workflow}: active_current_main=${active} latest_current_main=${latest_id:-none} age=${age}s threshold=${threshold}s"
+            if [ "$active" -gt 0 ] || [ "$age" -lt "$threshold" ]; then return 0; fi
+            started="$(date -u +%s)"
+            gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null
+            for _ in 1 2 3 4 5 6; do
+              sleep 5
+              fresh="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
+              if [ -n "$fresh" ]; then echo "${workflow}: dispatch verified ${fresh}"; return 0; fi
+            done
+            echo "${workflow}: dispatch verification failed" >&2
+            return 1
+          }
+          if [ "$need_live" = "true" ]; then dispatch_verified btc_live_cycle.yml 300; fi
+          if [ "$need_ws" = "true" ]; then dispatch_verified btc_binance_ws_collector.yml 900; fi
       - name: Upload frontier evidence
         uses: actions/upload-artifact@v6
         with:
