@@ -12,6 +12,7 @@ import io
 import json
 import time
 import urllib.request
+from urllib.parse import urlencode
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = ROOT / "data" / "historical_research" / "archive_cache"
 UA = "BTC-Prediction-Research/archive/1.0"
+REST_HOSTS = ("fapi.binance.com", "fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com")
+REST_BATCH = 1000
+REST_MAX_PAGES = 48
 
 
 def _download(url: str, timeout: int = 45) -> bytes:
@@ -110,6 +114,67 @@ def _month_rows(month: datetime):
     return _closed(_rows_from_zip(_download(_month_url(month)), month.strftime("%Y-%m")))
 
 
+def _rest_klines(target: int):
+    """Recover recent closed BTCUSDT 1m candles from public Binance Futures REST."""
+    target = int(target)
+    if target <= 0:
+        return []
+    rows = []
+    end_ms = int(time.time() * 1000) - 60_000
+    errors = []
+    for _ in range(REST_MAX_PAGES):
+        page = None
+        for host in REST_HOSTS:
+            url = "https://" + host + "/fapi/v1/klines?" + urlencode({
+                "symbol": "BTCUSDT",
+                "interval": "1m",
+                "limit": REST_BATCH,
+                "endTime": end_ms,
+            })
+            try:
+                page = json.loads(_download(url, timeout=30).decode("utf-8"))
+                if isinstance(page, list):
+                    break
+                errors.append(host + ":non_list_response")
+            except Exception as exc:
+                errors.append(host + ":" + type(exc).__name__)
+                page = None
+        if not isinstance(page, list) or not page:
+            break
+        parsed = []
+        for item in page:
+            if not isinstance(item, list) or len(item) < 11:
+                continue
+            try:
+                parsed.append([
+                    int(item[0]),
+                    float(item[1]),
+                    float(item[2]),
+                    float(item[3]),
+                    float(item[4]),
+                    float(item[5]),
+                ])
+            except (TypeError, ValueError):
+                continue
+        closed = _closed(parsed)
+        rows.extend(closed)
+        rows = list({int(row[0]): row for row in rows}.values())
+        contiguous = _contiguous_suffix(rows)
+        if len(contiguous) >= target:
+            return contiguous[-target:]
+        earliest = min((int(row[0]) for row in parsed), default=None)
+        if earliest is None:
+            break
+        end_ms = earliest - 1
+        if len(page) < REST_BATCH:
+            break
+    if len(_contiguous_suffix(rows)) >= target:
+        return _contiguous_suffix(rows)[-target:]
+    if errors:
+        return []
+    return []
+
+
 def binance_archive_rows(target: int = 30_000):
     """Return target recent closed BTCUSDT 1m candles from free archives.
     
@@ -198,6 +263,11 @@ def binance_archive_rows(target: int = 30_000):
 
     rows = _closed(rows)
     contiguous = _contiguous_suffix(rows)
+    if len(contiguous) < target:
+        rest_rows = _rest_klines(target)
+        rest_contiguous = _contiguous_suffix(rest_rows)
+        if len(rest_contiguous) >= target:
+            return rest_contiguous[-target:]
     if len(contiguous) < target:
         raise RuntimeError(
             f"archive returned only {len(contiguous)} contiguous closed rows; "

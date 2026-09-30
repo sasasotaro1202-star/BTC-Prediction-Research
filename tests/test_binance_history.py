@@ -131,6 +131,21 @@ class TestBinanceHistory(unittest.TestCase):
             bh._month_rows = old_month
             bh._load_day = old_day
 
+    def test_archive_rows_rest_fallback_recovers_when_archives_are_empty(self):
+        old_month = bh._month_rows
+        old_day = bh._load_day
+        old_rest = bh._rest_klines
+        try:
+            bh._month_rows = lambda month: []
+            bh._load_day = lambda day: ([], "mock")
+            bh._rest_klines = lambda target: [[i * 60_000, 1, 1, 1, 1, 1] for i in range(target)]
+            out = bh.binance_archive_rows(target=5)
+            self.assertEqual([r[0] for r in out], [0, 60_000, 120_000, 180_000, 240_000])
+        finally:
+            bh._month_rows = old_month
+            bh._load_day = old_day
+            bh._rest_klines = old_rest
+
     def test_contiguous_suffix_drops_older_rows_before_gap(self):
         rows = [
             [0, 1, 1, 1, 1, 1],
