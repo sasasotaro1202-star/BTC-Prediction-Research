@@ -78,3 +78,15 @@ def test_workflow_uses_run_state_and_avoids_snapshot_commit_churn():
     assert "data/historical_research/data_frontier_run.json" in workflow
     assert "git add data/historical_research/data_frontier.json" in workflow
     assert "git add data/historical_research/data_frontier.json data/historical_research/source_snapshots/" not in workflow
+
+def test_github_discovery_uses_auth_token():
+    seen = {}
+    def fake_get(url, method="GET", body=None, token=None):
+        seen["token"] = token
+        return {"items": []}
+    with patch.object(mod, "_get", side_effect=fake_get):
+        with patch.dict(__import__("os").environ, {"GITHUB_TOKEN": "test-token"}):
+            rows, failures = mod.discover_public_sources()
+    assert rows == []
+    assert seen["token"] == "test-token"
+    assert not failures

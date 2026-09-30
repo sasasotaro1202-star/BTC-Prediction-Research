@@ -26,8 +26,10 @@ PROBES={
 DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp")
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-def _get(url,method="GET",body=None):
+def _get(url,method="GET",body=None,token=None):
  headers={"User-Agent":"BTC-Prediction-Research-data-frontier/1.0","Accept":"application/json,text/plain,*/*"}
+ if token:
+  headers["Authorization"]="Bearer "+token
  data=None
  if method=="POST": headers["Content-Type"]="application/json"; data=json.dumps(body or {}).encode()
  req=Request(url,headers=headers,method=method,data=data)
@@ -103,7 +105,7 @@ def discover_public_sources():
  for query in DISCOVERY_QUERIES:
   url="https://api.github.com/search/repositories?q="+quote(query)+"&sort=updated&order=desc&per_page="+str(DISCOVERY_RESULTS)
   try:
-   payload=_get(url)
+   payload=_get(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
    for item in payload.get("items",[]) if isinstance(payload,dict) else []:
     name=str(item.get("full_name") or "")
     if name:
