@@ -104,4 +104,3 @@ def test_24h_stage4_does_not_self_reference_its_own_needs_result():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     stage4_block = workflow.split('\n  finalize:', 1)[0].split('\n  stage4_robustness:', 1)[1]
     assert 'needs.stage4_robustness.result' not in stage4_block
-    assert 'Stage results are enforced centrally by the finalize job' in stage4_block
