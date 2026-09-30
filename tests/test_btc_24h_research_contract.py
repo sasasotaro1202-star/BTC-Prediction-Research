@@ -112,3 +112,15 @@ def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
     assert "git fetch origin main --depth=1" in workflow
     assert "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha" in workflow
     assert "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA" in workflow
+
+def test_24h_all_jobs_fail_closed_when_main_moves():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    assert workflow.count('name: Fail closed if run is not latest main') == 5
+    assert workflow.count('git/ref/heads/main') == 5
+    assert workflow.count('STALE_MAIN_RUN expected=') == 5
+
+def test_actions_cleanup_cancels_stale_24h_research_runs():
+    cleanup = Path('.github/workflows/btc_actions_cleanup.yml').read_text(encoding='utf-8')
+    assert 'btc_24h_autonomous_research.yml' in cleanup
+    assert '[ "${head}" != "${main_sha}" ]' in cleanup
+    assert '[ "${age}" -ge 1800 ]' in cleanup
