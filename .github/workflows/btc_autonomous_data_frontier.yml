@@ -1,6 +1,12 @@
 name: BTC Autonomous Data Frontier
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/btc_data_frontier_autoselect.py"
+      - "tests/test_btc_data_frontier_autoselect.py"
+      - ".github/workflows/btc_autonomous_data_frontier.yml"
   schedule:
     - cron: "*/15 * * * *"
 permissions:
