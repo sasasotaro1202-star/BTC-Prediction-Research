@@ -91,3 +91,8 @@ def test_github_discovery_uses_auth_token():
     assert rows == []
     assert seen["github_token"] == "test-token"
     assert not failures
+
+def test_contract_runner_discovers_frontier_tests():
+    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+    assert "python -m unittest discover -s tests -p 'test_btc_data_frontier_autoselect.py' -v" in workflow
+    assert "python -m unittest tests.test_btc_data_frontier_autoselect -v" not in workflow
