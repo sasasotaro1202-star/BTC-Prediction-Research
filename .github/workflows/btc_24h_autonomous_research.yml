@@ -244,14 +244,17 @@ jobs:
           rm -f data/historical_research/rolling_challenger_oos.json
           rm -f data/historical_research/adaptive_ensemble_oos.json
       - name: Run rolling challenger
+        env:
+          ROLLING_MAX_ROWS: '3000'
+          ROLLING_TEST_BLOCK: '100'
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=60 180m python src/rolling_challenger_oos.py
+          timeout --signal=TERM --kill-after=60 220m python src/rolling_challenger_oos.py
           test -s data/historical_research/rolling_challenger_oos.json
       - name: Run adaptive ensemble
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=60 140m python src/adaptive_ensemble_oos.py
+          timeout --signal=TERM --kill-after=60 100m python src/adaptive_ensemble_oos.py
           test -s data/historical_research/adaptive_ensemble_oos.json
       - name: Verify research-only outputs
         run: |

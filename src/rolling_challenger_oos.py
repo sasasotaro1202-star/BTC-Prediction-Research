@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +73,7 @@ def load_current_rows(horizon: str):
         from bootstrap_train import make_features
         from binance_history import binance_archive_rows
         from label_policy import direction_from_return
-        raw = binance_archive_rows(max(MAX_ROWS + 50, 12000))
+        raw = binance_archive_rows(max(MAX_ROWS + 50, 3000))
         champion = joblib.load(ROOT / "models" / f"{horizon}.joblib")
         meta = json.loads((ROOT / "models" / f"{horizon}.json").read_text(encoding="utf-8"))
         trained_raw = meta.get("trained_at_utc")
@@ -303,6 +304,13 @@ def evaluate(horizon: str):
         "development_n": len(development),
         "final_holdout_n": len(holdout),
         "alpha": corrected_alpha,
+        "evaluation_config": {
+            "max_rows": MAX_ROWS,
+            "test_block": TEST_BLOCK,
+            "final_holdout_frac": FINAL_HOLDOUT_FRAC,
+            "purge": PURGE[horizon],
+            "embargo": EMBARGO[horizon],
+        },
         "candidates": candidate_results,
         "finished_utc": datetime.now(timezone.utc).isoformat(),
     }

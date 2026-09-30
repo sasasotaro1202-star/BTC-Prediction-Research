@@ -25,7 +25,7 @@ env:
 jobs:
   rolling_challenger:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 220
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -47,6 +47,9 @@ jobs:
       - name: Compile research code
         run: python -m compileall -q src scripts tests
       - name: Run rolling challenger OOS
+        env:
+          ROLLING_MAX_ROWS: '3000'
+          ROLLING_TEST_BLOCK: '100'
         run: |
           set -euo pipefail
           python src/rolling_challenger_oos.py

@@ -79,13 +79,23 @@ def test_24h_stage1_uses_actual_maximum_future_generalization_registry():
 
 def test_24h_stage3_runtime_budget_matches_standalone_lane():
     workflow = WORKFLOW.read_text(encoding='utf-8')
-    assert '180m python src/rolling_challenger_oos.py' in workflow
-    assert '140m python src/adaptive_ensemble_oos.py' in workflow
-    assert '160m python src/rolling_challenger_oos.py' not in workflow
-    assert '160m python src/adaptive_ensemble_oos.py' not in workflow
+    assert '220m python src/rolling_challenger_oos.py' in workflow
+    assert '100m python src/adaptive_ensemble_oos.py' in workflow
+    assert '180m python src/rolling_challenger_oos.py' not in workflow
+    assert '140m python src/adaptive_ensemble_oos.py' not in workflow
+    assert "ROLLING_MAX_ROWS: '3000'" in workflow
+    assert "ROLLING_TEST_BLOCK: '100'" in workflow
 
 def test_24h_fail_step_uses_valid_multiline_bash_condition():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     assert 'if [[ "${{ needs.stage1_maximum.result }}" != "success" ||' in workflow
     assert '"${{ needs.stage4_robustness.result }}" != "success" ]]; then' in workflow
     assert '] ||\n          then' not in workflow
+
+def test_24h_rolling_config_is_recorded_by_research_script():
+    script = Path('src/rolling_challenger_oos.py').read_text(encoding='utf-8')
+    assert 'ROLLING_MAX_ROWS' in script
+    assert 'ROLLING_TEST_BLOCK' in script
+    assert '"evaluation_config"' in script
+    assert '"max_rows": MAX_ROWS' in script
+    assert '"test_block": TEST_BLOCK' in script
