@@ -86,11 +86,11 @@ def test_24h_stage3_runtime_budget_matches_standalone_lane():
     assert "ROLLING_MAX_ROWS: '3000'" in workflow
     assert "ROLLING_TEST_BLOCK: '100'" in workflow
 
-def test_24h_fail_step_uses_valid_multiline_bash_condition():
+def test_24h_stage_results_are_enforced_by_finalize_job():
     workflow = WORKFLOW.read_text(encoding='utf-8')
-    assert 'if [[ "${{ needs.stage1_maximum.result }}" != "success" ||' in workflow
-    assert '"${{ needs.stage4_robustness.result }}" != "success" ]]; then' in workflow
-    assert '] ||\n          then' not in workflow
+    assert 'Enforce complete marathon evidence' in workflow
+    for result_var in ('S1', 'S2', 'S3', 'S4'):
+        assert f'test "${result_var}" = success' in workflow
 
 def test_24h_rolling_config_is_recorded_by_research_script():
     script = Path('src/rolling_challenger_oos.py').read_text(encoding='utf-8')
@@ -102,5 +102,6 @@ def test_24h_rolling_config_is_recorded_by_research_script():
 
 def test_24h_stage4_does_not_self_reference_its_own_needs_result():
     workflow = WORKFLOW.read_text(encoding='utf-8')
-    assert 'needs.stage4_robustness.result' not in workflow
-    assert 'Stage results are enforced centrally by the finalize job' in workflow
+    stage4_block = workflow.split('\n  finalize:', 1)[0].split('\n  stage4_robustness:', 1)[1]
+    assert 'needs.stage4_robustness.result' not in stage4_block
+    assert 'Stage results are enforced centrally by the finalize job' in stage4_block
