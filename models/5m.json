@@ -1,5 +1,5 @@
 {
-  "model_version": "bootstrap.bootstrap_rf",
+  "model_version": "bootstrap.soft_ensemble.v5.4",
   "horizon": "5m",
   "classes": [
     "DOWN",
@@ -26,17 +26,92 @@
   "artifact": "5m.joblib",
   "candidate": false,
   "bootstrap": true,
-  "holdout_n": 2154,
-  "holdout_metrics": {
-    "accuracy": 0.4921077065923863,
-    "logloss": 1.0333406394740106,
-    "brier": 0.6205338014552422
+  "selection_method": "nested_chronological_selection_gate_holdout",
+  "holdout_used_for_selection": false,
+  "holdout_used_for_gate": false,
+  "holdout_is_descriptive_only": true,
+  "train_n": 16475,
+  "selection_n": 4495,
+  "gate_n": 4495,
+  "holdout_n": 4495,
+  "gate_metrics": {
+    "accuracy": 0.4191323692992214,
+    "logloss": 1.0473253248558885,
+    "brier": 0.6364201771706586
   },
-  "baseline_metrics": {
-    "accuracy": 0.2590529247910863,
-    "logloss": 1.126103745404044,
-    "brier": 0.684499921766493
+  "baseline_gate_metrics": {
+    "accuracy": 0.3657397107897664,
+    "logloss": 1.0878621191835156,
+    "brier": 0.6597133348868283
   },
-  "temperature": 1.0,
-  "trained_at_utc": "2026-09-13T06:28:18.414287+00:00"
+  "final_holdout_metrics": {
+    "accuracy": 0.4162402669632925,
+    "logloss": 1.052881891189727,
+    "brier": 0.6397316996288327
+  },
+  "validation_metrics": [
+    {
+      "model": "soft_ensemble",
+      "logloss": 1.0289750325854532,
+      "brier": 0.6265566083138873,
+      "accuracy": 0.4218020022246941
+    },
+    {
+      "model": "rf",
+      "logloss": 1.0294204468053698,
+      "brier": 0.627694065983427,
+      "accuracy": 0.41379310344827586
+    },
+    {
+      "model": "extra_trees",
+      "logloss": 1.0296762804538626,
+      "brier": 0.6264624744630971,
+      "accuracy": 0.41713014460511677
+    },
+    {
+      "model": "rf_replay",
+      "logloss": 1.031039996027611,
+      "brier": 0.6289821313877505,
+      "accuracy": 0.41757508342602895
+    },
+    {
+      "model": "logreg",
+      "logloss": 1.0384796645256944,
+      "brier": 0.6280434622958544,
+      "accuracy": 0.42224694104560623
+    },
+    {
+      "model": "hgb",
+      "logloss": 1.045090232591255,
+      "brier": 0.6382964834278546,
+      "accuracy": 0.4157953281423804
+    },
+    {
+      "model": "rf_balanced",
+      "logloss": 1.0512028865395482,
+      "brier": 0.639902057975559,
+      "accuracy": 0.39443826473859844
+    },
+    {
+      "model": "lightgbm",
+      "logloss": 1.0514134901517747,
+      "brier": 0.6417080086940029,
+      "accuracy": 0.4164627363737486
+    },
+    {
+      "model": "extra_balanced",
+      "logloss": 1.067145367004345,
+      "brier": 0.6477287912621856,
+      "accuracy": 0.3875417130144605
+    }
+  ],
+  "validation_errors": [
+    {
+      "model": "xgboost",
+      "error_type": "ValueError",
+      "error": "Invalid classes inferred from unique values of `y`.  Expected: [0 1 2], got ['DOWN' 'FLAT' 'UP']"
+    }
+  ],
+  "final_fit_fraction": 0.85,
+  "trained_at_utc": "2026-09-30T16:52:47.379588+00:00"
 }
