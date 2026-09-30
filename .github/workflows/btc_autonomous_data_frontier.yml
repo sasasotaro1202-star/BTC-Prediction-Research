@@ -126,22 +126,34 @@ jobs:
             echo "ERROR: frontier selector state branch cannot be fetched; refusing to discard selection memory." >&2
             exit 1
           fi
-          git switch --detach origin/btc-data-frontier-state
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/historical_research/data_frontier_state.json
-          if git diff --cached --quiet; then
+          state_worktree="/tmp/btc-frontier-state-worktree"
+          rm -rf "$state_worktree"
+          if ! git worktree add --detach "$state_worktree" origin/btc-data-frontier-state; then
+            echo "ERROR: selector-state worktree creation failed; refusing to discard selection memory." >&2
+            exit 1
+          fi
+          trap 'git worktree remove --force "$state_worktree" >/dev/null 2>&1 || true' EXIT
+          mkdir -p "$state_worktree/data/historical_research"
+          cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
+          git -C "$state_worktree" config user.name "github-actions[bot]"
+          git -C "$state_worktree" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$state_worktree" add data/historical_research/data_frontier_state.json
+          if git -C "$state_worktree" diff --cached --quiet; then
             echo "Selector state unchanged."
             exit 0
           fi
-          git commit -m "chore: persist autonomous BTC frontier selector state"
+          git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
           for attempt in 1 2 3 4; do
-            if git push origin HEAD:btc-data-frontier-state; then
+            if git -C "$state_worktree" push origin HEAD:btc-data-frontier-state; then
               echo "Persistent selector state published."
               exit 0
             fi
-            git fetch --no-tags --depth=1 origin btc-data-frontier-state
-            git rebase origin/btc-data-frontier-state
+            git -C "$state_worktree" fetch --no-tags --depth=1 origin btc-data-frontier-state
+            git -C "$state_worktree" reset --hard origin/btc-data-frontier-state
+            mkdir -p "$state_worktree/data/historical_research"
+            cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
+            git -C "$state_worktree" add data/historical_research/data_frontier_state.json
+            git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
             sleep $((attempt * 2))
           done
           echo "ERROR: selector state branch publish failed after bounded retries." >&2
