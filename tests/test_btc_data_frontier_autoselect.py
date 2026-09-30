@@ -35,3 +35,29 @@ def test_discovery_candidate_is_never_production_eligible():
         rows=mod.discover_public_sources()
     assert rows[0]["pit_status"]=="UNVERIFIED"
     assert rows[0]["production_eligible"] is False
+
+def test_current_gap_keeps_collection_active_for_secondary_coverage():
+    with tempfile.TemporaryDirectory() as td:
+        root=Path(td)
+        (root/"pit_oos_audit.json").write_text(
+            '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
+            encoding="utf-8",
+        )
+        with patch.object(mod,"ROOT",root):
+            gap=mod.current_gap()
+        assert gap["gap"] == 0
+        assert gap["situation_meta_ready_min"] == 136
+        assert gap["online_expert_ready_min"] == 136
+
+def test_discovery_errors_are_recorded():
+    with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
+        rows, failures=mod.discover_public_sources()
+    assert rows == []
+    assert failures
+
+def test_select_sources_can_select_unverified_discovered_candidates():
+    frontier={"source_state":{},"candidates":{
+        "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin dataset","description":"historical API timestamp","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+    }}
+    selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
+    assert "github:test/btc" in selected

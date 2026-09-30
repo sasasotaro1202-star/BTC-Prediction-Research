@@ -64,11 +64,31 @@ def load_frontier():
  return p
 def current_gap():
  pth=ROOT/"data/historical_research/pit_oos_audit.json"
- if not pth.is_file(): return {"strict_primary":0,"target":300,"gap":300,"pit_verified":False}
+ default={
+  "strict_primary":0,"target":300,"gap":300,"pit_verified":False,"legacy_unverified":0,
+  "situation_meta_ready_min":0,"situation_meta_target":3000,
+  "online_expert_ready_min":0,"online_expert_target":140,
+ }
+ if not pth.is_file():
+  return default
  try:
-  p=json.loads(pth.read_text(encoding="utf-8")); strict=int(p.get("verified_primary_predictions",0)); target=int(p.get("min_strict_pit_rows",300))
-  return {"strict_primary":strict,"target":target,"gap":max(0,target-strict),"pit_verified":bool(p.get("pit_verified")),"legacy_unverified":int(p.get("legacy_unverified_count",0))}
- except (OSError,ValueError,TypeError,json.JSONDecodeError): return {"strict_primary":0,"target":300,"gap":300,"pit_verified":False}
+  p=json.loads(pth.read_text(encoding="utf-8"))
+  coverage=p.get("coverage") or {}
+  situation=[int((coverage.get(h) or {}).get("situation_meta_ready",0)) for h in ("5m","10m")]
+  online=[int((coverage.get(h) or {}).get("online_expert_ready",0)) for h in ("5m","10m")]
+  strict=int(p.get("verified_primary_predictions",0))
+  target=max(300,int(p.get("min_strict_pit_rows",300)))
+  return {
+   "strict_primary":strict,"target":target,"gap":max(0,target-strict),
+   "pit_verified":bool(p.get("pit_verified")),
+   "legacy_unverified":int(p.get("legacy_unverified_count",0)),
+   "situation_meta_ready_min":min(situation) if situation else 0,
+   "situation_meta_target":3000,
+   "online_expert_ready_min":min(online) if online else 0,
+   "online_expert_target":140,
+  }
+ except (OSError,ValueError,TypeError,json.JSONDecodeError):
+  return default
 def probe(sid):
  t=time.monotonic(); retrieved=now_utc(); method,url,body=PROBES[sid]
  try:
@@ -78,6 +98,7 @@ def probe(sid):
   return {"source_id":sid,"status":"ERROR","url":url,"retrieved_at":retrieved,"latency_sec":round(time.monotonic()-t,3),"error":f"{type(e).__name__}:{e}"}
 def discover_public_sources():
  found={}
+ failures=[]
  for query in DISCOVERY_QUERIES:
   url="https://api.github.com/search/repositories?q="+quote(query)+"&sort=updated&order=desc&per_page="+str(DISCOVERY_RESULTS)
   try:
@@ -86,8 +107,32 @@ def discover_public_sources():
     name=str(item.get("full_name") or "")
     if name:
      found["github:"+name]={"candidate_id":"github:"+name,"platform":"github","name":name,"url":str(item.get("html_url") or ""),"description":str(item.get("description") or ""),"query":query,"license":((item.get("license") or {}).get("spdx") if isinstance(item.get("license"),dict) else None),"stars":int(item.get("stargazers_count") or 0),"status":"DISCOVERED_UNVERIFIED","pit_status":"UNVERIFIED","production_eligible":False}
-  except Exception: pass
- return list(found.values())
+  except Exception as exc:
+   failures.append({"query":query,"platform":"github","error":f"{type(exc).__name__}:{exc}"})
+
+ for query in DISCOVERY_QUERIES:
+  url="https://huggingface.co/api/datasets?search="+quote(query)+"&limit="+str(DISCOVERY_RESULTS)
+  try:
+   payload=_get(url)
+   for item in payload if isinstance(payload,list) else []:
+    name=str(item.get("id") or "")
+    if not name: continue
+    found["huggingface:"+name]={
+     "candidate_id":"huggingface:"+name,
+     "platform":"huggingface",
+     "name":name,
+     "url":"https://huggingface.co/datasets/"+name,
+     "description":str(item.get("description") or ""),
+     "query":query,
+     "license":None,
+     "stars":int(item.get("likes") or 0),
+     "status":"DISCOVERED_UNVERIFIED",
+     "pit_status":"UNVERIFIED",
+     "production_eligible":False,
+    }
+  except Exception as exc:
+   failures.append({"query":query,"platform":"huggingface","error":f"{type(exc).__name__}:{exc}"})
+ return list(found.values()), failures
 def score(source,state,gap,pr):
  score=100-float(source.priority)*8
  score += 18 if source.access=="public_free" else 8
@@ -99,13 +144,25 @@ def score(source,state,gap,pr):
  if gap["gap"]>0 and source.family in {"exchange_derivatives","options","bitcoin_network","bitcoin_onchain","institutional_derivatives","capital_flow"}: score+=15
  return round(score,3)
 def select_sources(frontier,gap,results):
- rows=[(score(s,frontier["source_state"].get(s.source_id,{}),gap,results.get(s.source_id)),s) for s in SOURCES]
- rows.sort(key=lambda x:(-x[0],x[1].source_id)); selected=[]; families=set()
- for _,s in rows:
-  if s.family not in families and len(selected)<8: selected.append(s.source_id); families.add(s.family)
- for _,s in rows:
+ rows=[(score(s,frontier["source_state"].get(s.source_id,{}),gap,results.get(s.source_id)),s.source_id,s.family) for s in SOURCES]
+ for row in frontier.get("candidates",{}).values():
+  if row.get("production_eligible") is not False or row.get("status")!="DISCOVERED_UNVERIFIED":
+   continue
+  text_value=norm(" ".join((row.get("name",""),row.get("description",""),row.get("query",""))))
+  value=40.0
+  if "bitcoin" in text_value or re.search(r"\bbtc\b",text_value): value+=20
+  if any(k in text_value for k in ("timestamp","event","publication","api","websocket")): value+=15
+  if any(k in text_value for k in ("dataset","historical","archive","csv","parquet")): value+=10
+  if row.get("license"): value+=5
+  rows.append((value,row["candidate_id"],"discovered"))
+ rows.sort(key=lambda x:(-x[0],x[1]))
+ selected=[]; families=set()
+ for _,sid,family in rows:
+  if family not in families and len(selected)<8:
+   selected.append(sid); families.add(family)
+ for _,sid,_ in rows:
   if len(selected)>=8: break
-  if s.source_id not in selected: selected.append(s.source_id)
+  if sid not in selected: selected.append(sid)
  return selected
 def persist_snapshot(result):
  if result.get("status")!="OK": return None
@@ -124,7 +181,7 @@ def run():
   state["last_probe_at"]=r["retrieved_at"]; state["last_status"]=r["status"]; state["last_latency_sec"]=r["latency_sec"]
   if r.get("event_time"): state["last_source_event_time"]=r["event_time"]
   snapshots.append({k:v for k,v in r.items() if k!="payload"})
- discovered=discover_public_sources()
+ discovered, discovery_failures=discover_public_sources()
  for c in discovered:
   old=frontier["candidates"].get(c["candidate_id"],{}); old.update(c); old["first_seen"]=old.get("first_seen",now_utc()); old["last_seen"]=now_utc(); frontier["candidates"][c["candidate_id"]]=old
  selected=select_sources(frontier,gap,results)
@@ -132,8 +189,40 @@ def run():
   st=frontier["source_state"].setdefault(s.source_id,{})
   st["selected_for_next_cycle"]=s.source_id in selected
   if s.source_id in selected: st["selection_reason"]="data_gap_and_source_diversity" if gap["gap"]>0 else "rotating_frontier_coverage"
- runrec={"run_at":now_utc(),"cycle":cycle+1,"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids":selected,"successful_probes":sum(r["status"]=="OK" for r in results.values()),"failed_probes":sum(r["status"]=="ERROR" for r in results.values()),"new_discovered_candidates":len(discovered),"production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,"snapshots":snapshots}
- frontier["last_run"]=runrec; frontier["history"].append(runrec); frontier["history"]=frontier["history"][-120:]; frontier["updated_at"]=runrec["run_at"]; OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(frontier,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+ runrec={
+ "run_at":now_utc(),"cycle":cycle+1,"gap":gap,
+ "probed_source_ids":probe_ids,"selected_source_ids":selected,
+ "successful_probes":sum(r["status"]=="OK" for r in results.values()),
+ "failed_probes":sum(r["status"]=="ERROR" for r in results.values()),
+ "new_discovered_candidates":len(discovered),
+ "discovery_failures":discovery_failures,
+ "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
+ "snapshots":snapshots,
+ "actions":{
+  "collect_live": bool(
+   gap.get("gap",0)>0
+   or gap.get("situation_meta_ready_min",0)<gap.get("situation_meta_target",3000)
+   or gap.get("online_expert_ready_min",0)<gap.get("online_expert_target",140)
+  ),
+  "warm_binance_ws": bool(
+   gap.get("gap",0)>0
+   or gap.get("situation_meta_ready_min",0)<gap.get("situation_meta_target",3000)
+  ),
+  "continue_discovery":True,
+  "continue_selection":True,
+  "recompute_after_collection":True,
+ }}
+ frontier["candidate_count"]=len(frontier["candidates"])
+ frontier["durable_change"]=len(discovered)>0
+ durable={
+  "schema_version":1,
+  "updated_at":now_utc() if discovered else frontier.get("updated_at"),
+  "candidate_count":len(frontier["candidates"]),
+  "candidates":dict(sorted(frontier["candidates"].items())),
+  "policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"},
+ }
+ OUT.parent.mkdir(parents=True,exist_ok=True)
+ OUT.write_text(json.dumps(durable,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
  files=sorted(SNAPSHOT_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True) if SNAPSHOT_DIR.exists() else []
  for stale in files[MAX_SNAPSHOTS:]: stale.unlink(missing_ok=True)
  return runrec
