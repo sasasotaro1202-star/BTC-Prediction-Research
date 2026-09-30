@@ -310,9 +310,9 @@ jobs:
               fi
             fi
           }
-          # Integrity is read-only and has a 15m hard timeout. Cancel only
-          # genuinely stale runs so an old-head audit cannot block the next current-main audit.
-          recover_if_stale btc_integrity.yml 3600 1200 900
+          # Integrity is read-only with a 30m hard timeout. Keep the active
+          # recovery grace aligned to that budget; only clearly stale runs are cancelled.
+          recover_if_stale btc_integrity.yml 3600 1800 900
           # Live has a 5-minute target cadence. Recover at 5 minutes only
           # when no Live run is active, so a dropped schedule cannot create a
           # long gap while the active-run guard prevents overlap.

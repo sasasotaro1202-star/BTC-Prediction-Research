@@ -104,3 +104,11 @@ def test_24h_stage4_does_not_self_reference_its_own_needs_result():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     stage4_block = workflow.split('\n  finalize:', 1)[0].split('\n  stage4_robustness:', 1)[1]
     assert 'needs.stage4_robustness.result' not in stage4_block
+
+
+def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "Verify workflow SHA is current main before expensive research" in workflow
+    assert "git fetch origin main --depth=1" in workflow
+    assert "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha" in workflow
+    assert "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA" in workflow
