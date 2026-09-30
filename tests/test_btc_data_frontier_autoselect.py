@@ -70,3 +70,9 @@ def test_workflow_continuously_recovers_missing_data():
     assert "dispatch verification failed" in workflow
     assert "btc_live_cycle.yml 300" in workflow
     assert "btc_binance_ws_collector.yml 900" in workflow
+
+def test_workflow_uses_run_state_and_avoids_snapshot_commit_churn():
+    workflow = Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+    assert "data/historical_research/data_frontier_run.json" in workflow
+    assert "git add data/historical_research/data_frontier.json" in workflow
+    assert "git add data/historical_research/data_frontier.json data/historical_research/source_snapshots/" not in workflow

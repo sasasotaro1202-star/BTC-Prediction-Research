@@ -9,6 +9,7 @@ from src.btc_source_frontier_catalog import SOURCES
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"data/historical_research/data_frontier.json"
+RUN_OUT=ROOT/"data/historical_research/data_frontier_run.json"
 SNAPSHOT_DIR=ROOT/"data/historical_research/source_snapshots"
 MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
@@ -170,7 +171,7 @@ def persist_snapshot(result):
  p=SNAPSHOT_DIR/f"{stamp}_{result['source_id']}.json"; p.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True)+"\n",encoding="utf-8")
  return str(p.relative_to(ROOT))
 def run():
- frontier=load_frontier(); gap=current_gap(); cycle=len(frontier["history"])
+ frontier=load_frontier(); gap=current_gap(); cycle=int(datetime.now(timezone.utc).timestamp()//900)
  ids=[s.source_id for s in SOURCES if s.source_id in PROBES]; offset=cycle%max(1,len(ids)); probe_ids=(ids[offset:]+ids[:offset])[:min(5,len(ids))]
  results={sid:probe(sid) for sid in probe_ids}; snapshots=[]
  for sid,r in results.items():
@@ -223,6 +224,7 @@ def run():
  }
  OUT.parent.mkdir(parents=True,exist_ok=True)
  OUT.write_text(json.dumps(durable,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+ RUN_OUT.write_text(json.dumps(runrec,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
  files=sorted(SNAPSHOT_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True) if SNAPSHOT_DIR.exists() else []
  for stale in files[MAX_SNAPSHOTS:]: stale.unlink(missing_ok=True)
  return runrec
