@@ -149,7 +149,7 @@ def select_sources(frontier,gap,results):
  for row in frontier.get("candidates",{}).values():
   if row.get("production_eligible") is not False or row.get("status")!="DISCOVERED_UNVERIFIED":
    continue
-  text_value=norm(" ".join((row.get("name",""),row.get("description",""),row.get("query",""))))
+  text_value=_norm(" ".join((row.get("name",""),row.get("description",""),row.get("query",""))))
   value=40.0
   if "bitcoin" in text_value or re.search(r"\bbtc\b",text_value): value+=20
   if any(k in text_value for k in ("timestamp","event","publication","api","websocket")): value+=15

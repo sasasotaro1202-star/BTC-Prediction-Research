@@ -32,14 +32,16 @@ def test_probe_snapshot_uses_retrieval_basis_when_source_time_unknown():
 
 def test_discovery_candidate_is_never_production_eligible():
     with patch.object(mod,"_get",return_value={"items":[{"full_name":"example/btc-data","html_url":"https://github.com/example/btc-data"}]}):
-        rows=mod.discover_public_sources()
+        rows, failures=mod.discover_public_sources()
     assert rows[0]["pit_status"]=="UNVERIFIED"
     assert rows[0]["production_eligible"] is False
+    assert not failures
 
 def test_current_gap_keeps_collection_active_for_secondary_coverage():
     with tempfile.TemporaryDirectory() as td:
         root=Path(td)
-        (root/"pit_oos_audit.json").write_text(
+        (root/"data/historical_research").mkdir(parents=True,exist_ok=True)
+        (root/"data/historical_research/pit_oos_audit.json").write_text(
             '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
             encoding="utf-8",
         )
