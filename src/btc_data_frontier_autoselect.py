@@ -175,6 +175,20 @@ def select_sources(frontier,gap,results):
  for _,sid,_ in rows:
   if len(selected)>=8: break
   if sid not in selected: selected.append(sid)
+
+ # Keep one bounded exploration slot for newly discovered public candidates.
+ # They remain research-only/unverified; this only prevents the discovery
+ # frontier from being permanently starved by the static source catalog.
+ discovered_rows=[
+  row for row in rows
+  if row[1] in frontier.get("candidates",{})
+  and (frontier["candidates"].get(row[1]) or {}).get("status")=="DISCOVERED_UNVERIFIED"
+ ]
+ if gap.get("gap",0)>0 and discovered_rows:
+  best_discovered=max(discovered_rows,key=lambda x:(x[0],x[1]))
+  if best_discovered[0] >= 60:
+   if best_discovered[1] not in selected:
+    selected[-1]=best_discovered[1]
  return selected
 def persist_snapshot(result):
  if result.get("status")!="OK": return None
