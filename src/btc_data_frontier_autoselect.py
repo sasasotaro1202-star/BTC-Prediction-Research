@@ -26,6 +26,7 @@ PROBES={
 DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp")
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+def _norm(value): return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
 def _get(url,method="GET",body=None,token=None):
  headers={"User-Agent":"BTC-Prediction-Research-data-frontier/1.0","Accept":"application/json,text/plain,*/*"}
  if token:

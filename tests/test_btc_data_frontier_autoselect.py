@@ -82,11 +82,12 @@ def test_workflow_uses_run_state_and_avoids_snapshot_commit_churn():
 def test_github_discovery_uses_auth_token():
     seen = {}
     def fake_get(url, method="GET", body=None, token=None):
-        seen["token"] = token
+        if "api.github.com/search/repositories" in url:
+            seen["github_token"] = token
         return {"items": []}
     with patch.object(mod, "_get", side_effect=fake_get):
         with patch.dict(__import__("os").environ, {"GITHUB_TOKEN": "test-token"}):
             rows, failures = mod.discover_public_sources()
     assert rows == []
-    assert seen["token"] == "test-token"
+    assert seen["github_token"] == "test-token"
     assert not failures
