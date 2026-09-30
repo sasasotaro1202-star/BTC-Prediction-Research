@@ -1,0 +1,102 @@
+name: BTC Research Readiness Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/research_readiness.py"
+      - "src/btc_source_frontier_catalog.py"
+      - "src/production_integrity.py"
+      - "src/research_input_audit.py"
+      - "src/pit_oos_audit.py"
+      - "src/promotion_gate.py"
+      - "models/*.json"
+      - "models/*.joblib"
+      - "data/predictions.db.gz"
+      - "data/historical_research/*.json"
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-research-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  BTC_INTEGRITY_REQUIRE_FRESH: "false"
+  BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: "900"
+
+jobs:
+  audit:
+    name: BTC independent research readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f data/predictions.db
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+      - name: Compile readiness code
+        run: python -m compileall -q src tests
+      - name: Run production integrity snapshot
+        run: python src/production_integrity.py > data/historical_research/production_integrity.json
+      - name: Run strict research input audit
+        run: python src/research_input_audit.py
+      - name: Run strict PIT/OOS audit
+        run: python src/pit_oos_audit.py
+      - name: Evaluate promotion gate
+        run: python src/promotion_gate.py
+      - name: Build readiness state
+        run: python src/research_readiness.py
+      - name: Validate readiness contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/research_readiness.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("readiness must be research-only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("readiness changed production state")
+          if obj.get("no_implicit_activation") is not True:
+              raise SystemExit("implicit activation is forbidden")
+          if obj.get("source_frontier", {}).get("production_eligible_from_catalog") != 0:
+              raise SystemExit("catalog metadata cannot grant production eligibility")
+          print("BTC research readiness contract: VERIFIED")
+          PY
+      - name: Upload readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-research-readiness-${{ github.run_id }}
+          path: |
+            data/historical_research/production_integrity.json
+            data/historical_research/research_input_audit.json
+            data/historical_research/pit_oos_audit.json
+            data/historical_research/promotion_gate.json
+            data/historical_research/research_readiness.json
+          if-no-files-found: error
+          retention-days: 14
