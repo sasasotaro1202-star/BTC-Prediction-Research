@@ -88,6 +88,50 @@ class TestCalibration(unittest.TestCase):
                 obj = calibration_module._calibration_state(model_dir / "10m.calibration.json")
                 self.assertTrue(calibration_module._can_reuse_cached_calibration(obj, "10m", "bootstrap.bootstrap_rf", 2153, model_sha256))
 
+    def test_calibration_zero_settled_passes_model_hash_to_cache_reuse(self):
+        import json
+        import tempfile
+        from unittest.mock import patch
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'models').mkdir()
+            db = root / 'predictions.db'
+            cached = {
+                'horizon': '5m',
+                'temperature': 1.0,
+                'n_settled': 10,
+                'model_version': 'bootstrap.example.v1',
+                'model_sha256': 'a' * 64,
+            }
+            (root / 'models' / '5m.calibration.json').write_text(json.dumps(cached), encoding='utf-8')
+            (root / 'models' / '10m.calibration.json').write_text(json.dumps({**cached, 'horizon': '10m'}), encoding='utf-8')
+            calls = []
+
+            def reuse(obj, horizon, model_version, n_settled, model_sha256):
+                calls.append((horizon, model_version, n_settled, model_sha256))
+                return True
+
+            with patch.object(calibration_module, 'DB', db), \
+                 patch.object(calibration_module, 'MODEL_DIR', root / 'models'), \
+                 patch.object(calibration_module, 'init_db'), \
+                 patch.object(calibration_module, '_current_registry_version', return_value='bootstrap.example.v1'), \
+                 patch.object(calibration_module, '_settled_rows', return_value=[]), \
+                 patch.object(calibration_module, '_model_artifact_sha256', return_value='b' * 64), \
+                 patch.object(calibration_module, '_can_reuse_cached_calibration', side_effect=reuse), \
+                 patch.object(calibration_module, 'save_temperature') as save_temperature:
+                calibration_module.calibration()
+
+            self.assertEqual(
+                calls,
+                [
+                    ('5m', 'bootstrap.example.v1', 10, 'b' * 64),
+                    ('10m', 'bootstrap.example.v1', 10, 'b' * 64),
+                ],
+            )
+            save_temperature.assert_not_called()
+
     def test_save_temperature_skips_semantically_unchanged_artifact(self):
         import json
         import tempfile

@@ -216,6 +216,7 @@ def calibration():
                     and _can_reuse_cached_calibration(
                         cached, horizon_name, model_version,
                         int(cached.get("n_settled", -1)),
+                        model_sha256,
                     )
                 ):
                     print(
