@@ -1,66 +1,66 @@
 {
   "deltas_vs_soft": {
-    "accuracy": 0.00035714285714283367,
-    "brier": -0.00013702098851275935,
-    "ece": -0.0007617781611125168,
-    "logloss": -0.00014671084643524956
+    "accuracy": -0.00035714285714283367,
+    "brier": -0.00036547886466409274,
+    "ece": 0.0026242186732063494,
+    "logloss": -0.0005448938014709359
   },
   "horizon": "10m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.41535714285714287,
+      "accuracy": 0.43,
       "blocks": 28,
-      "brier": 0.632276879926609,
-      "ece": 0.08994657024146922,
-      "logloss": 1.0300342024801352,
+      "brier": 0.6252161044360329,
+      "ece": 0.09026998903678449,
+      "logloss": 1.0278134711276983,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.41535714285714287,
+      "accuracy": 0.43,
       "blocks": 28,
-      "brier": 0.6323296062916047,
-      "ece": 0.09004881183077255,
-      "logloss": 1.030096167603265,
+      "brier": 0.6252681817602739,
+      "ece": 0.08965477915340647,
+      "logloss": 1.027898592837819,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.415,
+      "accuracy": 0.43,
       "blocks": 28,
-      "brier": 0.6322860781885754,
-      "ece": 0.08995952127115948,
-      "logloss": 1.03004516584546,
+      "brier": 0.6252225186438325,
+      "ece": 0.08993611474922147,
+      "logloss": 1.0278239181249265,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.41464285714285715,
+      "accuracy": 0.42964285714285716,
       "blocks": 28,
-      "brier": 0.6323774980673453,
-      "ece": 0.09033972947318764,
-      "logloss": 1.030168664775793,
+      "brier": 0.6250564675783057,
+      "ece": 0.09081407121920866,
+      "logloss": 1.0276053554669176,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.4160714285714286,
+      "accuracy": 0.43,
       "blocks": 28,
-      "brier": 0.6316111954406622,
-      "ece": 0.08745625242740529,
-      "logloss": 1.0291508297174337,
+      "brier": 0.6246847671248562,
+      "ece": 0.0893066501884818,
+      "logloss": 1.0271119240441062,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.415,
+      "accuracy": 0.42964285714285716,
       "blocks": 28,
-      "brier": 0.6323622425029926,
-      "ece": 0.09000075399742138,
-      "logloss": 1.0301306252056828,
+      "brier": 0.625280071538494,
+      "ece": 0.0896808146138437,
+      "logloss": 1.027920366307876,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.4142857142857143,
+      "accuracy": 0.43,
       "blocks": 28,
-      "brier": 0.6325145190558581,
-      "ece": 0.09110150763430015,
-      "logloss": 1.0303153756222283,
+      "brier": 0.6254219464429698,
+      "ece": 0.08818985254600231,
+      "logloss": 1.0281502492683885,
       "n": 2800
     }
   },
@@ -68,20 +68,20 @@
     "early": {
       "blocks": 9,
       "full_vs_soft_accuracy_delta": -0.001111111111111106,
-      "full_vs_soft_brier_delta": -0.0001648161528614578,
-      "full_vs_soft_logloss_delta": -0.00020869735572095729
+      "full_vs_soft_brier_delta": -6.320470782847674e-05,
+      "full_vs_soft_logloss_delta": -0.00011063749937526939
     },
     "middle": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.001111111111111106,
-      "full_vs_soft_brier_delta": -0.00034541575452441534,
-      "full_vs_soft_logloss_delta": -0.00033917293955822007
+      "full_vs_soft_accuracy_delta": -0.0022222222222222244,
+      "full_vs_soft_brier_delta": 3.017785457717606e-05,
+      "full_vs_soft_logloss_delta": 9.262584716849019e-05
     },
     "recent": {
       "blocks": 10,
-      "full_vs_soft_accuracy_delta": 0.0010000000000000009,
-      "full_vs_soft_brier_delta": 7.554994881171506e-05,
-      "full_vs_soft_logloss_delta": 8.229289573218335e-05
+      "full_vs_soft_accuracy_delta": 0.0020000000000000018,
+      "full_vs_soft_brier_delta": -0.0009936166531332113,
+      "full_vs_soft_logloss_delta": -0.0015094921571319531
     }
   },
   "research_only": true,
