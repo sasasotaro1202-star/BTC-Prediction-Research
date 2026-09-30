@@ -10,6 +10,7 @@ from src.btc_source_frontier_catalog import SOURCES
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"data/historical_research/data_frontier.json"
 RUN_OUT=ROOT/"data/historical_research/data_frontier_run.json"
+STATE_OUT=ROOT/"data/historical_research/data_frontier_state.json"
 SNAPSHOT_DIR=ROOT/"data/historical_research/source_snapshots"
 MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
@@ -61,9 +62,16 @@ def _source_ts(v):
   except (TypeError,ValueError,OverflowError): pass
  return None
 def load_frontier():
- if not OUT.exists(): return {"schema_version":1,"candidates":{},"source_state":{},"history":[]}
- p=json.loads(OUT.read_text(encoding="utf-8"))
- if not isinstance(p,dict) or p.get("schema_version")!=1: raise RuntimeError("invalid data frontier schema")
+ if OUT.exists():
+  p=json.loads(OUT.read_text(encoding="utf-8"))
+  if not isinstance(p,dict) or p.get("schema_version") not in {1,2}: raise RuntimeError("invalid data frontier schema")
+ else:
+  p={"schema_version":1,"candidates":{},"source_state":{},"history":[]}
+ if STATE_OUT.exists():
+  state=json.loads(STATE_OUT.read_text(encoding="utf-8"))
+  if not isinstance(state,dict) or state.get("schema_version")!=1: raise RuntimeError("invalid data frontier state schema")
+  p["source_state"]=dict(state.get("source_state") or {})
+  p["history"]=list(state.get("history") or [])
  p.setdefault("candidates",{}); p.setdefault("source_state",{}); p.setdefault("history",[])
  return p
 def current_gap():
@@ -218,6 +226,9 @@ def run():
  }}
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
+ frontier["history"]=list(frontier.get("history") or [])
+ frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids":selected,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"]})
+ frontier["history"]=frontier["history"][-96:]
  durable={
   "schema_version":1,
   "updated_at":now_utc() if discovered else frontier.get("updated_at"),
@@ -227,6 +238,7 @@ def run():
  }
  OUT.parent.mkdir(parents=True,exist_ok=True)
  OUT.write_text(json.dumps(durable,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+ STATE_OUT.write_text(json.dumps({"schema_version":1,"updated_at":now_utc(),"source_state":dict(sorted(frontier["source_state"].items())),"history":frontier["history"],"policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"}},ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
  RUN_OUT.write_text(json.dumps(runrec,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
  files=sorted(SNAPSHOT_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True) if SNAPSHOT_DIR.exists() else []
  for stale in files[MAX_SNAPSHOTS:]: stale.unlink(missing_ok=True)
