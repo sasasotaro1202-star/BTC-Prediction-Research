@@ -24,3 +24,9 @@ class TestRollingChallengerFactoryContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_rolling_challenger_cancels_stale_duplicate_runs():
+    from pathlib import Path
+    workflow = Path(".github/workflows/btc_rolling_challenger.yml").read_text(encoding="utf-8")
+    assert "cancel-in-progress: true" in workflow

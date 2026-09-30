@@ -13,7 +13,8 @@ on:
 
 concurrency:
   group: btc-rolling-challenger
-  cancel-in-progress: false
+  # Research-only lane: a newer main-head run supersedes stale duplicate work.
+  cancel-in-progress: true
 
 permissions:
   contents: read
