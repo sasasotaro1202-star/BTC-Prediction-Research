@@ -89,6 +89,7 @@ def _case_outcome_prior(
     target = _case_key(current)
     levels = (
         target,
+        target[:5],
         target[:4],
         target[:3],
         target[:2],

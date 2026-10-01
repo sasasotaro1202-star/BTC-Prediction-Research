@@ -8,6 +8,7 @@ from src.experience_case_adaptive_controller_oos import (
     _adjust_probabilities,
     _baseline_error,
     _case_key,
+    _information_state,
     _hierarchical_prior,
 )
 
@@ -121,3 +122,18 @@ def test_case_memory_does_not_depend_on_future_rows():
     before = _hierarchical_prior(past, target)
     with_future = _hierarchical_prior(past + future, target)
     assert before == with_future
+
+def test_information_state_separates_clean_warning_and_degraded():
+    clean = _row()
+    warned = _row(
+        warning_flags='["order-book imbalance"]',
+    )
+    degraded = _row(
+        warning_flags='["partial market-data coverage; confidence reduced"]',
+    )
+    assert _information_state(clean) == "CLEAN"
+    assert _information_state(warned) == "WARNED"
+    assert _information_state(degraded) == "DEGRADED"
+    assert len(_case_key(clean)) == 6
+    assert _case_key(clean) != _case_key(warned)
+    assert _case_key(warned) != _case_key(degraded)

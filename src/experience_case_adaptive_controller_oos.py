@@ -87,6 +87,23 @@ def _flag_values(value: Any, prefix: str) -> list[str]:
     return [f"{prefix}:present"]
 
 
+def _information_state(row: Any) -> str:
+    """Compact causal information-quality state for case memory."""
+    warning_tokens = _flag_values(row["warning_flags"], "warning")
+    quality_tokens = _flag_values(row["data_quality_flags"], "quality")
+    tokens = warning_tokens + quality_tokens
+    if not tokens:
+        return "CLEAN"
+    degraded_terms = (
+        "partial", "missing", "coverage", "fallback",
+        "invalid", "reduced", "stale", "degraded",
+    )
+    lowered = [str(token).lower() for token in tokens]
+    if any(term in token for token in lowered for term in degraded_terms):
+        return "DEGRADED"
+    return "WARNED"
+
+
 def _meta_features(row: Any) -> dict[str, float | str]:
     created = _parse_ts(row["created_at_utc"])
     hour = created.hour + created.minute / 60.0
@@ -107,6 +124,7 @@ def _meta_features(row: Any) -> dict[str, float | str]:
         "horizon": str(row["horizon"]),
         "warning_count": float(len(_flag_values(row["warning_flags"], "warning"))),
         "quality_flag_count": float(len(_flag_values(row["data_quality_flags"], "quality"))),
+        "information_state": _information_state(row),
     }
     for token in _flag_values(row["warning_flags"], "warning"):
         values[f"flag:{token}"] = 1.0
@@ -122,7 +140,7 @@ def _baseline_error(train_rows: list[Any]) -> float:
     return _safe01((errors + 1.0) / (len(train_rows) + 2.0))
 
 
-def _case_key(row: Any) -> tuple[str, str, str, str, str]:
+def _case_key(row: Any) -> tuple[str, str, str, str, str, str]:
     """Return the full case identity used by hierarchical experience memory."""
     p = _probabilities(row)
     confidence = float(np.max(p))
@@ -142,6 +160,7 @@ def _case_key(row: Any) -> tuple[str, str, str, str, str]:
         str(row["predicted_direction"]),
         bucket,
         str(row["production_mode"] or "UNKNOWN"),
+        _information_state(row),
     )
 
 
@@ -163,6 +182,7 @@ def _hierarchical_prior(train_rows: list[Any], row: Any, shrinkage: float = 20.0
     # production_mode remains part of the full case identity.
     levels = (
         target,
+        target[:5],
         target[:4],
         target[:3],
         target[:2],
@@ -456,7 +476,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "mean_case_memory_error_risk": float(np.mean(case_prior_values)),
         "case_group_metrics": case_group_metrics,
         "case_group_count_with_support_floor": int(len(case_group_metrics)),
-        "case_dimensions": ("horizon", "regime", "predicted_direction", "confidence_bucket", "production_mode"),
+        "case_dimensions": ("horizon", "regime", "predicted_direction", "confidence_bucket", "production_mode", "information_state"),
     }
 
 

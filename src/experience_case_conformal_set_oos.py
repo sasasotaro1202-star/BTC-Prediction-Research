@@ -65,6 +65,7 @@ def _calibration_pool(prior: list[Any], current: Any) -> tuple[list[Any], str]:
     key = _case_key(current)
     levels = (
         (key, "exact_case"),
+        (key[:5], "without_information_state"),
         (key[:4], "without_production_mode"),
         (key[:3], "horizon_regime_direction"),
         (key[:2], "horizon_regime"),
