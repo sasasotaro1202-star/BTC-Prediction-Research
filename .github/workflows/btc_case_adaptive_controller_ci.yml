@@ -8,13 +8,16 @@ on:
       - "research/experience-case-adaptive-controller"
     paths:
       - "src/experience_case_adaptive_controller_oos.py"
+      - "src/experience_predictability_router_oos.py"
       - "tests/test_experience_case_adaptive_controller_oos.py"
+      - "tests/test_experience_predictability_router_oos.py"
       - "src/experience_case_conditional_policy_oos.py"
       - "tests/test_experience_case_conditional_policy_oos.py"
       - "src/experience_failure_recurrence_oos.py"
       - "tests/test_experience_failure_recurrence_oos.py"
       - "src/experience_case_conformal_set_oos.py"
       - "tests/test_experience_case_conformal_set_oos.py"
+      - "tests/test_experience_predictability_router_oos.py"
       - "src/experience_case_adaptive_controller_oos.py"
       - "tests/test_experience_case_adaptive_controller_oos.py"
       - "src/experience_case_conditional_policy_oos.py"
@@ -44,4 +47,4 @@ jobs:
       - name: Compile
         run: python -m compileall -q src tests
       - name: Run controller tests
-        run: python -m pytest -q tests/test_experience_case_adaptive_controller_oos.py tests/test_experience_case_conditional_policy_oos.py tests/test_experience_failure_recurrence_oos.py tests/test_experience_case_conformal_set_oos.py
+        run: python -m pytest -q tests/test_experience_case_adaptive_controller_oos.py tests/test_experience_case_conditional_policy_oos.py tests/test_experience_failure_recurrence_oos.py tests/test_experience_case_conformal_set_oos.py tests/test_experience_predictability_router_oos.py
