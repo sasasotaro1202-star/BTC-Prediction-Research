@@ -29,6 +29,7 @@ PROBES={
  "us_treasury_yield_curve":("GET","https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml",None),
 }
 DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp","bitcoin liquidation historical dataset public API","bitcoin funding rate historical dataset public","bitcoin open interest historical dataset public","bitcoin cross exchange spread historical dataset","bitcoin 5m OHLCV historical public API","bitcoin block fees mempool historical dataset")
+CODE_DISCOVERY_QUERIES=("BTCUSDT filename:csv","bitcoin orderbook filename:parquet","bitcoin funding filename:csv","bitcoin open interest filename:csv","bitcoin liquidation filename:csv","bitcoin OHLCV filename:parquet")
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -280,6 +281,33 @@ def discover_public_sources():
      found["github:"+name]={"candidate_id":"github:"+name,"platform":"github","name":name,"url":str(item.get("html_url") or ""),"description":str(item.get("description") or ""),"query":query,"license":((item.get("license") or {}).get("spdx") if isinstance(item.get("license"),dict) else None),"stars":int(item.get("stargazers_count") or 0),"status":"DISCOVERED_UNVERIFIED","pit_status":"UNVERIFIED","production_eligible":False}
   except Exception as exc:
    failures.append({"query":query,"platform":"github","error":f"{type(exc).__name__}:{exc}"})
+
+ for query in CODE_DISCOVERY_QUERIES:
+  url="https://api.github.com/search/code?q="+quote(query)+"&per_page="+str(DISCOVERY_RESULTS)
+  try:
+   payload=_get(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
+   for item in payload.get("items",[]) if isinstance(payload,dict) else []:
+    repo_name=str((item.get("repository") or {}).get("full_name") or "")
+    item_path=str(item.get("path") or item.get("name") or "")
+    if not repo_name or not item_path: continue
+    candidate_id=f"github-code:{repo_name}:{item_path}"
+    found[candidate_id]={
+     "candidate_id":candidate_id,
+     "platform":"github_code",
+     "name":f"{repo_name}/{item_path}",
+     "url":str(item.get("html_url") or ""),
+     "description":"GitHub code-search lead; file-level candidate requiring acquisition/PIT validation",
+     "query":query,
+     "repository":repo_name,
+     "path":item_path,
+     "license":None,
+     "stars":0,
+     "status":"DISCOVERED_UNVERIFIED",
+     "pit_status":"UNVERIFIED",
+     "production_eligible":False,
+    }
+  except Exception as exc:
+   failures.append({"query":query,"platform":"github_code","error":f"{type(exc).__name__}:{exc}"})
 
  for query in DISCOVERY_QUERIES:
   url="https://huggingface.co/api/datasets?search="+quote(query)+"&limit="+str(DISCOVERY_RESULTS)
