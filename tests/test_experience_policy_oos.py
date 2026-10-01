@@ -89,6 +89,30 @@ def test_prequential_uses_only_prior_settled_experiences():
     assert len(result["high_risk_cases_latest"]) <= 20
 
 
+def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
+    rows = [_row(i, 1) for i in range(8)]
+    shared_ts = rows[2]["settled_at_utc"]
+    rows[3]["settled_at_utc"] = shared_ts
+    seen = []
+
+    def fake_fit(train_rows, test_rows, model_c):
+        seen.append(("fit", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
+        return [0.5] * len(test_rows), False, []
+
+    def fake_memory(train_rows, test_rows, shrinkage=20.0):
+        seen.append(("memory", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
+        return [0.5] * len(test_rows)
+
+    monkeypatch.setattr(mod, "_fit_predict", fake_fit)
+    monkeypatch.setattr(mod, "_hierarchical_memory_predict", fake_memory)
+    out = mod.prequential_evaluate(rows, min_train_rows=2, block_size=1)
+    assert out["status"] == "OK"
+    assert any(
+        event[0] == "fit" and event[2] == [3, 4] and 2 not in event[1]
+        for event in seen
+    )
+
+
 def test_prequential_is_deterministic():
     rows = [_row(i, int(i % 3 != 0), warning=(i % 7 == 0)) for i in range(150)]
     a = mod.prequential_evaluate(rows, min_train_rows=100, max_report_cases=10)
