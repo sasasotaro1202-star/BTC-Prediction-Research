@@ -21,6 +21,24 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertGreaterEqual(len(families),4)
         self.assertTrue(all(s.access in {"public_free","free_limited"} for s in mod.SOURCES if s.source_id in selected))
 
+    def test_deribit_probe_uses_current_public_ticker_endpoint(self):
+        self.assertEqual(
+            mod.PROBES["deribit_public"][1],
+            "https://www.deribit.com/api/v2/public/ticker?instrument_name=BTC-PERPETUAL",
+        )
+
+    def test_probe_and_historical_acquisition_failures_are_separate(self):
+        source=next(src for src in mod.SOURCES if src.source_id=="deribit_public")
+        state={
+            "selection_count":0,
+            "probe_consecutive_failures":8,
+            "historical_acquisition_failures":0,
+        }
+        score_with_probe_failures=mod.score(source,state,{"gap":100},{})
+        state["historical_acquisition_failures"]=3
+        score_with_acquisition_failures=mod.score(source,state,{"gap":100},{})
+        self.assertLess(score_with_acquisition_failures,score_with_probe_failures)
+
     def test_probe_failure_never_becomes_success(self):
         with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
             result=mod.probe("mempool_space")
@@ -600,7 +618,33 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             self.assertEqual(evidence["by_source"]["deribit_public"]["status"],"MISSING")
             self.assertEqual(evidence["cross_source"]["overlap_event_times"],1)
             self.assertEqual(evidence["cross_source"]["duplicate_event_rows"],1)
-            self.assertIn("not historical-dataset completeness",evidence["note"])
+            self.assertIn("artifact_status",evidence["note"])
+
+    def test_durable_acquisition_state_is_not_marked_missing_when_workspace_artifact_is_absent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            acq=root/"data/historical_research/frontier_acquisitions"
+            acq.mkdir(parents=True,exist_ok=True)
+            frontier={
+                "source_state":{
+                    "bitget_public_ws":{
+                        "historical_total_records_acquired":400,
+                        "historical_batches_acquired":2,
+                        "historical_acquisition_failures":0,
+                        "last_historical_payload_sha256":"abc",
+                        "historical_earliest_event_time":"2026-09-30T11:50:00+00:00",
+                        "last_historical_event_time":"2026-09-30T11:40:00+00:00",
+                    }
+                }
+            }
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",acq):
+                evidence=mod.summarize_acquisition_evidence(frontier)
+            bitget=evidence["by_source"]["bitget_public_ws"]
+            self.assertEqual(bitget["status"],"COMPLETE")
+            self.assertEqual(bitget["record_count"],400)
+            self.assertEqual(bitget["batch_count"],2)
+            self.assertEqual(bitget["file_count"],0)
+            self.assertEqual(bitget["artifact_status"],"MISSING")
 
     def test_acquisition_totals_cover_all_independent_historical_sources(self):
         self.assertEqual(
