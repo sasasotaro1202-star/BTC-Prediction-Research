@@ -10,6 +10,7 @@ from src.experience_case_adaptive_controller_oos import (
     _case_key,
     _information_state,
     _hierarchical_prior,
+    _meta_features,
 )
 
 
@@ -134,6 +135,9 @@ def test_information_state_separates_clean_warning_and_degraded():
     assert _information_state(clean) == "CLEAN"
     assert _information_state(warned) == "WARNED"
     assert _information_state(degraded) == "DEGRADED"
+    assert _meta_features(clean)["information_state"] == "CLEAN"
+    assert _meta_features(warned)["information_state"] == "WARNED"
+    assert _meta_features(degraded)["information_state"] == "DEGRADED"
     assert len(_case_key(clean)) == 6
     assert _case_key(clean) != _case_key(warned)
     assert _case_key(warned) != _case_key(degraded)
