@@ -14,6 +14,7 @@ from src.experience_failure_adaptive_policy_oos import (
     _apply_policy,
     _choose_policy,
     _eligible_prior,
+    _eligible_risk_records,
     _metrics,
 )
 
@@ -128,3 +129,31 @@ def test_metrics_contract_is_finite():
     assert np.isfinite(metrics["accuracy"])
     assert np.isfinite(metrics["logloss"])
     assert np.isfinite(metrics["brier"])
+
+
+def test_policy_selection_filters_unsettled_risk_records():
+    current = _record(100, risk=0.6, correct=False)
+    current = RiskRecord(
+        experience_id=current.experience_id,
+        horizon=current.horizon,
+        case_key=current.case_key,
+        created_at_utc=datetime.fromtimestamp(100 * 60, tz=timezone.utc),
+        settled_at_utc=datetime.fromtimestamp(100 * 60 + 300, tz=timezone.utc),
+        y_index=current.y_index,
+        base_probability=current.base_probability,
+        baseline_error=current.baseline_error,
+        error_risk=current.error_risk,
+    )
+    usable = _record(1)
+    late_settlement = RiskRecord(
+        experience_id=2,
+        horizon="5m",
+        case_key=usable.case_key,
+        created_at_utc=datetime.fromtimestamp(2 * 60, tz=timezone.utc),
+        settled_at_utc=current.created_at_utc,
+        y_index=usable.y_index,
+        base_probability=usable.base_probability,
+        baseline_error=usable.baseline_error,
+        error_risk=usable.error_risk,
+    )
+    assert [r.experience_id for r in _eligible_risk_records([usable, late_settlement], current)] == [1]
