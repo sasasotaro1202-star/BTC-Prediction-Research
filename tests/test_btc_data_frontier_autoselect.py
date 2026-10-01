@@ -410,6 +410,29 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual([row["name"] for row in code_rows],["example/btc-model/data/BTCUSDT_1m/Data.csv"])
         self.assertEqual(failures,[])
 
+    def test_existing_low_signal_discovery_is_quarantined_without_deletion(self):
+        frontier={"candidates":{
+            "github-code:example/redteam:data/Malware.csv":{
+                "candidate_id":"github-code:example/redteam:data/Malware.csv",
+                "platform":"github_code","name":"example/redteam/data/Malware.csv",
+                "repository":"example/redteam","path":"data/Malware.csv",
+                "status":"DISCOVERED_UNVERIFIED","production_eligible":False,
+            },
+            "github-code:example/btc:data/BTCUSDT_1m.csv":{
+                "candidate_id":"github-code:example/btc:data/BTCUSDT_1m.csv",
+                "platform":"github_code","name":"example/btc/data/BTCUSDT_1m.csv",
+                "repository":"example/btc","path":"data/BTCUSDT_1m.csv",
+                "status":"DISCOVERED_UNVERIFIED","production_eligible":False,
+            },
+        }}
+        count=mod._quarantine_discovery_noise(frontier)
+        self.assertEqual(count,1)
+        noisy=frontier["candidates"]["github-code:example/redteam:data/Malware.csv"]
+        useful=frontier["candidates"]["github-code:example/btc:data/BTCUSDT_1m.csv"]
+        self.assertEqual(noisy["status"],"REJECTED_DISCOVERY_NOISE")
+        self.assertFalse(noisy["lifecycle"]["research_selection_eligible"])
+        self.assertEqual(useful["status"],"DISCOVERED_UNVERIFIED")
+
 
     def test_hyperliquid_history_retries_rate_limit_without_promoting_data(self):
         from urllib.error import HTTPError
