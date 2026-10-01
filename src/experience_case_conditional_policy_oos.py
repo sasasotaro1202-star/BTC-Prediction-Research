@@ -229,6 +229,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         risk = _safe01(0.65 * model_risk + 0.35 * memory_risk)
 
         case_prior, support, source = _case_outcome_prior(prior, current)
+        case_source_levels.append(source)
         corrected, blend, correction_action = _case_correction(
             base,
             case_prior,
@@ -339,7 +340,10 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         },
         "mean_predicted_error_risk": float(np.mean(risk_values)),
         "mean_case_support": float(np.mean(supports)),
-        "case_source_levels": "recorded_per_case_but_not_recomputed_in_summary",
+        "case_source_levels": {
+            source: int(case_source_levels.count(source))
+            for source in sorted(set(case_source_levels))
+        },
     }
 
 
