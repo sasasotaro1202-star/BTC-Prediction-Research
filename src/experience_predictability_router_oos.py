@@ -50,6 +50,7 @@ MIN_TRAIN = 140
 VALIDATION_SIZE = 60
 TIE_EPS = 0.002
 ROUTER_REFRESH = 20
+MIN_CONSECUTIVE_SELECTIONS = 2
 MAX_SHRINK = 0.35
 ABSTAIN_THRESHOLD = 0.80
 CANDIDATES = ("global", "case_memory", "meta")
@@ -273,6 +274,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     refresh_count = 0
     source_changes = 0
     previous_source: str | None = None
+    previous_candidate: str | None = None
+    candidate_streak = 0
+    raw_source_counts: dict[str, int] = {c: 0 for c in CANDIDATES}
 
     for block_start in range(MIN_TRAIN + VALIDATION_SIZE, len(ordered), ROUTER_REFRESH):
         block_end = min(len(ordered), block_start + ROUTER_REFRESH)
@@ -423,10 +427,12 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "deferred_cases": int(deferred_cases),
         "router_refresh_count": int(refresh_count),
         "router_refresh_size": ROUTER_REFRESH,
+        "min_consecutive_selections": MIN_CONSECUTIVE_SELECTIONS,
         "source_changes": int(source_changes),
         "candidate_sources": CANDIDATES,
         "selection_rule": f"lowest_validation_logloss_with_global_fallback_within_{TIE_EPS}",
         "source_counts": source_counts,
+        "raw_source_counts": raw_source_counts,
         "chronological_blocks": blocks,
         "block_size": block_size,
         "mean_validation_logloss_by_source": {
