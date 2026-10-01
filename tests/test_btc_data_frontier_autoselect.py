@@ -275,3 +275,14 @@ if __name__=="__main__":
             self.assertEqual(result["status"],"OK")
             self.assertIn("endTime=1700000000000",captured["url"])
             self.assertEqual(result["next_cursor_ms"],1699990000000)
+
+    def test_historical_acquisition_uses_short_cycle_cadence_and_accumulates_counts(self):
+        self.assertEqual(mod.HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC,900)
+        frontier={"source_state":{"bitget_public_ws":{}}, "candidates":{}, "history":[]}
+        result={"status":"OK","retrieved_at":"2026-10-01T00:00:00+00:00","record_count":200,"first_event_time":"2026-09-30T00:00:00+00:00","last_event_time":"2026-09-30T16:35:00+00:00","payload_sha256":"x"}
+        with patch.object(mod,"_acquisition_due",return_value=True), patch.object(mod,"acquire_bitget_history",return_value=result):
+            out=mod.acquire_selected_research_data(frontier,{"gap":1},["bitget_public_ws"])
+        self.assertEqual(out[0]["status"],"OK")
+        state=frontier["source_state"]["bitget_public_ws"]
+        self.assertEqual(state["historical_batches_acquired"],1)
+        self.assertEqual(state["historical_total_records_acquired"],200)
