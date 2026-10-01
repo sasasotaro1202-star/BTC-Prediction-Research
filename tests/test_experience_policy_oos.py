@@ -46,6 +46,13 @@ def test_features_exclude_realized_outcome_fields():
         assert forbidden not in features
 
 
+def test_hierarchical_memory_backoff_uses_smoothed_global_prior():
+    rows = [_row(i, int(i % 2 == 0), warning=(i % 3 == 0)) for i in range(20)]
+    probabilities = mod._hierarchical_memory_predict(rows[:10], [rows[10]])
+    assert len(probabilities) == 1
+    assert 0.0 < probabilities[0] < 1.0
+
+
 def test_prequential_returns_deferred_below_minimum():
     rows = [_row(i, i % 2) for i in range(50)]
     result = mod.prequential_evaluate(rows, min_train_rows=100)
@@ -75,6 +82,9 @@ def test_prequential_uses_only_prior_settled_experiences():
     assert result["model"]["model_fit_count"] > 0
     assert result["meta_error_probability"]["n"] == 80
     assert result["baseline_error_probability"]["n"] == 80
+    assert result["hierarchical_experience_memory"]["n"] == 80
+    assert "delta_logloss_memory_minus_baseline" in result
+    assert "delta_brier_memory_minus_baseline" in result
     assert set(result["threshold_policy_candidates"]) == {"0.55", "0.70"}
     assert len(result["high_risk_cases_latest"]) <= 20
 
