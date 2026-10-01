@@ -43,6 +43,7 @@ MIN_TRAIN = 100
 RECENT_MATCHES = 20
 RECENT_WINDOW = 10
 MIN_CASE_SUPPORT = 5
+RECURRENCE_REFRESH = 20
 
 
 def _eligible_prior(ordered: list[Any], current: Any) -> list[Any]:
@@ -128,6 +129,67 @@ def _feature_row(features: dict[str, float]) -> list[float]:
     return [float(features[name]) for name in names]
 
 
+def _fit_prequential_model(
+    prior: list[Any],
+) -> tuple[LogisticRegression | None, float]:
+    """Fit one causal recurrence model for a bounded model lifetime."""
+    baseline = _baseline_error(prior)
+    if len(prior) < MIN_TRAIN:
+        return None, baseline
+
+    rows = []
+    y = []
+    for end in range(MIN_TRAIN, len(prior)):
+        sub = prior[:end]
+        row = prior[end]
+        feat = _recurrence_features(sub, row)
+        rows.append(_feature_row(feat))
+        y.append(1 - int(row["correct"]))
+
+    if len(rows) < 30 or len(set(y)) < 2:
+        return None, baseline
+
+    try:
+        model = LogisticRegression(
+            C=0.5,
+            class_weight=None,
+            max_iter=1000,
+            random_state=42,
+        )
+        model.fit(np.asarray(rows, dtype=float), np.asarray(y, dtype=int))
+        if 1 not in {int(cls) for cls in model.classes_}:
+            return None, baseline
+        return model, baseline
+    except (TypeError, ValueError, FloatingPointError):
+        return None, baseline
+
+
+def _predict_prequential_model(
+    model: LogisticRegression | None,
+    prior: list[Any],
+    current_rows: list[Any],
+    default: float,
+) -> np.ndarray:
+    if model is None:
+        return np.full(len(current_rows), default, dtype=float)
+    try:
+        class_index = {int(cls): idx for idx, cls in enumerate(model.classes_)}
+        if 1 not in class_index:
+            return np.full(len(current_rows), default, dtype=float)
+        features = [
+            _feature_row(_recurrence_features(prior, row))
+            for row in current_rows
+        ]
+        return np.asarray(
+            model.predict_proba(np.asarray(features, dtype=float))[
+                :, class_index[1]
+            ],
+            dtype=float,
+        )
+    except (TypeError, ValueError, FloatingPointError):
+        return np.full(len(current_rows), default, dtype=float)
+
+
 def _fit_prequential(prior: list[Any], current: Any) -> tuple[float, bool]:
     if len(prior) < MIN_TRAIN:
         return _baseline_error(prior), False
@@ -189,23 +251,50 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     fitted = 0
     deferred_cases = 0
     pit_excluded_candidate_count = 0
+    refresh_count = 0
 
-    for index in range(MIN_TRAIN, len(ordered)):
-        current = ordered[index]
-        prior_candidates = ordered[:index]
-        prior = _eligible_prior(prior_candidates, current)
-        pit_excluded_candidate_count += max(0, len(prior_candidates) - len(prior))
+    for block_start in range(MIN_TRAIN, len(ordered), RECURRENCE_REFRESH):
+        block_end = min(len(ordered), block_start + RECURRENCE_REFRESH)
+        first_current = ordered[block_start]
+        prior_candidates = ordered[:block_start]
+        prior = _eligible_prior(prior_candidates, first_current)
+        pit_excluded_candidate_count += max(
+            0, len(prior_candidates) - len(prior)
+        )
         if len(prior) < MIN_TRAIN:
-            deferred_cases += 1
+            deferred_cases += block_end - block_start
             continue
-        feat = _recurrence_features(prior, current)
-        model_p, ok = _fit_prequential(prior, current)
-        if ok:
+
+        model, baseline = _fit_prequential_model(prior)
+        refresh_count += 1
+        if model is not None:
             fitted += 1
-        y_values.append(1 - int(current["correct"]))
-        p_model.append(model_p)
-        p_base.append(_baseline_error(prior))
-        feature_records.append(feat)
+
+        block_rows = ordered[block_start:block_end]
+        model_predictions = _predict_prequential_model(
+            model,
+            prior,
+            block_rows,
+            baseline,
+        )
+
+        for offset, index in enumerate(range(block_start, block_end)):
+            current = ordered[index]
+            current_prior = _eligible_prior(
+                ordered[:index],
+                current,
+            )
+            current_baseline = _baseline_error(current_prior)
+            if model is None:
+                probability = current_baseline
+            else:
+                probability = float(model_predictions[offset])
+            probability = _safe01(probability)
+            feat = _recurrence_features(current_prior, current)
+            y_values.append(1 - int(current["correct"]))
+            p_model.append(probability)
+            p_base.append(current_baseline)
+            feature_records.append(feat)
 
     if not y_values:
         return {
@@ -223,9 +312,18 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     base_ll = _logloss(y, pb)
     auc = float(roc_auc_score(y, pm)) if len(np.unique(y)) == 2 else None
 
-    case_support = np.asarray([x["case_support"] for x in feature_records], dtype=float)
-    recent_error = np.asarray([x["recent_error_rate"] for x in feature_records], dtype=float)
-    streak = np.asarray([x["error_streak"] for x in feature_records], dtype=float)
+    case_support = np.asarray(
+        [x["case_support"] for x in feature_records],
+        dtype=float,
+    )
+    recent_error = np.asarray(
+        [x["recent_error_rate"] for x in feature_records],
+        dtype=float,
+    )
+    streak = np.asarray(
+        [x["error_streak"] for x in feature_records],
+        dtype=float,
+    )
     recurrence_cases = case_support >= MIN_CASE_SUPPORT
 
     return {
@@ -236,11 +334,18 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "horizon": horizon,
         "n": len(ordered),
         "prequential_test_rows": int(len(y)),
-        "learning_boundary": "only_experiences_with_created_at_utc_and_settled_at_utc_strictly_before_current_prediction_time",
+        "learning_boundary": (
+            "only_experiences_with_created_at_utc_and_settled_at_utc_"
+            "strictly_before_current_prediction_time"
+        ),
         "pit_violation_count": 0,
-        "pit_excluded_candidate_count": int(pit_excluded_candidate_count),
+        "pit_excluded_candidate_count": int(
+            pit_excluded_candidate_count
+        ),
         "deferred_cases": int(deferred_cases),
         "model_fit_count": int(fitted),
+        "model_refresh_count": int(refresh_count),
+        "model_refresh_size": RECURRENCE_REFRESH,
         "features": (
             "same_case_recent_error_rate",
             "same_case_tail_error_rate",
@@ -253,6 +358,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "type": "prequential_logistic_regression",
             "target": "prediction_error",
             "trained_only_on_prior_settled_experiences": True,
+            "bounded_model_lifetime": True,
         },
         "baseline": {
             "logloss": base_ll,
@@ -261,7 +367,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "logloss": model_ll,
             "auc": auc,
         },
-        "delta_logloss_model_minus_baseline": float(model_ll - base_ll),
+        "delta_logloss_model_minus_baseline": float(
+            model_ll - base_ll
+        ),
         "diagnostics": {
             "cases_with_support_floor": int(np.sum(recurrence_cases)),
             "share_with_support_floor": float(np.mean(recurrence_cases)),
