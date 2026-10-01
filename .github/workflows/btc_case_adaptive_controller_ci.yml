@@ -5,6 +5,8 @@ on:
     paths:
       - "src/experience_case_adaptive_controller_oos.py"
       - "tests/test_experience_case_adaptive_controller_oos.py"
+      - "src/experience_case_conditional_policy_oos.py"
+      - "tests/test_experience_case_conditional_policy_oos.py"
   workflow_dispatch:
 
 permissions:
@@ -30,4 +32,4 @@ jobs:
       - name: Compile
         run: python -m compileall -q src tests
       - name: Run controller tests
-        run: python -m pytest -q tests/test_experience_case_adaptive_controller_oos.py
+        run: python -m pytest -q tests/test_experience_case_adaptive_controller_oos.py tests/test_experience_case_conditional_policy_oos.py
