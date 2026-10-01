@@ -9,6 +9,7 @@ from src.experience_predictability_router_oos import (
     MIN_CONSECUTIVE_SELECTIONS,
     _binary_logloss,
     _choose_source,
+    _candidate_stable_gain,
     _eligible_prior,
     _meta_predictions,
     _risk,
@@ -151,3 +152,14 @@ def test_router_requires_material_relative_gain_before_switching():
 def test_router_allows_material_relative_gain():
     scores = {"global": 0.70, "case_memory": 0.68, "meta": 0.69}
     assert _select_source_from_scores(scores) == "case_memory"
+
+
+def test_router_stable_gain_rejects_gain_only_in_one_validation_half():
+    labels = np.asarray([1, 0, 1, 0, 1, 0, 1, 0], dtype=int)
+    global_risk = np.asarray([0.2, 0.8, 0.2, 0.8, 0.2, 0.8, 0.2, 0.8], dtype=float)
+    candidate_risk = np.asarray([0.1, 0.9, 0.1, 0.9, 0.4, 0.6, 0.4, 0.6], dtype=float)
+    assert _candidate_stable_gain(
+        labels,
+        {"global": global_risk, "case_memory": candidate_risk, "meta": candidate_risk},
+        "case_memory",
+    ) is False
