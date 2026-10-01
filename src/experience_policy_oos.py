@@ -260,9 +260,12 @@ def prequential_evaluate(
     while start < len(ordered):
         # Cases sharing one settlement timestamp become one evaluation batch.
         # No outcome settled at the same instant can train another case.
-        settlement_ts = str(ordered[start]["settled_at_utc"])
         stop = min(len(ordered), start + max(1, int(block_size)))
-        while stop < len(ordered) and str(ordered[stop]["settled_at_utc"]) == settlement_ts:
+        # Never split one settlement timestamp across train/test or test/test.
+        while (
+            stop < len(ordered)
+            and str(ordered[stop]["settled_at_utc"]) == str(ordered[stop - 1]["settled_at_utc"])
+        ):
             stop += 1
         train_rows = ordered[:start]
         test_rows = ordered[start:stop]
