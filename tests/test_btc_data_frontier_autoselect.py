@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import patch
 import tempfile
+from datetime import datetime, timezone
 from src import btc_data_frontier_autoselect as mod
 
 
@@ -40,15 +41,71 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertFalse(rows[0]["production_eligible"])
         self.assertEqual(failures,[])
 
+    def test_current_gap_fails_closed_when_pit_audit_is_stale(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            old_audit={
+                "generated_at_utc":"2026-09-30T00:00:00+00:00",
+                "verified_primary_predictions":999,
+                "min_strict_pit_rows":300,
+                "pit_verified":True,
+                "coverage":{
+                    "5m":{"situation_meta_ready":3000,"online_expert_ready":140},
+                    "10m":{"situation_meta_ready":3000,"online_expert_ready":140},
+                },
+            }
+            (hist/"pit_oos_audit.json").write_text(__import__("json").dumps(old_audit),encoding="utf-8")
+            with patch.object(mod,"ROOT",root):
+                gap=mod.current_gap()
+            self.assertFalse(gap["pit_audit_fresh"])
+            self.assertEqual(gap["pit_audit_status"],"STALE")
+            self.assertFalse(gap["pit_verified"])
+            self.assertEqual(gap["strict_primary"],0)
+            self.assertEqual(gap["gap"],300)
+
+    def test_current_gap_accepts_fresh_pit_audit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            now=datetime.now(timezone.utc).replace(microsecond=0)
+            audit={
+                "generated_at_utc":now.isoformat(),
+                "verified_primary_predictions":154,
+                "min_strict_pit_rows":300,
+                "pit_verified":False,
+                "legacy_unverified_count":169,
+                "coverage":{
+                    "5m":{"situation_meta_ready":148,"online_expert_ready":148},
+                    "10m":{"situation_meta_ready":145,"online_expert_ready":145},
+                },
+            }
+            (hist/"pit_oos_audit.json").write_text(__import__("json").dumps(audit),encoding="utf-8")
+            with patch.object(mod,"ROOT",root):
+                gap=mod.current_gap()
+            self.assertTrue(gap["pit_audit_fresh"])
+            self.assertEqual(gap["pit_audit_status"],"FRESH")
+            self.assertEqual(gap["strict_primary"],154)
+            self.assertEqual(gap["gap"],146)
+
     def test_current_gap_keeps_collection_active_for_secondary_coverage(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
             hist=root/"data/historical_research"
             hist.mkdir(parents=True,exist_ok=True)
-            (hist/"pit_oos_audit.json").write_text(
-                '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
-                encoding="utf-8",
-            )
+            audit={
+                "generated_at_utc":datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "verified_primary_predictions":300,
+                "min_strict_pit_rows":300,
+                "pit_verified":False,
+                "coverage":{
+                    "5m":{"situation_meta_ready":136,"online_expert_ready":136},
+                    "10m":{"situation_meta_ready":140,"online_expert_ready":140},
+                },
+            }
+            (hist/"pit_oos_audit.json").write_text(__import__("json").dumps(audit),encoding="utf-8")
             with patch.object(mod,"ROOT",root):
                 gap=mod.current_gap()
             self.assertEqual(gap["gap"],0)

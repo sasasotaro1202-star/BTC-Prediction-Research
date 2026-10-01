@@ -27,6 +27,7 @@ HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
 MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
 ACQUISITION_SOURCE_IDS=("bitget_public_ws","hyperliquid_ws","deribit_public")
+PIT_AUDIT_MAX_AGE_SEC=3600
 
 # Discovery is deliberately broader than automatic acquisition. These gates
 # keep cost/licence uncertainty and PIT uncertainty fail-closed.
@@ -138,6 +139,27 @@ def _discovery_debt():
   )
  except (OSError,ValueError,TypeError,json.JSONDecodeError):
   return 0
+
+def _pit_audit_freshness():
+ pth=ROOT/"data/historical_research/pit_oos_audit.json"
+ if not pth.is_file():
+  return {"status":"MISSING","fresh":False,"age_sec":None,"generated_at_utc":None}
+ try:
+  obj=json.loads(pth.read_text(encoding="utf-8"))
+  generated=obj.get("generated_at_utc")
+  parsed=datetime.fromisoformat(str(generated).replace("Z","+00:00"))
+  if parsed.tzinfo is None:
+   return {"status":"INVALID","fresh":False,"age_sec":None,"generated_at_utc":generated}
+  age=max(0.0,(datetime.now(timezone.utc)-parsed).total_seconds())
+  fresh=age<=PIT_AUDIT_MAX_AGE_SEC
+  return {
+   "status":"FRESH" if fresh else "STALE",
+   "fresh":fresh,
+   "age_sec":round(age,3),
+   "generated_at_utc":parsed.astimezone(timezone.utc).isoformat(),
+  }
+ except (OSError,ValueError,TypeError,json.JSONDecodeError):
+  return {"status":"INVALID","fresh":False,"age_sec":None,"generated_at_utc":None}
 
 def plan_for_gap(gap):
  gate_gap=max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0)))
@@ -254,11 +276,16 @@ def load_frontier():
  return p
 def current_gap():
  pth=ROOT/"data/historical_research/pit_oos_audit.json"
+ freshness=_pit_audit_freshness()
  default={
   "strict_primary":0,"target":300,"gap":300,"pit_verified":False,"legacy_unverified":0,
   "situation_meta_ready_min":0,"situation_meta_target":3000,
   "online_expert_ready_min":0,"online_expert_target":140,
   "discovery_pending":_discovery_debt(),
+  "pit_audit_status":freshness["status"],
+  "pit_audit_fresh":freshness["fresh"],
+  "pit_audit_age_sec":freshness["age_sec"],
+  "pit_audit_generated_at_utc":freshness["generated_at_utc"],
  }
  if not pth.is_file():
   return default
@@ -269,6 +296,18 @@ def current_gap():
   online=[int((coverage.get(h) or {}).get("online_expert_ready",0)) for h in ("5m","10m")]
   strict=int(p.get("verified_primary_predictions",0))
   target=max(300,int(p.get("min_strict_pit_rows",300)))
+  if not freshness["fresh"]:
+   return {
+    **default,
+    "target":target,
+    "gap":target,
+    "pit_verified":False,
+    "legacy_unverified":int(p.get("legacy_unverified_count",0)),
+    "pit_audit_status":freshness["status"],
+    "pit_audit_fresh":False,
+    "pit_audit_age_sec":freshness["age_sec"],
+    "pit_audit_generated_at_utc":freshness["generated_at_utc"],
+   }
   return {
    "strict_primary":strict,"target":target,"gap":max(0,target-strict),
    "pit_verified":bool(p.get("pit_verified")),
@@ -278,9 +317,14 @@ def current_gap():
    "online_expert_ready_min":min(online) if online else 0,
    "online_expert_target":140,
    "discovery_pending":_discovery_debt(),
+   "pit_audit_status":freshness["status"],
+   "pit_audit_fresh":freshness["fresh"],
+   "pit_audit_age_sec":freshness["age_sec"],
+   "pit_audit_generated_at_utc":freshness["generated_at_utc"],
   }
  except (OSError,ValueError,TypeError,json.JSONDecodeError):
   return default
+
 def probe(sid):
  t=time.monotonic(); retrieved=now_utc(); method,url,body=PROBES[sid]
  try:
@@ -970,7 +1014,7 @@ def run():
  "actions":{
   "collect_live":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0 or secondary_gaps["online_expert_ready"]>0,
   "warm_binance_ws":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0,
-  "refresh_pit_audit":secondary_gaps["strict_primary_accumulation"]>0,
+  "refresh_pit_audit":(not gap.get("pit_audit_fresh",False)) or secondary_gaps["strict_primary_accumulation"]>0,
   "acquire_historical_archive":secondary_gaps["strict_primary_gate"]>0 or secondary_gaps["strict_primary_accumulation"]>0,
   "acquire_frontier_research_data":bool(acquisitions),
   "continue_discovery":True,
