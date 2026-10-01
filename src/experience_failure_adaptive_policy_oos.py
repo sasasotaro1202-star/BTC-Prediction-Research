@@ -53,6 +53,7 @@ class RiskRecord:
     horizon: str
     case_key: tuple[str, ...]
     created_at_utc: datetime
+    settled_at_utc: datetime
     y_index: int
     base_probability: tuple[float, float, float]
     baseline_error: float
@@ -178,6 +179,7 @@ def _risk_trace(rows: list[Any], horizon: str) -> tuple[list[RiskRecord], int]:
                 horizon=horizon,
                 case_key=_case_key(current),
                 created_at_utc=_parse_ts(current["created_at_utc"]),
+                settled_at_utc=_parse_ts(current["settled_at_utc"]),
                 y_index=CLASSES.index(actual),
                 base_probability=tuple(float(x) for x in base),
                 baseline_error=baseline,
@@ -356,6 +358,7 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             record
             for record in ordered[:index]
             if record.created_at_utc < current.created_at_utc
+            and record.settled_at_utc < current.created_at_utc
         ]
         if len(prior) < MIN_VALIDATION_SUPPORT:
             deferred += 1
@@ -427,9 +430,9 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "n": len(ordered),
         "prequential_test_rows": len(selected_records),
         "learning_boundary": (
-            "policy_for_current_case_uses_only_risk_records_with_created_at_utc "
-            "strictly_before_current_prediction_time; each risk record itself uses "
-            "only matured outcomes before its own prediction"
+            "policy_for_current_case_uses_only_risk_records_with_created_at_utc_and "
+            "settled_at_utc_strictly_before_current_prediction_time; each risk record "
+            "itself uses only matured outcomes before its own prediction"
         ),
         "pit_violation_count": 0,
         "pit_excluded_candidate_count": int(pit_excluded),
