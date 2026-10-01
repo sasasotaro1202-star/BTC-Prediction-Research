@@ -402,6 +402,28 @@ def _choose_case_or_global_policy(
     return policy, detail
 
 
+
+def _oracle_policy(validation: list[RiskRecord]) -> tuple[tuple[float, float], dict[str, Any]]:
+    """Descriptive hindsight oracle for reporting policy regret only.
+
+    This function must never be called during policy selection. It uses outcomes
+    from the evaluated slice solely to quantify the gap to the best grid policy.
+    """
+    scored: list[tuple[tuple[float, float], dict[str, Any]]] = [
+        (policy, _metrics(validation, policy))
+        for policy in POLICY_GRID
+    ]
+    scored.sort(
+        key=lambda item: (
+            float("inf") if item[1]["covered_logloss"] is None else item[1]["covered_logloss"],
+            float("inf") if item[1]["covered_brier"] is None else item[1]["covered_brier"],
+            -float(item[1]["coverage"] or 0.0),
+            item[0],
+        )
+    )
+    return scored[0]
+
+
 def _metrics_with_per_row_policies(
     records: list[RiskRecord],
     policies: list[tuple[float, float]],
@@ -501,12 +523,22 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             continue
         adaptive_block = _metrics_with_per_row_policies(block_records, block_policies)
         fixed_block = _metrics(block_records, (ABSTAIN_THRESHOLD, MAX_SHRINK))
+        oracle_policy, oracle_block = _oracle_policy(block_records)
         blocks.append(
             {
                 "start_index": int(start),
                 "n": int(len(block_records)),
                 "adaptive": adaptive_block,
                 "fixed": fixed_block,
+                "oracle": {
+                    "policy": {
+                        "abstain_threshold": oracle_policy[0],
+                        "max_shrink": oracle_policy[1],
+                    },
+                    "metrics": oracle_block,
+                },
+                "policy_regret_logloss": float(adaptive_block["logloss"] - oracle_block["logloss"]),
+                "policy_regret_brier": float(adaptive_block["brier"] - oracle_block["brier"]),
                 "delta_adaptive_minus_fixed": {
                     "logloss": float(adaptive_block["logloss"] - fixed_block["logloss"]),
                     "brier": float(adaptive_block["brier"] - fixed_block["brier"]),
@@ -586,6 +618,12 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             ),
         },
         "chronological_blocks": blocks,
+        "policy_regret": {
+            "definition": "adaptive policy minus hindsight best grid policy; descriptive evaluation only",
+            "mean_logloss": float(np.mean([b["policy_regret_logloss"] for b in blocks])) if blocks else None,
+            "mean_brier": float(np.mean([b["policy_regret_brier"] for b in blocks])) if blocks else None,
+            "oracle_computed_after_prediction_outcomes": True,
+        },
     }
 
 
