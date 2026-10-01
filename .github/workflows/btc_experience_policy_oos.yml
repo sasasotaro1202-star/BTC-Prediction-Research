@@ -5,7 +5,9 @@ on:
     - cron: '23 */6 * * *'
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - research/experience-case-adaptive-controller
     paths:
       - 'src/experience_policy_oos.py'
       - 'src/experience_policy_unweighted_logistic_oos.py'
