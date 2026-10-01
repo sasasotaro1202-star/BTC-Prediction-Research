@@ -46,6 +46,7 @@ VALIDATION_SIZE = 80
 MIN_VALIDATION_SUPPORT = 30
 MIN_CASE_VALIDATION_SUPPORT = 30
 MIN_COVERAGE = 0.80
+STABILITY_EPS = 0.002
 BLOCK_SIZE = 40
 RISK_REFRESH = 20
 
@@ -289,6 +290,34 @@ def _metrics(records: list[RiskRecord], policy: tuple[float, float]) -> dict[str
     }
 
 
+
+def _policy_stable_against_fixed(
+    validation: list[RiskRecord],
+    policy: tuple[float, float],
+) -> bool:
+    """Require the candidate to remain close to fixed-policy performance in two time blocks."""
+    if len(validation) < 2 * MIN_VALIDATION_SUPPORT:
+        return True
+    midpoint = len(validation) // 2
+    fixed = (ABSTAIN_THRESHOLD, MAX_SHRINK)
+    for subset in (validation[:midpoint], validation[midpoint:]):
+        candidate_metrics = _metrics(subset, policy)
+        fixed_metrics = _metrics(subset, fixed)
+        candidate_ll = candidate_metrics["covered_logloss"]
+        fixed_ll = fixed_metrics["covered_logloss"]
+        candidate_cov = candidate_metrics["coverage"] or 0.0
+        fixed_cov = fixed_metrics["coverage"] or 0.0
+        if (
+            candidate_ll is None
+            or fixed_ll is None
+            or candidate_cov < MIN_COVERAGE
+            or candidate_ll > fixed_ll + STABILITY_EPS
+            or candidate_cov + STABILITY_EPS < fixed_cov
+        ):
+            return False
+    return True
+
+
 def _choose_policy(validation: list[RiskRecord]) -> tuple[tuple[float, float], dict[str, Any]]:
     if len(validation) < MIN_VALIDATION_SUPPORT:
         return (
@@ -301,13 +330,23 @@ def _choose_policy(validation: list[RiskRecord]) -> tuple[tuple[float, float], d
         )
 
     eligible: list[tuple[tuple[float, float], dict[str, Any]]] = []
+    stability_rejections = 0
     for policy in POLICY_GRID:
         metrics = _metrics(validation, policy)
-        if metrics["coverage"] is not None and metrics["coverage"] >= MIN_COVERAGE:
-            eligible.append((policy, metrics))
+        if metrics["coverage"] is None or metrics["coverage"] < MIN_COVERAGE:
+            continue
+        if not _policy_stable_against_fixed(validation, policy):
+            stability_rejections += 1
+            continue
+        eligible.append((policy, metrics))
 
     if not eligible:
-        eligible = [(policy, _metrics(validation, policy)) for policy in POLICY_GRID]
+        # The fixed policy is itself part of POLICY_GRID. Fail closed if
+        # numerical/pathological inputs prevent a stable candidate from surviving.
+        fixed_policy = (ABSTAIN_THRESHOLD, MAX_SHRINK)
+        fixed_metrics = _metrics(validation, fixed_policy)
+        eligible = [(fixed_policy, fixed_metrics)]
+
 
     eligible.sort(
         key=lambda item: (
@@ -332,6 +371,8 @@ def _choose_policy(validation: list[RiskRecord]) -> tuple[tuple[float, float], d
         "validation": best_metrics,
         "fixed_validation": fixed_metrics,
         "covered_logloss_delta_selected_minus_fixed": delta,
+        "stability_epsilon": STABILITY_EPS,
+        "stability_rejections": int(stability_rejections),
     }
 
 
