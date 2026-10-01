@@ -4,6 +4,7 @@ import hashlib,json,math,os,re,time
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import quote
+from urllib.error import HTTPError
 from urllib.request import Request,urlopen
 from src.btc_source_frontier_catalog import SOURCES
 
@@ -14,6 +15,9 @@ STATE_OUT=ROOT/"data/historical_research/data_frontier_state.json"
 SNAPSHOT_DIR=ROOT/"data/historical_research/source_snapshots"
 MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
+HYPERLIQUID_HISTORY_BATCH_CANDLES=200
+HYPERLIQUID_HISTORY_MAX_RETRIES=2
+HYPERLIQUID_HISTORY_RETRY_BACKOFF_SEC=1.0
 DISCOVERY_RESULTS=8
 STRICT_PRIMARY_ACCUMULATION_TARGET=600
 HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
@@ -179,7 +183,8 @@ def _get(url,method="GET",body=None,token=None):
  req=Request(url,headers=headers,method=method,data=data)
  with urlopen(req,timeout=20) as r:
   raw=r.read(MAX_PAYLOAD_BYTES+1)
-  if len(raw)>MAX_PAYLOAD_BYTES: raw=raw[:MAX_PAYLOAD_BYTES]
+  if len(raw)>MAX_PAYLOAD_BYTES:
+   raise RuntimeError("response_too_large")
   if "json" in r.headers.get("content-type","") or raw[:1] in (b"{",b"["): return json.loads(raw.decode())
   return {"_text":raw.decode("utf-8",errors="replace")[:MAX_PAYLOAD_BYTES]}
 def _sha(v): return hashlib.sha256(json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest()
@@ -383,15 +388,46 @@ def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retr
  }
 
 
+def _get_hyperliquid_history_payload(body):
+ url="https://api.hyperliquid.xyz/info"
+ last_error=None
+ for attempt in range(HYPERLIQUID_HISTORY_MAX_RETRIES+1):
+  try:
+   return _get(url,"POST",body)
+  except HTTPError as exc:
+   if exc.code!=429 or attempt>=HYPERLIQUID_HISTORY_MAX_RETRIES:
+    raise
+   retry_after=exc.headers.get("Retry-After") if exc.headers else None
+   try:
+    delay=float(retry_after)
+   except (TypeError,ValueError):
+    delay=HYPERLIQUID_HISTORY_RETRY_BACKOFF_SEC*(2**attempt)
+   time.sleep(min(8.0,max(0.1,delay)))
+   last_error=exc
+ if last_error is not None:
+  raise last_error
+ raise RuntimeError("hyperliquid_history_request_failed")
+
+
 def acquire_hyperliquid_history(end_ms=None,interval="5m"):
  retrieved=now_utc()
  end_ms=int(end_ms or time.time()*1000)
  interval_ms={"1m":60_000,"3m":180_000,"5m":300_000,"15m":900_000}.get(interval,300_000)
- start_ms=end_ms-(interval_ms*1000)
+ batch_candles=HYPERLIQUID_HISTORY_BATCH_CANDLES
  url="https://api.hyperliquid.xyz/info"
- body={"type":"candleSnapshot","req":{"coin":"BTC","interval":interval,"startTime":start_ms,"endTime":end_ms}}
  try:
-  payload=_get(url,"POST",body)
+  for _ in range(3):
+   start_ms=end_ms-(interval_ms*batch_candles)
+   body={"type":"candleSnapshot","req":{"coin":"BTC","interval":interval,"startTime":start_ms,"endTime":end_ms}}
+   try:
+    payload=_get_hyperliquid_history_payload(body)
+    break
+   except RuntimeError as exc:
+    if str(exc)!="response_too_large" or batch_candles<=25:
+     raise
+    batch_candles=max(25,batch_candles//2)
+  else:
+   raise RuntimeError("hyperliquid_history_payload_unavailable")
   if not isinstance(payload,list):
    raise RuntimeError("hyperliquid_history_invalid_payload")
   retrieved_ms=int(time.time()*1000)
@@ -420,6 +456,7 @@ def acquire_hyperliquid_history(end_ms=None,interval="5m"):
   )
   result["history_window_start_ms"]=start_ms
   result["history_window_end_ms"]=end_ms
+  result["history_requested_candles"]=batch_candles
   result["retrieved_at"]=retrieved
   return result
  except Exception as exc:
