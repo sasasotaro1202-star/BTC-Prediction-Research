@@ -74,6 +74,13 @@ jobs:
           actions=last.get("actions",{})
           if actions.get("continue_discovery") is not True or actions.get("continue_selection") is not True:
               raise SystemExit("continuous frontier loop disabled")
+          remaining=(last.get("data_sufficiency") or {}).get("remaining", {})
+          if int(remaining.get("strict_primary_gate",0)) > 0 and actions.get("acquire_historical_archive") is not True:
+              raise SystemExit("historical acquisition loop disabled while strict primary data is missing")
+          if last.get("reselected_after_acquisition") is not True:
+              raise SystemExit("post-acquisition reselection loop disabled")
+          if "selected_source_ids_after_acquisition" not in last:
+              raise SystemExit("post-acquisition selection result missing")
           if actions.get("repeat_until_data_sufficient") is not True and any(int(v)>0 for v in (last.get("data_sufficiency") or {}).get("remaining", {}).values()):
               raise SystemExit("data-sufficiency repeat loop disabled while a gap remains")
           if last.get("next_best_action") not in {
@@ -139,6 +146,7 @@ jobs:
           path: |
             data/historical_research/data_frontier.json
             data/historical_research/source_snapshots/
+            data/historical_research/frontier_acquisitions/
             data/historical_research/data_frontier_state.json
             data_frontier_run.json
           if-no-files-found: error
