@@ -22,6 +22,7 @@ from experience_case_adaptive_controller_oos import (
     CLASSES,
     _adjust_probabilities,
     _meta_features,
+    _parse_ts,
     _probabilities,
     _safe01,
 )
@@ -274,11 +275,17 @@ def _update_weights(
     weights: dict[str, float],
     losses: dict[str, float],
 ) -> dict[str, float]:
-    updated = dict(weights)
+    updated = {
+        name: float(weights.get(name, 1.0 / len(CANDIDATES)))
+        for name in CANDIDATES
+    }
+    total_initial = sum(updated.values())
+    if total_initial <= 0.0 or not math.isfinite(total_initial):
+        updated = {name: 1.0 for name in CANDIDATES}
     finite_losses = {
         name: float(value)
         for name, value in losses.items()
-        if math.isfinite(float(value))
+        if name in CANDIDATES and math.isfinite(float(value))
     }
     if not finite_losses:
         return dict(weights)
