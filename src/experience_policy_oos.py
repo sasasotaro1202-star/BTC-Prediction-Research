@@ -112,6 +112,62 @@ def _baseline(train_rows: list[Any]) -> float:
     return _safe_normalize_probability((errors + 1.0) / (n + 2.0))
 
 
+def _confidence_bucket(confidence: float) -> str:
+    if confidence < 0.40:
+        return "0.33-0.40"
+    if confidence < 0.50:
+        return "0.40-0.50"
+    if confidence < 0.60:
+        return "0.50-0.60"
+    if confidence < 0.70:
+        return "0.60-0.70"
+    return "0.70+"
+
+
+def _hierarchical_key(row: Any, level: int) -> tuple[str, ...]:
+    base = (
+        str(row["regime"] or "UNKNOWN"),
+        str(row["predicted_direction"]),
+        _confidence_bucket(float(row["confidence"])),
+        str(row["production_mode"] or "UNKNOWN"),
+    )
+    if level == 1:
+        return base
+    if level == 2:
+        return base[:2]
+    return base[:1]
+
+
+def _hierarchical_memory_predict(
+    train_rows: list[Any],
+    test_rows: list[Any],
+    shrinkage: float = 20.0,
+) -> list[float]:
+    """Estimate next-case error probability using only prior settled rows."""
+    global_error = _baseline(train_rows)
+    grouped: dict[tuple[str, tuple[str, ...]], list[int]] = {}
+    for level in (1, 2, 3):
+        for row in train_rows:
+            grouped.setdefault((str(level), _hierarchical_key(row, level)), []).append(
+                1 - int(row["correct"])
+            )
+    probabilities: list[float] = []
+    for row in test_rows:
+        chosen = global_error
+        for level in (1, 2, 3):
+            values = grouped.get((str(level), _hierarchical_key(row, level)), [])
+            if not values:
+                continue
+            n = len(values)
+            group_rate = (sum(values) + 1.0) / (n + 2.0)
+            weight = n / (n + float(shrinkage))
+            chosen = weight * group_rate + (1.0 - weight) * global_error
+            if n >= 5:
+                break
+        probabilities.append(_safe_normalize_probability(chosen))
+    return probabilities
+
+
 def _metrics(y_true: list[int], probabilities: list[float]) -> dict[str, float]:
     if not y_true:
         return {"n": 0, "logloss": math.nan, "brier": math.nan, "error_rate": math.nan}
@@ -196,6 +252,7 @@ def prequential_evaluate(
     model_fit_count = 0
     fallback_count = 0
     latest_drivers: list[str] = []
+    p_memory: list[float] = []
 
     for start in range(min_train_rows, len(ordered), max(1, int(block_size))):
         train_rows = ordered[:start]
@@ -203,6 +260,7 @@ def prequential_evaluate(
         if not test_rows:
             continue
         probabilities, fitted, drivers = _fit_predict(train_rows, test_rows, model_c)
+        p_memory.extend(_hierarchical_memory_predict(train_rows, test_rows))
         if fitted:
             model_fit_count += 1
             latest_drivers = drivers
@@ -227,6 +285,7 @@ def prequential_evaluate(
 
     meta = _metrics(y_meta, p_meta)
     baseline_metrics = _metrics(y_meta, p_baseline)
+    memory_metrics = _metrics(y_meta, p_memory)
     threshold_metrics: dict[str, dict[str, float | int | None]] = {}
     total_errors = sum(y_meta)
     all_accuracy = float(sum(1 - value for value in y_meta) / len(y_meta)) if y_meta else 0.0
@@ -271,7 +330,10 @@ def prequential_evaluate(
         },
         "meta_error_probability": meta,
         "baseline_error_probability": baseline_metrics,
+        "hierarchical_experience_memory": memory_metrics,
         "delta_logloss_meta_minus_baseline": float(meta["logloss"] - baseline_metrics["logloss"]),
+        "delta_logloss_memory_minus_baseline": float(memory_metrics["logloss"] - baseline_metrics["logloss"]),
+        "delta_brier_memory_minus_baseline": float(memory_metrics["brier"] - baseline_metrics["brier"]),
         "delta_brier_meta_minus_baseline": float(meta["brier"] - baseline_metrics["brier"]),
         "threshold_policy_candidates": threshold_metrics,
         "high_risk_cases_latest": high_risk,
