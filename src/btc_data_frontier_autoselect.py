@@ -70,6 +70,8 @@ def _candidate_lifecycle(candidate):
  else:
   cost_status="UNCONFIRMED"
  acquisition_adapter=bool(candidate.get("acquisition_adapter_available"))
+ if str(candidate.get("candidate_id","")) in {"bitget_public_ws","hyperliquid_ws"}:
+  acquisition_adapter=True
  if blocked:
   acquisition_status="REJECTED"
  elif not acquisition_adapter:
@@ -348,16 +350,135 @@ def acquire_bitget_history(end_ms=None):
           "production_eligible":False,"error":f"{type(exc).__name__}:{exc}"}
 
 
+
+def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retrieved_at):
+ normalized=sorted(normalized,key=lambda row:row["event_time"])
+ if not normalized:
+  raise RuntimeError(f"{source_id}_no_closed_rows")
+ payload_sha=_sha({"source_id":source_id,"rows":normalized})
+ ACQUISITION_DIR.mkdir(parents=True,exist_ok=True)
+ stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+ path=ACQUISITION_DIR/f"{stamp}_{source_id}_history.json"
+ record={
+  "schema_version":1,"source_id":source_id,"transport":transport,"url":url,
+  "status":"OK","research_only":True,"production_eligible":False,
+  "pit_status":"UNVERIFIED_POSTHOC","temporal_basis":temporal_basis,
+  "retrieved_at":retrieved_at,"available_at":retrieved_at,"prediction_cutoff":retrieved_at,
+  "payload_sha256":payload_sha,"record_count":len(normalized),
+  "first_event_time":normalized[0]["event_time"],"last_event_time":normalized[-1]["event_time"],
+  "rows":normalized,
+ }
+ _atomic_write_json(path,record)
+ files=sorted(ACQUISITION_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True)
+ for stale in files[MAX_ACQUISITION_FILES:]:
+  stale.unlink(missing_ok=True)
+ return {
+  "source_id":source_id,"status":"OK","transport":transport,
+  "pit_status":"UNVERIFIED_POSTHOC","production_eligible":False,
+  "retrieved_at":retrieved_at,"record_count":len(normalized),
+  "first_event_time":normalized[0]["event_time"],"last_event_time":normalized[-1]["event_time"],
+  "payload_sha256":payload_sha,
+  "next_cursor_ms":min(int(datetime.fromisoformat(row["event_time"].replace("Z","+00:00")).timestamp()*1000) for row in normalized),
+  "path":str(path.relative_to(ROOT)),
+ }
+
+
+def acquire_hyperliquid_history(end_ms=None,interval="5m"):
+ retrieved=now_utc()
+ end_ms=int(end_ms or time.time()*1000)
+ interval_ms={"1m":60_000,"3m":180_000,"5m":300_000,"15m":900_000}.get(interval,300_000)
+ start_ms=end_ms-(interval_ms*1000)
+ url="https://api.hyperliquid.xyz/info"
+ body={"type":"candleSnapshot","req":{"coin":"BTC","interval":interval,"startTime":start_ms,"endTime":end_ms}}
+ try:
+  payload=_get(url,"POST",body)
+  if not isinstance(payload,list):
+   raise RuntimeError("hyperliquid_history_invalid_payload")
+  retrieved_ms=int(time.time()*1000)
+  normalized=[]
+  for row in payload:
+   if not isinstance(row,dict):
+    continue
+   try:
+    event_ms=int(row.get("t",0))
+    close_ms=int(row.get("T",event_ms+interval_ms))
+    if event_ms<=0 or close_ms>retrieved_ms:
+     continue
+    values=[float(row[k]) for k in ("o","h","l","c","v")]
+    if not all(math.isfinite(v) for v in values):
+     continue
+    normalized.append({
+     "event_time":datetime.fromtimestamp(event_ms/1000,timezone.utc).isoformat(),
+     "close_time":datetime.fromtimestamp(close_ms/1000,timezone.utc).isoformat(),
+     "open":values[0],"high":values[1],"low":values[2],"close":values[3],
+     "volume":values[4],"trade_count":int(row.get("n",0) or 0),
+    })
+   except (TypeError,ValueError,OverflowError):
+    continue
+  result=_persist_candle_batch(
+   "hyperliquid_ws",url,normalized,"rest_historical_candles","source_event_time",retrieved
+  )
+  result["history_window_start_ms"]=start_ms
+  result["history_window_end_ms"]=end_ms
+  result["retrieved_at"]=retrieved
+  return result
+ except Exception as exc:
+  return {"source_id":"hyperliquid_ws","status":"ERROR","retrieved_at":retrieved,
+          "production_eligible":False,"error":f"{type(exc).__name__}:{exc}"}
+
+
+def select_auto_acquisition_sources(frontier,selected,gap):
+ primary_gap=bool(gap.get("gap",0)>0 or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET)
+ out=[]
+ if primary_gap:
+  for sid in ("bitget_public_ws","hyperliquid_ws"):
+   if sid in selected:
+    out.append(sid)
+  for sid in ("bitget_public_ws","hyperliquid_ws"):
+   if sid not in out:
+    out.append(sid)
+ for sid in selected:
+  row=frontier.get("candidates",{}).get(sid)
+  if not row:
+   continue
+  lifecycle=row.get("lifecycle") or _candidate_lifecycle(row)
+  if lifecycle.get("cost_status")=="VERIFIED_FREE" and lifecycle.get("acquisition_adapter_available"):
+   out.append(sid)
+ return list(dict.fromkeys(out))
+
+
 def acquire_selected_research_data(frontier,gap,selected):
  candidate_ids=select_auto_acquisition_sources(frontier,selected,gap)
- if gap.get("gap",0)>0 and "bitget_public_ws" not in candidate_ids:
-  candidate_ids.append("bitget_public_ws")
  out=[]
- for sid in candidate_ids[:1]:
+ for sid in candidate_ids[:2]:
   state=frontier["source_state"].setdefault(sid,{})
+  if sid=="hyperliquid_ws":
+   if not _acquisition_due(state):
+    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
+                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
+    continue
+   cursor_ms=int(state.get("last_historical_cursor_ms",0) or 0)
+   result=acquire_hyperliquid_history(end_ms=(cursor_ms-1) if cursor_ms>0 else None)
+   if result.get("status")=="OK":
+    state["last_historical_acquisition_at"]=result["retrieved_at"]
+    state["last_historical_record_count"]=int(result.get("record_count",0))
+    state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
+    state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
+    state["last_historical_event_time"]=result.get("last_event_time")
+    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
+    state["last_historical_payload_sha256"]=result.get("payload_sha256")
+    state["historical_acquisition_failures"]=0
+   else:
+    state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+   out.append(result)
+   continue
   if not _acquisition_due(state):
    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
+   continue
+  if sid!="bitget_public_ws":
+   out.append({"source_id":sid,"status":"SKIPPED_NO_ADAPTER","production_eligible":False})
    continue
   cursor_ms=int(state.get("last_historical_cursor_ms",0) or 0)
   result=acquire_bitget_history(end_ms=(cursor_ms-1) if cursor_ms>0 else None)
@@ -564,9 +685,15 @@ def run():
  "snapshots":snapshots,
  "acquisitions":acquisitions,
  "acquisition_totals":{
-  "batches":int(frontier["source_state"].get("bitget_public_ws",{}).get("historical_batches_acquired",0)),
-  "records":int(frontier["source_state"].get("bitget_public_ws",{}).get("historical_total_records_acquired",0)),
-  "earliest_event_time":frontier["source_state"].get("bitget_public_ws",{}).get("historical_earliest_event_time"),
+  "batches":sum(int(frontier["source_state"].get(sid,{}).get("historical_batches_acquired",0)) for sid in ("bitget_public_ws","hyperliquid_ws")),
+  "records":sum(int(frontier["source_state"].get(sid,{}).get("historical_total_records_acquired",0)) for sid in ("bitget_public_ws","hyperliquid_ws")),
+  "by_source":{
+   sid:{
+    "batches":int(frontier["source_state"].get(sid,{}).get("historical_batches_acquired",0)),
+    "records":int(frontier["source_state"].get(sid,{}).get("historical_total_records_acquired",0)),
+    "earliest_event_time":frontier["source_state"].get(sid,{}).get("historical_earliest_event_time"),
+   } for sid in ("bitget_public_ws","hyperliquid_ws")
+  },
  },
  "data_sufficiency":{
   "promotion_gate_target":int(gap.get("target",300)),
