@@ -32,6 +32,7 @@ from experience_case_adaptive_controller_oos import (
     _case_key,
     _fit_meta_probability,
     _hierarchical_prior,
+    _meta_features,
     _parse_ts,
     _probabilities,
     _safe01,
