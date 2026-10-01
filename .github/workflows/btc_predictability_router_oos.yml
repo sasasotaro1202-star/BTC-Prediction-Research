@@ -1,0 +1,94 @@
+name: BTC Predictability Router OOS
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/experience_predictability_router_oos.py'
+      - 'src/experience_case_adaptive_controller_oos.py'
+      - 'tests/test_experience_predictability_router_oos.py'
+      - 'data/predictions.db.gz'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-predictability-router-oos-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  router:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore settled prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          from src.db import init_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          init_db()
+          PY
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Build experience ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH='${{ github.workspace }}/src:${{ github.workspace }}/scripts' python src/experience_ledger.py
+          test -s data/experience/experience_summary.json
+      - name: Run predictability router OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_predictability_router_oos.py
+          test -s data/historical_research/experience_predictability_router_oos.json
+      - name: Verify predictability router safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/experience_predictability_router_oos.json').read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('predictability router must remain research-only')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('predictability router cannot create promotion evidence')
+          for h,item in obj.get('horizons',{}).items():
+              if item.get('status') == 'OK':
+                  if int(item.get('pit_violation_count',0)) != 0:
+                      raise SystemExit(f'{h}: PIT violation detected')
+                  if set(item.get('candidate_sources',())) != {'global','case_memory','meta'}:
+                      raise SystemExit(f'{h}: candidate source set mismatch')
+                  for block in item.get('chronological_blocks',[]):
+                      if int(block.get('n',0)) < 20:
+                          raise SystemExit(f'{h}: undersized chronological block')
+          print('BTC predictability router safety boundary: VERIFIED')
+          PY
+      - name: Run router regression tests
+        run: python -m pytest -q tests/test_experience_predictability_router_oos.py
+      - name: Upload router artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-predictability-router-oos-${{ github.run_id }}
+          path: |
+            data/experience/experience_summary.json
+            data/historical_research/experience_predictability_router_oos.json
+          retention-days: 14
