@@ -67,8 +67,14 @@ def _baseline_error(prior: list[Any]) -> float:
 
 
 def _recurrence_features(prior: list[Any], current: Any) -> dict[str, float]:
+    """Build recurrence features from matured experiences only.
+
+    The helper itself enforces the PIT boundary so callers cannot accidentally
+    bypass the causal filter by passing an unfiltered row collection.
+    """
+    eligible = _eligible_prior(prior, current)
     key = _case_key(current)
-    matching = [row for row in prior if _case_key(row) == key]
+    matching = [row for row in eligible if _case_key(row) == key]
     matching.sort(key=lambda row: (_parse_ts(row["settled_at_utc"]), int(row["experience_id"])))
     recent = matching[-RECENT_MATCHES:]
     tail = recent[-RECENT_WINDOW:]
