@@ -181,7 +181,12 @@ def _metrics(y_true: list[int], probabilities: list[float]) -> dict[str, float]:
     }
 
 
-def _fit_predict(train_rows: list[Any], test_rows: list[Any], model_c: float) -> tuple[list[float], bool, list[str]]:
+def _fit_predict(
+    train_rows: list[Any],
+    test_rows: list[Any],
+    model_c: float,
+    class_weight: str | None = "balanced",
+) -> tuple[list[float], bool, list[str]]:
     baseline = _baseline(train_rows)
     try:
         vectorizer = DictVectorizer(sparse=True)
@@ -192,7 +197,7 @@ def _fit_predict(train_rows: list[Any], test_rows: list[Any], model_c: float) ->
             return [baseline] * len(test_rows), False, []
         model = LogisticRegression(
             C=float(model_c),
-            class_weight="balanced",
+            class_weight=class_weight,
             max_iter=1000,
             random_state=42,
         )
@@ -229,6 +234,7 @@ def prequential_evaluate(
     block_size: int = 1,
     model_c: float = 0.5,
     max_report_cases: int = 100,
+    class_weight: str | None = "balanced",
 ) -> dict[str, Any]:
     ordered = sorted(
         rows,
@@ -271,7 +277,12 @@ def prequential_evaluate(
         test_rows = ordered[start:stop]
         if not test_rows:
             break
-        probabilities, fitted, drivers = _fit_predict(train_rows, test_rows, model_c)
+        probabilities, fitted, drivers = _fit_predict(
+            train_rows,
+            test_rows,
+            model_c,
+            class_weight=class_weight,
+        )
         p_memory.extend(_hierarchical_memory_predict(train_rows, test_rows))
         if fitted:
             model_fit_count += 1
@@ -336,6 +347,7 @@ def prequential_evaluate(
         "model": {
             "type": "logistic_regression",
             "target": "prediction_error",
+            "class_weight": class_weight,
             "trained_only_on_prior_settled_experiences": True,
             "model_fit_count": int(model_fit_count),
             "fallback_count": int(fallback_count),

@@ -95,7 +95,7 @@ def test_prequential_moves_initial_split_to_settlement_boundary(monkeypatch):
     rows[2]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append((len(train_rows), [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
@@ -112,7 +112,7 @@ def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
     rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append(("fit", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
@@ -128,6 +128,21 @@ def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
         event[0] == "fit" and event[2] == [3, 4] and event[1] == [1, 2]
         for event in seen
     )
+
+
+def test_prequential_supports_unweighted_logistic():
+    rows = [_row(i, int(i % 3 != 0), warning=(i % 7 == 0)) for i in range(150)]
+    result = mod.prequential_evaluate(
+        rows,
+        min_train_rows=100,
+        block_size=1,
+        model_c=0.5,
+        class_weight=None,
+        max_report_cases=10,
+    )
+    assert result["status"] == "OK"
+    assert result["model"]["class_weight"] is None
+    assert result["model"]["model_fit_count"] > 0
 
 
 def test_prequential_is_deterministic():
@@ -210,7 +225,7 @@ def test_prequential_does_not_split_settlement_timestamp_at_block_boundary(monke
     rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append(("fit", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
