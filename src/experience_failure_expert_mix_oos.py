@@ -302,9 +302,18 @@ def _update_weights(
 
     # Keep every expert alive so a temporarily weak expert can recover.
     floor = WEIGHT_FLOOR / len(CANDIDATES)
-    clipped = {name: max(floor, normalized[name]) for name in CANDIDATES}
-    clipped_total = sum(clipped.values())
-    return {name: clipped[name] / clipped_total for name in CANDIDATES}
+    residual = {
+        name: max(0.0, normalized[name] - floor)
+        for name in CANDIDATES
+    }
+    residual_total = sum(residual.values())
+    remaining = max(0.0, 1.0 - floor * len(CANDIDATES))
+    if residual_total <= 0.0 or not math.isfinite(residual_total):
+        return {name: 1.0 / len(CANDIDATES) for name in CANDIDATES}
+    return {
+        name: floor + remaining * residual[name] / residual_total
+        for name in CANDIDATES
+    }
 
 
 def _mixed_risk(
