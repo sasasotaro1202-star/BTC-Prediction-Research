@@ -1,15 +1,16 @@
 """Research-only prequential learning from settled BTC experience.
 
-try:
-    from experience_pit_scope import load_strict_primary_rows
-except ModuleNotFoundError:
-    from src.experience_pit_scope import load_strict_primary_rows
 The learner predicts the probability that the next prediction will be wrong.
 For every evaluated experience, training data contains only earlier settled
 experiences. The learned risk score can later inform abstention/confidence
 policies, but this module never mutates production state.
 """
 from __future__ import annotations
+
+try:
+    from experience_pit_scope import load_strict_primary_rows
+except ModuleNotFoundError:
+    from src.experience_pit_scope import load_strict_primary_rows
 
 import json
 import math
