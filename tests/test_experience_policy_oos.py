@@ -95,7 +95,7 @@ def test_prequential_moves_initial_split_to_settlement_boundary(monkeypatch):
     rows[2]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append((len(train_rows), [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
@@ -112,7 +112,7 @@ def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
     rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append(("fit", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
@@ -225,7 +225,7 @@ def test_prequential_does_not_split_settlement_timestamp_at_block_boundary(monke
     rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
-    def fake_fit(train_rows, test_rows, model_c):
+    def fake_fit(train_rows, test_rows, model_c, class_weight="balanced"):
         seen.append(("fit", [r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
         return [0.5] * len(test_rows), False, []
 
