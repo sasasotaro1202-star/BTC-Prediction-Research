@@ -187,19 +187,14 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
 
     coverage_mask = np.asarray(actions) != "ABSTAIN"
     coverage = float(np.mean(coverage_mask))
-    all_case_metrics = {
-        "accuracy": float(np.mean(adjusted_pred == y)),
-        "logloss": _binary_logloss(
-            np.eye(3, dtype=int)[y].argmax(axis=1) * 0 + y,
-            np.clip(np.max(adjusted, axis=1), 1e-9, 1.0),
-        ),
-    }
     # Use the same multiclass metrics as the controller.
-    def mll(prob: np.ndarray) -> float:
-        return float(-np.mean(np.log(np.clip(prob[np.arange(len(y)), y], 1e-9, 1.0))))
+    def mll(prob: np.ndarray, labels: np.ndarray) -> float:
+        return float(
+            -np.mean(np.log(np.clip(prob[np.arange(len(labels)), labels], 1e-9, 1.0)))
+        )
 
-    def brier(prob: np.ndarray) -> float:
-        one = np.eye(3, dtype=float)[y]
+    def brier(prob: np.ndarray, labels: np.ndarray) -> float:
+        one = np.eye(3, dtype=float)[labels]
         return float(np.mean(np.sum((prob - one) ** 2, axis=1)))
 
     source_counts = {name: int(sources.count(name)) for name in CANDIDATES}
@@ -255,18 +250,18 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         },
         "baseline": {
             "accuracy": float(np.mean(base_pred == y)),
-            "logloss": mll(base),
-            "brier": brier(base),
+            "logloss": mll(base, y),
+            "brier": brier(base, y),
         },
         "routed": {
             "accuracy": float(np.mean(adjusted_pred == y)),
-            "logloss": mll(adjusted),
-            "brier": brier(adjusted),
+            "logloss": mll(adjusted, y),
+            "brier": brier(adjusted, y),
         },
         "delta_routed_minus_baseline": {
             "accuracy": float(np.mean(adjusted_pred == y) - np.mean(base_pred == y)),
-            "logloss": float(mll(adjusted) - mll(base)),
-            "brier": float(brier(adjusted) - brier(base)),
+            "logloss": float(mll(adjusted, y) - mll(base, y)),
+            "brier": float(brier(adjusted, y) - brier(base, y)),
         },
         "selective": {
             "coverage": coverage,
