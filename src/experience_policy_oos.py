@@ -172,6 +172,7 @@ def prequential_evaluate(
     thresholds: tuple[float, ...] = (0.55, 0.60, 0.65, 0.70),
     block_size: int = 1,
     model_c: float = 0.5,
+    max_report_cases: int = 100,
 ) -> dict[str, Any]:
     ordered = sorted(
         rows,
@@ -227,24 +228,33 @@ def prequential_evaluate(
     meta = _metrics(y_meta, p_meta)
     baseline_metrics = _metrics(y_meta, p_baseline)
     threshold_metrics: dict[str, dict[str, float | int | None]] = {}
+    total_errors = sum(y_meta)
+    all_accuracy = float(sum(1 - value for value in y_meta) / len(y_meta)) if y_meta else 0.0
     for threshold in thresholds:
         keep = [idx for idx, p in enumerate(p_meta) if p < float(threshold)]
         abstain = [idx for idx, p in enumerate(p_meta) if p >= float(threshold)]
         kept_correct = sum(1 - y_meta[idx] for idx in keep)
         abstain_errors = sum(y_meta[idx] for idx in abstain)
+        kept_accuracy = float(kept_correct / len(keep)) if keep else None
         threshold_metrics[f"{float(threshold):.2f}"] = {
             "threshold_error_probability": float(threshold),
             "coverage": float(len(keep) / len(y_meta)) if y_meta else 0.0,
             "kept_n": int(len(keep)),
-            "kept_accuracy": float(kept_correct / len(keep)) if keep else None,
+            "kept_accuracy": kept_accuracy,
+            "selective_accuracy_gain_vs_all": (
+                float(kept_accuracy - all_accuracy) if kept_accuracy is not None else None
+            ),
             "abstain_n": int(len(abstain)),
             "abstain_error_rate": float(abstain_errors / len(abstain)) if abstain else None,
+            "abstain_error_capture_rate": (
+                float(abstain_errors / total_errors) if total_errors else None
+            ),
         }
 
     high_risk = sorted(
         cases,
         key=lambda row: (-float(row["learned_error_probability"]), row["settled_at_utc"], row["experience_id"]),
-    )[:max(1, int(_config().get("max_report_cases", 100)))]
+    )[:max(1, int(max_report_cases))]
     return {
         "status": "OK",
         "rows": len(ordered),
@@ -275,7 +285,6 @@ def build(
     output_path: Path = OUT,
 ) -> dict[str, Any]:
     cfg = _config(config_path)
-    init_db()
     with sqlite3.connect(db_path) as con:
         con.row_factory = sqlite3.Row
         rows_by_horizon: dict[str, list[Any]] = {"5m": [], "10m": []}
@@ -304,6 +313,7 @@ def build(
             thresholds=tuple(float(x) for x in cfg["thresholds"]),
             block_size=1,
             model_c=float(cfg["model_c"]),
+            max_report_cases=int(cfg["max_report_cases"]),
         )
         payload["horizons"][horizon] = result
 
