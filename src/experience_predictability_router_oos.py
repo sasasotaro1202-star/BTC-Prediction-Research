@@ -224,17 +224,6 @@ def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, flo
         "meta": meta_values,
     }
     scores = {name: _binary_logloss(labels, candidate_values[name]) for name in CANDIDATES}
-    midpoint = len(labels) // 2
-    split_scores = {
-        "first": {
-            name: _binary_logloss(labels[:midpoint], candidate_values[name][:midpoint])
-            for name in CANDIDATES
-        },
-        "second": {
-            name: _binary_logloss(labels[midpoint:], candidate_values[name][midpoint:])
-            for name in CANDIDATES
-        },
-    }
     best = _select_source_from_scores(scores)
     if best != "global" and not _candidate_stable_gain(labels, candidate_values, best):
         best = "global"
