@@ -80,6 +80,7 @@ jobs:
               "collect_live_and_refresh_pit",
               "warm_binance_ws_and_collect_context",
               "continue_live_cycles_for_online_expert",
+              "collect_live_and_refresh_pit_for_evidence_margin",
               "discover_and_reselect_frontier",
           }:
               raise SystemExit("next-best frontier action is invalid")
@@ -148,13 +149,18 @@ jobs:
         run: |
           set -euo pipefail
           test -s data/historical_research/data_frontier_state.json
-          if ! git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
-            echo "ERROR: frontier selector state branch cannot be fetched; refusing to discard selection memory." >&2
-            exit 1
-          fi
           state_worktree="/tmp/btc-frontier-state-worktree"
           rm -rf "$state_worktree"
-          if ! git worktree add --detach "$state_worktree" origin/btc-data-frontier-state; then
+          state_ref="origin/btc-data-frontier-state"
+          if git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+            echo "Using existing selector-state branch."
+          else
+            # First successful cycle bootstraps the dedicated state branch from
+            # this exact main snapshot instead of failing and losing selection memory.
+            echo "Selector-state branch absent; bootstrapping it from ${GITHUB_SHA}."
+            state_ref="${GITHUB_SHA}"
+          fi
+          if ! git worktree add --detach "$state_worktree" "$state_ref"; then
             echo "ERROR: selector-state worktree creation failed; refusing to discard selection memory." >&2
             exit 1
           fi
@@ -174,12 +180,20 @@ jobs:
               echo "Persistent selector state published."
               exit 0
             fi
-            git -C "$state_worktree" fetch --no-tags --depth=1 origin btc-data-frontier-state
-            git -C "$state_worktree" reset --hard origin/btc-data-frontier-state
-            mkdir -p "$state_worktree/data/historical_research"
-            cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
-            git -C "$state_worktree" add data/historical_research/data_frontier_state.json
-            git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
+            # A concurrent first writer may have created the branch. Reconcile
+            # onto the now-visible remote state before retrying.
+            if git -C "$state_worktree" fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+              git -C "$state_worktree" reset --hard origin/btc-data-frontier-state
+              mkdir -p "$state_worktree/data/historical_research"
+              cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
+              git -C "$state_worktree" add data/historical_research/data_frontier_state.json
+              if ! git -C "$state_worktree" diff --cached --quiet; then
+                git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
+              else
+                echo "Selector state already current after reconciliation."
+                exit 0
+              fi
+            fi
             sleep $((attempt * 2))
           done
           echo "ERROR: selector state branch publish failed after bounded retries." >&2

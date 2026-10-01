@@ -209,3 +209,16 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 if __name__=="__main__":
     main()
+
+    def test_workflow_allows_evidence_margin_collection_action(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn('"collect_live_and_refresh_pit_for_evidence_margin"',workflow)
+
+    def test_workflow_bootstraps_missing_selector_state_branch(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        section_start=workflow.index("      - name: Persist frontier selector state")
+        section_end=workflow.index("      - name: Persist newly discovered frontier candidates")
+        section=workflow[section_start:section_end]
+        self.assertIn('state_ref="${GITHUB_SHA}"',section)
+        self.assertIn("Selector-state branch absent; bootstrapping it",section)
+        self.assertIn("git worktree add --detach",section)
