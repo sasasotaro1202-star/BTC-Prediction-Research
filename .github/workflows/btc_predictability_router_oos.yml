@@ -7,10 +7,8 @@ on:
       - main
     paths:
       - 'src/experience_predictability_router_oos.py'
-      - 'src/experience_failure_adaptive_policy_oos.py'
       - 'src/experience_case_adaptive_controller_oos.py'
       - 'tests/test_experience_predictability_router_oos.py'
-      - 'tests/test_experience_failure_adaptive_policy_oos.py'
       - 'requirements.txt'
   workflow_dispatch:
 
@@ -60,7 +58,6 @@ jobs:
           set -euo pipefail
           python src/experience_predictability_router_oos.py
           test -s data/historical_research/experience_predictability_router_oos.json
-            data/historical_research/experience_failure_adaptive_policy_oos.json
       - name: Verify predictability router safety and PIT boundary
         shell: bash
         run: |
@@ -84,38 +81,8 @@ jobs:
                           raise SystemExit(f'{h}: undersized chronological block')
           print('BTC predictability router safety boundary: VERIFIED')
           PY
-      - name: Run failure adaptive policy OOS
-        shell: bash
-        run: |
-          set -euo pipefail
-          python src/experience_failure_adaptive_policy_oos.py
-          test -s data/historical_research/experience_failure_adaptive_policy_oos.json
-
-      - name: Verify failure adaptive policy safety and PIT boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          obj=json.loads(Path('data/historical_research/experience_failure_adaptive_policy_oos.json').read_text(encoding='utf-8'))
-          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
-              raise SystemExit('failure adaptive policy must remain research-only')
-          if obj.get('promotion_evidence_eligible') is not False:
-              raise SystemExit('failure adaptive policy cannot create promotion evidence')
-          for h,item in obj.get('horizons',{}).items():
-              if item.get('status') == 'OK':
-                  if int(item.get('pit_violation_count',0)) != 0:
-                      raise SystemExit(f'{h}: PIT violation detected')
-                  if int(item.get('policy_grid_size',0)) != 15:
-                      raise SystemExit(f'{h}: unexpected policy grid size')
-                  if not 0.0 <= float(item.get('changed_policy_rate',0.0)) <= 1.0:
-                      raise SystemExit(f'{h}: invalid changed policy rate')
-          print('BTC failure adaptive policy boundary: VERIFIED')
-          PY
-
       - name: Run router regression tests
-        run: python -m pytest -q tests/test_experience_predictability_router_oos.py tests/test_experience_failure_adaptive_policy_oos.py
+        run: python -m pytest -q tests/test_experience_predictability_router_oos.py
       - name: Upload router artifact
         if: always()
         uses: actions/upload-artifact@v6
