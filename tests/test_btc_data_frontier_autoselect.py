@@ -262,3 +262,16 @@ if __name__=="__main__":
         }}
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
+
+    def test_historical_acquisition_cursor_moves_backward(self):
+        captured={}
+        def fake_get(url,method="GET",body=None,token=None):
+            captured["url"]=url
+            return {"code":"00000","data":[["1699990000000","100","101","99","100.5","12","1206"]]}
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(mod,"_get",side_effect=fake_get):
+                result=mod.acquire_bitget_history(end_ms=1700000000000)
+            self.assertEqual(result["status"],"OK")
+            self.assertIn("endTime=1700000000000",captured["url"])
+            self.assertEqual(result["next_cursor_ms"],1699990000000)
