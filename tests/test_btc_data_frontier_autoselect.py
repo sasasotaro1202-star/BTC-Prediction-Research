@@ -312,6 +312,42 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
 
+    def test_hyperliquid_history_acquisition_is_research_only_and_cursored(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            fake_payload=[
+                {"t":1700000000000,"T":1700000299999,"o":"100","h":"101","l":"99","c":"100.5","v":"12","n":42}
+            ]
+            def fake_get(url,method="GET",body=None,token=None):
+                self.assertEqual(method,"POST")
+                self.assertEqual(body["type"],"candleSnapshot")
+                self.assertEqual(body["req"]["coin"],"BTC")
+                self.assertEqual(body["req"]["interval"],"5m")
+                return fake_payload
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(mod,"_get",side_effect=fake_get):
+                result=mod.acquire_hyperliquid_history(end_ms=1700000600000)
+            self.assertEqual(result["status"],"OK")
+            self.assertFalse(result["production_eligible"])
+            self.assertEqual(result["pit_status"],"UNVERIFIED_POSTHOC")
+            self.assertEqual(result["next_cursor_ms"],1700000000000)
+            saved=list((root/"data/historical_research/frontier_acquisitions").glob("*.json"))
+            self.assertEqual(len(saved),1)
+
+    def test_auto_acquisition_includes_hyperliquid_when_primary_gap_remains(self):
+        selected=["bitget_public_ws"]
+        frontier={"source_state":{},"candidates":{}}
+        ids=mod.select_auto_acquisition_sources(
+            frontier,selected,{"gap":149,"strict_primary":151}
+        )
+        self.assertIn("bitget_public_ws",ids)
+        self.assertIn("hyperliquid_ws",ids)
+
+    def test_hyperliquid_is_only_auto_acquired_via_explicit_adapter(self):
+        frontier={"source_state":{},"candidates":{}}
+        ids=mod.select_auto_acquisition_sources(
+            frontier,[],{"gap":0,"strict_primary":600}
+        )
+        self.assertNotIn("hyperliquid_ws",ids)
     def test_historical_acquisition_cursor_moves_backward(self):
         captured={}
         def fake_get(url,method="GET",body=None,token=None):
