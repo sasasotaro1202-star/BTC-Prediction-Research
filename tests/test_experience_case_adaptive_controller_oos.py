@@ -25,6 +25,8 @@ def _row(
     p=(0.10, 0.10, 0.80),
     correct=1,
     mode="binance_primary",
+    warning_flags="[]",
+    data_quality_flags="[]",
 ):
     return {
         "experience_id": experience_id,
@@ -34,8 +36,8 @@ def _row(
         "regime": regime,
         "predicted_direction": direction,
         "production_mode": mode,
-        "warning_flags": "[]",
-        "data_quality_flags": "[]",
+        "warning_flags": warning_flags,
+        "data_quality_flags": data_quality_flags,
         "probability_json": json.dumps(dict(zip(CLASSES, p))),
         "correct": correct,
     }
@@ -49,11 +51,13 @@ def test_case_key_is_horizon_specific():
     assert _case_key(a) != _case_key(b)
 
 
-def test_case_key_separates_production_mode():
+def test_case_key_separates_production_mode_and_information_state():
     primary = _row(mode="binance_primary")
     shadow = _row(mode="shadow_candidate")
-    assert _case_key(primary)[-1] == "binance_primary"
-    assert _case_key(shadow)[-1] == "shadow_candidate"
+    assert _case_key(primary)[4] == "binance_primary"
+    assert _case_key(shadow)[4] == "shadow_candidate"
+    assert _case_key(primary)[5] == "CLEAN"
+    assert _case_key(shadow)[5] == "CLEAN"
     assert _case_key(primary) != _case_key(shadow)
 
 
