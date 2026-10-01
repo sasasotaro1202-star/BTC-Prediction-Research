@@ -254,6 +254,40 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         return float(np.mean(np.sum((prob - one) ** 2, axis=1)))
 
     source_counts = {name: int(sources.count(name)) for name in CANDIDATES}
+
+    block_size = 40
+    blocks: list[dict[str, Any]] = []
+    for start in range(0, len(y), block_size):
+        end = min(len(y), start + block_size)
+        if end - start < 20:
+            continue
+        block_slice = slice(start, end)
+        block_sources = sources[start:end]
+        block_y = y[block_slice]
+        block_base = base[block_slice]
+        block_adjusted = adjusted[block_slice]
+        block_base_pred = np.argmax(block_base, axis=1)
+        block_adj_pred = np.argmax(block_adjusted, axis=1)
+        block_sources_count = {
+            name: int(block_sources.count(name)) for name in CANDIDATES
+        }
+        blocks.append({
+            "index": int(len(blocks)),
+            "start": int(start),
+            "end": int(end),
+            "n": int(end - start),
+            "baseline_accuracy": float(np.mean(block_base_pred == block_y)),
+            "routed_accuracy": float(np.mean(block_adj_pred == block_y)),
+            "baseline_logloss": mll(block_base, block_y),
+            "routed_logloss": mll(block_adjusted, block_y),
+            "baseline_brier": brier(block_base, block_y),
+            "routed_brier": brier(block_adjusted, block_y),
+            "delta_accuracy": float(np.mean(block_adj_pred == block_y) - np.mean(block_base_pred == block_y)),
+            "delta_logloss": float(mll(block_adjusted, block_y) - mll(block_base, block_y)),
+            "delta_brier": float(brier(block_adjusted, block_y) - brier(block_base, block_y)),
+            "source_counts": block_sources_count,
+        })
+
     predictability = {
         "risk_target": "base_prediction_error",
         "logloss": _binary_logloss(error_labels, risk_arr),
@@ -298,6 +332,8 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "candidate_sources": CANDIDATES,
         "selection_rule": f"lowest_validation_logloss_with_global_fallback_within_{TIE_EPS}",
         "source_counts": source_counts,
+        "chronological_blocks": blocks,
+        "block_size": block_size,
         "mean_validation_logloss_by_source": {
             name: (
                 float(np.mean(values)) if values else None
