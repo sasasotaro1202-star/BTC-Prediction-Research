@@ -176,9 +176,9 @@ def _acquisition_due(state, now=None):
   return True
 
 
-def acquire_bitget_history():
+def acquire_bitget_history(end_ms=None):
  retrieved=now_utc()
- url=_bitget_history_url()
+ url=_bitget_history_url(end_ms=end_ms)
  try:
   payload=_get(url)
   rows=payload.get("data") if isinstance(payload,dict) else None
@@ -230,6 +230,7 @@ def acquire_bitget_history():
    "pit_status":"UNVERIFIED_POSTHOC","production_eligible":False,"retrieved_at":retrieved,
    "record_count":len(normalized),"first_event_time":normalized[0]["event_time"],
    "last_event_time":normalized[-1]["event_time"],"payload_sha256":payload_sha,
+   "next_cursor_ms":min(int(datetime.fromisoformat(row["event_time"].replace("Z","+00:00")).timestamp()*1000) for row in normalized),
    "path":str(path.relative_to(ROOT)),
   }
  except Exception as exc:
@@ -248,11 +249,13 @@ def acquire_selected_research_data(frontier,gap,selected):
    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
    continue
-  result=acquire_bitget_history()
+  cursor_ms=int(state.get("last_historical_cursor_ms",0) or 0)
+  result=acquire_bitget_history(end_ms=(cursor_ms-1) if cursor_ms>0 else None)
   if result.get("status")=="OK":
    state["last_historical_acquisition_at"]=result["retrieved_at"]
    state["last_historical_record_count"]=int(result.get("record_count",0))
    state["last_historical_event_time"]=result.get("last_event_time")
+   state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
    state["historical_acquisition_failures"]=0
   else:
@@ -428,7 +431,7 @@ def run():
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
  frontier["history"]=list(frontier.get("history") or [])
- frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids":selected,"selected_discovered_source_ids":selected_discovered,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"]})
+ frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids_before_acquisition":selected_before_acquisition,"selected_source_ids":selected,"reselected_after_acquisition":True,"selected_discovered_source_ids":selected_discovered,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"],"acquisition_statuses":[x.get("status") for x in acquisitions]})
  frontier["history"]=frontier["history"][-96:]
  durable={
   "schema_version":1,
