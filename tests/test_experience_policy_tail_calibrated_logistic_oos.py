@@ -8,6 +8,7 @@ def _row(i: int, correct: int):
     return {
         "experience_id": i + 1,
         "prediction_id": i + 1,
+        "horizon": "5m",
         "created_at_utc": ts.isoformat(),
         "target_at_utc": (ts + timedelta(minutes=5)).isoformat(),
         "model_version": "test.v1",
