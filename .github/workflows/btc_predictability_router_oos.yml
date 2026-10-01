@@ -13,8 +13,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: btc-predictability-router-oos-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  group: btc-predictability-router-oos-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
