@@ -40,14 +40,16 @@ def _row(
         "predicted_direction": direction,
         "production_mode": mode,
         "information_state": info,
+        "warning_flags": "",
+        "data_quality_flags": "",
         "actual_direction": "UP" if correct else "DOWN",
         "probability_json": json.dumps(p),
     }
 
 
 def test_update_weights_rewards_lower_loss_expert():
-    weights = {name: 1.0 / 3.0 for name in CANDIDATES}
-    losses = {"global": 0.80, "case_memory": 0.60, "meta": 0.75}
+    weights = {name: 1.0 / len(CANDIDATES) for name in CANDIDATES}
+    losses = {"global": 0.80, "case_memory": 0.60, "meta": 0.75, "temporal_memory": 0.65}
     updated = _update_weights(weights, losses)
     assert np.isclose(sum(updated.values()), 1.0)
     assert updated["case_memory"] > updated["global"]
@@ -56,19 +58,19 @@ def test_update_weights_rewards_lower_loss_expert():
 
 
 def test_update_weights_keeps_experts_alive():
-    weights = {name: 1.0 / 3.0 for name in CANDIDATES}
-    losses = {"global": 0.0, "case_memory": 10.0, "meta": 10.0}
+    weights = {name: 1.0 / len(CANDIDATES) for name in CANDIDATES}
+    losses = {"global": 0.0, "case_memory": 10.0, "meta": 10.0, "temporal_memory": 10.0}
     updated = _update_weights(weights, losses)
     assert np.isclose(sum(updated.values()), 1.0)
     assert min(updated.values()) >= (WEIGHT_FLOOR / len(CANDIDATES)) - 1e-12
 
 
 def test_mixed_risk_is_bounded_and_weighted():
-    risks = {"global": 0.9, "case_memory": 0.3, "meta": 0.6}
-    weights = {"global": 0.2, "case_memory": 0.5, "meta": 0.3}
+    risks = {"global": 0.9, "case_memory": 0.3, "meta": 0.6, "temporal_memory": 0.4}
+    weights = {"global": 0.2, "case_memory": 0.4, "meta": 0.2, "temporal_memory": 0.2}
     mixed = _mixed_risk(risks, weights)
     assert 0.0 <= mixed <= 1.0
-    assert np.isclose(mixed, 0.2 * 0.9 + 0.5 * 0.3 + 0.3 * 0.6)
+    assert np.isclose(mixed, 0.2 * 0.9 + 0.4 * 0.3 + 0.2 * 0.6 + 0.2 * 0.4)
 
 
 def test_eligible_prior_requires_both_prediction_and_settlement_before_current():
