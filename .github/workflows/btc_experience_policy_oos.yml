@@ -4,39 +4,6 @@ on:
   schedule:
     - cron: '23 */6 * * *'
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'src/experience_policy_oos.py'
-      - 'src/experience_policy_unweighted_logistic_oos.py'
-      - 'src/experience_policy_tail_calibrated_logistic_oos.py'
-      - 'src/experience_policy_core_feature_logistic_oos.py'
-      - 'src/experience_policy_stability_oos.py'
-      - 'src/experience_policy_promotion_gate.py'
-      - 'tests/test_experience_policy_core_feature_logistic_oos.py'
-      - 'tests/test_experience_policy_tail_calibrated_logistic_oos.py'
-      - 'tests/test_experience_policy_stability_oos.py'
-      - 'tests/test_experience_policy_promotion_gate.py'
-      - 'config/EXPERIENCE_POLICY_CORE_FEATURE_LOGISTIC_OOS.json'
-      - 'config/EXPERIENCE_POLICY_TAIL_CALIBRATED_LOGISTIC_OOS.json'
-      - 'config/EXPERIENCE_POLICY_STABILITY_OOS.json'
-      - 'config/EXPERIENCE_POLICY_PROMOTION_GATE.json'
-      - 'src/experience_ledger.py'
-      - 'src/experience_case_adaptive_controller_oos.py'
-      - 'tests/test_experience_case_adaptive_controller_oos.py'
-      - 'src/experience_case_conditional_policy_oos.py'
-      - 'tests/test_experience_case_conditional_policy_oos.py'
-      - 'src/experience_failure_recurrence_oos.py'
-      - 'tests/test_experience_failure_recurrence_oos.py'
-      - 'src/experience_case_conformal_set_oos.py'
-      - 'src/experience_predictability_router_oos.py'
-      - 'tests/test_experience_case_conformal_set_oos.py'
-      - 'tests/test_experience_predictability_router_oos.py'
-      - 'tests/test_experience_policy_oos.py'
-      - 'config/EXPERIENCE_POLICY_OOS.json'
-      - 'config/EXPERIENCE_POLICY_UNWEIGHTED_LOGISTIC_OOS.json'
-      - '.github/workflows/btc_experience_policy_oos.yml'
   push:
     branches:
       - main
