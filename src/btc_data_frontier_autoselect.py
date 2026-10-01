@@ -18,6 +18,9 @@ MAX_SNAPSHOTS=240
 HYPERLIQUID_HISTORY_BATCH_CANDLES=200
 HYPERLIQUID_HISTORY_MAX_RETRIES=2
 HYPERLIQUID_HISTORY_RETRY_BACKOFF_SEC=1.0
+DERIBIT_HISTORY_BATCH_CANDLES=200
+DERIBIT_HISTORY_MAX_RETRIES=2
+DERIBIT_HISTORY_RETRY_BACKOFF_SEC=1.0
 DISCOVERY_RESULTS=8
 STRICT_PRIMARY_ACCUMULATION_TARGET=600
 HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
@@ -74,7 +77,7 @@ def _candidate_lifecycle(candidate):
  else:
   cost_status="UNCONFIRMED"
  acquisition_adapter=bool(candidate.get("acquisition_adapter_available"))
- if str(candidate.get("candidate_id","")) in {"bitget_public_ws","hyperliquid_ws"}:
+ if str(candidate.get("candidate_id","")) in {"bitget_public_ws","hyperliquid_ws","deribit_public"}:
   acquisition_adapter=True
  if blocked:
   acquisition_status="REJECTED"
@@ -464,14 +467,91 @@ def acquire_hyperliquid_history(end_ms=None,interval="5m"):
           "production_eligible":False,"error":f"{type(exc).__name__}:{exc}"}
 
 
+def _get_deribit_history_payload(params):
+ url="https://www.deribit.com/api/v2/public/get_tradingview_chart_data"
+ last_error=None
+ for attempt in range(DERIBIT_HISTORY_MAX_RETRIES+1):
+  try:
+   query="&".join(f"{quote(str(k))}={quote(str(v))}" for k,v in params.items())
+   payload=_get(url+"?"+query)
+   if not isinstance(payload,dict) or not isinstance(payload.get("result"),dict):
+    raise RuntimeError("deribit_history_invalid_payload")
+   return payload["result"]
+  except HTTPError as exc:
+   if exc.code!=429 or attempt>=DERIBIT_HISTORY_MAX_RETRIES:
+    raise
+   time.sleep(min(8.0,DERIBIT_HISTORY_RETRY_BACKOFF_SEC*(2**attempt)))
+   last_error=exc
+ if last_error is not None:
+  raise last_error
+ raise RuntimeError("deribit_history_request_failed")
+
+
+def acquire_deribit_history(end_ms=None,resolution="5"):
+ retrieved=now_utc()
+ end_ms=int(end_ms or time.time()*1000)
+ interval_ms={"1":60_000,"3":180_000,"5":300_000,"15":900_000}.get(str(resolution),300_000)
+ batch_candles=DERIBIT_HISTORY_BATCH_CANDLES
+ url="https://www.deribit.com/api/v2/public/get_tradingview_chart_data"
+ try:
+  for _ in range(3):
+   start_ms=end_ms-(interval_ms*batch_candles)
+   result=_get_deribit_history_payload({
+    "instrument_name":"BTC-PERPETUAL",
+    "start_timestamp":start_ms,
+    "end_timestamp":end_ms,
+    "resolution":resolution,
+   })
+   ticks=result.get("ticks") or []
+   if ticks:
+    break
+   if batch_candles<=25:
+    break
+   batch_candles=max(25,batch_candles//2)
+  ticks=result.get("ticks") or []
+  closes=result.get("close") or []
+  opens=result.get("open") or []
+  highs=result.get("high") or []
+  lows=result.get("low") or []
+  volumes=result.get("volume") or []
+  if not ticks:
+   raise RuntimeError("deribit_history_no_rows")
+  normalized=[]
+  for i,event_ms in enumerate(ticks):
+   try:
+    event_ms=int(event_ms)
+    close_ms=event_ms+interval_ms
+    values=[float(opens[i]),float(highs[i]),float(lows[i]),float(closes[i]),float(volumes[i] if i<len(volumes) else 0.0)]
+    if event_ms<=0 or close_ms>int(time.time()*1000) or not all(math.isfinite(v) for v in values):
+     continue
+    normalized.append({
+     "event_time":datetime.fromtimestamp(event_ms/1000,timezone.utc).isoformat(),
+     "close_time":datetime.fromtimestamp(close_ms/1000,timezone.utc).isoformat(),
+     "open":values[0],"high":values[1],"low":values[2],"close":values[3],
+     "volume":values[4],"trade_count":0,
+    })
+   except (IndexError,TypeError,ValueError,OverflowError):
+    continue
+  result=_persist_candle_batch("deribit_public",url,normalized,"rest_historical_candles","source_event_time",retrieved)
+  result["history_window_start_ms"]=start_ms
+  result["history_window_end_ms"]=end_ms
+  result["history_requested_candles"]=batch_candles
+  result["instrument_name"]="BTC-PERPETUAL"
+  result["retrieved_at"]=retrieved
+  return result
+ except Exception as exc:
+  return {"source_id":"deribit_public","status":"ERROR","retrieved_at":retrieved,
+          "production_eligible":False,"error":f"{type(exc).__name__}:{exc}"}
+
+
 def select_auto_acquisition_sources(frontier,selected,gap):
  primary_gap=bool(gap.get("gap",0)>0 or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET)
  out=[]
  if primary_gap:
-  for sid in ("bitget_public_ws","hyperliquid_ws"):
+  for sid in ("bitget_public_ws","hyperliquid_ws","deribit_public"):
    if sid in selected:
     out.append(sid)
-  for sid in ("bitget_public_ws","hyperliquid_ws"):
+  for sid in ("bitget_public_ws","hyperliquid_ws","deribit_public"):
    if sid not in out:
     out.append(sid)
  for sid in selected:
@@ -487,8 +567,29 @@ def select_auto_acquisition_sources(frontier,selected,gap):
 def acquire_selected_research_data(frontier,gap,selected):
  candidate_ids=select_auto_acquisition_sources(frontier,selected,gap)
  out=[]
- for sid in candidate_ids[:2]:
+ for sid in candidate_ids[:3]:
   state=frontier["source_state"].setdefault(sid,{})
+  if sid=="deribit_public":
+   if not _acquisition_due(state):
+    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
+                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
+    continue
+   cursor_ms=int(state.get("last_historical_cursor_ms",0) or 0)
+   result=acquire_deribit_history(end_ms=(cursor_ms-1) if cursor_ms>0 else None)
+   if result.get("status")=="OK":
+    state["last_historical_acquisition_at"]=result["retrieved_at"]
+    state["last_historical_record_count"]=int(result.get("record_count",0))
+    state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
+    state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
+    state["last_historical_event_time"]=result.get("last_event_time")
+    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
+    state["last_historical_payload_sha256"]=result.get("payload_sha256")
+    state["historical_acquisition_failures"]=0
+   else:
+    state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+   out.append(result)
+   continue
   if sid=="hyperliquid_ws":
    if not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
