@@ -339,10 +339,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         },
         "mean_predicted_error_risk": float(np.mean(risk_values)),
         "mean_case_support": float(np.mean(supports)),
-        "case_source_levels": sorted(set(
-            str(_case_outcome_prior(prior, current)[2])
-            for current, prior in []
-        )),
+        "case_source_levels": "recorded_per_case_but_not_recomputed_in_summary",
     }
 
 
