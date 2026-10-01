@@ -20,6 +20,9 @@ DEFAULT_CONFIG = {
     "require_pit_verified": True,
     "max_pit_audit_age_sec": 3600,
     "require_independent_holdout": True,
+    "require_stability_oos": True,
+    "required_non_worse_fraction": 0.70,
+    "require_latest_block_non_worse": True,
     "candidate": "hierarchical_experience_memory",
 }
 
@@ -55,6 +58,7 @@ def evaluate(
     research: dict[str, Any],
     pit_audit: dict[str, Any],
     config: dict[str, Any] | None = None,
+    stability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = dict(DEFAULT_CONFIG)
     if isinstance(config, dict):
@@ -85,6 +89,11 @@ def evaluate(
         decision = "HOLD"
         reasons.append("pit_audit_not_fresh")
 
+    stability_horizons = stability.get("horizons") if isinstance(stability, dict) else None
+    if bool(cfg["require_stability_oos"]) and not isinstance(stability_horizons, dict):
+        decision = "HOLD"
+        reasons.append("experience_stability_oos_missing")
+
     per_horizon: dict[str, Any] = {}
     for horizon in ("5m", "10m"):
         item = horizons[horizon]
@@ -100,6 +109,21 @@ def evaluate(
         br_gain = _relative_gain(baseline.get("brier"), candidate.get("brier"))
         adequate_n = n >= int(cfg["min_prequential_test_rows"])
         metric_pass = ll_gain >= float(cfg["min_relative_logloss_gain"]) and br_gain >= float(cfg["min_relative_brier_gain"])
+        stability_item = stability_horizons.get(horizon) if isinstance(stability_horizons, dict) else None
+        stability_ok = False
+        stability_fraction = None
+        stability_latest_non_worse = None
+        if isinstance(stability_item, dict) and stability_item.get("status") == "OK":
+            stability_fraction = float(stability_item.get("non_worse_fraction", 0.0))
+            latest = stability_item.get("latest_block") or {}
+            stability_latest_non_worse = bool(latest.get("non_worse"))
+            stability_ok = (
+                int(stability_item.get("block_count", 0)) >= int(cfg.get("min_stability_blocks", 5))
+                and stability_fraction >= float(cfg["required_non_worse_fraction"])
+                and (not bool(cfg["require_latest_block_non_worse"]) or stability_latest_non_worse)
+            )
+        elif bool(cfg["require_stability_oos"]):
+            stability_ok = False
         per_horizon[horizon] = {
             "status": "OK",
             "prequential_test_rows": n,
@@ -107,7 +131,13 @@ def evaluate(
             "relative_brier_gain": br_gain,
             "metric_pass": metric_pass,
             "sample_pass": adequate_n,
+            "stability_pass": stability_ok,
+            "stability_non_worse_fraction": stability_fraction,
+            "stability_latest_block_non_worse": stability_latest_non_worse,
         }
+        if bool(cfg["require_stability_oos"]) and not stability_ok:
+            decision = "REJECTED" if decision != "HOLD" else "HOLD"
+            reasons.append(f"{horizon}:stability_gate_failed")
         if not adequate_n:
             decision = "HOLD"
             reasons.append(f"{horizon}:insufficient_prequential_rows")
@@ -156,6 +186,7 @@ def _pit_freshness_from_obj(obj: dict[str, Any], max_age: int) -> dict[str, Any]
 def build(
     research_path: Path = ROOT / "data/historical_research/experience_policy_oos.json",
     pit_path: Path = ROOT / "data/historical_research/pit_oos_audit.json",
+    stability_path: Path = ROOT / "data/historical_research/experience_policy_stability_oos.json",
     config_path: Path = ROOT / "config/EXPERIENCE_POLICY_PROMOTION_GATE.json",
     output_path: Path = ROOT / "data/historical_research/experience_policy_promotion_gate.json",
 ) -> dict[str, Any]:
@@ -164,6 +195,7 @@ def build(
     cfg.update(loaded_cfg)
     research = _load(research_path)
     pit = _load(pit_path)
+    stability = _load(stability_path)
     if not research:
         report = {
             "schema_version": 1,
@@ -185,7 +217,7 @@ def build(
             "reasons": ["missing_pit_audit"],
         }
     else:
-        report = evaluate(research, pit, cfg)
+        report = evaluate(research, pit, cfg, stability)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
