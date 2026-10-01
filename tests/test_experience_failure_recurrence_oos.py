@@ -132,7 +132,6 @@ def test_bounded_lifetime_recurrence_model_is_finite_and_refresh_is_positive():
             created=f"2026-09-{25 + (i // 50):02d}T{(i % 24):02d}:{i % 60:02d}:00+00:00",
             settled=f"2026-09-{25 + (i // 50):02d}T{(i % 24):02d}:{(i % 60 + 1):02d}:00+00:00",
             correct=i % 2,
-            actual="UP" if i % 2 else "DOWN",
         )
         for i in range(1, 121)
     ]
