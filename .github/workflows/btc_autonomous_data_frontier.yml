@@ -127,9 +127,11 @@ jobs:
             if [ "$active" -gt 0 ] || [ "$age" -lt "$threshold" ]; then return 0; fi
             started="$(date -u +%s)"
             gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null
-            for _ in 1 2 3 4 5 6; do
-              sleep 5
-              fresh="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
+            # Dispatch creation can be delayed behind an already-running research lane.
+            # Verify for up to 120s, while remaining fail-closed on missing evidence.
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              sleep 10
+              fresh="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
               if [ -n "$fresh" ]; then echo "${workflow}: dispatch verified ${fresh}"; return 0; fi
             done
             echo "${workflow}: dispatch verification failed" >&2
