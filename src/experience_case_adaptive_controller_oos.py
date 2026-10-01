@@ -143,8 +143,18 @@ def _case_key(row: Any) -> tuple[str, str, str, str]:
 
 
 def _hierarchical_prior(train_rows: list[Any], row: Any, shrinkage: float = 20.0) -> float:
-    """Case-specific error probability from earlier matured experiences only."""
-    global_error = _baseline_error(train_rows)
+    """Case-specific error probability from experiences matured before this prediction."""
+    prediction_time = _parse_ts(row["created_at_utc"])
+    eligible = []
+    for candidate in train_rows:
+        try:
+            created = _parse_ts(candidate["created_at_utc"])
+            settled = _parse_ts(candidate["settled_at_utc"])
+        except (TypeError, ValueError):
+            continue
+        if created < prediction_time and settled < prediction_time:
+            eligible.append(candidate)
+    global_error = _baseline_error(eligible)
     target = _case_key(row)
     levels = (
         target,
@@ -153,7 +163,7 @@ def _hierarchical_prior(train_rows: list[Any], row: Any, shrinkage: float = 20.0
         (target[0],),
     )
     for level_key in levels:
-        group = [r for r in train_rows if _case_key(r)[:len(level_key)] == level_key]
+        group = [r for r in eligible if _case_key(r)[:len(level_key)] == level_key]
         if not group:
             continue
         n = len(group)
