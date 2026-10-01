@@ -10,6 +10,9 @@ on:
       - 'src/experience_policy_oos.py'
       - 'src/experience_policy_unweighted_logistic_oos.py'
       - 'src/experience_policy_tail_calibrated_logistic_oos.py'
+      - 'src/experience_policy_core_feature_logistic_oos.py'
+      - 'tests/test_experience_policy_core_feature_logistic_oos.py'
+      - 'config/EXPERIENCE_POLICY_CORE_FEATURE_LOGISTIC_OOS.json'
       - 'tests/test_experience_policy_tail_calibrated_logistic_oos.py'
       - 'config/EXPERIENCE_POLICY_TAIL_CALIBRATED_LOGISTIC_OOS.json'
       - 'src/experience_ledger.py'
@@ -94,6 +97,41 @@ jobs:
           set -euo pipefail
           python src/experience_policy_unweighted_logistic_oos.py
           test -s data/historical_research/experience_policy_unweighted_logistic_oos.json
+
+      - name: Run core feature logistic OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_policy_core_feature_logistic_oos.py
+          test -s data/historical_research/experience_policy_core_feature_logistic_oos.json
+
+      - name: Validate core feature logistic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_policy_core_feature_logistic_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("candidate") != "core_feature_unweighted_logistic":
+              raise SystemExit("unexpected core-feature candidate")
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("core-feature candidate must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("core-feature candidate cannot create promotion evidence")
+          expected=set(obj.get("feature_policy", []))
+          forbidden=set(obj.get("excluded_features", []))
+          if expected & forbidden:
+              raise SystemExit("feature policy overlaps exclusions")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK":
+                  if item.get("model",{}).get("feature_profile") != "core_prediction_time":
+                      raise SystemExit(f"{h}: unexpected feature profile")
+                  if item.get("model",{}).get("trained_only_on_prior_settled_experiences") is not True:
+                      raise SystemExit(f"{h}: prequential boundary missing")
+          print("BTC core feature experience logistic OOS: VERIFIED")
+          PY
 
       - name: Run temporal tail calibrated logistic OOS
         shell: bash
