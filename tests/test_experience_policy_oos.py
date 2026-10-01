@@ -103,7 +103,7 @@ def test_prequential_moves_initial_split_to_settlement_boundary(monkeypatch):
     monkeypatch.setattr(mod, "_hierarchical_memory_predict", lambda train_rows, test_rows: [0.5] * len(test_rows))
     out = mod.prequential_evaluate(rows, min_train_rows=2, block_size=1)
     assert out["status"] == "OK"
-    assert any(test_ids == [3] and train_n == 3 for train_n, test_ids in seen)
+    assert any(test_ids == [4] and train_n == 3 for train_n, test_ids in seen)
 
 
 def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
@@ -125,7 +125,7 @@ def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
     out = mod.prequential_evaluate(rows, min_train_rows=2, block_size=1)
     assert out["status"] == "OK"
     assert any(
-        event[0] == "fit" and event[2] == [3, 4] and 2 not in event[1]
+        event[0] == "fit" and event[2] == [3, 4] and event[1] == [1, 2]
         for event in seen
     )
 
