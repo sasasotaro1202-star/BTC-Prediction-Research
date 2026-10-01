@@ -207,7 +207,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
     def test_run_records_selected_discovered_candidates(self):
         frontier={"source_state":{},"candidates":{
-            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","url":"https://github.com/test/btc","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
         }}
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
@@ -354,4 +354,3 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 if __name__=="__main__":
     main()
-
