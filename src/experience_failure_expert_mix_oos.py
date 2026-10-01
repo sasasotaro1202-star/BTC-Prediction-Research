@@ -76,28 +76,35 @@ def _sequential_validation_risks(
     train_rows: list[Any],
     validation_rows: list[Any],
 ) -> dict[str, np.ndarray]:
-    ordered_train = sorted(
-        train_rows,
-        key=lambda row: (_parse_ts(row["settled_at_utc"]), int(row["experience_id"])),
+    ordered_rows = sorted(
+        list(train_rows) + list(validation_rows),
+        key=lambda row: (
+            _parse_ts(row["settled_at_utc"]),
+            _parse_ts(row["created_at_utc"]),
+            int(row["experience_id"]),
+        ),
+    )
+    train_ids = {int(row["experience_id"]) for row in train_rows}
+    validation_sorted = sorted(
+        validation_rows,
+        key=lambda x: (_parse_ts(x["created_at_utc"]), int(x["experience_id"])),
     )
     memory_state = _memory_state([])
-    ptr = 0
+    added_ids: set[int] = set()
     global_values: list[float] = []
     memory_values: list[float] = []
 
-    for row in sorted(
-        validation_rows,
-        key=lambda x: (_parse_ts(x["created_at_utc"]), int(x["experience_id"])),
-    ):
+    for row in validation_sorted:
         prediction_time = _parse_ts(row["created_at_utc"])
-        while ptr < len(ordered_train):
-            candidate = ordered_train[ptr]
+        for candidate in ordered_rows:
+            cid = int(candidate["experience_id"])
+            if cid in added_ids or cid == int(row["experience_id"]):
+                continue
             created = _parse_ts(candidate["created_at_utc"])
             settled = _parse_ts(candidate["settled_at_utc"])
-            if not (created < prediction_time and settled < prediction_time):
-                break
-            _memory_add(memory_state, candidate)
-            ptr += 1
+            if created < prediction_time and settled < prediction_time:
+                _memory_add(memory_state, candidate)
+                added_ids.add(cid)
         global_values.append(
             _safe01(
                 (memory_state["errors"] + 1.0)
