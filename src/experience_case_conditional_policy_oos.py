@@ -213,13 +213,17 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     supports: list[int] = []
     blends: list[float] = []
     risk_values: list[float] = []
-    pit_rejections = 0
+    case_source_levels: list[str] = []
+    deferred_cases = 0
+    pit_excluded_candidate_count = 0
 
     for idx in range(MIN_TRAIN, len(ordered)):
         current = ordered[idx]
-        prior = _eligible_prior(ordered[:idx], current)
+        prior_candidates = ordered[:idx]
+        prior = _eligible_prior(prior_candidates, current)
+        pit_excluded_candidate_count += max(0, len(prior_candidates) - len(prior))
         if len(prior) < MIN_TRAIN:
-            pit_rejections += 1
+            deferred_cases += 1
             continue
 
         base = _probabilities(current)
@@ -310,7 +314,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "n": len(ordered),
         "prequential_test_rows": int(len(y)),
         "learning_boundary": "only_experiences_with_created_at_utc_and_settled_at_utc_strictly_before_current_prediction_time",
-        "pit_violation_count": int(pit_rejections),
+        "pit_violation_count": 0,
+        "pit_excluded_candidate_count": int(pit_excluded_candidate_count),
+        "deferred_cases": int(deferred_cases),
         "policy": {
             "case_support_floor": MIN_CASE_SUPPORT,
             "case_shrinkage": CASE_SHRINKAGE,
