@@ -4,7 +4,8 @@ For each prediction, calibration scores are computed only from experiences whose
 prediction and outcome were both completed strictly before the current prediction.
 A hierarchical case pool is used when the exact case is sparse.
 
-The output is a prediction set {class}, {class_a, class_b}, or {DOWN, FLAT, UP}.
+
+from experience_pit_scope import load_strict_primary_rowsThe output is a prediction set {class}, {class_a, class_b}, or {DOWN, FLAT, UP}.
 No production artifact or promotion evidence is modified.
 """
 
@@ -206,28 +207,24 @@ def evaluate_horizon(rows: list[Any], horizon: str, alpha: float = 0.20) -> dict
     }
 
 
+def load_rows_with_pit_scope() -> tuple[list[Any], dict[str, Any]]:
+    return load_strict_primary_rows(DB)
+
+
 def load_rows() -> list[Any]:
-    init_db()
-    with sqlite3.connect(DB) as con:
-        con.row_factory = sqlite3.Row
-        return list(
-            con.execute(
-                """SELECT *
-                   FROM experience_ledger
-                   WHERE actual_direction IN ('DOWN','FLAT','UP')
-                     AND settled_at_utc IS NOT NULL
-                   ORDER BY settled_at_utc, experience_id"""
-            ).fetchall()
-        )
+    rows, _ = load_rows_with_pit_scope()
+    return rows
 
 
 def build() -> dict[str, Any]:
-    rows = load_rows()
+    rows, pit_scope = load_rows_with_pit_scope()
     payload = {
         "schema_version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "research_only": True,
         "production_changed": False,
+        "strict_pit_scope": True,
+        "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "description": "PIT-safe case-conditional APS prediction sets for uncertainty-aware output.",
         "alphas": [float(x) for x in ALPHA_GRID],
