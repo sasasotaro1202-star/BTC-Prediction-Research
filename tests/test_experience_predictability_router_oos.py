@@ -9,6 +9,7 @@ from src.experience_predictability_router_oos import (
     _binary_logloss,
     _choose_source,
     _eligible_prior,
+    _meta_predictions,
     _risk,
 )
 
@@ -104,3 +105,10 @@ def test_binary_logloss_is_finite():
 def test_router_constants_keep_causal_validation_window():
     assert MIN_TRAIN >= 100
     assert VALIDATION_SIZE >= 40
+
+def test_meta_predictions_fail_closed_on_short_training_history():
+    rows = [_row(experience_id=i, correct=i % 2, actual="UP" if i % 2 else "DOWN") for i in range(1, 12)]
+    current = _row(experience_id=999, created="2026-10-01T01:00:00+00:00")
+    values = _meta_predictions(rows, [current])
+    assert values.shape == (1,)
+    assert 0.0 <= values[0] <= 1.0
