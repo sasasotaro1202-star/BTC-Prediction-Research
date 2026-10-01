@@ -50,6 +50,7 @@ MIN_TRAIN = 140
 VALIDATION_SIZE = 60
 TIE_EPS = 0.002
 MIN_RELATIVE_GAIN = 0.01
+MIN_SPLIT_RELATIVE_GAIN = 0.005
 ROUTER_REFRESH = 20
 MIN_CONSECUTIVE_SELECTIONS = 2
 MAX_SHRINK = 0.35
@@ -223,7 +224,30 @@ def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, flo
         "meta": meta_values,
     }
     scores = {name: _binary_logloss(labels, candidate_values[name]) for name in CANDIDATES}
+    midpoint = len(labels) // 2
+    split_scores = {
+        "first": {
+            name: _binary_logloss(labels[:midpoint], candidate_values[name][:midpoint])
+            for name in CANDIDATES
+        },
+        "second": {
+            name: _binary_logloss(labels[midpoint:], candidate_values[name][midpoint:])
+            for name in CANDIDATES
+        },
+    }
     best = _select_source_from_scores(scores)
+    if best != "global":
+        global_score = float(scores["global"])
+        required_full = global_score * (1.0 - MIN_RELATIVE_GAIN)
+        qualified = scores[best] < required_full
+        for split in ("first", "second"):
+            split_global = float(split_scores[split]["global"])
+            split_required = split_global * (1.0 - MIN_SPLIT_RELATIVE_GAIN)
+            if split_scores[split][best] >= split_required:
+                qualified = False
+                break
+        if not qualified:
+            best = "global"
     return best, scores, len(validation)
 
 
@@ -441,9 +465,10 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "router_refresh_size": ROUTER_REFRESH,
         "min_consecutive_selections": MIN_CONSECUTIVE_SELECTIONS,
         "min_relative_gain": MIN_RELATIVE_GAIN,
+        "min_split_relative_gain": MIN_SPLIT_RELATIVE_GAIN,
         "source_changes": int(source_changes),
         "candidate_sources": CANDIDATES,
-        "selection_rule": f"lowest_validation_logloss_requires_{MIN_RELATIVE_GAIN:.3f}_relative_gain_and_global_fallback_within_{TIE_EPS}",
+        "selection_rule": f"lowest_validation_logloss_requires_{MIN_RELATIVE_GAIN:.3f}_relative_gain_and_{MIN_SPLIT_RELATIVE_GAIN:.3f}_gain_on_both_validation_halves_with_global_fallback_within_{TIE_EPS}",
         "source_counts": source_counts,
         "raw_source_counts": raw_source_counts,
         "chronological_blocks": blocks,
