@@ -11,6 +11,8 @@ from src.experience_failure_expert_mix_oos import (
     _binary_logloss,
     _eligible_prior,
     _mixed_risk,
+    _fit_temporal_memory,
+    _predict_temporal_memory,
     _sequential_validation_risks,
     _update_weights,
 )
@@ -123,3 +125,32 @@ def test_binary_logloss_contract():
     assert np.isfinite(_binary_logloss(y, p))
     assert ETA > 0.0
     assert VALIDATION_SIZE >= 20
+
+
+def test_temporal_memory_falls_back_below_minimum_support():
+    rows = [_row(experience_id=i, correct=(i % 2 == 0)) for i in range(1, 20)]
+    bundle = _fit_temporal_memory(rows)
+    assert bundle is None
+    pred = _predict_temporal_memory(bundle, rows[:3])
+    assert pred.shape == (3,)
+    assert np.allclose(pred, 0.5)
+
+
+def test_temporal_memory_predictions_are_bounded_with_sufficient_support():
+    rows = [
+        _row(
+            experience_id=i,
+            created=f"2026-09-20T00:{i:02d}:00+00:00",
+            settled=f"2026-09-20T01:{i:02d}:00+00:00",
+            correct=(i % 3 != 0),
+            direction="UP" if i % 2 == 0 else "DOWN",
+            regime="TREND" if i % 4 else "RANGE",
+        )
+        for i in range(1, 81)
+    ]
+    bundle = _fit_temporal_memory(rows)
+    assert bundle is not None
+    values = _predict_temporal_memory(bundle, rows[-5:])
+    assert values.shape == (5,)
+    assert np.isfinite(values).all()
+    assert np.all((values >= 0.0) & (values <= 1.0))
