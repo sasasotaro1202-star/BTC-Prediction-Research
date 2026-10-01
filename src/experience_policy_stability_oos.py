@@ -72,8 +72,11 @@ def evaluate_rows(
     start = int(min_train_rows)
     block_id = 0
     while start < len(ordered):
-        stop = min(len(ordered), start + block_size)
         train_rows = ordered[:start]
+        stop = min(len(ordered), start + block_size)
+        settlement_ts = str(ordered[start]["settled_at_utc"])
+        while stop < len(ordered) and str(ordered[stop]["settled_at_utc"]) == settlement_ts:
+            stop += 1
         test_rows = ordered[start:stop]
         y_true = [1 - int(row["correct"]) for row in test_rows]
         baseline = [_baseline(train_rows)] * len(test_rows)
