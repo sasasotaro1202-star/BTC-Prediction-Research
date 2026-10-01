@@ -19,6 +19,17 @@ STRICT_PRIMARY_ACCUMULATION_TARGET=600
 HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
 MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
+
+# Discovery is deliberately broader than automatic acquisition. These gates
+# keep cost/licence uncertainty and PIT uncertainty fail-closed.
+FREE_ACCESS_VALUES={"public_free","free_limited","public","free","free_registration"}
+BLOCKED_PROVIDER_TERMS={
+ "bloomberg","factset","lseg","refinitiv","morningstar","sp global",
+ "standard and poor","pitchbook","third bridge","polygon.io",
+ "alphavantage","alpha vantage","quandl",
+}
+DISCOVERY_RESEARCH_STATUSES={"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}
+
 PROBES={
  "hyperliquid_ws":("POST","https://api.hyperliquid.xyz/info",{"type":"metaAndAssetCtxs"}),
  "bitget_public_ws":("GET","https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES&symbol=BTCUSDT",None),
@@ -30,6 +41,7 @@ PROBES={
 }
 DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp","bitcoin liquidation historical dataset public API","bitcoin funding rate historical dataset public","bitcoin open interest historical dataset public","bitcoin cross exchange spread historical dataset","bitcoin 5m OHLCV historical public API","bitcoin block fees mempool historical dataset")
 CODE_DISCOVERY_QUERIES=("BTCUSDT filename:csv","bitcoin orderbook filename:parquet","bitcoin funding filename:csv","bitcoin open interest filename:csv","bitcoin liquidation filename:csv","bitcoin OHLCV filename:parquet")
+SOURCES_BY_ID={s.source_id:s for s in SOURCES}
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -39,6 +51,84 @@ def _atomic_write_json(path: Path, payload: object) -> None:
  tmp.replace(path)
 
 
+def _candidate_lifecycle(candidate):
+ text_value=_norm(" ".join(
+  str(candidate.get(k,""))
+  for k in ("name","description","full_name","repository","url","html_url")
+ ))
+ blocked=any(term in text_value for term in BLOCKED_PROVIDER_TERMS)
+ source_url=str(candidate.get("url") or candidate.get("html_url") or "").strip()
+ if blocked:
+  eligibility="REJECTED_BLOCKED_PROVIDER"
+ elif not source_url.startswith("https://"):
+  eligibility="REJECTED_NON_HTTPS"
+ else:
+  eligibility="ELIGIBLE_FOR_RESEARCH_REVIEW"
+ free_status=str(candidate.get("free_status") or "").strip().lower()
+ if free_status in FREE_ACCESS_VALUES:
+  cost_status="VERIFIED_FREE"
+ else:
+  cost_status="UNCONFIRMED"
+ acquisition_adapter=bool(candidate.get("acquisition_adapter_available"))
+ if blocked:
+  acquisition_status="REJECTED"
+ elif not acquisition_adapter:
+  acquisition_status="BLOCKED_UNTIL_VERIFIED_AND_ADAPTER"
+ else:
+  acquisition_status="RESEARCH_ACQUISITION_ALLOWED"
+ return {
+  "stage":"REJECTED" if blocked else "DISCOVERED",
+  "eligibility":eligibility,
+  "cost_status":cost_status,
+  "data_feasibility":"METADATA_ONLY",
+  "pit_status":"UNVERIFIED",
+  "acquisition_status":acquisition_status,
+  "research_selection_eligible":eligibility=="ELIGIBLE_FOR_RESEARCH_REVIEW",
+  "adoption_status":"RESEARCH_CANDIDATE_ONLY",
+  "next_test":(
+   "verify_cost_license_access_pit_and_add_safe_adapter"
+   if not blocked else
+   "no_further_research_unless_policy_changes"
+  ),
+ }
+
+def _decorate_discovery_candidate(candidate):
+ row=dict(candidate)
+ row["lifecycle"]=_candidate_lifecycle(row)
+ return row
+
+def _discovered_candidate_score(candidate):
+ text_value=_norm(" ".join(
+  str(candidate.get(k,""))
+  for k in ("name","description","query")
+ ))
+ value=40.0
+ if "bitcoin" in text_value or re.search(r"\bbtc\b",text_value): value+=20
+ if any(k in text_value for k in ("timestamp","event","publication","api","websocket")): value+=15
+ if any(k in text_value for k in ("dataset","historical","archive","csv","parquet")): value+=10
+ if candidate.get("license"): value+=5
+ # Exploration debt: repeatedly selecting the same candidate loses priority.
+ # This is persisted through selection_count in the durable/state branch.
+ count=max(0,int(candidate.get("selection_count",0) or 0))
+ value+=max(0,12-2*count)
+ if not candidate.get("last_selected_at"): value+=5
+ return round(value,3)
+
+def _discovery_debt():
+ pth=OUT
+ if not pth.is_file():
+  return 0
+ try:
+  obj=json.loads(pth.read_text(encoding="utf-8"))
+  return sum(
+   1 for row in (obj.get("candidates") or {}).values()
+   if row.get("production_eligible") is False
+   and row.get("status") in DISCOVERY_RESEARCH_STATUSES
+   and _candidate_lifecycle(row).get("research_selection_eligible")
+  )
+ except (OSError,ValueError,TypeError,json.JSONDecodeError):
+  return 0
+
 def plan_for_gap(gap):
  gate_gap=max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0)))
  accumulation_gap=max(0,STRICT_PRIMARY_ACCUMULATION_TARGET-int(gap.get("strict_primary",0)))
@@ -47,8 +137,21 @@ def plan_for_gap(gap):
   "strict_primary_accumulation":accumulation_gap,
   "situation_meta_ready":max(0,int(gap.get("situation_meta_target",3000))-int(gap.get("situation_meta_ready_min",0))),
   "online_expert_ready":max(0,int(gap.get("online_expert_target",140))-int(gap.get("online_expert_ready_min",0))),
+  "discovery_pending":max(0,int(gap.get("discovery_pending",0))),
  }
- needs_more=any(v>0 for v in secondary.values())
+ blocking_reasons=[]
+ acquisition_reasons=[]
+ if gate_gap>0:
+  blocking_reasons.append("strict_primary_gate")
+ if accumulation_gap>0:
+  acquisition_reasons.append("strict_primary_accumulation")
+ if secondary["situation_meta_ready"]>0:
+  acquisition_reasons.append("situation_meta_ready")
+ if secondary["online_expert_ready"]>0:
+  acquisition_reasons.append("online_expert_ready")
+ if secondary["discovery_pending"]>0:
+  acquisition_reasons.append("discovery_candidate_review")
+ needs_more=bool(blocking_reasons or acquisition_reasons)
  if gate_gap>0:
   next_action="collect_live_and_refresh_pit"
  elif accumulation_gap>0:
@@ -57,8 +160,12 @@ def plan_for_gap(gap):
   next_action="warm_binance_ws_and_collect_context"
  elif secondary["online_expert_ready"]>0:
   next_action="continue_live_cycles_for_online_expert"
+ elif secondary["discovery_pending"]>0:
+  next_action="discover_and_reselect_frontier"
  else:
   next_action="discover_and_reselect_frontier"
+ secondary["blocking_reasons"]=blocking_reasons
+ secondary["acquisition_reasons"]=acquisition_reasons
  return secondary,needs_more,next_action
 def _norm(value): return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
 def _get(url,method="GET",body=None,token=None):
@@ -127,6 +234,7 @@ def current_gap():
   "strict_primary":0,"target":300,"gap":300,"pit_verified":False,"legacy_unverified":0,
   "situation_meta_ready_min":0,"situation_meta_target":3000,
   "online_expert_ready_min":0,"online_expert_target":140,
+  "discovery_pending":_discovery_debt(),
  }
  if not pth.is_file():
   return default
@@ -145,6 +253,7 @@ def current_gap():
    "situation_meta_target":3000,
    "online_expert_ready_min":min(online) if online else 0,
    "online_expert_target":140,
+   "discovery_pending":_discovery_debt(),
   }
  except (OSError,ValueError,TypeError,json.JSONDecodeError):
   return default
@@ -240,7 +349,7 @@ def acquire_bitget_history(end_ms=None):
 
 
 def acquire_selected_research_data(frontier,gap,selected):
- candidate_ids=[sid for sid in selected if sid=="bitget_public_ws"]
+ candidate_ids=select_auto_acquisition_sources(frontier,selected,gap)
  if gap.get("gap",0)>0 and "bitget_public_ws" not in candidate_ids:
   candidate_ids.append("bitget_public_ws")
  out=[]
@@ -331,7 +440,8 @@ def discover_public_sources():
     }
   except Exception as exc:
    failures.append({"query":query,"platform":"huggingface","error":f"{type(exc).__name__}:{exc}"})
- return list(found.values()), failures
+ return [_decorate_discovery_candidate(row) for row in found.values()], failures
+
 def score(source,state,gap,pr):
  score=100-float(source.priority)*8
  score += 18 if source.access=="public_free" else 8
@@ -347,20 +457,20 @@ def score(source,state,gap,pr):
 def select_sources(frontier,gap,results):
  rows=[(score(s,frontier["source_state"].get(s.source_id,{}),gap,results.get(s.source_id)),s.source_id,s.family) for s in SOURCES]
  for row in frontier.get("candidates",{}).values():
-  if row.get("production_eligible") is not False or row.get("status") not in {"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}:
+  if row.get("production_eligible") is not False or row.get("status") not in DISCOVERY_RESEARCH_STATUSES:
    continue
-  text_value=_norm(" ".join((row.get("name",""),row.get("description",""),row.get("query",""))))
-  value=40.0
-  if "bitcoin" in text_value or re.search(r"\bbtc\b",text_value): value+=20
-  if any(k in text_value for k in ("timestamp","event","publication","api","websocket")): value+=15
-  if any(k in text_value for k in ("dataset","historical","archive","csv","parquet")): value+=10
-  if row.get("license"): value+=5
+  lifecycle=row.get("lifecycle") or _candidate_lifecycle(row)
+  if lifecycle.get("eligibility")!="ELIGIBLE_FOR_RESEARCH_REVIEW":
+   continue
+  # Discovery selection is research-only. Unknown cost/PIT may be investigated,
+  # but cannot auto-enter acquisition or production.
+  value=_discovered_candidate_score(row)
   rows.append((value,row["candidate_id"],"discovered"))
  rows.sort(key=lambda x:(-x[0],x[1]))
  discovered_rows=[
   row for row in rows
   if row[1] in frontier.get("candidates",{})
-  and (frontier["candidates"].get(row[1]) or {}).get("status") in {"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}
+  and (frontier["candidates"].get(row[1]) or {}).get("status") in DISCOVERY_RESEARCH_STATUSES
  ]
  reserved_discovered=None
  if discovered_rows:
@@ -368,8 +478,8 @@ def select_sources(frontier,gap,results):
   if best_discovered[0] >= 60:
    reserved_discovered=best_discovered[1]
 
- # Reserve one exploration slot on every cycle when a sufficiently relevant
- # discovered candidate exists. The candidate remains research-only/unverified.
+ # Reserve one exploration slot when qualified discovery debt exists.
+ # selection_count lowers priority on repeated picks, preventing starvation.
  selected=[]; families=set()
  if reserved_discovered is not None:
   selected.append(reserved_discovered); families.add("discovered")
@@ -384,6 +494,21 @@ def select_sources(frontier,gap,results):
    continue
   if sid not in selected: selected.append(sid)
  return selected
+
+def select_auto_acquisition_sources(frontier,selected,gap):
+ # Only sources with an implemented safe acquisition adapter may auto-acquire.
+ # Currently Bitget historical candles are the bounded adapter; discovered
+ # GitHub/Hugging Face candidates remain verification debt.
+ out=[]
+ if (gap.get("gap",0)>0 or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET) and "bitget_public_ws" in SOURCES_BY_ID:
+  out.append("bitget_public_ws") if "bitget_public_ws" in selected else None
+ for sid in selected:
+  if sid in frontier.get("candidates",{}):
+   row=frontier["candidates"][sid]
+   lc=row.get("lifecycle") or _candidate_lifecycle(row)
+   if lc.get("cost_status")=="VERIFIED_FREE" and lc.get("acquisition_adapter_available"):
+    out.append(sid)
+ return list(dict.fromkeys(out))
 def persist_snapshot(result):
  if result.get("status")!="OK": return None
  SNAPSHOT_DIR.mkdir(parents=True,exist_ok=True); stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -447,8 +572,18 @@ def run():
   "promotion_gate_target":int(gap.get("target",300)),
   "accumulation_target":STRICT_PRIMARY_ACCUMULATION_TARGET,
   "remaining":secondary_gaps,
+  "blocking_reasons":list(secondary_gaps.get("blocking_reasons",[])),
+  "acquisition_reasons":list(secondary_gaps.get("acquisition_reasons",[])),
   "repeat_until_data_sufficient":repeat_until_data_sufficient,
   "stop_when_all_targets_met":True,
+ },
+ "selection_policy":{
+  "reselect_after_acquisition":True,
+  "reselect_after_new_data":True,
+  "continue_discovery":True,
+  "continue_selection":True,
+  "persistent_selection_count":True,
+  "anti_starvation":"selection_count_penalty",
  },
  "next_best_action":next_action,
  "actions":{
@@ -460,6 +595,7 @@ def run():
   "continue_discovery":True,
   "continue_selection":True,
   "repeat_until_data_sufficient":repeat_until_data_sufficient,
+  "pending_discovery_review":secondary_gaps.get("discovery_pending",0)>0,
   "recompute_after_collection":True,
   "reselect_after_acquisition":True,
  },
