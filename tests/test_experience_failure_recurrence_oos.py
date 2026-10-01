@@ -5,9 +5,12 @@ import numpy as np
 from src.experience_case_adaptive_controller_oos import CLASSES
 from src.experience_failure_recurrence_oos import (
     MIN_CASE_SUPPORT,
+    RECURRENCE_REFRESH,
     _eligible_prior,
     _recurrence_features,
     _fit_prequential,
+    _fit_prequential_model,
+    _predict_prequential_model,
 )
 
 
@@ -121,3 +124,23 @@ def test_support_floor_is_positive_and_stable():
     empty = _recurrence_features([], current)
     assert empty["case_support"] == 0.0
     assert np.isfinite(list(empty.values())).all()
+
+def test_bounded_lifetime_recurrence_model_is_finite_and_refresh_is_positive():
+    prior = [
+        _row(
+            experience_id=i,
+            created=f"2026-09-{25 + (i // 50):02d}T{(i % 24):02d}:{i % 60:02d}:00+00:00",
+            settled=f"2026-09-{25 + (i // 50):02d}T{(i % 24):02d}:{(i % 60 + 1):02d}:00+00:00",
+            correct=i % 2,
+            actual="UP" if i % 2 else "DOWN",
+        )
+        for i in range(1, 121)
+    ]
+    model, baseline = _fit_prequential_model(prior)
+    assert RECURRENCE_REFRESH >= 5
+    assert 0.0 <= baseline <= 1.0
+    if model is not None:
+        preds = _predict_prequential_model(model, prior[-5:], prior[-5:], baseline)
+        assert preds.shape == (5,)
+        assert np.isfinite(preds).all()
+        assert np.all((preds >= 0.0) & (preds <= 1.0))
