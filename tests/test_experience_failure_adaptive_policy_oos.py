@@ -3,19 +3,25 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from src.experience_case_adaptive_controller_oos import CLASSES
+from src.experience_case_adaptive_controller_oos import (
+    CLASSES,
+    _case_key,
+)
 from src.experience_failure_adaptive_policy_oos import (
     ABSTAIN_THRESHOLD,
     MAX_SHRINK,
     MIN_COVERAGE,
     MIN_VALIDATION_SUPPORT,
     POLICY_GRID,
+    RISK_REFRESH,
     RiskRecord,
     _apply_policy,
     _choose_policy,
     _eligible_prior,
     _eligible_risk_records,
+    _fit_risk_model,
     _metrics,
+    _predict_risk_model,
 )
 
 
@@ -49,7 +55,7 @@ def _record(i, *, risk=0.8, correct=True):
     return RiskRecord(
         experience_id=i,
         horizon="5m",
-        case_key=("5m", "TREND", "UP", "0.70+", "binance_primary"),
+        case_key=("5m", "TREND", "UP", "0.70+", "binance_primary", "CLEAN"),
         created_at_utc=datetime.fromtimestamp(i * 60, tz=timezone.utc),
         settled_at_utc=datetime.fromtimestamp(i * 60 + 300, tz=timezone.utc),
         y_index=2 if correct else 0,
@@ -157,3 +163,32 @@ def test_policy_selection_filters_unsettled_risk_records():
         error_risk=usable.error_risk,
     )
     assert [r.experience_id for r in _eligible_risk_records([usable, late_settlement], current)] == [1]
+
+
+def test_policy_case_key_uses_shared_six_axis_identity():
+    row = _row()
+    assert len(_case_key(row)) == 6
+    assert _case_key(row)[4] == "binance_primary"
+    assert _case_key(row)[5] == "CLEAN"
+
+
+def test_bounded_risk_model_refresh_is_finite():
+    rows = [
+        _row(
+            experience_id=i,
+            created=f"2026-09-{25 + i // 30:02d}T{(i % 24):02d}:{i % 60:02d}:00+00:00",
+            settled=f"2026-09-{25 + i // 30:02d}T{(i % 24):02d}:{(i % 60 + 1):02d}:00+00:00",
+            correct=i % 2,
+            actual="UP" if i % 2 else "DOWN",
+            direction="UP" if i % 2 else "DOWN",
+        )
+        for i in range(1, 121)
+    ]
+    model, default = _fit_risk_model(rows)
+    assert RISK_REFRESH >= 5
+    assert 0.0 <= default <= 1.0
+    if model is not None:
+        values = _predict_risk_model(model, rows[-5:], default)
+        assert values.shape == (5,)
+        assert np.isfinite(values).all()
+        assert np.all((values >= 0.0) & (values <= 1.0))
