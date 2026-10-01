@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -96,8 +97,8 @@ def test_sequential_validation_risks_are_finite_and_bounded():
     train = [
         _row(
             experience_id=i,
-            created=f"2026-09-20T00:{i:02d}:00+00:00",
-            settled=f"2026-09-20T00:{i:02d}:30+00:00",
+            created=(datetime(2026, 9, 20, tzinfo=timezone.utc) + timedelta(minutes=i)).isoformat(),
+            settled=(datetime(2026, 9, 20, tzinfo=timezone.utc) + timedelta(minutes=i, seconds=30)).isoformat(),
             correct=(i % 2 == 0),
             direction="UP" if i % 2 == 0 else "DOWN",
         )
@@ -142,8 +143,8 @@ def test_temporal_memory_predictions_are_bounded_with_sufficient_support():
     rows = [
         _row(
             experience_id=i,
-            created=f"2026-09-20T00:{i:02d}:00+00:00",
-            settled=f"2026-09-20T01:{i:02d}:00+00:00",
+            created=(datetime(2026, 9, 20, tzinfo=timezone.utc) + timedelta(minutes=i)).isoformat(),
+            settled=(datetime(2026, 9, 20, 1, tzinfo=timezone.utc) + timedelta(minutes=i)).isoformat(),
             correct=(i % 3 != 0),
             direction="UP" if i % 2 == 0 else "DOWN",
             regime="TREND" if i % 4 else "RANGE",
