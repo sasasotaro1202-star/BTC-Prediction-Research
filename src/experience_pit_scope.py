@@ -54,7 +54,7 @@ def _strict_prediction_ok(
         return False, "scenario_not_object"
 
     provenance = scenario.get("provenance")
-    if not isinstance(provenance, dict):
+    if not isinstance(provenance, dict) or not provenance:
         return False, "missing_top_level_provenance"
 
     top_errors = validate_provenance_envelope(provenance, "experience")
