@@ -618,7 +618,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             self.assertEqual(evidence["by_source"]["deribit_public"]["status"],"MISSING")
             self.assertEqual(evidence["cross_source"]["overlap_event_times"],1)
             self.assertEqual(evidence["cross_source"]["duplicate_event_rows"],1)
-            self.assertIn("not historical-dataset completeness",evidence["note"])
+            self.assertIn("artifact_status",evidence["note"])
 
     def test_durable_acquisition_state_is_not_marked_missing_when_workspace_artifact_is_absent(self):
         with tempfile.TemporaryDirectory() as td:
