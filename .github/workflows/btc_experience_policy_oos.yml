@@ -70,8 +70,8 @@ on:
       - '.github/workflows/btc_experience_policy_oos.yml'
 
 concurrency:
-  group: btc-experience-policy-oos-${{ github.ref }}
-  cancel-in-progress: true
+  group: btc-experience-policy-oos-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
