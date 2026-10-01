@@ -728,6 +728,31 @@ def acquire_selected_research_data(frontier,gap,selected):
  return out
 
 
+def _quarantine_discovery_noise(frontier):
+ quarantined=0
+ for candidate in frontier.get("candidates",{}).values():
+  if (
+   candidate.get("platform")=="github_code"
+   and candidate.get("status") in DISCOVERY_RESEARCH_STATUSES
+   and not _has_direct_discovery_signal(candidate)
+  ):
+   candidate["status"]="REJECTED_DISCOVERY_NOISE"
+   candidate["production_eligible"]=False
+   candidate["rejection_reason"]="low_signal_code_search_match"
+   candidate["lifecycle"]={
+    "stage":"REJECTED",
+    "eligibility":"REJECTED_DISCOVERY_NOISE",
+    "cost_status":"UNCONFIRMED",
+    "data_feasibility":"METADATA_ONLY",
+    "pit_status":"UNVERIFIED",
+    "acquisition_status":"REJECTED",
+    "research_selection_eligible":False,
+    "adoption_status":"RESEARCH_CANDIDATE_ONLY",
+    "next_test":"none_until_new_direct_signal",
+   }
+   quarantined+=1
+ return quarantined
+
 def discover_public_sources():
  found={}
  failures=[]
@@ -874,6 +899,7 @@ def run():
   if r.get("event_time"): state["last_source_event_time"]=r["event_time"]
   snapshots.append({k:v for k,v in r.items() if k!="payload"})
  discovered, discovery_failures=discover_public_sources()
+ quarantined_discovery_noise=_quarantine_discovery_noise(frontier)
  for c in discovered:
   old=frontier["candidates"].get(c["candidate_id"],{}); old.update(c); old["first_seen"]=old.get("first_seen",now_utc()); old["last_seen"]=now_utc(); frontier["candidates"][c["candidate_id"]]=old
  selected_before_acquisition=select_sources(frontier,gap,results)
@@ -906,6 +932,7 @@ def run():
  "successful_probes":sum(r["status"]=="OK" for r in results.values()),
  "failed_probes":sum(r["status"]=="ERROR" for r in results.values()),
  "new_discovered_candidates":len(discovered),
+ "quarantined_discovery_noise":quarantined_discovery_noise,
  "discovery_failures":discovery_failures,
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
@@ -955,15 +982,17 @@ def run():
  },
  }
  frontier["acquisition_evidence"]=acquisition_evidence
+ frontier["discovery_quarantined_total"]=int(frontier.get("discovery_quarantined_total",0))+quarantined_discovery_noise
  frontier["candidate_count"]=len(frontier["candidates"])
- frontier["durable_change"]=len(discovered)>0
+ frontier["durable_change"]=bool(discovered) or bool(quarantined_discovery_noise)
  frontier["history"]=list(frontier.get("history") or [])
- frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids_before_acquisition":selected_before_acquisition,"selected_source_ids":selected,"reselected_after_acquisition":True,"selected_discovered_source_ids":selected_discovered,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"],"acquisition_statuses":[x.get("status") for x in acquisitions]})
+ frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids_before_acquisition":selected_before_acquisition,"selected_source_ids":selected,"reselected_after_acquisition":True,"selected_discovered_source_ids":selected_discovered,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"],"quarantined_discovery_noise":runrec["quarantined_discovery_noise"],"acquisition_statuses":[x.get("status") for x in acquisitions]})
  frontier["history"]=frontier["history"][-96:]
  durable={
   "schema_version":1,
   "updated_at":now_utc() if discovered else frontier.get("updated_at"),
   "candidate_count":len(frontier["candidates"]),
+  "discovery_quarantined_total":int(frontier.get("discovery_quarantined_total",0)),
   "candidates":dict(sorted(frontier["candidates"].items())),
   "acquisition_evidence":acquisition_evidence,
   "policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"},
