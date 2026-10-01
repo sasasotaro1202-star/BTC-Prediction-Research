@@ -160,3 +160,18 @@ def test_case_prior_is_shrunk_toward_global_when_support_is_small():
     global_error = _baseline_error(matching + global_history)
     assert 0.0 <= global_error <= 1.0
     assert np.isclose(posterior.sum(), 1.0)
+
+
+def test_case_correction_blend_is_bounded_even_with_large_support():
+    from src.experience_case_conditional_policy_oos import MAX_CORRECTION_BLEND
+    base = np.asarray([0.20, 0.30, 0.50], dtype=float)
+    case_prior = np.asarray([0.90, 0.05, 0.05], dtype=float)
+    _, blend, action = _case_correction(
+        base,
+        case_prior,
+        support=10_000,
+        error_risk=1.0,
+        baseline_error=0.1,
+    )
+    assert action == "CASE_CORRECTION"
+    assert 0.0 < blend <= MAX_CORRECTION_BLEND
