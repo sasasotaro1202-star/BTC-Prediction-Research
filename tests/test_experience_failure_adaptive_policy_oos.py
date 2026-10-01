@@ -11,11 +11,13 @@ from src.experience_failure_adaptive_policy_oos import (
     ABSTAIN_THRESHOLD,
     MAX_SHRINK,
     MIN_COVERAGE,
+    MIN_CASE_VALIDATION_SUPPORT,
     MIN_VALIDATION_SUPPORT,
     POLICY_GRID,
     RISK_REFRESH,
     RiskRecord,
     _apply_policy,
+    _choose_case_or_global_policy,
     _choose_policy,
     _eligible_prior,
     _eligible_risk_records,
@@ -192,3 +194,29 @@ def test_bounded_risk_model_refresh_is_finite():
         assert values.shape == (5,)
         assert np.isfinite(values).all()
         assert np.all((values >= 0.0) & (values <= 1.0))
+
+
+def test_case_policy_uses_matured_history_when_case_support_is_sufficient():
+    current = _record(999, risk=0.6)
+    case_history = [
+        _record(i, risk=0.85 if i <= 15 else 0.45, correct=(i > 15))
+        for i in range(1, MIN_VALIDATION_SUPPORT + 1)
+    ]
+    other_history = [
+        RiskRecord(
+            experience_id=1000 + i,
+            horizon="5m",
+            case_key=("5m", "RANGE", "DOWN", "0.40-0.50", "binance_primary", "CLEAN"),
+            created_at_utc=datetime.fromtimestamp((1000 + i) * 60, tz=timezone.utc),
+            settled_at_utc=datetime.fromtimestamp((1000 + i) * 60 + 300, tz=timezone.utc),
+            y_index=0,
+            base_probability=(0.80, 0.10, 0.10),
+            baseline_error=0.35,
+            error_risk=0.55,
+        )
+        for i in range(1, MIN_VALIDATION_SUPPORT + 1)
+    ]
+    policy, detail = _choose_case_or_global_policy(case_history + other_history, current)
+    assert policy in POLICY_GRID
+    assert detail["source"] == "case_matured_failure_history"
+    assert detail["case_support"] == MIN_CASE_VALIDATION_SUPPORT
