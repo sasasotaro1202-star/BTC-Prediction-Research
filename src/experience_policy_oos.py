@@ -1,0 +1,320 @@
+"""Research-only prequential learning from settled BTC experience.
+
+The learner predicts the probability that the next prediction will be wrong.
+For every evaluated experience, training data contains only earlier settled
+experiences. The learned risk score can later inform abstention/confidence
+policies, but this module never mutates production state.
+"""
+from __future__ import annotations
+
+import json
+import math
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss, log_loss
+
+try:
+    from db import DB, init_db
+except ModuleNotFoundError:
+    from src.db import DB, init_db
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "data" / "historical_research" / "experience_policy_oos.json"
+CONFIG = ROOT / "config" / "EXPERIENCE_POLICY_OOS.json"
+
+DEFAULT_CONFIG = {
+    "schema_version": 1,
+    "min_train_rows": 100,
+    "thresholds": [0.55, 0.60, 0.65, 0.70],
+    "max_report_cases": 100,
+    "model_c": 0.5,
+}
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _config(path: Path = CONFIG) -> dict[str, Any]:
+    if not path.is_file():
+        return dict(DEFAULT_CONFIG)
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(obj, dict):
+            return dict(DEFAULT_CONFIG)
+        out = dict(DEFAULT_CONFIG)
+        out.update(obj)
+        return out
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return dict(DEFAULT_CONFIG)
+
+
+def _parse_ts(value: Any) -> datetime:
+    text = str(value).replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp must include timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _flag_tokens(value: Any, prefix: str) -> list[str]:
+    if value in (None, "", "[]", "null"):
+        return []
+    try:
+        obj = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return [prefix + ":invalid_json"]
+    if isinstance(obj, list):
+        return [prefix + ":" + str(item) for item in obj if item not in (None, "")]
+    return [prefix + ":present"]
+
+
+def _features(row: Any) -> dict[str, float | str]:
+    """Prediction-time features only; no realized outcome fields are included."""
+    created = _parse_ts(row["created_at_utc"])
+    hour = created.hour + created.minute / 60.0
+    confidence = float(row["confidence"])
+    entropy = float(row["entropy"])
+    margin = float(row["margin"])
+    values: dict[str, float | str] = {
+        "confidence": confidence,
+        "entropy": entropy,
+        "margin": margin,
+        "hour_sin": math.sin(2.0 * math.pi * hour / 24.0),
+        "hour_cos": math.cos(2.0 * math.pi * hour / 24.0),
+        "warning_count": float(len(_flag_tokens(row["warning_flags"], "warning"))),
+        "quality_flag_count": float(len(_flag_tokens(row["data_quality_flags"], "quality"))),
+        "regime": str(row["regime"] or "UNKNOWN"),
+        "predicted_direction": str(row["predicted_direction"]),
+        "production_mode": str(row["production_mode"] or "UNKNOWN"),
+        "model_version": str(row["model_version"] or "UNKNOWN"),
+    }
+    for token in _flag_tokens(row["warning_flags"], "warning"):
+        values["flag:" + token] = 1.0
+    for token in _flag_tokens(row["data_quality_flags"], "quality"):
+        values["flag:" + token] = 1.0
+    return values
+
+
+def _safe_normalize_probability(value: float) -> float:
+    return float(min(1.0 - 1e-6, max(1e-6, value)))
+
+
+def _baseline(train_rows: list[Any]) -> float:
+    errors = sum(int(row["correct"] == 0) for row in train_rows)
+    n = len(train_rows)
+    return _safe_normalize_probability((errors + 1.0) / (n + 2.0))
+
+
+def _metrics(y_true: list[int], probabilities: list[float]) -> dict[str, float]:
+    if not y_true:
+        return {"n": 0, "logloss": math.nan, "brier": math.nan, "error_rate": math.nan}
+    y = np.asarray(y_true, dtype=int)
+    p = np.asarray([_safe_normalize_probability(v) for v in probabilities], dtype=float)
+    return {
+        "n": int(len(y)),
+        "logloss": float(log_loss(y, p, labels=[0, 1])),
+        "brier": float(brier_score_loss(y, p)),
+        "error_rate": float(np.mean(y)),
+    }
+
+
+def _fit_predict(train_rows: list[Any], test_rows: list[Any], model_c: float) -> tuple[list[float], bool, list[str]]:
+    baseline = _baseline(train_rows)
+    try:
+        vectorizer = DictVectorizer(sparse=True)
+        x_train = vectorizer.fit_transform([_features(row) for row in train_rows])
+        x_test = vectorizer.transform([_features(row) for row in test_rows])
+        y_train = np.asarray([1 - int(row["correct"]) for row in train_rows], dtype=int)
+        if len(np.unique(y_train)) < 2:
+            return [baseline] * len(test_rows), False, []
+        model = LogisticRegression(
+            C=float(model_c),
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=42,
+        )
+        model.fit(x_train, y_train)
+        p = model.predict_proba(x_test)
+        class_index = {int(c): i for i, c in enumerate(model.classes_)}
+        probabilities = [
+            _safe_normalize_probability(float(row[class_index[1]]))
+            if 1 in class_index
+            else baseline
+            for row in p
+        ]
+        names = list(vectorizer.get_feature_names_out())
+        coef = model.coef_[0]
+        ranked = sorted(
+            zip(names, coef, strict=False),
+            key=lambda x: abs(float(x[1])),
+            reverse=True,
+        )
+        drivers = [
+            f"{name}={'+' if value >= 0 else ''}{float(value):.6f}"
+            for name, value in ranked[:12]
+        ]
+        return probabilities, True, drivers
+    except (ValueError, TypeError, FloatingPointError):
+        return [baseline] * len(test_rows), False, []
+
+
+def prequential_evaluate(
+    rows: list[Any],
+    *,
+    min_train_rows: int = 100,
+    thresholds: tuple[float, ...] = (0.55, 0.60, 0.65, 0.70),
+    block_size: int = 1,
+    model_c: float = 0.5,
+) -> dict[str, Any]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            _parse_ts(row["settled_at_utc"]),
+            int(row["experience_id"]),
+        ),
+    )
+    if len(ordered) <= min_train_rows:
+        return {
+            "status": "DEFERRED",
+            "reason": "insufficient_settled_experience",
+            "rows": len(ordered),
+            "min_train_rows": min_train_rows,
+        }
+
+    y_meta: list[int] = []
+    p_meta: list[float] = []
+    p_baseline: list[float] = []
+    cases: list[dict[str, Any]] = []
+    model_fit_count = 0
+    fallback_count = 0
+    latest_drivers: list[str] = []
+
+    for start in range(min_train_rows, len(ordered), max(1, int(block_size))):
+        train_rows = ordered[:start]
+        test_rows = ordered[start:min(len(ordered), start + max(1, int(block_size)))]
+        if not test_rows:
+            continue
+        probabilities, fitted, drivers = _fit_predict(train_rows, test_rows, model_c)
+        if fitted:
+            model_fit_count += 1
+            latest_drivers = drivers
+        else:
+            fallback_count += 1
+        baseline = _baseline(train_rows)
+        for row, p in zip(test_rows, probabilities, strict=False):
+            error = 1 - int(row["correct"])
+            y_meta.append(error)
+            p_meta.append(p)
+            p_baseline.append(baseline)
+            cases.append({
+                "experience_id": int(row["experience_id"]),
+                "prediction_id": int(row["prediction_id"]),
+                "horizon": str(row["horizon"]),
+                "settled_at_utc": str(row["settled_at_utc"]),
+                "predicted_direction": str(row["predicted_direction"]),
+                "correct": int(row["correct"]),
+                "learned_error_probability": float(p),
+                "baseline_error_probability": float(baseline),
+            })
+
+    meta = _metrics(y_meta, p_meta)
+    baseline_metrics = _metrics(y_meta, p_baseline)
+    threshold_metrics: dict[str, dict[str, float | int | None]] = {}
+    for threshold in thresholds:
+        keep = [idx for idx, p in enumerate(p_meta) if p < float(threshold)]
+        abstain = [idx for idx, p in enumerate(p_meta) if p >= float(threshold)]
+        kept_correct = sum(1 - y_meta[idx] for idx in keep)
+        abstain_errors = sum(y_meta[idx] for idx in abstain)
+        threshold_metrics[f"{float(threshold):.2f}"] = {
+            "threshold_error_probability": float(threshold),
+            "coverage": float(len(keep) / len(y_meta)) if y_meta else 0.0,
+            "kept_n": int(len(keep)),
+            "kept_accuracy": float(kept_correct / len(keep)) if keep else None,
+            "abstain_n": int(len(abstain)),
+            "abstain_error_rate": float(abstain_errors / len(abstain)) if abstain else None,
+        }
+
+    high_risk = sorted(
+        cases,
+        key=lambda row: (-float(row["learned_error_probability"]), row["settled_at_utc"], row["experience_id"]),
+    )[:max(1, int(_config().get("max_report_cases", 100)))]
+    return {
+        "status": "OK",
+        "rows": len(ordered),
+        "prequential_test_rows": len(y_meta),
+        "min_train_rows": int(min_train_rows),
+        "block_size": int(block_size),
+        "model": {
+            "type": "logistic_regression",
+            "target": "prediction_error",
+            "trained_only_on_prior_settled_experiences": True,
+            "model_fit_count": int(model_fit_count),
+            "fallback_count": int(fallback_count),
+            "latest_feature_drivers": latest_drivers,
+        },
+        "meta_error_probability": meta,
+        "baseline_error_probability": baseline_metrics,
+        "delta_logloss_meta_minus_baseline": float(meta["logloss"] - baseline_metrics["logloss"]),
+        "delta_brier_meta_minus_baseline": float(meta["brier"] - baseline_metrics["brier"]),
+        "threshold_policy_candidates": threshold_metrics,
+        "high_risk_cases_latest": high_risk,
+    }
+
+
+def build(
+    db_path: Path = DB,
+    *,
+    config_path: Path = CONFIG,
+    output_path: Path = OUT,
+) -> dict[str, Any]:
+    cfg = _config(config_path)
+    init_db()
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        rows_by_horizon: dict[str, list[Any]] = {"5m": [], "10m": []}
+        for row in con.execute(
+            """SELECT * FROM experience_ledger
+               WHERE horizon IN ('5m','10m')
+               ORDER BY settled_at_utc, experience_id"""
+        ).fetchall():
+            rows_by_horizon[str(row["horizon"])].append(row)
+
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "generated_at_utc": now_utc(),
+        "research_only": True,
+        "production_changed": False,
+        "promotion_evidence_eligible": False,
+        "experience_source": "experience_ledger",
+        "learning_boundary": "each test case is scored using only earlier settled experiences",
+        "config": cfg,
+        "horizons": {},
+    }
+    for horizon, rows in rows_by_horizon.items():
+        result = prequential_evaluate(
+            rows,
+            min_train_rows=int(cfg["min_train_rows"]),
+            thresholds=tuple(float(x) for x in cfg["thresholds"]),
+            block_size=1,
+            model_c=float(cfg["model_c"]),
+        )
+        payload["horizons"][horizon] = result
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+if __name__ == "__main__":
+    report = build()
+    print(json.dumps(report, ensure_ascii=False))
