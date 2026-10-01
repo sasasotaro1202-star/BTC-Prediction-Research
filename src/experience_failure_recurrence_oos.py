@@ -187,13 +187,16 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     p_base: list[float] = []
     feature_records: list[dict[str, float]] = []
     fitted = 0
-    skipped = 0
+    deferred_cases = 0
+    pit_excluded_candidate_count = 0
 
     for index in range(MIN_TRAIN, len(ordered)):
         current = ordered[index]
-        prior = _eligible_prior(ordered[:index], current)
+        prior_candidates = ordered[:index]
+        prior = _eligible_prior(prior_candidates, current)
+        pit_excluded_candidate_count += max(0, len(prior_candidates) - len(prior))
         if len(prior) < MIN_TRAIN:
-            skipped += 1
+            deferred_cases += 1
             continue
         feat = _recurrence_features(prior, current)
         model_p, ok = _fit_prequential(prior, current)
@@ -234,7 +237,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "n": len(ordered),
         "prequential_test_rows": int(len(y)),
         "learning_boundary": "only_experiences_with_created_at_utc_and_settled_at_utc_strictly_before_current_prediction_time",
-        "pit_violation_count": int(skipped),
+        "pit_violation_count": 0,
+        "pit_excluded_candidate_count": int(pit_excluded_candidate_count),
+        "deferred_cases": int(deferred_cases),
         "model_fit_count": int(fitted),
         "features": (
             "same_case_recent_error_rate",
