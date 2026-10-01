@@ -1,0 +1,125 @@
+name: BTC Experience Policy OOS Learning
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/experience_policy_oos.py'
+      - 'src/experience_ledger.py'
+      - 'tests/test_experience_policy_oos.py'
+      - 'config/EXPERIENCE_POLICY_OOS.json'
+      - '.github/workflows/btc_experience_policy_oos.yml'
+
+concurrency:
+  group: btc-experience-policy-oos
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  learn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fail closed if scheduled run is stale
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          test "${remote_sha}" = "${GITHUB_SHA}" || {
+            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+            exit 1
+          }
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Restore settled prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          from src.db import init_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          init_db()
+          PY
+
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+
+      - name: Run experience ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py
+          test -s data/experience/experience_summary.json
+
+      - name: Run prequential experience policy learning
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_policy_oos.py
+          test -s data/historical_research/experience_policy_oos.json
+
+      - name: Run focused tests
+        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py
+
+      - name: Validate research-only and no-leakage contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_policy_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("experience policy must remain research-only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("experience policy changed production state")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("experience policy cannot bypass promotion gate")
+          if "prior_settled_experiences" not in str(obj.get("learning_boundary","")):
+              raise SystemExit("experience learning boundary missing")
+          horizons=obj.get("horizons")
+          if not isinstance(horizons,dict) or set(horizons) != {"5m","10m"}:
+              raise SystemExit("experience policy horizons incomplete")
+          for h,item in horizons.items():
+              if item.get("status") == "OK":
+                  if item.get("model",{}).get("trained_only_on_prior_settled_experiences") is not True:
+                      raise SystemExit(f"{h}: prequential boundary missing")
+          print("BTC experience policy OOS: VERIFIED")
+          PY
+
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-experience-policy-oos-${{ github.run_id }}
+          path: |
+            data/experience/experience_summary.json
+            data/historical_research/experience_policy_oos.json
+          if-no-files-found: error
+          retention-days: 14
