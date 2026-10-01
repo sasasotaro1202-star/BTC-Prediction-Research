@@ -192,9 +192,8 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
     def test_selection_count_is_persistent_state_signal(self):
         state={"selection_count":5,"successful_probes":0,"consecutive_failures":0}
-        self.assertGreaterEqual(
-            mod.score(mod.get_source("mempool_space"),state,{"gap":159},{ }),0
-        )
+        source=next(src for src in mod.SOURCES if src.source_id=="mempool_space")
+        self.assertGreaterEqual(mod.score(source,state,{"gap":159},{}),0)
 
     def test_workflow_persists_state_even_when_recovery_step_fails(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
