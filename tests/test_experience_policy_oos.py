@@ -206,8 +206,8 @@ def test_build_is_research_only_and_does_not_mutate_production(tmp_path):
 
 def test_prequential_does_not_split_settlement_timestamp_at_block_boundary(monkeypatch):
     rows = [_row(i, 1) for i in range(8)]
-    shared_ts = rows[1]["settled_at_utc"]
-    rows[2]["settled_at_utc"] = shared_ts
+    shared_ts = rows[2]["settled_at_utc"]
+    rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
     def fake_fit(train_rows, test_rows, model_c):
@@ -216,7 +216,7 @@ def test_prequential_does_not_split_settlement_timestamp_at_block_boundary(monke
 
     monkeypatch.setattr(mod, "_fit_predict", fake_fit)
     monkeypatch.setattr(mod, "_hierarchical_memory_predict", lambda train_rows, test_rows: [0.5] * len(test_rows))
-    out = mod.prequential_evaluate(rows, min_train_rows=3, block_size=1)
+    out = mod.prequential_evaluate(rows, min_train_rows=2, block_size=1)
     assert out["status"] == "OK"
-    assert any(event[0] == "fit" and event[2] == [3] for event in seen)
-    assert any(event[0] == "fit" and event[2] == [4] and event[1][:3] == [1, 2, 3] for event in seen)
+    assert any(event[0] == "fit" and event[2] == [3, 4] and event[1] == [1, 2] for event in seen)
+    assert any(event[0] == "fit" and event[2] == [5] and event[1][:4] == [1, 2, 3, 4] for event in seen)
