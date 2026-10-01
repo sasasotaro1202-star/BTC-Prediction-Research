@@ -42,7 +42,7 @@ PROBES={
  "hyperliquid_ws":("POST","https://api.hyperliquid.xyz/info",{"type":"metaAndAssetCtxs"}),
  "bitget_public_ws":("GET","https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES&symbol=BTCUSDT",None),
  "binance_options_public":("GET","https://eapi.binance.com/eapi/v1/exchangeInfo",None),
- "deribit_public":("GET","https://www.deribit.com/api/v2/public/get_ticker?instrument_name=BTC-PERPETUAL",None),
+ "deribit_public":("GET","https://www.deribit.com/api/v2/public/ticker?instrument_name=BTC-PERPETUAL",None),
  "mempool_space":("GET","https://mempool.space/api/v1/fees/recommended",None),
  "brk_bitview":("GET","https://bitview.space/",None),
  "us_treasury_yield_curve":("GET","https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml",None),
@@ -836,7 +836,11 @@ def score(source,state,gap,pr):
  score += 8 if source.realtime else 0
  score += 8 if source.historical else 0
  score += 20 if pr and pr.get("status")=="OK" else (-18 if pr else 0)
- score += min(10,int(state.get("successful_probes",0))*.5)-min(12,int(state.get("consecutive_failures",0))*2)
+ probe_failures=int(state.get("probe_consecutive_failures",state.get("consecutive_failures",0)) or 0)
+ acquisition_failures=int(state.get("historical_acquisition_failures",0) or 0)
+ score += min(10,int(state.get("successful_probes",0))*.5)
+ score -= min(12,probe_failures*2)
+ if source.historical: score -= min(6,acquisition_failures*2)
  if gap["gap"]>0 and source.family in {"exchange_derivatives","options","bitcoin_network","bitcoin_onchain","institutional_derivatives","capital_flow"}: score+=15
  return round(score,3)
 def select_sources(frontier,gap,results):
@@ -894,7 +898,11 @@ def run():
   state=frontier["source_state"].setdefault(sid,{})
   if r["status"]=="OK":
    state["successful_probes"]=int(state.get("successful_probes",0))+1; state["consecutive_failures"]=0; state["last_ok_at"]=r["retrieved_at"]; state["last_snapshot"]=persist_snapshot(r)
-  else: state["consecutive_failures"]=int(state.get("consecutive_failures",0))+1
+  else: state["probe_consecutive_failures"]=int(state.get("probe_consecutive_failures",state.get("consecutive_failures",0)) or 0)+1
+  state["consecutive_failures"]=int(state.get("probe_consecutive_failures",0))
+  if r["status"]=="OK":
+   state["probe_consecutive_failures"]=0
+   state["consecutive_failures"]=0
   state["last_probe_at"]=r["retrieved_at"]; state["last_status"]=r["status"]; state["last_latency_sec"]=r["latency_sec"]
   if r.get("event_time"): state["last_source_event_time"]=r["event_time"]
   snapshots.append({k:v for k,v in r.items() if k!="payload"})
