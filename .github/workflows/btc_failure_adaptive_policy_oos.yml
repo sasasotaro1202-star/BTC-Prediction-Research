@@ -1,0 +1,93 @@
+name: BTC Failure-Adaptive Policy OOS
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    paths:
+      - 'src/experience_failure_adaptive_policy_oos.py'
+      - 'src/experience_case_adaptive_controller_oos.py'
+      - 'tests/test_experience_failure_adaptive_policy_oos.py'
+      - 'requirements.txt'
+      - 'data/predictions.db.gz'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-failure-adaptive-policy-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore settled prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          from src.db import init_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          init_db()
+          PY
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Build experience ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH='${{ github.workspace }}/src:${{ github.workspace }}/scripts' python src/experience_ledger.py
+          test -s data/experience/experience_summary.json
+      - name: Run failure-adaptive policy OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_failure_adaptive_policy_oos.py
+          test -s data/historical_research/experience_failure_adaptive_policy_oos.json
+      - name: Verify policy safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/historical_research/experience_failure_adaptive_policy_oos.json').read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+              raise SystemExit('failure-adaptive policy must remain research-only')
+          if obj.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('failure-adaptive policy cannot create promotion evidence')
+          for h,item in obj.get('horizons',{}).items():
+              if item.get('status') == 'OK':
+                  if int(item.get('pit_violation_count',0)) != 0:
+                      raise SystemExit(f'{h}: PIT violation detected')
+                  for block in item.get('chronological_blocks',[]):
+                      if int(block.get('n',0)) < 10:
+                          raise SystemExit(f'{h}: undersized chronological block')
+          print('BTC failure-adaptive policy safety boundary: VERIFIED')
+          PY
+      - name: Run policy regression tests
+        run: python -m pytest -q tests/test_experience_failure_adaptive_policy_oos.py
+      - name: Upload policy artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-failure-adaptive-policy-oos-${{ github.run_id }}
+          path: |
+            data/experience/experience_summary.json
+            data/historical_research/experience_failure_adaptive_policy_oos.json
+          retention-days: 14
