@@ -302,7 +302,7 @@ def build(
         "production_changed": False,
         "promotion_evidence_eligible": False,
         "experience_source": "experience_ledger",
-        "learning_boundary": "each test case is scored using only earlier settled experiences",
+        "learning_boundary": "each test case is scored using only prior_settled_experiences (earlier settled experiences); no current or future outcome is used",
         "config": cfg,
         "horizons": {},
     }
