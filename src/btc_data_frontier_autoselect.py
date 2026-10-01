@@ -1,6 +1,6 @@
 """Autonomous BTC data frontier: discover, acquire, validate, and select free research data."""
 from __future__ import annotations
-import hashlib,json,os,re,time
+import hashlib,json,math,os,re,time
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -16,6 +16,9 @@ MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
 DISCOVERY_RESULTS=8
 STRICT_PRIMARY_ACCUMULATION_TARGET=600
+HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=3600
+MAX_ACQUISITION_FILES=48
+ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
 PROBES={
  "hyperliquid_ws":("POST","https://api.hyperliquid.xyz/info",{"type":"metaAndAssetCtxs"}),
  "bitget_public_ws":("GET","https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES&symbol=BTCUSDT",None),
@@ -25,7 +28,7 @@ PROBES={
  "brk_bitview":("GET","https://bitview.space/",None),
  "us_treasury_yield_curve":("GET","https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml",None),
 }
-DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp")
+DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp","bitcoin liquidation historical dataset public API","bitcoin funding rate historical dataset public","bitcoin open interest historical dataset public","bitcoin cross exchange spread historical dataset","bitcoin 5m OHLCV historical public API","bitcoin block fees mempool historical dataset")
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -151,6 +154,113 @@ def probe(sid):
   return {"source_id":sid,"status":"OK","url":url,"retrieved_at":retrieved,"available_at":retrieved,"event_time":st,"temporal_basis":"source_timestamp" if st else "retrieval_snapshot","record_count":_count(payload),"payload_sha256":_sha(payload),"latency_sec":round(time.monotonic()-t,3),"payload":payload}
  except Exception as e:
   return {"source_id":sid,"status":"ERROR","url":url,"retrieved_at":retrieved,"latency_sec":round(time.monotonic()-t,3),"error":f"{type(e).__name__}:{e}"}
+def _bitget_history_url(end_ms=None, limit=200):
+ if end_ms is None:
+  end_ms=int(time.time()*1000)
+ end_ms=int(end_ms)
+ start_ms=end_ms-(5*60*1000*int(limit))
+ return ("https://api.bitget.com/api/v2/mix/market/history-candles?"
+         "symbol=BTCUSDT&productType=USDT-FUTURES&granularity=5m"
+         f"&startTime={start_ms}&endTime={end_ms}&limit={int(limit)}")
+
+
+def _acquisition_due(state, now=None):
+ raw=state.get("last_historical_acquisition_at")
+ if not raw:
+  return True
+ try:
+  last=datetime.fromisoformat(str(raw).replace("Z","+00:00"))
+  current=datetime.now(timezone.utc) if now is None else now
+  return (current-last).total_seconds() >= HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC
+ except (TypeError,ValueError):
+  return True
+
+
+def acquire_bitget_history():
+ retrieved=now_utc()
+ url=_bitget_history_url()
+ try:
+  payload=_get(url)
+  rows=payload.get("data") if isinstance(payload,dict) else None
+  if not isinstance(rows,list):
+   raise RuntimeError("bitget_history_missing_data")
+  retrieved_ms=int(time.time()*1000)
+  normalized=[]
+  for row in rows:
+   if not isinstance(row,list) or len(row)<7:
+    continue
+   try:
+    event_ms=int(row[0])
+    close_ms=event_ms+5*60*1000
+    if event_ms<=0 or close_ms>retrieved_ms:
+     continue
+    values=[float(row[i]) for i in range(1,7)]
+    if not all(math.isfinite(v) for v in values):
+     continue
+    normalized.append({
+     "event_time":datetime.fromtimestamp(event_ms/1000,timezone.utc).isoformat(),
+     "close_time":datetime.fromtimestamp(close_ms/1000,timezone.utc).isoformat(),
+     "open":values[0],"high":values[1],"low":values[2],"close":values[3],
+     "volume":values[4],"quote_volume":values[5],
+    })
+   except (TypeError,ValueError,OverflowError,IndexError):
+    continue
+  if not normalized:
+   raise RuntimeError("bitget_history_no_closed_rows")
+  normalized.sort(key=lambda row:row["event_time"])
+  payload_sha=_sha(payload)
+  ACQUISITION_DIR.mkdir(parents=True,exist_ok=True)
+  stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+  path=ACQUISITION_DIR/f"{stamp}_bitget_5m_history.json"
+  record={
+   "schema_version":1,"source_id":"bitget_public_ws","transport":"rest_historical_candles",
+   "url":url,"status":"OK","research_only":True,"production_eligible":False,
+   "pit_status":"UNVERIFIED_POSTHOC","temporal_basis":"posthoc_historical_endpoint",
+   "retrieved_at":retrieved,"available_at":retrieved,"prediction_cutoff":retrieved,
+   "payload_sha256":payload_sha,"record_count":len(normalized),
+   "first_event_time":normalized[0]["event_time"],"last_event_time":normalized[-1]["event_time"],
+   "rows":normalized,
+  }
+  _atomic_write_json(path,record)
+  files=sorted(ACQUISITION_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True)
+  for stale in files[MAX_ACQUISITION_FILES:]:
+   stale.unlink(missing_ok=True)
+  return {
+   "source_id":"bitget_public_ws","status":"OK","transport":"rest_historical_candles",
+   "pit_status":"UNVERIFIED_POSTHOC","production_eligible":False,"retrieved_at":retrieved,
+   "record_count":len(normalized),"first_event_time":normalized[0]["event_time"],
+   "last_event_time":normalized[-1]["event_time"],"payload_sha256":payload_sha,
+   "path":str(path.relative_to(ROOT)),
+  }
+ except Exception as exc:
+  return {"source_id":"bitget_public_ws","status":"ERROR","retrieved_at":retrieved,
+          "production_eligible":False,"error":f"{type(exc).__name__}:{exc}"}
+
+
+def acquire_selected_research_data(frontier,gap,selected):
+ candidate_ids=[sid for sid in selected if sid=="bitget_public_ws"]
+ if gap.get("gap",0)>0 and "bitget_public_ws" not in candidate_ids:
+  candidate_ids.append("bitget_public_ws")
+ out=[]
+ for sid in candidate_ids[:1]:
+  state=frontier["source_state"].setdefault(sid,{})
+  if not _acquisition_due(state):
+   out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
+               "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
+   continue
+  result=acquire_bitget_history()
+  if result.get("status")=="OK":
+   state["last_historical_acquisition_at"]=result["retrieved_at"]
+   state["last_historical_record_count"]=int(result.get("record_count",0))
+   state["last_historical_event_time"]=result.get("last_event_time")
+   state["last_historical_payload_sha256"]=result.get("payload_sha256")
+   state["historical_acquisition_failures"]=0
+  else:
+   state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+  out.append(result)
+ return out
+
+
 def discover_public_sources():
  found={}
  failures=[]
@@ -203,7 +313,7 @@ def score(source,state,gap,pr):
 def select_sources(frontier,gap,results):
  rows=[(score(s,frontier["source_state"].get(s.source_id,{}),gap,results.get(s.source_id)),s.source_id,s.family) for s in SOURCES]
  for row in frontier.get("candidates",{}).values():
-  if row.get("production_eligible") is not False or row.get("status")!="DISCOVERED_UNVERIFIED":
+  if row.get("production_eligible") is not False or row.get("status") not in {"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}:
    continue
   text_value=_norm(" ".join((row.get("name",""),row.get("description",""),row.get("query",""))))
   value=40.0
@@ -216,7 +326,7 @@ def select_sources(frontier,gap,results):
  discovered_rows=[
   row for row in rows
   if row[1] in frontier.get("candidates",{})
-  and (frontier["candidates"].get(row[1]) or {}).get("status")=="DISCOVERED_UNVERIFIED"
+  and (frontier["candidates"].get(row[1]) or {}).get("status") in {"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}
  ]
  reserved_discovered=None
  if discovered_rows:
@@ -261,11 +371,13 @@ def run():
  discovered, discovery_failures=discover_public_sources()
  for c in discovered:
   old=frontier["candidates"].get(c["candidate_id"],{}); old.update(c); old["first_seen"]=old.get("first_seen",now_utc()); old["last_seen"]=now_utc(); frontier["candidates"][c["candidate_id"]]=old
+ selected_before_acquisition=select_sources(frontier,gap,results)
+ acquisitions=acquire_selected_research_data(frontier,gap,selected_before_acquisition)
  selected=select_sources(frontier,gap,results)
  selected_discovered=[
   sid for sid in selected
   if sid in frontier.get("candidates",{})
-  and (frontier["candidates"].get(sid) or {}).get("status")=="DISCOVERED_UNVERIFIED"
+  and (frontier["candidates"].get(sid) or {}).get("status") in {"DISCOVERED_UNVERIFIED","ACQUIRED_RESEARCH_ONLY"}
  ]
  for sid in selected_discovered:
   cand=frontier["candidates"][sid]
@@ -280,13 +392,18 @@ def run():
  secondary_gaps,repeat_until_data_sufficient,next_action=plan_for_gap(gap)
  runrec={
  "run_at":now_utc(),"cycle":cycle+1,"gap":gap,
- "probed_source_ids":probe_ids,"selected_source_ids":selected,
+ "probed_source_ids":probe_ids,
+ "selected_source_ids_before_acquisition":selected_before_acquisition,
+ "selected_source_ids":selected,
+ "reselected_after_acquisition":True,
+ "selected_source_ids_after_acquisition":selected,
  "successful_probes":sum(r["status"]=="OK" for r in results.values()),
  "failed_probes":sum(r["status"]=="ERROR" for r in results.values()),
  "new_discovered_candidates":len(discovered),
  "discovery_failures":discovery_failures,
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
+ "acquisitions":acquisitions,
  "data_sufficiency":{
   "promotion_gate_target":int(gap.get("target",300)),
   "accumulation_target":STRICT_PRIMARY_ACCUMULATION_TARGET,
@@ -299,6 +416,8 @@ def run():
   "collect_live":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0 or secondary_gaps["online_expert_ready"]>0,
   "warm_binance_ws":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0,
   "refresh_pit_audit":secondary_gaps["strict_primary_accumulation"]>0,
+  "acquire_historical_archive":secondary_gaps["strict_primary_gate"]>0 or secondary_gaps["strict_primary_accumulation"]>0,
+  "acquire_frontier_research_data":bool(acquisitions),
   "continue_discovery":True,
   "continue_selection":True,
   "repeat_until_data_sufficient":repeat_until_data_sufficient,
