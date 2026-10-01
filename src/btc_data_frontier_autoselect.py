@@ -616,20 +616,6 @@ def select_sources(frontier,gap,results):
   if sid not in selected: selected.append(sid)
  return selected
 
-def select_auto_acquisition_sources(frontier,selected,gap):
- # Only sources with an implemented safe acquisition adapter may auto-acquire.
- # Currently Bitget historical candles are the bounded adapter; discovered
- # GitHub/Hugging Face candidates remain verification debt.
- out=[]
- if (gap.get("gap",0)>0 or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET) and "bitget_public_ws" in SOURCES_BY_ID:
-  out.append("bitget_public_ws") if "bitget_public_ws" in selected else None
- for sid in selected:
-  if sid in frontier.get("candidates",{}):
-   row=frontier["candidates"][sid]
-   lc=row.get("lifecycle") or _candidate_lifecycle(row)
-   if lc.get("cost_status")=="VERIFIED_FREE" and lc.get("acquisition_adapter_available"):
-    out.append(sid)
- return list(dict.fromkeys(out))
 def persist_snapshot(result):
  if result.get("status")!="OK": return None
  SNAPSHOT_DIR.mkdir(parents=True,exist_ok=True); stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
