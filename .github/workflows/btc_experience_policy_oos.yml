@@ -36,6 +36,8 @@ on:
       - 'config/EXPERIENCE_POLICY_UNWEIGHTED_LOGISTIC_OOS.json'
       - '.github/workflows/btc_experience_policy_oos.yml'
 
+      - 'src/experience_pit_scope.py'
+      - 'tests/test_experience_pit_scope.py'
 concurrency:
   group: btc-experience-policy-oos-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
