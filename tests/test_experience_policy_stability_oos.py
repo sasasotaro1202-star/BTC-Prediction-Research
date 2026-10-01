@@ -62,3 +62,20 @@ def test_evaluate_rows_is_deterministic():
     a=mod.evaluate_rows(rows,min_train_rows=100,test_block_rows=40,min_blocks=3)
     b=mod.evaluate_rows(rows,min_train_rows=100,test_block_rows=40,min_blocks=3)
     assert a==b
+
+
+def test_stability_does_not_split_settlement_timestamp_at_block_boundary(monkeypatch):
+    rows = [_row(i, 1) for i in range(8)]
+    shared_ts = rows[1]["settled_at_utc"]
+    rows[2]["settled_at_utc"] = shared_ts
+    seen = []
+
+    monkeypatch.setattr(mod, "_baseline", lambda train_rows: 0.5)
+    def memory(train_rows, test_rows):
+        seen.append(([r["experience_id"] for r in train_rows], [r["experience_id"] for r in test_rows]))
+        return [0.5] * len(test_rows)
+    monkeypatch.setattr(mod, "_hierarchical_memory_predict", memory)
+    monkeypatch.setattr(mod, "_metrics", lambda y_true, probabilities: {"n": len(y_true), "logloss": 0.5, "brier": 0.25, "error_rate": 0.5})
+    out = mod.evaluate_rows(rows, min_train_rows=3, test_block_rows=1, min_blocks=1)
+    assert out["status"] == "OK"
+    assert any(test_ids == [4] and train_ids[:3] == [1, 2, 3] for train_ids, test_ids in seen)
