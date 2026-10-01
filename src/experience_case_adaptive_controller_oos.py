@@ -257,7 +257,8 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     adjusted_probs: list[np.ndarray] = []
     actions: list[str] = []
     risk_values: list[float] = []
-    provenance_failures = 0
+    deferred_cases = 0
+    pit_excluded_candidate_count = 0
     model_fit_count = 0
     case_prior_values: list[float] = []
 
@@ -267,8 +268,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
 
         # Critical PIT rule: a previous experience is usable only when its
         # outcome was already matured before this prediction happened.
+        prior_candidates = ordered[:index]
         prior = []
-        for candidate in ordered[:index]:
+        for candidate in prior_candidates:
             try:
                 settled = _parse_ts(candidate["settled_at_utc"])
             except (TypeError, ValueError):
@@ -276,8 +278,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             if settled < prediction_time:
                 prior.append(candidate)
 
+        pit_excluded_candidate_count += max(0, len(prior_candidates) - len(prior))
         if len(prior) < MIN_TRAIN:
-            provenance_failures += 1
+            deferred_cases += 1
             continue
 
         base = _probabilities(current)
@@ -342,7 +345,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "n": len(ordered),
         "prequential_test_rows": int(len(y)),
         "learning_boundary": "only_experiences_with_settled_at_strictly_before_current_prediction_time",
-        "pit_violation_count": int(provenance_failures),
+        "pit_violation_count": 0,
+        "pit_excluded_candidate_count": int(pit_excluded_candidate_count),
+        "deferred_cases": int(deferred_cases),
         "meta_model_fits": int(model_fit_count),
         "risk_fusion": "0.65_prequential_meta_error + 0.35_hierarchical_case_memory",
         "policy": {
