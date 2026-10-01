@@ -158,6 +158,17 @@ def test_build_is_research_only_and_does_not_mutate_production(tmp_path):
     con = sqlite3.connect(db)
     try:
         con.execute(
+            """CREATE TABLE predictions (
+                prediction_id INTEGER PRIMARY KEY,
+                created_at_utc TEXT NOT NULL,
+                target_5m TEXT,
+                target_10m TEXT,
+                actual_direction_5m TEXT,
+                actual_direction_10m TEXT,
+                scenario_json TEXT NOT NULL
+            )"""
+        )
+        con.execute(
             """CREATE TABLE experience_ledger (
                 experience_id INTEGER PRIMARY KEY,
                 prediction_id INTEGER NOT NULL,
@@ -185,6 +196,40 @@ def test_build_is_research_only_and_does_not_mutate_production(tmp_path):
         )
         rows = [_row(i, int(i % 4 != 0), warning=(i % 6 == 0)) for i in range(130)]
         for row in rows:
+            created = datetime.fromisoformat(row["created_at_utc"])
+            scenario = {
+                "decision_time_utc": row["created_at_utc"],
+                "provenance": {
+                    "event_time": (created - timedelta(seconds=2)).isoformat(),
+                    "available_at": (created - timedelta(seconds=1)).isoformat(),
+                    "retrieved_at": row["created_at_utc"],
+                    "prediction_cutoff": row["created_at_utc"],
+                    "sources": {
+                        "binance_futures": {
+                            "status": "ok",
+                            "event_time": (created - timedelta(seconds=2)).isoformat(),
+                            "available_at": (created - timedelta(seconds=1)).isoformat(),
+                            "retrieved_at": row["created_at_utc"],
+                            "prediction_cutoff": row["created_at_utc"],
+                        }
+                    },
+                },
+            }
+            con.execute(
+                """INSERT INTO predictions (
+                    prediction_id, created_at_utc, target_5m, target_10m,
+                    actual_direction_5m, actual_direction_10m, scenario_json
+                ) VALUES (?,?,?,?,?,?,?)""",
+                (
+                    row["prediction_id"],
+                    row["created_at_utc"],
+                    row["target_at_utc"],
+                    None,
+                    "UP",
+                    None,
+                    json.dumps(scenario),
+                ),
+            )
             con.execute(
                 """INSERT INTO experience_ledger VALUES (
                 :experience_id,:prediction_id,:horizon,:created_at_utc,:target_at_utc,
