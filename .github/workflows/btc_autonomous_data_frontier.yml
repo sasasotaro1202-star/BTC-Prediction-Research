@@ -30,13 +30,18 @@ jobs:
         run: |
           set -euo pipefail
           rm -f data/historical_research/data_frontier_state.json
+          state_tmp="$(mktemp)"
+          trap 'rm -f "$state_tmp"' EXIT
           if git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
-            if git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > data/historical_research/data_frontier_state.json 2>/dev/null; then
+            if git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > "$state_tmp" 2>/dev/null && [ -s "$state_tmp" ]; then
+              mv "$state_tmp" data/historical_research/data_frontier_state.json
               echo "Loaded persistent frontier selector state."
             else
-              echo "State branch exists but no state file is published yet; starting selector state fresh."
+              rm -f "$state_tmp"
+              echo "State branch exists but no valid state file is published yet; starting selector state fresh."
             fi
           else
+            rm -f "$state_tmp"
             echo "WARN: frontier selector state branch unavailable; selection starts from local evidence only."
           fi
       - uses: actions/setup-python@v7
@@ -60,7 +65,7 @@ jobs:
           if last.get("free_only") is not True or last.get("production_changed") is not False or last.get("unknown_pit_policy")!="FAIL_CLOSED":
               raise SystemExit("frontier safety contract failed")
           actions=last.get("actions",{})
-          if actions.get("continue_discovery") is not True or actions.get("continue_selection") is not True:
+          if actions.get("continue_discovery") is not True or actions.get("continue_selection") is not True or actions.get("repeat_until_data_sufficient") is not True:
               raise SystemExit("continuous frontier loop disabled")
           for row in p.get("candidates",{}).values():
               if row.get("production_eligible") is not False: raise SystemExit("unverified candidate became production eligible")
@@ -82,6 +87,8 @@ jobs:
           )"
           need_live="$(jq -r '.collect_live // false' <<<"$actions_state")"
           need_ws="$(jq -r '.warm_binance_ws // false' <<<"$actions_state")"
+          need_archive="$(jq -r '.acquire_historical_archive // false' <<<"$actions_state")"
+          need_pit="$(jq -r '.refresh_pit_audit // false' <<<"$actions_state")"
           main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
           dispatch_verified() {
             workflow="$1"
@@ -106,6 +113,8 @@ jobs:
           }
           if [ "$need_live" = "true" ]; then dispatch_verified btc_live_cycle.yml 300; fi
           if [ "$need_ws" = "true" ]; then dispatch_verified btc_binance_ws_collector.yml 900; fi
+          if [ "$need_archive" = "true" ]; then dispatch_verified btc_archive_refresh.yml 21600; fi
+          if [ "$need_pit" = "true" ]; then dispatch_verified btc_pit_oos_audit.yml 3600; fi
       - name: Upload frontier evidence
         uses: actions/upload-artifact@v6
         with:

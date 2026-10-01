@@ -61,18 +61,32 @@ def _source_ts(v):
    if n>1_000_000_000: return datetime.fromtimestamp(n,timezone.utc).isoformat()
   except (TypeError,ValueError,OverflowError): pass
  return None
+def _empty_frontier():
+ return {"schema_version":1,"candidates":{},"source_state":{},"history":[]}
+
 def load_frontier():
+ recovery=[]
  if OUT.exists():
-  p=json.loads(OUT.read_text(encoding="utf-8"))
-  if not isinstance(p,dict) or p.get("schema_version") not in {1,2}: raise RuntimeError("invalid data frontier schema")
+  raw=OUT.read_text(encoding="utf-8")
+  if raw.strip():
+   p=json.loads(raw)
+   if not isinstance(p,dict) or p.get("schema_version") not in {1,2}: raise RuntimeError("invalid data frontier schema")
+  else:
+   p=_empty_frontier()
+   recovery.append("empty_durable_frontier_reset")
  else:
-  p={"schema_version":1,"candidates":{},"source_state":{},"history":[]}
+  p=_empty_frontier()
  if STATE_OUT.exists():
-  state=json.loads(STATE_OUT.read_text(encoding="utf-8"))
-  if not isinstance(state,dict) or state.get("schema_version")!=1: raise RuntimeError("invalid data frontier state schema")
-  p["source_state"]=dict(state.get("source_state") or {})
-  p["history"]=list(state.get("history") or [])
+  raw_state=STATE_OUT.read_text(encoding="utf-8")
+  if raw_state.strip():
+   state=json.loads(raw_state)
+   if not isinstance(state,dict) or state.get("schema_version")!=1: raise RuntimeError("invalid data frontier state schema")
+   p["source_state"]=dict(state.get("source_state") or {})
+   p["history"]=list(state.get("history") or [])
+  else:
+   recovery.append("empty_selector_state_ignored")
  p.setdefault("candidates",{}); p.setdefault("source_state",{}); p.setdefault("history",[])
+ p["_recovery_events"]=recovery
  return p
 def current_gap():
  pth=ROOT/"data/historical_research/pit_oos_audit.json"
@@ -168,27 +182,32 @@ def select_sources(frontier,gap,results):
   if row.get("license"): value+=5
   rows.append((value,row["candidate_id"],"discovered"))
  rows.sort(key=lambda x:(-x[0],x[1]))
- selected=[]; families=set()
- for _,sid,family in rows:
-  if family not in families and len(selected)<8:
-   selected.append(sid); families.add(family)
- for _,sid,_ in rows:
-  if len(selected)>=8: break
-  if sid not in selected: selected.append(sid)
-
- # Keep one bounded exploration slot for newly discovered public candidates.
- # They remain research-only/unverified; this only prevents the discovery
- # frontier from being permanently starved by the static source catalog.
  discovered_rows=[
   row for row in rows
   if row[1] in frontier.get("candidates",{})
   and (frontier["candidates"].get(row[1]) or {}).get("status")=="DISCOVERED_UNVERIFIED"
  ]
- if gap.get("gap",0)>0 and discovered_rows:
+ reserved_discovered=None
+ if discovered_rows:
   best_discovered=max(discovered_rows,key=lambda x:(x[0],x[1]))
   if best_discovered[0] >= 60:
-   if best_discovered[1] not in selected:
-    selected[-1]=best_discovered[1]
+   reserved_discovered=best_discovered[1]
+
+ # Reserve one exploration slot on every cycle when a sufficiently relevant
+ # discovered candidate exists. The candidate remains research-only/unverified.
+ selected=[]; families=set()
+ if reserved_discovered is not None:
+  selected.append(reserved_discovered); families.add("discovered")
+ for _,sid,family in rows:
+  if family=="discovered" and sid!=reserved_discovered:
+   continue
+  if family not in families and len(selected)<8:
+   selected.append(sid); families.add(family)
+ for _,sid,family in rows:
+  if len(selected)>=8: break
+  if family=="discovered" and sid!=reserved_discovered:
+   continue
+  if sid not in selected: selected.append(sid)
  return selected
 def persist_snapshot(result):
  if result.get("status")!="OK": return None
@@ -196,7 +215,8 @@ def persist_snapshot(result):
  p=SNAPSHOT_DIR/f"{stamp}_{result['source_id']}.json"; p.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True)+"\n",encoding="utf-8")
  return str(p.relative_to(ROOT))
 def run():
- frontier=load_frontier(); gap=current_gap(); cycle=int(datetime.now(timezone.utc).timestamp()//900)
+ frontier=load_frontier(); recovery_events=list(frontier.pop("_recovery_events",[]) or [])
+ gap=current_gap(); cycle=int(datetime.now(timezone.utc).timestamp()//900)
  ids=[s.source_id for s in SOURCES if s.source_id in PROBES]; offset=cycle%max(1,len(ids)); probe_ids=(ids[offset:]+ids[:offset])[:min(5,len(ids))]
  results={sid:probe(sid) for sid in probe_ids}; snapshots=[]
  for sid,r in results.items():
@@ -241,7 +261,7 @@ def run():
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
  frontier["history"]=list(frontier.get("history") or [])
- frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids":selected,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"]})
+ frontier["history"].append({"run_at":runrec["run_at"],"cycle":runrec["cycle"],"gap":gap,"probed_source_ids":probe_ids,"selected_source_ids":selected,"selected_discovered_source_ids":selected_discovered,"successful_probes":runrec["successful_probes"],"failed_probes":runrec["failed_probes"],"new_discovered_candidates":runrec["new_discovered_candidates"]})
  frontier["history"]=frontier["history"][-96:]
  durable={
   "schema_version":1,

@@ -123,3 +123,36 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 if __name__=="__main__":
     main()
+
+    def test_empty_durable_frontier_recovers_as_fresh_state():
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            out=hist/"data_frontier.json"
+            out.write_text("",encoding="utf-8")
+            with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",out), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
+                frontier=mod.load_frontier()
+            self.assertEqual(frontier["candidates"],{})
+            self.assertIn("empty_durable_frontier_reset",frontier["_recovery_events"])
+
+    def test_selector_always_reserves_one_qualified_discovery_slot():
+        frontier={"source_state":{},"candidates":{
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+        }}
+        selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
+        self.assertIn("github:test/btc",selected)
+        self.assertEqual(sum(1 for sid in selected if sid=="github:test/btc"),1)
+
+    def test_workflow_recovers_missing_historical_and_pit_data():
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn("acquire_historical_archive",workflow)
+        self.assertIn("refresh_pit_audit",workflow)
+        self.assertIn("dispatch_verified btc_archive_refresh.yml 21600",workflow)
+        self.assertIn("dispatch_verified btc_pit_oos_audit.yml 3600",workflow)
+
+    def test_workflow_does_not_materialize_empty_selector_state_on_missing_file():
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        self.assertIn("state_tmp=",workflow)
+        self.assertIn("mv "$state_tmp"",workflow)
+        self.assertNotIn("git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > data/historical_research/data_frontier_state.json",workflow)
