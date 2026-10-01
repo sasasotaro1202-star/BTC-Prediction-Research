@@ -447,8 +447,8 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "brier": float(np.mean((risks - error_labels) ** 2)),
             "auc": predictability_auc,
             "mean_absolute_calibration_gap": (
-                float(np.mean([x["absolute_calibration_gap"] for x in risk_bins]))
-                if risk_bins else None
+                float(sum(x["n"] * x["absolute_calibration_gap"] for x in risk_bins) / len(error_labels))
+                if risk_bins and len(error_labels) else None
             ),
             "risk_bins": risk_bins,
         },
