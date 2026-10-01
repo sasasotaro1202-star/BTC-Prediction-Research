@@ -388,6 +388,28 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertFalse(code_rows[0]["production_eligible"])
         self.assertEqual(failures,[])
 
+    def test_github_code_discovery_filters_low_signal_filename_matches(self):
+        def fake_get(url,method="GET",body=None,token=None):
+            if "api.github.com/search/code" in url:
+                return {"items":[
+                    {
+                        "name":"Malware.csv","path":"data/Malware.csv",
+                        "html_url":"https://github.com/example/redteam/blob/main/data/Malware.csv",
+                        "repository":{"full_name":"example/redteam"}
+                    },
+                    {
+                        "name":"Data.csv","path":"data/BTCUSDT_1m/Data.csv",
+                        "html_url":"https://github.com/example/btc-model/blob/main/data/BTCUSDT_1m/Data.csv",
+                        "repository":{"full_name":"example/btc-model"}
+                    }
+                ]}
+            return {"items":[]}
+        with patch.object(mod,"_get",side_effect=fake_get):
+            rows, failures=mod.discover_public_sources()
+        code_rows=[row for row in rows if row.get("platform")=="github_code"]
+        self.assertEqual([row["name"] for row in code_rows],["example/btc-model/data/BTCUSDT_1m/Data.csv"])
+        self.assertEqual(failures,[])
+
 
     def test_hyperliquid_history_retries_rate_limit_without_promoting_data(self):
         from urllib.error import HTTPError
