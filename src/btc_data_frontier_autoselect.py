@@ -26,6 +26,7 @@ STRICT_PRIMARY_ACCUMULATION_TARGET=600
 HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
 MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
+ACQUISITION_SOURCE_IDS=("bitget_public_ws","hyperliquid_ws","deribit_public")
 
 # Discovery is deliberately broader than automatic acquisition. These gates
 # keep cost/licence uncertainty and PIT uncertainty fail-closed.
@@ -389,6 +390,84 @@ def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retr
   "next_cursor_ms":min(int(datetime.fromisoformat(row["event_time"].replace("Z","+00:00")).timestamp()*1000) for row in normalized),
   "path":str(path.relative_to(ROOT)),
  }
+
+
+def summarize_acquisition_evidence():
+ """Audit research acquisitions without allowing them into model inputs."""
+ result={
+  "schema_version":1,
+  "generated_at":now_utc(),
+  "scope":"research_acquisition_evidence_integrity",
+  "note":"COMPLETE/PARTIAL/MISSING describe evidence integrity for acquired batches, not historical-dataset completeness.",
+  "by_source":{},
+  "cross_source":{"unique_event_times":0,"duplicate_event_rows":0,"overlap_event_times":0},
+  "invalid_files":[],
+ }
+ files=sorted(ACQUISITION_DIR.glob("*_history.json")) if ACQUISITION_DIR.exists() else []
+ event_sources={}
+ for sid in ACQUISITION_SOURCE_IDS:
+  result["by_source"][sid]={
+   "status":"MISSING","file_count":0,"record_count":0,"valid_row_count":0,
+   "invalid_row_count":0,"unique_event_times":0,"duplicate_event_rows":0,
+   "first_event_time":None,"last_event_time":None,
+  }
+ loaded=[]
+ for path in files:
+  try:
+   obj=json.loads(path.read_text(encoding="utf-8"))
+   if not isinstance(obj,dict): raise ValueError("record_not_object")
+   sid=str(obj.get("source_id") or "")
+   if sid not in result["by_source"]:
+    continue
+   loaded.append((path,obj))
+  except (OSError,ValueError,TypeError,json.JSONDecodeError) as exc:
+   result["invalid_files"].append({"path":str(path.relative_to(ROOT)),"error":f"{type(exc).__name__}:{exc}"})
+ for sid in ACQUISITION_SOURCE_IDS:
+  src_state=result["by_source"][sid]
+  source_files=[(path,obj) for path,obj in loaded if str(obj.get("source_id") or "")==sid]
+  src_state["file_count"]=len(source_files)
+  source_event_times=set()
+  provenance_complete=True
+  for path,obj in source_files:
+   src_state["record_count"]+=int(obj.get("record_count",0) or 0)
+   if (
+    obj.get("status")!="OK"
+    or obj.get("research_only") is not True
+    or obj.get("production_eligible") is not False
+    or obj.get("pit_status")!="UNVERIFIED_POSTHOC"
+   ):
+    provenance_complete=False
+   rows=obj.get("rows") if isinstance(obj.get("rows"),list) else []
+   for row in rows:
+    try:
+     event_time=str(row.get("event_time") or "").strip()
+     parsed=datetime.fromisoformat(event_time.replace("Z","+00:00"))
+     if parsed.tzinfo is None:
+      raise ValueError("event_time_naive")
+     values=[float(row[k]) for k in ("open","high","low","close","volume")]
+     if not all(math.isfinite(v) for v in values):
+      raise ValueError("nonfinite_ohlcv")
+    except (AttributeError,KeyError,TypeError,ValueError,OverflowError):
+     src_state["invalid_row_count"]+=1
+     continue
+    src_state["valid_row_count"]+=1
+    source_event_times.add(event_time)
+    event_sources.setdefault(event_time,set()).add(sid)
+    src_state["first_event_time"]=event_time if src_state["first_event_time"] is None else min(src_state["first_event_time"],event_time)
+    src_state["last_event_time"]=event_time if src_state["last_event_time"] is None else max(src_state["last_event_time"],event_time)
+  src_state["unique_event_times"]=len(source_event_times)
+  src_state["duplicate_event_rows"]=max(0,src_state["valid_row_count"]-src_state["unique_event_times"])
+  if src_state["file_count"]==0:
+   src_state["status"]="MISSING"
+  elif src_state["invalid_row_count"]>0 or not provenance_complete or src_state["valid_row_count"]==0:
+   src_state["status"]="PARTIAL"
+  else:
+   src_state["status"]="COMPLETE"
+ result["invalid_files_count"]=len(result["invalid_files"])
+ result["cross_source"]["unique_event_times"]=len(event_sources)
+ result["cross_source"]["overlap_event_times"]=sum(1 for sources in event_sources.values() if len(sources)>1)
+ result["cross_source"]["duplicate_event_rows"]=sum(max(0,len(sources)-1) for sources in event_sources.values())
+ return result
 
 
 def _get_hyperliquid_history_payload(body):
@@ -793,6 +872,7 @@ def run():
   if s.source_id in selected:
    st["selection_reason"]="data_gap_and_source_diversity" if gap["gap"]>0 else "rotating_frontier_coverage"
    st["selection_count"]=int(st.get("selection_count",0))+1
+ acquisition_evidence=summarize_acquisition_evidence()
  secondary_gaps,repeat_until_data_sufficient,next_action=plan_for_gap(gap)
  runrec={
  "run_at":now_utc(),"cycle":cycle+1,"gap":gap,
@@ -808,15 +888,16 @@ def run():
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
  "acquisitions":acquisitions,
+ "acquisition_evidence":acquisition_evidence,
  "acquisition_totals":{
-  "batches":sum(int(frontier["source_state"].get(sid,{}).get("historical_batches_acquired",0)) for sid in ("bitget_public_ws","hyperliquid_ws")),
-  "records":sum(int(frontier["source_state"].get(sid,{}).get("historical_total_records_acquired",0)) for sid in ("bitget_public_ws","hyperliquid_ws")),
+  "batches":sum(int(frontier["source_state"].get(sid,{}).get("historical_batches_acquired",0)) for sid in ACQUISITION_SOURCE_IDS),
+  "records":sum(int(frontier["source_state"].get(sid,{}).get("historical_total_records_acquired",0)) for sid in ACQUISITION_SOURCE_IDS),
   "by_source":{
    sid:{
     "batches":int(frontier["source_state"].get(sid,{}).get("historical_batches_acquired",0)),
     "records":int(frontier["source_state"].get(sid,{}).get("historical_total_records_acquired",0)),
     "earliest_event_time":frontier["source_state"].get(sid,{}).get("historical_earliest_event_time"),
-   } for sid in ("bitget_public_ws","hyperliquid_ws")
+   } for sid in ACQUISITION_SOURCE_IDS
   },
  },
  "data_sufficiency":{
@@ -851,6 +932,7 @@ def run():
   "reselect_after_acquisition":True,
  },
  }
+ frontier["acquisition_evidence"]=acquisition_evidence
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
  frontier["history"]=list(frontier.get("history") or [])
@@ -861,6 +943,7 @@ def run():
   "updated_at":now_utc() if discovered else frontier.get("updated_at"),
   "candidate_count":len(frontier["candidates"]),
   "candidates":dict(sorted(frontier["candidates"].items())),
+  "acquisition_evidence":acquisition_evidence,
   "policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"},
  }
  OUT.parent.mkdir(parents=True,exist_ok=True)
