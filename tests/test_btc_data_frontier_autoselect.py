@@ -286,3 +286,19 @@ if __name__=="__main__":
         state=frontier["source_state"]["bitget_public_ws"]
         self.assertEqual(state["historical_batches_acquired"],1)
         self.assertEqual(state["historical_total_records_acquired"],200)
+
+    def test_github_code_discovery_is_unverified(self):
+        seen={}
+        def fake_get(url,method="GET",body=None,token=None):
+            if "api.github.com/search/code" in url:
+                seen["token"]=token
+                return {"items":[{"name":"btc.csv","path":"data/btc.csv","html_url":"https://github.com/example/btc/blob/main/data/btc.csv","repository":{"full_name":"example/btc"}}]}
+            return {"items":[]}
+        with patch.object(mod,"_get",side_effect=fake_get), patch.dict(__import__("os").environ,{"GITHUB_TOKEN":"test-token"}):
+            rows, failures=mod.discover_public_sources()
+        code_rows=[row for row in rows if row.get("platform")=="github_code"]
+        self.assertTrue(code_rows)
+        self.assertEqual(seen["token"],"test-token")
+        self.assertEqual(code_rows[0]["pit_status"],"UNVERIFIED")
+        self.assertFalse(code_rows[0]["production_eligible"])
+        self.assertEqual(failures,[])
