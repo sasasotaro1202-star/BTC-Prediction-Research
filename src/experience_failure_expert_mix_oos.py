@@ -337,6 +337,41 @@ def _apply_risk(
     return adjusted, action
 
 
+
+def _risk_coverage(error_labels: np.ndarray, risk: np.ndarray, coverages=(0.90, 0.80, 0.70, 0.60, 0.50)) -> dict[str, dict[str, float | int]]:
+    error_labels = np.asarray(error_labels, dtype=int)
+    risk = np.asarray(risk, dtype=float)
+    if len(error_labels) == 0:
+        return {}
+    order = np.argsort(risk, kind="mergesort")
+    out: dict[str, dict[str, float | int]] = {}
+    for coverage in coverages:
+        k = max(1, int(round(len(error_labels) * float(coverage))))
+        kept = error_labels[order[:k]]
+        out[f"{float(coverage):.2f}"] = {
+            "coverage": float(k / len(error_labels)),
+            "error_rate": float(np.mean(kept)),
+            "accuracy": float(1.0 - np.mean(kept)),
+            "n": int(k),
+        }
+    return out
+
+
+def _aurc(error_labels: np.ndarray, risk: np.ndarray) -> float:
+    error_labels = np.asarray(error_labels, dtype=int)
+    risk = np.asarray(risk, dtype=float)
+    order = np.argsort(risk, kind="mergesort")
+    kept = error_labels[order]
+    cumulative = np.cumsum(kept) / np.arange(1, len(kept) + 1)
+    coverage = np.arange(1, len(kept) + 1) / len(kept)
+    if len(cumulative) <= 1:
+        return float(cumulative[0]) if len(cumulative) else float("nan")
+    return float(
+        np.sum((cumulative[:-1] + cumulative[1:]) * np.diff(coverage) * 0.5)
+    )
+
+
+
 def _metrics(labels: np.ndarray, probabilities: np.ndarray) -> dict[str, float]:
     labels = np.asarray(labels, dtype=int)
     probabilities = np.asarray(probabilities, dtype=float)
@@ -370,6 +405,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
 
     weights = {name: 1.0 / len(CANDIDATES) for name in CANDIDATES}
     labels: list[int] = []
+    mixed_risks: list[float] = []
     base_probs: list[np.ndarray] = []
     global_probs: list[np.ndarray] = []
     mix_probs: list[np.ndarray] = []
@@ -460,6 +496,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
                 _apply_risk(base, baseline, baseline)[0]
             )
             mix_probs.append(mixed_probability)
+            mixed_risks.append(mixed)
             actions.append(action)
 
     if not labels:
@@ -479,6 +516,13 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     overall_base = _metrics(y, base)
     overall_global = _metrics(y, global_adjusted)
     overall_mix = _metrics(y, mix)
+    mixed_risk = np.asarray(mixed_risks, dtype=float)
+    base_error_labels = (np.argmax(base, axis=1) != y).astype(int)
+    risk_cov = _risk_coverage(base_error_labels, mixed_risk)
+    aurc_value = _aurc(base_error_labels, mixed_risk)
+    baseline_risk = 1.0 - np.max(base, axis=1)
+    baseline_rc = _risk_coverage(base_error_labels, baseline_risk)
+    baseline_aurc = _aurc(base_error_labels, baseline_risk)
 
     blocks: list[dict[str, Any]] = []
     for start in range(0, len(y), BLOCK_SIZE):
@@ -530,6 +574,14 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "accuracy": overall_mix["accuracy"] - overall_global["accuracy"],
             "logloss": overall_mix["logloss"] - overall_global["logloss"],
             "brier": overall_mix["brier"] - overall_global["brier"],
+        },
+        "risk_selective_diagnostics": {
+            "risk_target": "base_prediction_error",
+            "risk_coverage": risk_cov,
+            "aurc": aurc_value,
+            "baseline_confidence_risk_coverage": baseline_rc,
+            "baseline_confidence_aurc": baseline_aurc,
+            "aurc_improvement": float(baseline_aurc - aurc_value) if np.isfinite(aurc_value) and np.isfinite(baseline_aurc) else None,
         },
         "action_counts": {
             name: int(actions.count(name))
