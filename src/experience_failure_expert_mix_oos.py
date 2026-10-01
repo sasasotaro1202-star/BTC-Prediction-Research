@@ -16,10 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sklearn.feature_extraction import DictVectorizer
 
 from experience_case_adaptive_controller_oos import (
     CLASSES,
     _adjust_probabilities,
+    _meta_features,
     _probabilities,
     _safe01,
 )
@@ -41,12 +43,14 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "experience_failure_expert_mix_oos.json"
 
-CANDIDATES = ("global", "case_memory", "meta")
+CANDIDATES = ("global", "case_memory", "meta", "temporal_memory")
 MIN_TRAIN = 140
 VALIDATION_SIZE = 60
 MIX_REFRESH = 20
 ETA = 1.0
 WEIGHT_FLOOR = 0.05
+TEMPORAL_K = 25
+MIN_TEMPORAL_TRAIN = 60
 BLOCK_SIZE = 40
 
 
@@ -132,6 +136,94 @@ def _sequential_validation_risks(
     }
 
 
+
+def _temporal_features(rows: list[Any]) -> list[dict[str, float | str]]:
+    features: list[dict[str, float | str]] = []
+    for row in rows:
+        item = dict(_meta_features(row))
+        probability = _probabilities(row)
+        item.update(
+            {
+                "p_down": float(probability[0]),
+                "p_flat": float(probability[1]),
+                "p_up": float(probability[2]),
+            }
+        )
+        features.append(item)
+    return features
+
+
+def _fit_temporal_memory(train_rows: list[Any]) -> Any:
+    if len(train_rows) < MIN_TEMPORAL_TRAIN:
+        return None
+    try:
+        vectorizer = DictVectorizer(sparse=False)
+        matrix = np.asarray(
+            vectorizer.fit_transform(_temporal_features(train_rows)),
+            dtype=float,
+        )
+        if matrix.ndim != 2 or len(matrix) < MIN_TEMPORAL_TRAIN:
+            return None
+        median = np.nanmedian(matrix, axis=0)
+        scale = np.nanmedian(np.abs(matrix - median), axis=0)
+        median = np.where(np.isfinite(median), median, 0.0)
+        scale = np.where(np.isfinite(scale) & (scale > 1e-6), scale, 1.0)
+        normalized = np.nan_to_num(
+            (matrix - median) / scale,
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        labels = np.asarray(
+            [1 - int(row["correct"]) for row in train_rows],
+            dtype=float,
+        )
+        return vectorizer, normalized, labels
+    except (TypeError, ValueError, FloatingPointError):
+        return None
+
+
+def _predict_temporal_memory(
+    bundle: Any,
+    rows: list[Any],
+    k: int = TEMPORAL_K,
+) -> np.ndarray:
+    if bundle is None or not rows:
+        return np.full(len(rows), 0.5, dtype=float)
+    try:
+        vectorizer, train_matrix, labels = bundle
+        current = np.asarray(
+            vectorizer.transform(_temporal_features(rows)),
+            dtype=float,
+        )
+        current = np.nan_to_num(current, nan=0.0, posinf=0.0, neginf=0.0)
+        if train_matrix.ndim != 2 or len(train_matrix) == 0:
+            return np.full(len(rows), 0.5, dtype=float)
+        k = max(3, min(int(k), len(train_matrix)))
+        output: list[float] = []
+        n_train = len(train_matrix)
+        for query in current:
+            distances = np.sqrt(
+                np.mean((train_matrix - query[None, :]) ** 2, axis=1)
+            )
+            idx = np.argpartition(distances, k - 1)[:k]
+            d = distances[idx]
+            temperature = max(float(np.median(d)) + 0.25, 0.25)
+            similarity = np.exp(-d / temperature)
+            ages = (n_train - 1) - idx
+            recency = np.exp(-ages / 120.0)
+            weights = similarity * recency
+            if not np.isfinite(weights).all() or float(weights.sum()) <= 0.0:
+                weights = np.ones_like(weights)
+            weights /= float(weights.sum())
+            weighted_error = float(np.dot(weights, labels[idx]))
+            output.append((weighted_error * len(idx) + 1.0) / (len(idx) + 2.0))
+        return np.asarray([_safe01(v) for v in output], dtype=float)
+    except (TypeError, ValueError, FloatingPointError):
+        return np.full(len(rows), 0.5, dtype=float)
+
+
+
 def _validation_candidate_losses(
     matured: list[Any],
     current: Any,
@@ -164,6 +256,13 @@ def _validation_candidate_losses(
     candidate_values = _sequential_validation_risks(train, validation)
     meta_bundle, meta_default = _fit_meta_model(train)
     candidate_values["meta"] = _predict_meta(meta_bundle, validation, meta_default)
+    temporal_bundle = _fit_temporal_memory(train)
+    candidate_values["temporal_memory"] = _predict_temporal_memory(
+        temporal_bundle,
+        validation,
+    )
+    if temporal_bundle is None:
+        candidate_values["temporal_memory"][:] = _baseline_error(train)
     losses = {
         name: _binary_logloss(labels, candidate_values[name])
         for name in CANDIDATES
@@ -292,8 +391,16 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         memory_state = _memory_state(matured)
         seen_ids = {int(row["experience_id"]) for row in matured}
         meta_bundle, meta_default = _fit_meta_model(matured)
+        temporal_bundle = _fit_temporal_memory(matured)
         block_rows = ordered[block_start:block_end]
         frozen_meta = _predict_meta(meta_bundle, block_rows, meta_default)
+        temporal_default = _baseline_error(matured)
+        frozen_temporal = _predict_temporal_memory(
+            temporal_bundle,
+            block_rows,
+        )
+        if temporal_bundle is None:
+            frozen_temporal[:] = temporal_default
         frozen_index = {int(row["experience_id"]): i for i, row in enumerate(block_rows)}
 
         for index in range(block_start, block_end):
@@ -319,6 +426,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
                 "case_memory": _memory_risk(memory_state, current),
                 "meta": float(
                     frozen_meta[frozen_index[int(current["experience_id"])]]
+                ),
+                "temporal_memory": float(
+                    frozen_temporal[frozen_index[int(current["experience_id"])]]
                 ),
             }
             mixed = _mixed_risk(candidate_risks, weights)
@@ -392,6 +502,8 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "mix_refresh_size": MIX_REFRESH,
         "eta": ETA,
         "weight_floor": WEIGHT_FLOOR,
+            "temporal_k": TEMPORAL_K,
+            "min_temporal_train": MIN_TEMPORAL_TRAIN,
         "candidate_sources": CANDIDATES,
         "weight_trace": weight_trace,
         "validation_trace": validation_trace,
