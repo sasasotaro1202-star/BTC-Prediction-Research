@@ -66,8 +66,8 @@ def test_evaluate_rows_is_deterministic():
 
 def test_stability_does_not_split_settlement_timestamp_at_block_boundary(monkeypatch):
     rows = [_row(i, 1) for i in range(8)]
-    shared_ts = rows[1]["settled_at_utc"]
-    rows[2]["settled_at_utc"] = shared_ts
+    shared_ts = rows[2]["settled_at_utc"]
+    rows[3]["settled_at_utc"] = shared_ts
     seen = []
 
     monkeypatch.setattr(mod, "_baseline", lambda train_rows: 0.5)
@@ -76,6 +76,7 @@ def test_stability_does_not_split_settlement_timestamp_at_block_boundary(monkeyp
         return [0.5] * len(test_rows)
     monkeypatch.setattr(mod, "_hierarchical_memory_predict", memory)
     monkeypatch.setattr(mod, "_metrics", lambda y_true, probabilities: {"n": len(y_true), "logloss": 0.5, "brier": 0.25, "error_rate": 0.5})
-    out = mod.evaluate_rows(rows, min_train_rows=3, test_block_rows=1, min_blocks=1)
+    out = mod.evaluate_rows(rows, min_train_rows=2, test_block_rows=1, min_blocks=1)
     assert out["status"] == "OK"
-    assert any(test_ids == [4] and train_ids[:3] == [1, 2, 3] for train_ids, test_ids in seen)
+    assert any(test_ids == [3, 4] and train_ids == [1, 2] for train_ids, test_ids in seen)
+    assert any(test_ids == [5] and train_ids[:4] == [1, 2, 3, 4] for train_ids, test_ids in seen)
