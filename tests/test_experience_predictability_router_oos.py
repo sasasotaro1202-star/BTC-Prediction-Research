@@ -135,3 +135,6 @@ def test_router_evaluate_horizon_emits_case_metrics():
     assert result["status"] == "OK"
     assert result["pit_violation_count"] == 0
     assert "case_group_metrics" in result
+    assert "chronological_blocks" in result
+    assert result["chronological_blocks"]
+    assert all(block["n"] >= 20 for block in result["chronological_blocks"])
