@@ -21,6 +21,7 @@ from src.experience_failure_adaptive_policy_oos import (
     _choose_policy,
     _eligible_prior,
     _eligible_risk_records,
+    _policy_stable_against_fixed,
     _fit_risk_model,
     _metrics,
     _predict_risk_model,
@@ -220,3 +221,20 @@ def test_case_policy_uses_matured_history_when_case_support_is_sufficient():
     assert policy in POLICY_GRID
     assert detail["source"] == "case_matured_failure_history"
     assert detail["case_support"] == MIN_CASE_VALIDATION_SUPPORT
+
+
+def test_policy_stability_gate_rejects_time_localized_degradation():
+    records = [
+        _record(i, risk=0.75, correct=(i <= 40))
+        for i in range(1, 81)
+    ]
+    candidate = (0.90, 0.15)
+    assert _policy_stable_against_fixed(records, candidate) is False
+
+
+def test_fixed_policy_passes_its_own_stability_gate():
+    records = [
+        _record(i, risk=0.75, correct=(i % 2 == 0))
+        for i in range(1, 81)
+    ]
+    assert _policy_stable_against_fixed(records, (ABSTAIN_THRESHOLD, MAX_SHRINK)) is True
