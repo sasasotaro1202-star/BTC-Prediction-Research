@@ -188,7 +188,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     risks: list[float] = []
     actions: list[str] = []
     sources: list[str] = []
-    case_keys: list[tuple[str, str, str, str, str]] = []
+    case_keys: list[tuple[str, str, str, str, str, str]] = []
     source_validation_logloss: dict[str, list[float]] = {c: [] for c in CANDIDATES}
     pit_excluded_candidate_count = 0
     deferred_cases = 0
@@ -315,6 +315,14 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "mean_risk": float(np.mean(risk_arr[mask])),
             "observed_error_rate": float(np.mean(error_labels[mask])),
             "abstain_rate": float(np.mean(np.asarray(actions)[mask] == "ABSTAIN")),
+            "source_case": {
+                "horizon": key[0],
+                "regime": key[1],
+                "predicted_direction": key[2],
+                "confidence_bucket": key[3],
+                "production_mode": key[4],
+                "information_state": key[5],
+            },
         }
 
     return {
