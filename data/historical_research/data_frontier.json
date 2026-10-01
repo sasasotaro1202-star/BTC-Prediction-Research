@@ -15,9 +15,9 @@
       "deribit_public": {
         "duplicate_event_rows": 0,
         "file_count": 1,
-        "first_event_time": "2026-09-30T12:20:00+00:00",
+        "first_event_time": "2026-09-30T12:25:00+00:00",
         "invalid_row_count": 0,
-        "last_event_time": "2026-10-01T04:55:00+00:00",
+        "last_event_time": "2026-10-01T05:00:00+00:00",
         "record_count": 200,
         "status": "COMPLETE",
         "unique_event_times": 200,
@@ -25,22 +25,22 @@
       },
       "hyperliquid_ws": {
         "duplicate_event_rows": 0,
-        "file_count": 2,
-        "first_event_time": "2026-09-29T19:15:00+00:00",
+        "file_count": 1,
+        "first_event_time": "2026-09-30T12:25:00+00:00",
         "invalid_row_count": 0,
-        "last_event_time": "2026-10-01T04:55:00+00:00",
-        "record_count": 401,
+        "last_event_time": "2026-10-01T05:00:00+00:00",
+        "record_count": 200,
         "status": "COMPLETE",
-        "unique_event_times": 401,
-        "valid_row_count": 401
+        "unique_event_times": 200,
+        "valid_row_count": 200
       }
     },
     "cross_source": {
       "duplicate_event_rows": 200,
       "overlap_event_times": 200,
-      "unique_event_times": 401
+      "unique_event_times": 200
     },
-    "generated_at": "2026-10-01T05:02:06+00:00",
+    "generated_at": "2026-10-01T05:05:59+00:00",
     "invalid_files": [],
     "invalid_files_count": 0,
     "note": "COMPLETE/PARTIAL/MISSING describe evidence integrity for acquired batches, not historical-dataset completeness.",
@@ -56,15 +56,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "AfterRain007/Skripsi/Trash/dfVal.csv",
       "path": "Trash/dfVal.csv",
@@ -72,9 +72,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin funding filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "AfterRain007/Skripsi",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/AfterRain007/Skripsi/blob/a70e6e5fcdad93b8c83a190cbdabc284c11b4a16/Trash/dfVal.csv"
     },
     "github-code:AlexIchie-coder/Projects:API/Bitcoin_Daily_News.csv": {
@@ -616,6 +617,7 @@
       "description": "GitHub code-search lead; file-level candidate requiring acquisition/PIT validation",
       "first_seen": "2026-10-01T05:02:06+00:00",
       "last_seen": "2026-10-01T05:02:06+00:00",
+      "last_selected_at": "2026-10-01T05:05:59+00:00",
       "license": null,
       "lifecycle": {
         "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
@@ -635,6 +637,7 @@
       "production_eligible": false,
       "query": "bitcoin liquidation filename:csv",
       "repository": "manasmudbari/bitcoin-llm-regime-analysis",
+      "selection_count": 1,
       "stars": 0,
       "status": "DISCOVERED_UNVERIFIED",
       "url": "https://github.com/manasmudbari/bitcoin-llm-regime-analysis/blob/face30a21bb2bf4d3c7d0993ebb32fa46ee0cc43/data/bitcoin_news_events.csv"
@@ -704,15 +707,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/Malware.csv",
       "path": "data/Malware.csv",
@@ -720,9 +723,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/Malware.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/MetaHub.csv": {
@@ -732,15 +736,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/MetaHub.csv",
       "path": "data/MetaHub.csv",
@@ -748,9 +752,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/MetaHub.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/Stand.csv": {
@@ -760,15 +765,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/Stand.csv",
       "path": "data/Stand.csv",
@@ -776,9 +781,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin funding filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/Stand.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/blog.csv": {
@@ -788,15 +794,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/blog.csv",
       "path": "data/blog.csv",
@@ -804,9 +810,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/blog.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/coins.csv": {
@@ -816,15 +823,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/coins.csv",
       "path": "data/coins.csv",
@@ -832,9 +839,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/coins.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/geek.csv": {
@@ -844,15 +852,15 @@
       "last_seen": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/geek.csv",
       "path": "data/geek.csv",
@@ -860,9 +868,10 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/geek.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/golang.csv": {
@@ -873,15 +882,15 @@
       "last_selected_at": "2026-10-01T04:54:21+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/golang.csv",
       "path": "data/golang.csv",
@@ -889,10 +898,11 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "selection_count": 1,
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/golang.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/modded.csv": {
@@ -903,15 +913,15 @@
       "last_selected_at": "2026-10-01T04:51:58+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/modded.csv",
       "path": "data/modded.csv",
@@ -919,10 +929,11 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "selection_count": 1,
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/modded.csv"
     },
     "github-code:umbrae/reddit-top-2.5-million:data/valve.csv": {
@@ -933,15 +944,15 @@
       "last_selected_at": "2026-10-01T04:44:47+00:00",
       "license": null,
       "lifecycle": {
-        "acquisition_status": "BLOCKED_UNTIL_VERIFIED_AND_ADAPTER",
+        "acquisition_status": "REJECTED",
         "adoption_status": "RESEARCH_CANDIDATE_ONLY",
         "cost_status": "UNCONFIRMED",
         "data_feasibility": "METADATA_ONLY",
-        "eligibility": "ELIGIBLE_FOR_RESEARCH_REVIEW",
-        "next_test": "verify_cost_license_access_pit_and_add_safe_adapter",
+        "eligibility": "REJECTED_DISCOVERY_NOISE",
+        "next_test": "none_until_new_direct_signal",
         "pit_status": "UNVERIFIED",
-        "research_selection_eligible": true,
-        "stage": "DISCOVERED"
+        "research_selection_eligible": false,
+        "stage": "REJECTED"
       },
       "name": "umbrae/reddit-top-2.5-million/data/valve.csv",
       "path": "data/valve.csv",
@@ -949,13 +960,15 @@
       "platform": "github_code",
       "production_eligible": false,
       "query": "bitcoin open interest filename:csv",
+      "rejection_reason": "low_signal_code_search_match",
       "repository": "umbrae/reddit-top-2.5-million",
       "selection_count": 1,
       "stars": 0,
-      "status": "DISCOVERED_UNVERIFIED",
+      "status": "REJECTED_DISCOVERY_NOISE",
       "url": "https://github.com/umbrae/reddit-top-2.5-million/blob/d0efcade504b8ed735a48ddc2b15552fa924c9d9/data/valve.csv"
     }
   },
+  "discovery_quarantined_total": 10,
   "policy": {
     "free_only": true,
     "production_promotion": false,
