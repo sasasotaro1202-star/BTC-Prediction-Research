@@ -70,6 +70,8 @@ def evaluate_rows(
     block_size = max(1, int(test_block_rows))
     blocks: list[dict[str, Any]] = []
     start = int(min_train_rows)
+    while start > 0 and start < len(ordered) and str(ordered[start]["settled_at_utc"]) == str(ordered[start - 1]["settled_at_utc"]):
+        start += 1
     block_id = 0
     while start < len(ordered):
         train_rows = ordered[:start]
