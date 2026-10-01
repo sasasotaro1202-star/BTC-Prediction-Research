@@ -28,6 +28,7 @@ from typing import Any
 import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 
 try:
     from db import DB, init_db
@@ -232,6 +233,14 @@ def _logloss(y_idx: np.ndarray, p: np.ndarray) -> float:
     return float(-np.mean(np.log(np.clip(p[np.arange(len(y_idx)), y_idx], 1e-9, 1.0))))
 
 
+def _binary_logloss(y_true: np.ndarray, p: np.ndarray) -> float:
+    if len(y_true) == 0:
+        return float("nan")
+    p = np.clip(np.asarray(p, dtype=float), 1e-9, 1.0 - 1e-9)
+    y_true = np.asarray(y_true, dtype=int)
+    return float(-np.mean(np.where(y_true == 1, np.log(p), np.log(1.0 - p))))
+
+
 def _brier(y_idx: np.ndarray, p: np.ndarray) -> float:
     if len(y_idx) == 0:
         return float("nan")
@@ -261,6 +270,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     pit_excluded_candidate_count = 0
     model_fit_count = 0
     case_prior_values: list[float] = []
+    case_keys: list[tuple[str, str, str, str, str]] = []
 
     for index in range(MIN_TRAIN, len(ordered)):
         current = ordered[index]
@@ -302,6 +312,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         actions.append(action)
         risk_values.append(risk)
         case_prior_values.append(memory_risk)
+        case_keys.append(_case_key(current))
 
     if not ys:
         return {
@@ -314,6 +325,9 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     y = np.asarray(ys, dtype=int)
     base = np.vstack(base_probs)
     adjusted = np.vstack(adjusted_probs)
+    risks = np.asarray(risk_values, dtype=float)
+    base_pred = np.argmax(base, axis=1)
+    error_labels = (base_pred != y).astype(int)
     base_acc = float(np.mean(np.argmax(base, axis=1) == y))
     adjusted_acc = float(np.mean(np.argmax(adjusted, axis=1) == y))
     keep_mask = np.asarray(actions) != "ABSTAIN"
@@ -322,6 +336,53 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         float(np.mean(np.argmax(adjusted[keep_mask], axis=1) == y[keep_mask]))
         if np.any(keep_mask) else None
     )
+
+    predictability_auc = (
+        float(roc_auc_score(error_labels, risks))
+        if len(np.unique(error_labels)) == 2
+        else None
+    )
+    risk_bins: list[dict[str, Any]] = []
+    for lo in np.linspace(0.0, 0.9, 10):
+        hi = float(min(1.0, lo + 0.1))
+        mask = (risks >= lo) & ((risks < hi) if hi < 1.0 else (risks <= hi))
+        if np.any(mask):
+            observed = float(np.mean(error_labels[mask]))
+            predicted = float(np.mean(risks[mask]))
+            risk_bins.append({
+                "lower": float(lo),
+                "upper": float(hi),
+                "n": int(mask.sum()),
+                "mean_predicted_risk": predicted,
+                "observed_error_rate": observed,
+                "absolute_calibration_gap": float(abs(predicted - observed)),
+            })
+
+    case_group_metrics: dict[str, dict[str, Any]] = {}
+    actions_arr = np.asarray(actions)
+    adjusted_pred = np.argmax(adjusted, axis=1)
+    for key in sorted(set(case_keys)):
+        mask = np.asarray([k == key for k in case_keys], dtype=bool)
+        if int(mask.sum()) < MIN_CASE_SUPPORT:
+            continue
+        key_text = "|".join(key)
+        case_group_metrics[key_text] = {
+            "n": int(mask.sum()),
+            "base_accuracy": float(np.mean(base_pred[mask] == y[mask])),
+            "adjusted_accuracy": float(np.mean(adjusted_pred[mask] == y[mask])),
+            "base_logloss": _logloss(y[mask], base[mask]),
+            "adjusted_logloss": _logloss(y[mask], adjusted[mask]),
+            "mean_predicted_error_risk": float(np.mean(risks[mask])),
+            "observed_base_error_rate": float(np.mean(error_labels[mask])),
+            "abstain_rate": float(np.mean(actions_arr[mask] == "ABSTAIN")),
+            "source_case": {
+                "horizon": key[0],
+                "regime": key[1],
+                "predicted_direction": key[2],
+                "confidence_bucket": key[3],
+                "production_mode": key[4],
+            },
+        }
 
     groups: dict[str, dict[str, Any]] = {}
     for action in ("KEEP", "SHRINK", "ABSTAIN"):
@@ -380,8 +441,21 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             ),
         },
         "action_groups": groups,
+        "predictability": {
+            "risk_target": "base_prediction_error",
+            "logloss": _binary_logloss(error_labels, risks),
+            "brier": float(np.mean((risks - error_labels) ** 2)),
+            "auc": predictability_auc,
+            "mean_absolute_calibration_gap": (
+                float(np.mean([x["absolute_calibration_gap"] for x in risk_bins]))
+                if risk_bins else None
+            ),
+            "risk_bins": risk_bins,
+        },
         "mean_predicted_error_risk": float(np.mean(risk_values)),
         "mean_case_memory_error_risk": float(np.mean(case_prior_values)),
+        "case_group_metrics": case_group_metrics,
+        "case_group_count_with_support_floor": int(len(case_group_metrics)),
         "case_dimensions": ("horizon", "regime", "predicted_direction", "confidence_bucket", "production_mode"),
     }
 
