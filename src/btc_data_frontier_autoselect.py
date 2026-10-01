@@ -14,7 +14,8 @@ STATE_OUT=ROOT/"data/historical_research/data_frontier_state.json"
 SNAPSHOT_DIR=ROOT/"data/historical_research/source_snapshots"
 MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
-DISCOVERY_RESULTS=6
+DISCOVERY_RESULTS=8
+STRICT_PRIMARY_ACCUMULATION_TARGET=600
 PROBES={
  "hyperliquid_ws":("POST","https://api.hyperliquid.xyz/info",{"type":"metaAndAssetCtxs"}),
  "bitget_public_ws":("GET","https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES&symbol=BTCUSDT",None),
@@ -27,6 +28,34 @@ PROBES={
 DISCOVERY_QUERIES=("bitcoin dataset orderbook historical","bitcoin futures funding open interest dataset","bitcoin onchain dataset historical","BTC options historical dataset","crypto market microstructure dataset","bitcoin news events dataset timestamp")
 
 def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+def _atomic_write_json(path: Path, payload: object) -> None:
+ tmp = path.with_suffix(path.suffix + ".tmp")
+ tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2,sort_keys=True)+"\\n",encoding="utf-8")
+ tmp.replace(path)
+
+
+def plan_for_gap(gap):
+ gate_gap=max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0)))
+ accumulation_gap=max(0,STRICT_PRIMARY_ACCUMULATION_TARGET-int(gap.get("strict_primary",0)))
+ secondary={
+  "strict_primary_gate":gate_gap,
+  "strict_primary_accumulation":accumulation_gap,
+  "situation_meta_ready":max(0,int(gap.get("situation_meta_target",3000))-int(gap.get("situation_meta_ready_min",0))),
+  "online_expert_ready":max(0,int(gap.get("online_expert_target",140))-int(gap.get("online_expert_ready_min",0))),
+ }
+ needs_more=any(v>0 for v in secondary.values())
+ if gate_gap>0:
+  next_action="collect_live_and_refresh_pit"
+ elif accumulation_gap>0:
+  next_action="collect_live_and_refresh_pit_for_evidence_margin"
+ elif secondary["situation_meta_ready"]>0:
+  next_action="warm_binance_ws_and_collect_context"
+ elif secondary["online_expert_ready"]>0:
+  next_action="continue_live_cycles_for_online_expert"
+ else:
+  next_action="discover_and_reselect_frontier"
+ return secondary,needs_more,next_action
 def _norm(value): return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
 def _get(url,method="GET",body=None,token=None):
  headers={"User-Agent":"BTC-Prediction-Research-data-frontier/1.0","Accept":"application/json,text/plain,*/*"}
@@ -162,6 +191,8 @@ def discover_public_sources():
 def score(source,state,gap,pr):
  score=100-float(source.priority)*8
  score += 18 if source.access=="public_free" else 8
+ score += min(8, max(0, 6-int(state.get("selection_count",0))))
+ score += 5 if not state.get("last_probe_at") else 0
  score += 15 if source.pit in {"low","medium"} else -20
  score += 8 if source.realtime else 0
  score += 8 if source.historical else 0
@@ -243,7 +274,10 @@ def run():
  for s in SOURCES:
   st=frontier["source_state"].setdefault(s.source_id,{})
   st["selected_for_next_cycle"]=s.source_id in selected
-  if s.source_id in selected: st["selection_reason"]="data_gap_and_source_diversity" if gap["gap"]>0 else "rotating_frontier_coverage"
+  if s.source_id in selected:
+   st["selection_reason"]="data_gap_and_source_diversity" if gap["gap"]>0 else "rotating_frontier_coverage"
+   st["selection_count"]=int(st.get("selection_count",0))+1
+ secondary_gaps,repeat_until_data_sufficient,next_action=plan_for_gap(gap)
  runrec={
  "run_at":now_utc(),"cycle":cycle+1,"gap":gap,
  "probed_source_ids":probe_ids,"selected_source_ids":selected,
@@ -253,35 +287,24 @@ def run():
  "discovery_failures":discovery_failures,
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
- secondary_gaps={
-  "strict_primary":max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0))),
-  "situation_meta_ready":max(0,int(gap.get("situation_meta_target",3000))-int(gap.get("situation_meta_ready_min",0))),
-  "online_expert_ready":max(0,int(gap.get("online_expert_target",140))-int(gap.get("online_expert_ready_min",0))),
- }
- repeat_until_data_sufficient=any(value>0 for value in secondary_gaps.values())
- if secondary_gaps["strict_primary"]>0:
-  next_action="collect_live_and_refresh_pit"
- elif secondary_gaps["situation_meta_ready"]>0:
-  next_action="warm_binance_ws_and_collect_context"
- elif secondary_gaps["online_expert_ready"]>0:
-  next_action="continue_live_cycles_for_online_expert"
- else:
-  next_action="discover_and_reselect_frontier"
- runrec["data_sufficiency"]={
+ "data_sufficiency":{
+  "promotion_gate_target":int(gap.get("target",300)),
+  "accumulation_target":STRICT_PRIMARY_ACCUMULATION_TARGET,
   "remaining":secondary_gaps,
   "repeat_until_data_sufficient":repeat_until_data_sufficient,
   "stop_when_all_targets_met":True,
- }
- runrec["next_best_action"]=next_action
- runrec["actions"]={
-  "collect_live":secondary_gaps["strict_primary"]>0,
-  "warm_binance_ws":secondary_gaps["strict_primary"]>0 or secondary_gaps["situation_meta_ready"]>0,
-  "refresh_pit_audit":secondary_gaps["strict_primary"]>0,
+ },
+ "next_best_action":next_action,
+ "actions":{
+  "collect_live":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0 or secondary_gaps["online_expert_ready"]>0,
+  "warm_binance_ws":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0,
+  "refresh_pit_audit":secondary_gaps["strict_primary_accumulation"]>0,
   "continue_discovery":True,
   "continue_selection":True,
   "repeat_until_data_sufficient":repeat_until_data_sufficient,
   "recompute_after_collection":True,
   "reselect_after_acquisition":True,
+ },
  }
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
@@ -296,9 +319,9 @@ def run():
   "policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"},
  }
  OUT.parent.mkdir(parents=True,exist_ok=True)
- OUT.write_text(json.dumps(durable,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
- STATE_OUT.write_text(json.dumps({"schema_version":1,"updated_at":now_utc(),"source_state":dict(sorted(frontier["source_state"].items())),"history":frontier["history"],"policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"}},ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
- RUN_OUT.write_text(json.dumps(runrec,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+ _atomic_write_json(OUT,durable)
+ _atomic_write_json(STATE_OUT,{"schema_version":1,"updated_at":now_utc(),"source_state":dict(sorted(frontier["source_state"].items())),"history":frontier["history"],"policy":{"free_only":True,"production_promotion":False,"unknown_pit":"FAIL_CLOSED"}})
+ _atomic_write_json(RUN_OUT,runrec)
  files=sorted(SNAPSHOT_DIR.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True) if SNAPSHOT_DIR.exists() else []
  for stale in files[MAX_SNAPSHOTS:]: stale.unlink(missing_ok=True)
  return runrec
