@@ -49,6 +49,7 @@ OUT = ROOT / "data" / "historical_research" / "experience_predictability_router_
 MIN_TRAIN = 140
 VALIDATION_SIZE = 60
 TIE_EPS = 0.002
+MIN_RELATIVE_GAIN = 0.01
 ROUTER_REFRESH = 20
 MIN_CONSECUTIVE_SELECTIONS = 2
 MAX_SHRINK = 0.35
@@ -223,8 +224,13 @@ def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, flo
     }
     scores = {name: _binary_logloss(labels, candidate_values[name]) for name in CANDIDATES}
     best = min(CANDIDATES, key=lambda c: (scores[c], CANDIDATES.index(c)))
-    if best != "global" and scores[best] >= scores["global"] - TIE_EPS:
-        best = "global"
+    global_score = float(scores["global"])
+    if best != "global":
+        required = global_score * (1.0 - MIN_RELATIVE_GAIN)
+        if scores[best] >= required:
+            best = "global"
+        elif scores[best] >= global_score - TIE_EPS:
+            best = "global"
     return best, scores, len(validation)
 
 
@@ -428,9 +434,10 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "router_refresh_count": int(refresh_count),
         "router_refresh_size": ROUTER_REFRESH,
         "min_consecutive_selections": MIN_CONSECUTIVE_SELECTIONS,
+        "min_relative_gain": MIN_RELATIVE_GAIN,
         "source_changes": int(source_changes),
         "candidate_sources": CANDIDATES,
-        "selection_rule": f"lowest_validation_logloss_with_global_fallback_within_{TIE_EPS}",
+        "selection_rule": f"lowest_validation_logloss_requires_{MIN_RELATIVE_GAIN:.3f}_relative_gain_and_global_fallback_within_{TIE_EPS}",
         "source_counts": source_counts,
         "raw_source_counts": raw_source_counts,
         "chronological_blocks": blocks,
