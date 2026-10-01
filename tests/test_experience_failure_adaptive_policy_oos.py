@@ -46,6 +46,8 @@ def _row(
         "horizon": "5m",
         "created_at_utc": created,
         "settled_at_utc": settled,
+        "warning_flags": "",
+        "data_quality_flags": "",
         "regime": regime,
         "predicted_direction": direction,
         "production_mode": mode,
@@ -123,7 +125,7 @@ def test_policy_selection_uses_matured_failure_history():
     validation = []
     for i in range(1, 81):
         high_risk = i <= 40
-        validation.append(_record(i, risk=0.85 if high_risk else 0.45, correct=False if high_risk else True))
+        validation.append(_record(i, risk=0.65 if high_risk else 0.45, correct=False if high_risk else True))
     policy, detail = _choose_policy(validation)
     assert detail["source"] == "matured_failure_history"
     assert detail["support"] == 80
