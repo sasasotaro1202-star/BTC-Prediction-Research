@@ -127,18 +127,21 @@ def evaluate_horizon(rows: list[Any], horizon: str, alpha: float = 0.20) -> dict
     singleton_n = 0
     q_values: list[float] = []
     pool_levels: list[str] = []
-    skipped = 0
+    deferred_cases = 0
+    pit_excluded_candidate_count = 0
 
     for idx in range(MIN_TRAIN, len(ordered)):
         current = ordered[idx]
-        prior = _eligible_prior(ordered[:idx], current)
+        prior_candidates = ordered[:idx]
+        prior = _eligible_prior(prior_candidates, current)
+        pit_excluded_candidate_count += max(0, len(prior_candidates) - len(prior))
         if len(prior) < MIN_TRAIN:
-            skipped += 1
+            deferred_cases += 1
             continue
 
         pool, level = _calibration_pool(prior, current)
         if len(pool) < MIN_CALIBRATION_SUPPORT:
-            skipped += 1
+            deferred_cases += 1
             continue
 
         scores = [_aps_score(row) for row in pool]
@@ -178,7 +181,9 @@ def evaluate_horizon(rows: list[Any], horizon: str, alpha: float = 0.20) -> dict
         "n": len(ordered),
         "prequential_test_rows": len(outcomes),
         "learning_boundary": "only_experiences_with_created_at_utc_and_settled_at_utc_strictly_before_current_prediction_time",
-        "pit_violation_count": int(skipped),
+        "pit_violation_count": 0,
+        "pit_excluded_candidate_count": int(pit_excluded_candidate_count),
+        "deferred_cases": int(deferred_cases),
         "alpha": float(alpha),
         "target_marginal_coverage": float(1.0 - alpha),
         "coverage": float(np.mean(covered_arr)),
