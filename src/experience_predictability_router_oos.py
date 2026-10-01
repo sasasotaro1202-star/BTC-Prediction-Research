@@ -223,15 +223,21 @@ def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, flo
         "meta": meta_values,
     }
     scores = {name: _binary_logloss(labels, candidate_values[name]) for name in CANDIDATES}
+    best = _select_source_from_scores(scores)
+    return best, scores, len(validation)
+
+
+
+def _select_source_from_scores(scores: dict[str, float]) -> str:
+    """Select a risk source only when its validation gain is material."""
     best = min(CANDIDATES, key=lambda c: (scores[c], CANDIDATES.index(c)))
     global_score = float(scores["global"])
     if best != "global":
         required = global_score * (1.0 - MIN_RELATIVE_GAIN)
-        if scores[best] >= required:
-            best = "global"
-        elif scores[best] >= global_score - TIE_EPS:
-            best = "global"
-    return best, scores, len(validation)
+        if scores[best] >= required or scores[best] >= global_score - TIE_EPS:
+            return "global"
+    return best
+
 
 
 def _mll(labels: np.ndarray, p: np.ndarray) -> float:
