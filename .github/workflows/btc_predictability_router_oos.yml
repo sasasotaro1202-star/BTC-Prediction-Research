@@ -2,13 +2,13 @@ name: BTC Predictability Router OOS
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
     branches:
       - main
     paths:
       - 'src/experience_predictability_router_oos.py'
       - 'src/experience_case_adaptive_controller_oos.py'
       - 'tests/test_experience_predictability_router_oos.py'
-      - 'data/predictions.db.gz'
       - 'requirements.txt'
   workflow_dispatch:
 
