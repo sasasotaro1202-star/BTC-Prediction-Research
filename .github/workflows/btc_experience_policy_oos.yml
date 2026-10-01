@@ -4,8 +4,9 @@ on:
   schedule:
     - cron: '23 */6 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
+  pull_request:
+    branches:
+      - main
     paths:
       - 'src/experience_policy_oos.py'
       - 'src/experience_policy_unweighted_logistic_oos.py'
@@ -22,13 +23,54 @@ on:
       - 'config/EXPERIENCE_POLICY_STABILITY_OOS.json'
       - 'config/EXPERIENCE_POLICY_PROMOTION_GATE.json'
       - 'src/experience_ledger.py'
+      - 'src/experience_case_adaptive_controller_oos.py'
+      - 'tests/test_experience_case_adaptive_controller_oos.py'
+      - 'src/experience_case_conditional_policy_oos.py'
+      - 'tests/test_experience_case_conditional_policy_oos.py'
+      - 'src/experience_failure_recurrence_oos.py'
+      - 'tests/test_experience_failure_recurrence_oos.py'
+      - 'src/experience_case_conformal_set_oos.py'
+      - 'src/experience_predictability_router_oos.py'
+      - 'tests/test_experience_case_conformal_set_oos.py'
+      - 'tests/test_experience_predictability_router_oos.py'
+      - 'tests/test_experience_policy_oos.py'
+      - 'config/EXPERIENCE_POLICY_OOS.json'
+      - 'config/EXPERIENCE_POLICY_UNWEIGHTED_LOGISTIC_OOS.json'
+      - '.github/workflows/btc_experience_policy_oos.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/experience_policy_oos.py'
+      - 'src/experience_policy_unweighted_logistic_oos.py'
+      - 'src/experience_policy_tail_calibrated_logistic_oos.py'
+      - 'src/experience_policy_core_feature_logistic_oos.py'
+      - 'src/experience_policy_stability_oos.py'
+      - 'src/experience_policy_promotion_gate.py'
+      - 'tests/test_experience_policy_core_feature_logistic_oos.py'
+      - 'tests/test_experience_policy_tail_calibrated_logistic_oos.py'
+      - 'tests/test_experience_policy_stability_oos.py'
+      - 'tests/test_experience_policy_promotion_gate.py'
+      - 'config/EXPERIENCE_POLICY_CORE_FEATURE_LOGISTIC_OOS.json'
+      - 'config/EXPERIENCE_POLICY_TAIL_CALIBRATED_LOGISTIC_OOS.json'
+      - 'config/EXPERIENCE_POLICY_STABILITY_OOS.json'
+      - 'config/EXPERIENCE_POLICY_PROMOTION_GATE.json'
+      - 'src/experience_ledger.py'
+      - 'src/experience_case_adaptive_controller_oos.py'
+      - 'tests/test_experience_case_adaptive_controller_oos.py'
+      - 'src/experience_case_conditional_policy_oos.py'
+      - 'tests/test_experience_case_conditional_policy_oos.py'
+      - 'src/experience_failure_recurrence_oos.py'
+      - 'tests/test_experience_failure_recurrence_oos.py'
+      - 'src/experience_case_conformal_set_oos.py'
+      - 'tests/test_experience_case_conformal_set_oos.py'
       - 'tests/test_experience_policy_oos.py'
       - 'config/EXPERIENCE_POLICY_OOS.json'
       - 'config/EXPERIENCE_POLICY_UNWEIGHTED_LOGISTIC_OOS.json'
       - '.github/workflows/btc_experience_policy_oos.yml'
 
 concurrency:
-  group: btc-experience-policy-oos
+  group: btc-experience-policy-oos-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -198,6 +240,147 @@ jobs:
           print("BTC unweighted experience logistic OOS: VERIFIED")
           PY
 
+      - name: Run case-adaptive experience controller OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_case_adaptive_controller_oos.py
+          test -s data/historical_research/experience_case_adaptive_controller_oos.json
+
+      - name: Run case-conditional conformal prediction set OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_case_conformal_set_oos.py
+          test -s data/historical_research/experience_case_conformal_set_oos.json
+
+      - name: Verify conformal set safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_case_conformal_set_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("conformal set candidate must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("conformal set cannot create promotion evidence")
+          for h,alpha_items in obj.get("horizons",{}).items():
+              for alpha,item in alpha_items.items():
+                  if item.get("status") == "OK":
+                      if int(item.get("pit_violation_count",0)) != 0:
+                          raise SystemExit(f"{h}/{alpha}: PIT violation detected")
+                      if not 0.0 <= float(item.get("coverage",0.0)) <= 1.0:
+                          raise SystemExit(f"{h}/{alpha}: invalid coverage")
+          print("BTC case-conditional conformal set boundary: VERIFIED")
+          PY
+
+      - name: Run failure recurrence OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_failure_recurrence_oos.py
+          test -s data/historical_research/experience_failure_recurrence_oos.json
+
+      - name: Verify failure recurrence safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_failure_recurrence_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("failure recurrence candidate must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("failure recurrence cannot create promotion evidence")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK" and int(item.get("pit_violation_count",0)) != 0:
+                  raise SystemExit(f"{h}: PIT violation detected")
+          print("BTC failure recurrence OOS boundary: VERIFIED")
+          PY
+
+      - name: Run prequential predictability source router OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_predictability_router_oos.py
+          test -s data/historical_research/experience_predictability_router_oos.json
+
+      - name: Verify predictability router safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_predictability_router_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("predictability router must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("predictability router cannot create promotion evidence")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK":
+                  if int(item.get("pit_violation_count",0)) != 0:
+                      raise SystemExit(f"{h}: PIT violation detected")
+                  if set(item.get("candidate_sources",())) != {"global","case_memory","meta"}:
+                      raise SystemExit(f"{h}: candidate source set mismatch")
+          print("BTC predictability source router boundary: VERIFIED")
+          PY
+
+      - name: Run case-conditional experience policy OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_case_conditional_policy_oos.py
+          test -s data/historical_research/experience_case_conditional_policy_oos.json
+
+      - name: Verify case-conditional policy safety and PIT boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_case_conditional_policy_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("case-conditional policy must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("case-conditional policy cannot create promotion evidence")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK":
+                  if int(item.get("pit_violation_count",0)) != 0:
+                      raise SystemExit(f"{h}: PIT violation detected")
+                  delta=item.get("delta_selected_minus_baseline",{})
+                  if not all(k in delta for k in ("accuracy","logloss","brier","ece")):
+                      raise SystemExit(f"{h}: incomplete candidate metric set")
+          print("BTC case-conditional policy boundary: VERIFIED")
+          PY
+
+      - name: Verify case-adaptive controller safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_case_adaptive_controller_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("case-adaptive controller must remain research-only")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("case-adaptive controller cannot create promotion evidence")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK" and int(item.get("pit_violation_count",0)) != 0:
+                  raise SystemExit(f"{h}: PIT violation detected")
+          print("BTC case-adaptive controller boundary: VERIFIED")
+          PY
+
       - name: Run chronological stability OOS
         shell: bash
         run: |
@@ -206,7 +389,7 @@ jobs:
           test -s data/historical_research/experience_policy_stability_oos.json
 
       - name: Run focused tests
-        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_stability_oos.py tests/test_experience_policy_promotion_gate.py tests/test_experience_policy_tail_calibrated_logistic_oos.py tests/test_experience_policy_core_feature_logistic_oos.py
+        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_case_adaptive_controller_oos.py tests/test_experience_case_conditional_policy_oos.py tests/test_experience_failure_recurrence_oos.py tests/test_experience_case_conformal_set_oos.py tests/test_experience_predictability_router_oos.py tests/test_experience_policy_oos.py tests/test_experience_policy_stability_oos.py tests/test_experience_policy_promotion_gate.py tests/test_experience_policy_tail_calibrated_logistic_oos.py tests/test_experience_policy_core_feature_logistic_oos.py
 
       - name: Validate experience stability evidence
         shell: bash
@@ -292,5 +475,11 @@ jobs:
             data/historical_research/experience_policy_tail_calibrated_logistic_oos.json
             data/historical_research/experience_policy_core_feature_logistic_oos.json
             data/historical_research/experience_policy_promotion_gate.json
+            data/historical_research/experience_case_adaptive_controller_oos.json
+            data/historical_research/experience_case_conditional_policy_oos.json
+            data/historical_research/experience_failure_recurrence_oos.json
+            data/historical_research/experience_case_conformal_set_oos.json
+            data/historical_research/experience_predictability_router_oos.json
           if-no-files-found: error
           retention-days: 14
+# Research-branch OOS execution trigger
