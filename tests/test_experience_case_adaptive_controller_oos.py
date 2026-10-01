@@ -59,7 +59,11 @@ def test_hierarchical_memory_uses_matching_case_history():
         )
         for i in range(1, 31)
     ]
-    target = _row(experience_id=999)
+    target = _row(
+        experience_id=999,
+        created="2026-10-01T00:10:00+00:00",
+        settled="2026-10-01T00:15:00+00:00",
+    )
     estimate = _hierarchical_prior(matching + other, target)
     assert estimate > _baseline_error(matching + other)
 
