@@ -130,6 +130,21 @@ def test_prequential_does_not_split_same_settlement_timestamp(monkeypatch):
     )
 
 
+def test_prequential_supports_unweighted_logistic():
+    rows = [_row(i, int(i % 3 != 0), warning=(i % 7 == 0)) for i in range(150)]
+    result = mod.prequential_evaluate(
+        rows,
+        min_train_rows=100,
+        block_size=1,
+        model_c=0.5,
+        class_weight=None,
+        max_report_cases=10,
+    )
+    assert result["status"] == "OK"
+    assert result["model"]["class_weight"] is None
+    assert result["model"]["model_fit_count"] > 0
+
+
 def test_prequential_is_deterministic():
     rows = [_row(i, int(i % 3 != 0), warning=(i % 7 == 0)) for i in range(150)]
     a = mod.prequential_evaluate(rows, min_train_rows=100, max_report_cases=10)
