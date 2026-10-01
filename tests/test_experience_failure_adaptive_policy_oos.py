@@ -24,6 +24,7 @@ from src.experience_failure_adaptive_policy_oos import (
     _policy_stable_against_fixed,
     _fit_risk_model,
     _metrics,
+    _oracle_policy,
     _predict_risk_model,
 )
 
@@ -238,3 +239,15 @@ def test_fixed_policy_passes_its_own_stability_gate():
         for i in range(1, 81)
     ]
     assert _policy_stable_against_fixed(records, (ABSTAIN_THRESHOLD, MAX_SHRINK)) is True
+
+
+def test_oracle_policy_is_in_policy_grid_and_is_evaluation_only():
+    records = [
+        _record(i, risk=0.75, correct=(i % 3 != 0))
+        for i in range(1, 81)
+    ]
+    policy, metrics = _oracle_policy(records)
+    assert policy in POLICY_GRID
+    assert metrics["n"] == 80
+    assert np.isfinite(metrics["logloss"])
+    assert np.isfinite(metrics["brier"])
