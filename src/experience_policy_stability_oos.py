@@ -76,8 +76,11 @@ def evaluate_rows(
     while start < len(ordered):
         train_rows = ordered[:start]
         stop = min(len(ordered), start + block_size)
-        settlement_ts = str(ordered[start]["settled_at_utc"])
-        while stop < len(ordered) and str(ordered[stop]["settled_at_utc"]) == settlement_ts:
+        # Keep an entire settlement timestamp in the same OOS block.
+        while (
+            stop < len(ordered)
+            and str(ordered[stop]["settled_at_utc"]) == str(ordered[stop - 1]["settled_at_utc"])
+        ):
             stop += 1
         test_rows = ordered[start:stop]
         y_true = [1 - int(row["correct"]) for row in test_rows]
