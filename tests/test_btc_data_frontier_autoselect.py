@@ -165,50 +165,49 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 
     def test_accumulation_target_stays_above_promotion_floor(self):
-            secondary, repeat, action = mod.plan_for_gap({
-                "strict_primary":300,
-                "target":300,
-                "situation_meta_ready_min":3000,
-                "situation_meta_target":3000,
-                "online_expert_ready_min":140,
-                "online_expert_target":140,
-            })
-            self.assertEqual(secondary["strict_primary_gate"],0)
-            self.assertEqual(secondary["strict_primary_accumulation"],300)
-            self.assertTrue(repeat)
-            self.assertEqual(action,"collect_live_and_refresh_pit_for_evidence_margin")
+        secondary, repeat, action = mod.plan_for_gap({
+            "strict_primary":300,
+            "target":300,
+            "situation_meta_ready_min":3000,
+            "situation_meta_target":3000,
+            "online_expert_ready_min":140,
+            "online_expert_target":140,
+        })
+        self.assertEqual(secondary["strict_primary_gate"],0)
+        self.assertEqual(secondary["strict_primary_accumulation"],300)
+        self.assertTrue(repeat)
+        self.assertEqual(action,"collect_live_and_refresh_pit_for_evidence_margin")
 
-        def test_gate_shortfall_prioritizes_live_acquisition(self):
-            _, repeat, action = mod.plan_for_gap({
-                "strict_primary":141,
-                "target":300,
-                "situation_meta_ready_min":3000,
-                "situation_meta_target":3000,
-                "online_expert_ready_min":140,
-                "online_expert_target":140,
-            })
-            self.assertTrue(repeat)
-            self.assertEqual(action,"collect_live_and_refresh_pit")
+    def test_gate_shortfall_prioritizes_live_acquisition(self):
+        _, repeat, action = mod.plan_for_gap({
+            "strict_primary":141,
+            "target":300,
+            "situation_meta_ready_min":3000,
+            "situation_meta_target":3000,
+            "online_expert_ready_min":140,
+            "online_expert_target":140,
+        })
+        self.assertTrue(repeat)
+        self.assertEqual(action,"collect_live_and_refresh_pit")
 
-        def test_selection_count_is_persistent_state_signal(self):
-            state={"selection_count":5,"successful_probes":0,"consecutive_failures":0}
-            self.assertGreaterEqual(mod.score(mod.get_source("mempool_space"),state,{"gap":159},{ }),0)
+    def test_selection_count_is_persistent_state_signal(self):
+        state={"selection_count":5,"successful_probes":0,"consecutive_failures":0}
+        self.assertGreaterEqual(
+            mod.score(mod.get_source("mempool_space"),state,{"gap":159},{ }),0
+        )
 
-        def test_workflow_persists_state_even_when_recovery_step_fails(self):
-            workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
-            start=workflow.index("      - name: Persist frontier selector state")
-            end=workflow.index("      - name: Persist newly discovered frontier candidates")
-            self.assertIn("if: always()",workflow[start:end])
-            self.assertIn("if: always()",workflow[end:])
+    def test_workflow_persists_state_even_when_recovery_step_fails(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        start=workflow.index("      - name: Persist frontier selector state")
+        end=workflow.index("      - name: Persist newly discovered frontier candidates")
+        self.assertIn("if: always()",workflow[start:end])
+        self.assertIn("if: always()",workflow[end:])
 
-        def test_workflow_exposes_accumulation_loop(self):
-            source=Path("src/btc_data_frontier_autoselect.py").read_text(encoding="utf-8")
-            self.assertIn("STRICT_PRIMARY_ACCUMULATION_TARGET=600",source)
-            self.assertIn("strict_primary_accumulation",source)
-            self.assertIn("collect_live_and_refresh_pit_for_evidence_margin",source)
-
-if __name__=="__main__":
-    main()
+    def test_workflow_exposes_accumulation_loop(self):
+        source=Path("src/btc_data_frontier_autoselect.py").read_text(encoding="utf-8")
+        self.assertIn("STRICT_PRIMARY_ACCUMULATION_TARGET=600",source)
+        self.assertIn("strict_primary_accumulation",source)
+        self.assertIn("collect_live_and_refresh_pit_for_evidence_margin",source)
 
     def test_workflow_allows_evidence_margin_collection_action(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
@@ -222,3 +221,6 @@ if __name__=="__main__":
         self.assertIn('state_ref="${GITHUB_SHA}"',section)
         self.assertIn("Selector-state branch absent; bootstrapping it",section)
         self.assertIn("git worktree add --detach",section)
+
+if __name__=="__main__":
+    main()
