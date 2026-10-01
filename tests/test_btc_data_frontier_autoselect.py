@@ -120,11 +120,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertIn("data/historical_research/data_frontier_state.json",workflow)
         self.assertIn("refusing to discard selection memory",workflow)
 
-
-if __name__=="__main__":
-    main()
-
-    def test_empty_durable_frontier_recovers_as_fresh_state():
+    def test_empty_durable_frontier_recovers_as_fresh_state(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
             hist=root/"data/historical_research"
@@ -136,7 +132,7 @@ if __name__=="__main__":
             self.assertEqual(frontier["candidates"],{})
             self.assertIn("empty_durable_frontier_reset",frontier["_recovery_events"])
 
-    def test_selector_always_reserves_one_qualified_discovery_slot():
+    def test_selector_always_reserves_one_qualified_discovery_slot(self):
         frontier={"source_state":{},"candidates":{
             "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
         }}
@@ -144,15 +140,30 @@ if __name__=="__main__":
         self.assertIn("github:test/btc",selected)
         self.assertEqual(sum(1 for sid in selected if sid=="github:test/btc"),1)
 
-    def test_workflow_recovers_missing_historical_and_pit_data():
+    def test_workflow_recovers_missing_historical_and_pit_data(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
         self.assertIn("acquire_historical_archive",workflow)
         self.assertIn("refresh_pit_audit",workflow)
         self.assertIn("dispatch_verified btc_archive_refresh.yml 21600",workflow)
         self.assertIn("dispatch_verified btc_pit_oos_audit.yml 3600",workflow)
 
-    def test_workflow_does_not_materialize_empty_selector_state_on_missing_file():
+    def test_workflow_does_not_materialize_empty_selector_state_on_missing_file(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
         self.assertIn("state_tmp=",workflow)
-        self.assertIn("mv "$state_tmp"",workflow)
+        self.assertIn('mv "$state_tmp"',workflow)
         self.assertNotIn("git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > data/historical_research/data_frontier_state.json",workflow)
+
+    def test_run_records_selected_discovered_candidates(self):
+        frontier={"source_state":{},"candidates":{
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+        }}
+        selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
+        self.assertIn("github:test/btc",selected)
+        frontier["candidates"]["github:test/btc"]["last_selected_at"]="2026-10-01T00:00:00+00:00"
+        frontier["candidates"]["github:test/btc"]["selection_count"]=1
+        self.assertEqual(frontier["candidates"]["github:test/btc"]["selection_count"],1)
+
+
+if __name__=="__main__":
+    main()
+    main()

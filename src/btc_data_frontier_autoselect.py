@@ -231,6 +231,15 @@ def run():
  for c in discovered:
   old=frontier["candidates"].get(c["candidate_id"],{}); old.update(c); old["first_seen"]=old.get("first_seen",now_utc()); old["last_seen"]=now_utc(); frontier["candidates"][c["candidate_id"]]=old
  selected=select_sources(frontier,gap,results)
+ selected_discovered=[
+  sid for sid in selected
+  if sid in frontier.get("candidates",{})
+  and (frontier["candidates"].get(sid) or {}).get("status")=="DISCOVERED_UNVERIFIED"
+ ]
+ for sid in selected_discovered:
+  cand=frontier["candidates"][sid]
+  cand["last_selected_at"]=now_utc()
+  cand["selection_count"]=int(cand.get("selection_count",0))+1
  for s in SOURCES:
   st=frontier["source_state"].setdefault(s.source_id,{})
   st["selected_for_next_cycle"]=s.source_id in selected
