@@ -18,7 +18,8 @@ promotion candidate only after independent OOS/holdout validation.
 """
 from __future__ import annotations
 
-import json
+
+from experience_pit_scope import load_strict_primary_rowsimport json
 import math
 import sqlite3
 from datetime import datetime, timezone
@@ -480,21 +481,17 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     }
 
 
+def load_experience_rows_with_pit_scope() -> tuple[list[Any], dict[str, Any]]:
+    return load_strict_primary_rows(DB)
+
+
 def load_experience_rows() -> list[Any]:
-    init_db()
-    with sqlite3.connect(DB) as con:
-        con.row_factory = sqlite3.Row
-        rows = con.execute(
-            """SELECT * FROM experience_ledger
-               WHERE actual_direction IN ('DOWN','FLAT','UP')
-                 AND settled_at_utc IS NOT NULL
-               ORDER BY settled_at_utc, experience_id"""
-        ).fetchall()
-    return list(rows)
+    rows, _ = load_experience_rows_with_pit_scope()
+    return rows
 
 
 def build() -> dict[str, Any]:
-    rows = load_experience_rows()
+    rows, pit_scope = load_experience_rows_with_pit_scope()
     results = {
         h: evaluate_horizon(rows, h)
         for h in ("5m", "10m")
@@ -504,6 +501,8 @@ def build() -> dict[str, Any]:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "research_only": True,
         "production_changed": False,
+        "strict_pit_scope": True,
+        "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "description": (
             "Case-adaptive controller combining prequential past-prediction "
