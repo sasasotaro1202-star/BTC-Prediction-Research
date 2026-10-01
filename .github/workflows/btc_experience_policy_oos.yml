@@ -9,6 +9,9 @@ on:
     paths:
       - 'src/experience_policy_oos.py'
       - 'src/experience_policy_unweighted_logistic_oos.py'
+      - 'src/experience_policy_tail_calibrated_logistic_oos.py'
+      - 'tests/test_experience_policy_tail_calibrated_logistic_oos.py'
+      - 'config/EXPERIENCE_POLICY_TAIL_CALIBRATED_LOGISTIC_OOS.json'
       - 'src/experience_ledger.py'
       - 'tests/test_experience_policy_oos.py'
       - 'config/EXPERIENCE_POLICY_OOS.json'
@@ -92,6 +95,39 @@ jobs:
           python src/experience_policy_unweighted_logistic_oos.py
           test -s data/historical_research/experience_policy_unweighted_logistic_oos.json
 
+      - name: Run temporal tail calibrated logistic OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_policy_tail_calibrated_logistic_oos.py
+          test -s data/historical_research/experience_policy_tail_calibrated_logistic_oos.json
+
+      - name: Validate temporal tail calibrated logistic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_policy_tail_calibrated_logistic_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("candidate") != "temporal_tail_calibrated_unweighted_logistic":
+              raise SystemExit("unexpected temporal calibration candidate")
+          if obj.get("research_only") is not True:
+              raise SystemExit("temporal calibrated candidate must remain research-only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("temporal calibrated candidate changed production state")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("temporal calibrated candidate cannot create promotion evidence")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK":
+                  if item.get("model",{}).get("probability_calibration") != "temporal_tail_sigmoid":
+                      raise SystemExit(f"{h}: unexpected calibration method")
+                  if item.get("model",{}).get("trained_only_on_prior_settled_experiences") is not True:
+                      raise SystemExit(f"{h}: prequential boundary missing")
+          print("BTC temporal calibrated experience logistic OOS: VERIFIED")
+          PY
+
       - name: Validate unweighted experience logistic evidence
         shell: bash
         run: |
@@ -126,7 +162,7 @@ jobs:
           test -s data/historical_research/experience_policy_stability_oos.json
 
       - name: Run focused tests
-        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_stability_oos.py tests/test_experience_policy_promotion_gate.py
+        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_stability_oos.py tests/test_experience_policy_promotion_gate.py tests/test_experience_policy_tail_calibrated_logistic_oos.py
 
       - name: Validate experience stability evidence
         shell: bash
