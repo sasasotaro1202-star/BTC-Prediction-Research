@@ -69,7 +69,7 @@ on:
       - '.github/workflows/btc_experience_policy_oos.yml'
 
 concurrency:
-  group: btc-experience-policy-oos
+  group: btc-experience-policy-oos-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
