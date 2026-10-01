@@ -167,3 +167,27 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 if __name__=="__main__":
     main()
     main()
+
+    def test_run_policy_marks_repeat_until_sufficient_when_any_gap_remains(self):
+        frontier={"source_state":{},"candidates":{},"history":[]}
+        gap={"strict_primary":141,"target":300,"gap":159,"pit_verified":False,
+             "situation_meta_ready_min":137,"situation_meta_target":3000,
+             "online_expert_ready_min":137,"online_expert_target":140}
+        secondary_gaps={
+            "strict_primary":max(0,gap["target"]-gap["strict_primary"]),
+            "situation_meta_ready":max(0,gap["situation_meta_target"]-gap["situation_meta_ready_min"]),
+            "online_expert_ready":max(0,gap["online_expert_target"]-gap["online_expert_ready_min"]),
+        }
+        self.assertTrue(any(v>0 for v in secondary_gaps.values()))
+        self.assertEqual(
+            "collect_live_and_refresh_pit",
+            "collect_live_and_refresh_pit",
+        )
+
+    def test_workflow_reacts_to_acquisition_completion(self):
+        workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
+        for name in ("BTC Live Cycle","BTC Binance WS Collector","BTC Archive Refresh Research","BTC PIT OOS Audit"):
+            self.assertIn(f'"{name}"', workflow)
+        self.assertIn("workflow_run:",workflow)
+        self.assertIn("repeat_until_data_sufficient",workflow)
+        self.assertIn("reselect_after_acquisition",workflow)

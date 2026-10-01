@@ -253,20 +253,36 @@ def run():
  "discovery_failures":discovery_failures,
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
- "actions":{
-  "collect_live": bool(
-   gap.get("gap",0)>0
-   or gap.get("situation_meta_ready_min",0)<gap.get("situation_meta_target",3000)
-   or gap.get("online_expert_ready_min",0)<gap.get("online_expert_target",140)
-  ),
-  "warm_binance_ws": bool(
-   gap.get("gap",0)>0
-   or gap.get("situation_meta_ready_min",0)<gap.get("situation_meta_target",3000)
-  ),
+ secondary_gaps={
+  "strict_primary":max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0))),
+  "situation_meta_ready":max(0,int(gap.get("situation_meta_target",3000))-int(gap.get("situation_meta_ready_min",0))),
+  "online_expert_ready":max(0,int(gap.get("online_expert_target",140))-int(gap.get("online_expert_ready_min",0))),
+ }
+ repeat_until_data_sufficient=any(value>0 for value in secondary_gaps.values())
+ if secondary_gaps["strict_primary"]>0:
+  next_action="collect_live_and_refresh_pit"
+ elif secondary_gaps["situation_meta_ready"]>0:
+  next_action="warm_binance_ws_and_collect_context"
+ elif secondary_gaps["online_expert_ready"]>0:
+  next_action="continue_live_cycles_for_online_expert"
+ else:
+  next_action="discover_and_reselect_frontier"
+ runrec["data_sufficiency"]={
+  "remaining":secondary_gaps,
+  "repeat_until_data_sufficient":repeat_until_data_sufficient,
+  "stop_when_all_targets_met":True,
+ }
+ runrec["next_best_action"]=next_action
+ runrec["actions"]={
+  "collect_live":secondary_gaps["strict_primary"]>0,
+  "warm_binance_ws":secondary_gaps["strict_primary"]>0 or secondary_gaps["situation_meta_ready"]>0,
+  "refresh_pit_audit":secondary_gaps["strict_primary"]>0,
   "continue_discovery":True,
   "continue_selection":True,
+  "repeat_until_data_sufficient":repeat_until_data_sufficient,
   "recompute_after_collection":True,
- }}
+  "reselect_after_acquisition":True,
+ }
  frontier["candidate_count"]=len(frontier["candidates"])
  frontier["durable_change"]=len(discovered)>0
  frontier["history"]=list(frontier.get("history") or [])

@@ -9,6 +9,13 @@ on:
       - ".github/workflows/btc_autonomous_data_frontier.yml"
   schedule:
     - cron: "*/15 * * * *"
+  workflow_run:
+    workflows:
+      - "BTC Live Cycle"
+      - "BTC Binance WS Collector"
+      - "BTC Archive Refresh Research"
+      - "BTC PIT OOS Audit"
+    types: [completed]
 permissions:
   actions: write
   contents: write
@@ -65,8 +72,17 @@ jobs:
           if last.get("free_only") is not True or last.get("production_changed") is not False or last.get("unknown_pit_policy")!="FAIL_CLOSED":
               raise SystemExit("frontier safety contract failed")
           actions=last.get("actions",{})
-          if actions.get("continue_discovery") is not True or actions.get("continue_selection") is not True or actions.get("repeat_until_data_sufficient") is not True:
+          if actions.get("continue_discovery") is not True or actions.get("continue_selection") is not True:
               raise SystemExit("continuous frontier loop disabled")
+          if actions.get("repeat_until_data_sufficient") is not True and any(int(v)>0 for v in (last.get("data_sufficiency") or {}).get("remaining", {}).values()):
+              raise SystemExit("data-sufficiency repeat loop disabled while a gap remains")
+          if last.get("next_best_action") not in {
+              "collect_live_and_refresh_pit",
+              "warm_binance_ws_and_collect_context",
+              "continue_live_cycles_for_online_expert",
+              "discover_and_reselect_frontier",
+          }:
+              raise SystemExit("next-best frontier action is invalid")
           for row in p.get("candidates",{}).values():
               if row.get("production_eligible") is not False: raise SystemExit("unverified candidate became production eligible")
           print({"cycle":last.get("cycle"),"gap":last.get("gap"),"selected":last.get("selected_source_ids"),"discovered":len(p.get("candidates",{})),"actions":actions})
