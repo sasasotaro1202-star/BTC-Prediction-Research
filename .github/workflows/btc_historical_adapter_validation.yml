@@ -1,0 +1,24 @@
+name: BTC Historical Adapter Validation
+
+on:
+  push:
+    branches:
+      - feat/expand-historical-acquisition-adapters-20261001
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Compile
+        run: python -m py_compile src/btc_data_frontier_autoselect.py tests/test_btc_data_frontier_autoselect.py
+      - name: Frontier tests
+        run: python -m unittest discover -s tests -p 'test_btc_data_frontier_autoselect.py' -v
