@@ -14,6 +14,8 @@ from src.experience_failure_expert_mix_oos import (
     _mixed_risk,
     _fit_temporal_memory,
     _predict_temporal_memory,
+    _risk_coverage,
+    _aurc,
     _sequential_validation_risks,
     _update_weights,
 )
@@ -157,3 +159,20 @@ def test_temporal_memory_predictions_are_bounded_with_sufficient_support():
     assert values.shape == (5,)
     assert np.isfinite(values).all()
     assert np.all((values >= 0.0) & (values <= 1.0))
+
+
+def test_risk_coverage_and_aurc_are_finite_and_monotonic_in_coverage():
+    errors = np.asarray([0, 1, 0, 1, 1, 0, 0, 1], dtype=int)
+    risk = np.asarray([0.1, 0.9, 0.2, 0.8, 0.7, 0.3, 0.4, 0.6], dtype=float)
+    diagnostics = _risk_coverage(errors, risk)
+    assert set(diagnostics) == {"0.90", "0.80", "0.70", "0.60", "0.50"}
+    assert all(np.isfinite(v["error_rate"]) for v in diagnostics.values())
+    assert np.isfinite(_aurc(errors, risk))
+
+
+def test_risk_coverage_prefers_low_risk_rows():
+    errors = np.asarray([0, 0, 1, 1], dtype=int)
+    risk = np.asarray([0.1, 0.2, 0.9, 0.8], dtype=float)
+    rc = _risk_coverage(errors, risk, coverages=(0.50,))
+    assert rc["0.50"]["error_rate"] == 0.0
+    assert rc["0.50"]["accuracy"] == 1.0
