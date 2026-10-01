@@ -11,6 +11,7 @@ from src.experience_predictability_router_oos import (
     _eligible_prior,
     _meta_predictions,
     _risk,
+    evaluate_horizon,
 )
 
 
@@ -112,3 +113,25 @@ def test_meta_predictions_fail_closed_on_short_training_history():
     values = _meta_predictions(rows, [current])
     assert values.shape == (1,)
     assert 0.0 <= values[0] <= 1.0
+
+def test_router_evaluate_horizon_emits_case_metrics():
+    rows = []
+    for i in range(1, 241):
+        minute = i % 60
+        hour = i // 60
+        created = f"2026-09-{25 + (hour // 24):02d}T{hour % 24:02d}:{minute:02d}:00+00:00"
+        settled = f"2026-09-{25 + (hour // 24):02d}T{(hour % 24) + (1 if minute >= 55 else 0):02d}:{(minute + 5) % 60:02d}:00+00:00"
+        correct = i % 2
+        rows.append(
+            _row(
+                experience_id=i,
+                created=created,
+                settled=settled,
+                correct=correct,
+                actual="UP" if correct else "DOWN",
+            )
+        )
+    result = evaluate_horizon(rows, "5m")
+    assert result["status"] == "OK"
+    assert result["pit_violation_count"] == 0
+    assert "case_group_metrics" in result
