@@ -83,8 +83,32 @@ jobs:
           python src/experience_policy_oos.py
           test -s data/historical_research/experience_policy_oos.json
 
+      - name: Run chronological stability OOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_policy_stability_oos.py
+          test -s data/historical_research/experience_policy_stability_oos.json
+
       - name: Run focused tests
-        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_promotion_gate.py
+        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_stability_oos.py tests/test_experience_policy_promotion_gate.py
+
+      - name: Validate experience stability evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_policy_stability_oos.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+              raise SystemExit("experience stability artifact must remain research-only")
+          for h,item in obj.get("horizons",{}).items():
+              if item.get("status") == "OK" and int(item.get("block_count",0)) < int(obj["config"]["min_blocks"]):
+                  raise SystemExit(f"{h}: insufficient stability blocks")
+          print("BTC experience stability OOS: VERIFIED")
+          PY
 
       - name: Evaluate experience policy promotion gate
         shell: bash
@@ -148,5 +172,6 @@ jobs:
           path: |
             data/experience/experience_summary.json
             data/historical_research/experience_policy_oos.json
+            data/historical_research/experience_policy_stability_oos.json
           if-no-files-found: error
           retention-days: 14
