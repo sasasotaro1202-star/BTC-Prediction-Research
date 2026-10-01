@@ -465,5 +465,46 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(lifecycle["acquisition_status"],"RESEARCH_ACQUISITION_ALLOWED")
         self.assertFalse(lifecycle["research_selection_eligible"] is False)
 
+    def test_acquisition_evidence_distinguishes_complete_partial_missing_and_overlap(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            acq=root/"data/historical_research/frontier_acquisitions"
+            acq.mkdir(parents=True,exist_ok=True)
+            valid={
+                "schema_version":1,"source_id":"bitget_public_ws","status":"OK",
+                "research_only":True,"production_eligible":False,"pit_status":"UNVERIFIED_POSTHOC",
+                "record_count":1,"rows":[{
+                    "event_time":"2026-10-01T00:00:00+00:00",
+                    "open":100.0,"high":101.0,"low":99.0,"close":100.5,"volume":12.0
+                }]
+            }
+            partial={
+                "schema_version":1,"source_id":"hyperliquid_ws","status":"OK",
+                "research_only":True,"production_eligible":False,"pit_status":"UNVERIFIED_POSTHOC",
+                "record_count":2,"rows":[{
+                    "event_time":"2026-10-01T00:00:00+00:00",
+                    "open":100.0,"high":101.0,"low":99.0,"close":100.5,"volume":12.0
+                },{
+                    "event_time":"2026-10-01T00:05:00+00:00",
+                    "open":"bad","high":101.0,"low":99.0,"close":100.5,"volume":12.0
+                }]
+            }
+            (acq/"a_bitget_public_ws_history.json").write_text(__import__("json").dumps(valid),encoding="utf-8")
+            (acq/"b_hyperliquid_ws_history.json").write_text(__import__("json").dumps(partial),encoding="utf-8")
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",acq):
+                evidence=mod.summarize_acquisition_evidence()
+            self.assertEqual(evidence["by_source"]["bitget_public_ws"]["status"],"COMPLETE")
+            self.assertEqual(evidence["by_source"]["hyperliquid_ws"]["status"],"PARTIAL")
+            self.assertEqual(evidence["by_source"]["deribit_public"]["status"],"MISSING")
+            self.assertEqual(evidence["cross_source"]["overlap_event_times"],1)
+            self.assertEqual(evidence["cross_source"]["duplicate_event_rows"],1)
+            self.assertIn("not historical-dataset completeness",evidence["note"])
+
+    def test_acquisition_totals_cover_all_independent_historical_sources(self):
+        self.assertEqual(
+            mod.ACQUISITION_SOURCE_IDS,
+            ("bitget_public_ws","hyperliquid_ws","deribit_public"),
+        )
+
 if __name__=="__main__":
     main()
