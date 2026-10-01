@@ -8,7 +8,11 @@ research-only until independent OOS/holdout promotion evidence exists.
 from __future__ import annotations
 
 
-from experience_pit_scope import load_strict_primary_rowsimport json
+try:
+    from experience_pit_scope import load_strict_primary_rows
+except ModuleNotFoundError:
+    from src.experience_pit_scope import load_strict_primary_rows
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone

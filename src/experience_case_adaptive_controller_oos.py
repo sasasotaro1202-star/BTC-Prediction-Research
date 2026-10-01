@@ -19,7 +19,11 @@ promotion candidate only after independent OOS/holdout validation.
 from __future__ import annotations
 
 
-from experience_pit_scope import load_strict_primary_rowsimport json
+try:
+    from experience_pit_scope import load_strict_primary_rows
+except ModuleNotFoundError:
+    from src.experience_pit_scope import load_strict_primary_rows
+import json
 import math
 import sqlite3
 from datetime import datetime, timezone
