@@ -121,7 +121,8 @@ def _baseline_error(train_rows: list[Any]) -> float:
     return _safe01((errors + 1.0) / (len(train_rows) + 2.0))
 
 
-def _case_key(row: Any) -> tuple[str, str, str, str]:
+def _case_key(row: Any) -> tuple[str, str, str, str, str]:
+    """Return the full case identity used by hierarchical experience memory."""
     p = _probabilities(row)
     confidence = float(np.max(p))
     if confidence < 0.40:
@@ -139,6 +140,7 @@ def _case_key(row: Any) -> tuple[str, str, str, str]:
         str(row["regime"] or "UNKNOWN"),
         str(row["predicted_direction"]),
         bucket,
+        str(row["production_mode"] or "UNKNOWN"),
     )
 
 
@@ -156,8 +158,11 @@ def _hierarchical_prior(train_rows: list[Any], row: Any, shrinkage: float = 20.0
             eligible.append(candidate)
     global_error = _baseline_error(eligible)
     target = _case_key(row)
+    # Full case first; progressively relax only when support is sparse.
+    # production_mode remains part of the full case identity.
     levels = (
         target,
+        target[:4],
         target[:3],
         target[:2],
         (target[0],),
