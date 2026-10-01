@@ -254,11 +254,20 @@ def prequential_evaluate(
     latest_drivers: list[str] = []
     p_memory: list[float] = []
 
-    for start in range(min_train_rows, len(ordered), max(1, int(block_size))):
+    start = int(min_train_rows)
+    while start > 0 and start < len(ordered) and str(ordered[start]["settled_at_utc"]) == str(ordered[start - 1]["settled_at_utc"]):
+        start += 1
+    while start < len(ordered):
+        # Cases sharing one settlement timestamp become one evaluation batch.
+        # No outcome settled at the same instant can train another case.
+        settlement_ts = str(ordered[start]["settled_at_utc"])
+        stop = min(len(ordered), start + max(1, int(block_size)))
+        while stop < len(ordered) and str(ordered[stop]["settled_at_utc"]) == settlement_ts:
+            stop += 1
         train_rows = ordered[:start]
-        test_rows = ordered[start:min(len(ordered), start + max(1, int(block_size)))]
+        test_rows = ordered[start:stop]
         if not test_rows:
-            continue
+            break
         probabilities, fitted, drivers = _fit_predict(train_rows, test_rows, model_c)
         p_memory.extend(_hierarchical_memory_predict(train_rows, test_rows))
         if fitted:
@@ -283,6 +292,7 @@ def prequential_evaluate(
                 "baseline_error_probability": float(baseline),
             })
 
+        start = stop
     meta = _metrics(y_meta, p_meta)
     baseline_metrics = _metrics(y_meta, p_baseline)
     memory_metrics = _metrics(y_meta, p_memory)
