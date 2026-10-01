@@ -255,6 +255,8 @@ def prequential_evaluate(
     p_memory: list[float] = []
 
     start = int(min_train_rows)
+    while start > 0 and start < len(ordered) and str(ordered[start]["settled_at_utc"]) == str(ordered[start - 1]["settled_at_utc"]):
+        start += 1
     while start < len(ordered):
         # Cases sharing one settlement timestamp become one evaluation batch.
         # No outcome settled at the same instant can train another case.
