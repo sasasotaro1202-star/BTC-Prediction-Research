@@ -50,7 +50,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('data/historical_research/rolling_retrain_10m_oos.json')
+          p=Path('data/historical_research/rolling_retrain_5m_oos.json')
           o=json.loads(p.read_text(encoding='utf-8'))
           v=o['horizons']['5m']
           assert o['research_only'] is True
@@ -74,6 +74,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: btc-rolling-retrain-5m-oos
-          path: data/historical_research/rolling_retrain_10m_oos.json
+          path: data/historical_research/rolling_retrain_5m_oos.json
           if-no-files-found: error
           retention-days: 7
