@@ -95,10 +95,17 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             root=Path(td)
             hist=root/"data/historical_research"
             hist.mkdir(parents=True,exist_ok=True)
-            (hist/"pit_oos_audit.json").write_text(
-                '{"verified_primary_predictions":300,"min_strict_pit_rows":300,"pit_verified":false,"coverage":{"5m":{"situation_meta_ready":136,"online_expert_ready":136},"10m":{"situation_meta_ready":140,"online_expert_ready":140}}}',
-                encoding="utf-8",
-            )
+            audit={
+                "generated_at_utc":datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "verified_primary_predictions":300,
+                "min_strict_pit_rows":300,
+                "pit_verified":False,
+                "coverage":{
+                    "5m":{"situation_meta_ready":136,"online_expert_ready":136},
+                    "10m":{"situation_meta_ready":140,"online_expert_ready":140},
+                },
+            }
+            (hist/"pit_oos_audit.json").write_text(__import__("json").dumps(audit),encoding="utf-8")
             with patch.object(mod,"ROOT",root):
                 gap=mod.current_gap()
             self.assertEqual(gap["gap"],0)
