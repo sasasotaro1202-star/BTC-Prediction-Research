@@ -6,6 +6,7 @@ from src.experience_predictability_router_oos import (
     CANDIDATES,
     MIN_TRAIN,
     VALIDATION_SIZE,
+    MIN_CONSECUTIVE_SELECTIONS,
     _binary_logloss,
     _choose_source,
     _eligible_prior,
@@ -106,6 +107,7 @@ def test_binary_logloss_is_finite():
 def test_router_constants_keep_causal_validation_window():
     assert MIN_TRAIN >= 100
     assert VALIDATION_SIZE >= 40
+    assert MIN_CONSECUTIVE_SELECTIONS >= 2
 
 def test_meta_predictions_fail_closed_on_short_training_history():
     rows = [_row(experience_id=i, correct=i % 2, actual="UP" if i % 2 else "DOWN") for i in range(1, 12)]
