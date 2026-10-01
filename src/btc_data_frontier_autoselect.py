@@ -16,7 +16,7 @@ MAX_PAYLOAD_BYTES=120_000
 MAX_SNAPSHOTS=240
 DISCOVERY_RESULTS=8
 STRICT_PRIMARY_ACCUMULATION_TARGET=600
-HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=3600
+HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
 MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
 PROBES={
@@ -254,6 +254,9 @@ def acquire_selected_research_data(frontier,gap,selected):
   if result.get("status")=="OK":
    state["last_historical_acquisition_at"]=result["retrieved_at"]
    state["last_historical_record_count"]=int(result.get("record_count",0))
+   state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
+   state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+   state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
    state["last_historical_event_time"]=result.get("last_event_time")
    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
@@ -407,6 +410,11 @@ def run():
  "production_changed":False,"unknown_pit_policy":"FAIL_CLOSED","free_only":True,
  "snapshots":snapshots,
  "acquisitions":acquisitions,
+ "acquisition_totals":{
+  "batches":int(frontier["source_state"].get("bitget_public_ws",{}).get("historical_batches_acquired",0)),
+  "records":int(frontier["source_state"].get("bitget_public_ws",{}).get("historical_total_records_acquired",0)),
+  "earliest_event_time":frontier["source_state"].get("bitget_public_ws",{}).get("historical_earliest_event_time"),
+ },
  "data_sufficiency":{
   "promotion_gate_target":int(gap.get("target",300)),
   "accumulation_target":STRICT_PRIMARY_ACCUMULATION_TARGET,
