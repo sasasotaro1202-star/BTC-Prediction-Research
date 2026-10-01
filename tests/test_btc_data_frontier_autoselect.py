@@ -26,6 +26,24 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(result["status"],"ERROR")
         self.assertNotIn("payload",result)
 
+    def test_deribit_probe_uses_current_public_ticker_endpoint(self):
+        self.assertEqual(
+            mod.PROBES["deribit_public"][1],
+            "https://www.deribit.com/api/v2/public/ticker?instrument_name=BTC-PERPETUAL",
+        )
+
+    def test_probe_and_historical_acquisition_failures_are_separate(self):
+        source=next(src for src in mod.SOURCES if src.source_id=="deribit_public")
+        state={
+            "selection_count":0,
+            "probe_consecutive_failures":8,
+            "historical_acquisition_failures":0,
+        }
+        score_with_probe_failures=mod.score(source,state,{"gap":100},{})
+        state["historical_acquisition_failures"]=3
+        score_with_acquisition_failures=mod.score(source,state,{"gap":100},{})
+        self.assertLess(score_with_acquisition_failures,score_with_probe_failures)
+
     def test_probe_snapshot_uses_retrieval_basis_when_source_time_unknown(self):
         with patch.object(mod,"_get",return_value={"foo":"bar"}):
             result=mod.probe("mempool_space")
