@@ -159,6 +159,21 @@ def _predict_meta(model_bundle: tuple[DictVectorizer, LogisticRegression] | None
         return np.full(len(rows), default, dtype=float)
 
 
+def _meta_predictions(train_rows: list[Any], prediction_rows: list[Any]) -> np.ndarray:
+    bundle, default = _fit_meta_model(train_rows)
+    return _predict_meta(bundle, prediction_rows, default)
+
+
+def _risk(candidate: str, train_rows: list[Any], row: Any) -> float:
+    if candidate == "global":
+        return _baseline_error(train_rows)
+    if candidate == "case_memory":
+        return _memory_risk(_memory_state(train_rows), row)
+    if candidate == "meta":
+        return float(_meta_predictions(train_rows, [row])[0])
+    raise ValueError(f"unknown_candidate:{candidate}")
+
+
 def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, float], int]:
     eligible = _eligible_prior(matured, current)
     if len(eligible) < MIN_TRAIN + VALIDATION_SIZE:
