@@ -122,14 +122,17 @@ class TestBinanceHistory(unittest.TestCase):
     def test_archive_rows_fails_closed_when_not_enough_history(self):
         old_month = bh._month_rows
         old_day = bh._load_day
+        old_rest = bh._rest_klines
         try:
             bh._month_rows = lambda month: []
             bh._load_day = lambda day: ([], "mock")
+            bh._rest_klines = lambda target: []
             with self.assertRaisesRegex(RuntimeError, "need 5"):
                 bh.binance_archive_rows(target=5)
         finally:
             bh._month_rows = old_month
             bh._load_day = old_day
+            bh._rest_klines = old_rest
 
     def test_archive_rows_rest_fallback_recovers_when_archives_are_empty(self):
         old_month = bh._month_rows
