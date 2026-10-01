@@ -82,7 +82,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(lifecycle["eligibility"],"ELIGIBLE_FOR_RESEARCH_REVIEW")
         self.assertEqual(lifecycle["cost_status"],"UNCONFIRMED")
         self.assertEqual(lifecycle["pit_status"],"UNVERIFIED")
-        self.assertFalse(lifecycle["research_selection_eligible"] is False)
+        self.assertTrue(lifecycle["research_selection_eligible"])
         self.assertEqual(lifecycle["acquisition_status"],"BLOCKED_UNTIL_VERIFIED_AND_ADAPTER")
 
         blocked=dict(candidate,description="FactSet bitcoin historical dataset")
@@ -282,9 +282,6 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             loaded=__import__("json").loads(path.read_text(encoding="utf-8"))
             self.assertEqual(loaded,payload)
 
-if __name__=="__main__":
-    main()
-
     def test_bitget_history_acquisition_is_research_only_and_posthoc_pit_unverified(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
@@ -354,3 +351,7 @@ if __name__=="__main__":
         self.assertEqual(code_rows[0]["pit_status"],"UNVERIFIED")
         self.assertFalse(code_rows[0]["production_eligible"])
         self.assertEqual(failures,[])
+
+if __name__=="__main__":
+    main()
+
