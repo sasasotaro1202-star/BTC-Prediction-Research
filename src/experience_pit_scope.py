@@ -11,8 +11,15 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from pit_oos_audit import AVAILABLE_STATUSES, validate_provenance_envelope
-from db import DB, init_db
+try:
+    from pit_oos_audit import AVAILABLE_STATUSES, validate_provenance_envelope
+except ModuleNotFoundError:
+    from src.pit_oos_audit import AVAILABLE_STATUSES, validate_provenance_envelope
+
+try:
+    from db import DB, init_db
+except ModuleNotFoundError:
+    from src.db import DB, init_db
 
 MAX_TIME_SKEW_SECONDS = 60
 PRIMARY_SOURCE = "binance_futures"
