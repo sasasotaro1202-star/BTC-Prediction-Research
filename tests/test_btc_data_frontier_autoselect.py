@@ -63,10 +63,62 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
     def test_select_sources_can_select_unverified_discovered_candidates(self):
         frontier={"source_state":{},"candidates":{
-            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin dataset","description":"historical API timestamp","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin dataset","description":"historical API timestamp","query":"bitcoin dataset","license":"MIT","url":"https://github.com/test/btc","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
         }}
         selected=mod.select_sources(frontier,{"strict_primary":141,"target":300,"gap":159,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
+
+    def test_discovery_lifecycle_is_fail_closed_for_unknown_cost_and_pit(self):
+        candidate={
+            "candidate_id":"github:test/unknown",
+            "name":"bitcoin historical dataset",
+            "url":"https://github.com/test/unknown",
+            "description":"timestamped historical CSV",
+            "platform":"github",
+            "status":"DISCOVERED_UNVERIFIED",
+            "production_eligible":False,
+        }
+        lifecycle=mod._candidate_lifecycle(candidate)
+        self.assertEqual(lifecycle["eligibility"],"ELIGIBLE_FOR_RESEARCH_REVIEW")
+        self.assertEqual(lifecycle["cost_status"],"UNCONFIRMED")
+        self.assertEqual(lifecycle["pit_status"],"UNVERIFIED")
+        self.assertTrue(lifecycle["research_selection_eligible"])
+        self.assertEqual(lifecycle["acquisition_status"],"BLOCKED_UNTIL_VERIFIED_AND_ADAPTER")
+
+        blocked=dict(candidate,description="FactSet bitcoin historical dataset")
+        blocked_lifecycle=mod._candidate_lifecycle(blocked)
+        self.assertEqual(blocked_lifecycle["eligibility"],"REJECTED_BLOCKED_PROVIDER")
+
+    def test_discovery_selection_penalizes_repeated_same_candidate(self):
+        base={
+            "candidate_id":"github:test/a",
+            "name":"bitcoin historical dataset A",
+            "url":"https://github.com/test/a",
+            "description":"bitcoin API historical csv timestamp",
+            "query":"bitcoin dataset",
+            "license":"MIT",
+            "status":"DISCOVERED_UNVERIFIED",
+            "production_eligible":False,
+        }
+        repeated=dict(base,selection_count=8,last_selected_at="2026-09-30T00:00:00+00:00")
+        frontier={"source_state":{},"candidates":{
+            base["candidate_id"]:base,
+            "github:test/b":dict(base,candidate_id="github:test/b",name="bitcoin historical dataset B",url="https://github.com/test/b",selection_count=0,last_selected_at=None),
+        }}
+        selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
+        self.assertIn("github:test/b",selected)
+
+    def test_discovery_debt_is_exposed_until_candidates_are_verified(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            (hist/"data_frontier.json").write_text(
+                '{"schema_version":1,"candidates":{"github:test/btc":{"candidate_id":"github:test/btc","url":"https://github.com/test/btc","status":"DISCOVERED_UNVERIFIED","production_eligible":false}}}',
+                encoding="utf-8",
+            )
+            with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",hist/"data_frontier.json"):
+                self.assertEqual(mod._discovery_debt(),1)
 
     def test_workflow_continuously_recovers_missing_data(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
@@ -134,7 +186,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
     def test_selector_always_reserves_one_qualified_discovery_slot(self):
         frontier={"source_state":{},"candidates":{
-            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","url":"https://github.com/test/btc","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
         }}
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
@@ -155,7 +207,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
     def test_run_records_selected_discovered_candidates(self):
         frontier={"source_state":{},"candidates":{
-            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"bitcoin API timestamps historical csv","query":"bitcoin dataset","license":"MIT","url":"https://github.com/test/btc","status":"DISCOVERED_UNVERIFIED","production_eligible":False}
         }}
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
@@ -230,9 +282,6 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             loaded=__import__("json").loads(path.read_text(encoding="utf-8"))
             self.assertEqual(loaded,payload)
 
-if __name__=="__main__":
-    main()
-
     def test_bitget_history_acquisition_is_research_only_and_posthoc_pit_unverified(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
@@ -258,7 +307,7 @@ if __name__=="__main__":
 
     def test_candidate_reselection_accepts_acquired_research_only_candidates(self):
         frontier={"source_state":{},"candidates":{
-            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"timestamp historical csv","query":"bitcoin dataset","license":"MIT","status":"ACQUIRED_RESEARCH_ONLY","production_eligible":False}
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"timestamp historical csv","query":"bitcoin dataset","license":"MIT","url":"https://github.com/test/btc","status":"ACQUIRED_RESEARCH_ONLY","production_eligible":False}
         }}
         selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
         self.assertIn("github:test/btc",selected)
@@ -302,3 +351,6 @@ if __name__=="__main__":
         self.assertEqual(code_rows[0]["pit_status"],"UNVERIFIED")
         self.assertFalse(code_rows[0]["production_eligible"])
         self.assertEqual(failures,[])
+
+if __name__=="__main__":
+    main()
