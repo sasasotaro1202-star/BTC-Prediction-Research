@@ -44,6 +44,7 @@ POLICY_GRID = tuple(
 )
 VALIDATION_SIZE = 80
 MIN_VALIDATION_SUPPORT = 30
+MIN_CASE_VALIDATION_SUPPORT = 30
 MIN_COVERAGE = 0.80
 BLOCK_SIZE = 40
 RISK_REFRESH = 20
@@ -334,6 +335,32 @@ def _choose_policy(validation: list[RiskRecord]) -> tuple[tuple[float, float], d
     }
 
 
+
+def _choose_case_or_global_policy(
+    validation: list[RiskRecord],
+    current: RiskRecord,
+) -> tuple[tuple[float, float], dict[str, Any]]:
+    case_validation = [record for record in validation if record.case_key == current.case_key]
+    if len(case_validation) >= MIN_CASE_VALIDATION_SUPPORT:
+        policy, detail = _choose_policy(case_validation)
+        detail = {
+            **detail,
+            "source": "case_matured_failure_history",
+            "case_support": int(len(case_validation)),
+            "global_validation_support": int(len(validation)),
+        }
+        return policy, detail
+
+    policy, detail = _choose_policy(validation)
+    detail = {
+        **detail,
+        "source": "matured_failure_history" if detail["source"] == "matured_failure_history" else detail["source"],
+        "case_support": int(len(case_validation)),
+        "global_validation_support": int(len(validation)),
+    }
+    return policy, detail
+
+
 def _metrics_with_per_row_policies(
     records: list[RiskRecord],
     policies: list[tuple[float, float]],
@@ -404,7 +431,7 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             deferred += 1
             continue
         validation = prior[-VALIDATION_SIZE:]
-        policy, selection = _choose_policy(validation)
+        policy, selection = _choose_case_or_global_policy(validation, current)
         selected_policies.append(policy)
         policy_sources.append(str(selection["source"]))
         if policy != (ABSTAIN_THRESHOLD, MAX_SHRINK):
@@ -490,6 +517,7 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "selected_policy_counts": counts,
         "changed_policy_rate": float(changed / len(selected_policies)),
         "policy_sources": {
+            "case_matured_failure_history": int(policy_sources.count("case_matured_failure_history")),
             "matured_failure_history": int(policy_sources.count("matured_failure_history")),
             "fixed_fallback": int(policy_sources.count("fixed_fallback")),
         },
