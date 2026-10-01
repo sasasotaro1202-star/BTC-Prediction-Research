@@ -427,5 +427,43 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             self.assertEqual(result["history_requested_candles"],100)
             self.assertEqual(requested[1],100*5*60*1000)
 
+
+    def test_deribit_history_acquisition_is_research_only_and_cursored(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            fake_result={
+                "ticks":[1700000000000],
+                "open":[100.0],"high":[101.0],"low":[99.0],"close":[100.5],
+                "volume":[12.0],"cost":[1206.0],"status":"ok",
+            }
+            captured={}
+            def fake_get(url,method="GET",body=None,token=None):
+                captured["url"]=url
+                self.assertEqual(method,"GET")
+                self.assertIn("instrument_name=BTC-PERPETUAL",url)
+                self.assertIn("resolution=5",url)
+                return {"jsonrpc":"2.0","result":fake_result,"usIn":1,"usOut":2}
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(mod,"_get",side_effect=fake_get):
+                result=mod.acquire_deribit_history(end_ms=1700000600000)
+            self.assertEqual(result["status"],"OK")
+            self.assertFalse(result["production_eligible"])
+            self.assertEqual(result["pit_status"],"UNVERIFIED_POSTHOC")
+            self.assertEqual(result["instrument_name"],"BTC-PERPETUAL")
+            self.assertEqual(result["next_cursor_ms"],1700000000000)
+
+    def test_auto_acquisition_includes_deribit_as_third_independent_source(self):
+        ids=mod.select_auto_acquisition_sources(
+            {"source_state":{},"candidates":{}},
+            ["bitget_public_ws","hyperliquid_ws"],
+            {"gap":148,"strict_primary":152},
+        )
+        self.assertEqual(ids[:3],["bitget_public_ws","hyperliquid_ws","deribit_public"])
+
+    def test_deribit_candidate_is_research_adapter_only(self):
+        candidate={"candidate_id":"deribit_public","url":"https://www.deribit.com","production_eligible":False}
+        lifecycle=mod._candidate_lifecycle(candidate)
+        self.assertEqual(lifecycle["acquisition_status"],"RESEARCH_ACQUISITION_ALLOWED")
+        self.assertFalse(lifecycle["research_selection_eligible"] is False)
+
 if __name__=="__main__":
     main()
