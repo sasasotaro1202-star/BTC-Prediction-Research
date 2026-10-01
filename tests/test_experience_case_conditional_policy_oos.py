@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -175,3 +176,33 @@ def test_case_correction_blend_is_bounded_even_with_large_support():
     )
     assert action == "CASE_CORRECTION"
     assert 0.0 < blend <= MAX_CORRECTION_BLEND
+
+
+def test_evaluate_horizon_initializes_case_source_tracking():
+    from src.experience_case_conditional_policy_oos import evaluate_horizon
+
+    t0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    rows = []
+    for i in range(100):
+        created = t0 + timedelta(minutes=10 * i)
+        settled = created + timedelta(minutes=5)
+        rows.append(
+            _row(
+                experience_id=i + 1,
+                created=created.isoformat(),
+                settled=settled.isoformat(),
+                actual="DOWN" if i % 2 == 0 else "UP",
+                correct=1 if i % 2 else 0,
+            )
+        )
+    current = _row(
+        experience_id=101,
+        created=(t0 + timedelta(minutes=1010)).isoformat(),
+        settled=(t0 + timedelta(minutes=1015)).isoformat(),
+        actual="UP",
+        correct=0,
+    )
+    result = evaluate_horizon(rows + [current], "5m")
+    assert result["status"] == "OK"
+    assert isinstance(result["case_source_levels"], dict)
+    assert result["pit_violation_count"] == 0
