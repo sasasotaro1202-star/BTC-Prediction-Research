@@ -224,6 +224,16 @@ def _risk_trace(
     return records, pit_excluded, refresh_count
 
 
+def _eligible_risk_records(records: list[RiskRecord], current: RiskRecord) -> list[RiskRecord]:
+    """Return risk records whose prediction and outcome both predate current."""
+    return [
+        record
+        for record in records
+        if record.created_at_utc < current.created_at_utc
+        and record.settled_at_utc < current.created_at_utc
+    ]
+
+
 def _metrics(records: list[RiskRecord], policy: tuple[float, float]) -> dict[str, Any]:
     if not records:
         return {
@@ -389,12 +399,7 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     changed = 0
 
     for index, current in enumerate(ordered):
-        prior = [
-            record
-            for record in ordered[:index]
-            if record.created_at_utc < current.created_at_utc
-            and record.settled_at_utc < current.created_at_utc
-        ]
+        prior = _eligible_risk_records(ordered[:index], current)
         if len(prior) < MIN_VALIDATION_SUPPORT:
             deferred += 1
             continue
