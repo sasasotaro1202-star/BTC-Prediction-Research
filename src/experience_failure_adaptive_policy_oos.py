@@ -21,8 +21,9 @@ from experience_case_adaptive_controller_oos import (
     CLASSES,
     MAX_SHRINK,
     MIN_TRAIN,
+    _baseline_error,
+    _case_key,
     _hierarchical_prior,
-    _fit_meta_probability,
     _parse_ts,
     _probabilities,
     _safe01,
@@ -45,6 +46,7 @@ VALIDATION_SIZE = 80
 MIN_VALIDATION_SUPPORT = 30
 MIN_COVERAGE = 0.80
 BLOCK_SIZE = 40
+RISK_REFRESH = 20
 
 
 @dataclass(frozen=True)
@@ -72,35 +74,6 @@ def _eligible_prior(ordered: list[Any], current: Any) -> list[Any]:
         if created < prediction_time and settled < prediction_time:
             eligible.append(row)
     return eligible
-
-
-def _case_key(row: Any) -> tuple[str, ...]:
-    probability = _probabilities(row)
-    confidence = float(np.max(probability))
-    if confidence < 0.40:
-        bucket = "0.33-0.40"
-    elif confidence < 0.50:
-        bucket = "0.40-0.50"
-    elif confidence < 0.60:
-        bucket = "0.50-0.60"
-    elif confidence < 0.70:
-        bucket = "0.60-0.70"
-    else:
-        bucket = "0.70+"
-    return (
-        str(row["horizon"]),
-        str(row["regime"] or "UNKNOWN"),
-        str(row["predicted_direction"]),
-        bucket,
-        str(row["production_mode"] or "UNKNOWN"),
-    )
-
-
-def _baseline_error(rows: list[Any]) -> float:
-    if not rows:
-        return 0.5
-    errors = sum(1 - int(row["correct"]) for row in rows)
-    return _safe01((errors + 1.0) / (len(rows) + 2.0))
 
 
 def _apply_policy(
@@ -144,7 +117,40 @@ def _brier(y: np.ndarray, p: np.ndarray) -> float:
     return float(np.mean(np.sum((p - one_hot) ** 2, axis=1)))
 
 
-def _risk_trace(rows: list[Any], horizon: str) -> tuple[list[RiskRecord], int]:
+def _fit_risk_model(
+    prior: list[Any],
+) -> tuple[Any, float]:
+    """Fit one error-risk meta model for a bounded model lifetime."""
+    baseline = _baseline_error(prior)
+    if len(prior) < MIN_TRAIN:
+        return None, baseline
+    try:
+        from experience_predictability_router_oos import _fit_meta_model
+
+        return _fit_meta_model(prior)
+    except (ImportError, TypeError, ValueError, FloatingPointError):
+        return None, baseline
+
+
+def _predict_risk_model(
+    model_bundle: Any,
+    rows: list[Any],
+    default: float,
+) -> np.ndarray:
+    if not rows or model_bundle is None:
+        return np.full(len(rows), default, dtype=float)
+    try:
+        from experience_predictability_router_oos import _predict_meta
+
+        return _predict_meta(model_bundle, rows, default)
+    except (ImportError, TypeError, ValueError, FloatingPointError):
+        return np.full(len(rows), default, dtype=float)
+
+
+def _risk_trace(
+    rows: list[Any],
+    horizon: str,
+) -> tuple[list[RiskRecord], int, int]:
     ordered = sorted(
         [row for row in rows if str(row["horizon"]) == horizon],
         key=lambda row: (
@@ -155,38 +161,67 @@ def _risk_trace(rows: list[Any], horizon: str) -> tuple[list[RiskRecord], int]:
     )
     records: list[RiskRecord] = []
     pit_excluded = 0
+    refresh_count = 0
 
-    for index in range(MIN_TRAIN, len(ordered)):
-        current = ordered[index]
-        candidates = ordered[:index]
-        prior = _eligible_prior(candidates, current)
+    for block_start in range(MIN_TRAIN, len(ordered), RISK_REFRESH):
+        block_end = min(len(ordered), block_start + RISK_REFRESH)
+        first_current = ordered[block_start]
+        candidates = ordered[:block_start]
+        prior = _eligible_prior(candidates, first_current)
         pit_excluded += max(0, len(candidates) - len(prior))
         if len(prior) < MIN_TRAIN:
             continue
 
-        base = _probabilities(current)
-        baseline = _baseline_error(prior)
-        meta_risk, _ = _fit_meta_probability(prior, current)
-        memory_risk = _hierarchical_prior(prior, current)
-        risk = _safe01(0.65 * meta_risk + 0.35 * memory_risk)
-
-        actual = str(current["actual_direction"])
-        if actual not in CLASSES:
-            continue
-        records.append(
-            RiskRecord(
-                experience_id=int(current["experience_id"]),
-                horizon=horizon,
-                case_key=_case_key(current),
-                created_at_utc=_parse_ts(current["created_at_utc"]),
-                settled_at_utc=_parse_ts(current["settled_at_utc"]),
-                y_index=CLASSES.index(actual),
-                base_probability=tuple(float(x) for x in base),
-                baseline_error=baseline,
-                error_risk=risk,
-            )
+        model, default = _fit_risk_model(prior)
+        refresh_count += 1
+        block_rows = ordered[block_start:block_end]
+        model_predictions = _predict_risk_model(
+            model,
+            block_rows,
+            default,
         )
-    return records, pit_excluded
+
+        for offset, index in enumerate(range(block_start, block_end)):
+            current = ordered[index]
+            current_prior = _eligible_prior(
+                ordered[:index],
+                current,
+            )
+            if len(current_prior) < MIN_TRAIN:
+                continue
+
+            base = _probabilities(current)
+            baseline = _baseline_error(current_prior)
+            memory_risk = _hierarchical_prior(
+                current_prior,
+                current,
+            )
+            meta_risk = (
+                float(model_predictions[offset])
+                if model is not None
+                else baseline
+            )
+            risk = _safe01(
+                0.65 * meta_risk + 0.35 * memory_risk
+            )
+
+            actual = str(current["actual_direction"])
+            if actual not in CLASSES:
+                continue
+            records.append(
+                RiskRecord(
+                    experience_id=int(current["experience_id"]),
+                    horizon=horizon,
+                    case_key=_case_key(current),
+                    created_at_utc=_parse_ts(current["created_at_utc"]),
+                    settled_at_utc=_parse_ts(current["settled_at_utc"]),
+                    y_index=CLASSES.index(actual),
+                    base_probability=tuple(float(x) for x in base),
+                    baseline_error=baseline,
+                    error_risk=risk,
+                )
+            )
+    return records, pit_excluded, refresh_count
 
 
 def _metrics(records: list[RiskRecord], policy: tuple[float, float]) -> dict[str, Any]:
@@ -336,7 +371,7 @@ def _metrics_with_per_row_policies(
 
 
 def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
-    records, pit_excluded = _risk_trace(rows, horizon)
+    records, pit_excluded, refresh_count = _risk_trace(rows, horizon)
     if not records:
         return {
             "status": "DEFERRED",
@@ -438,6 +473,8 @@ def _evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "pit_excluded_candidate_count": int(pit_excluded),
         "deferred_cases": int(deferred),
         "validation_size": VALIDATION_SIZE,
+        "risk_model_refresh_count": int(refresh_count),
+        "risk_model_refresh_size": RISK_REFRESH,
         "min_validation_support": MIN_VALIDATION_SUPPORT,
         "min_coverage_constraint": MIN_COVERAGE,
         "policy_grid_size": len(POLICY_GRID),
