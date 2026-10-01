@@ -22,6 +22,27 @@ def test_evaluate_rows_defers_when_too_few_rows():
     assert out["status"]=="DEFERRED"
 
 
+def test_stability_moves_initial_split_to_settlement_boundary(monkeypatch):
+    rows = [_row(i, 1) for i in range(8)]
+    shared_ts = rows[1]["settled_at_utc"]
+    rows[2]["settled_at_utc"] = shared_ts
+    seen = []
+
+    monkeypatch.setattr(mod, "_baseline", lambda train_rows: 0.5)
+    monkeypatch.setattr(mod, "_hierarchical_memory_predict", lambda train_rows, test_rows: [0.5] * len(test_rows))
+    monkeypatch.setattr(mod, "_metrics", lambda y_true, probabilities: {"n": len(y_true), "logloss": 0.5, "brier": 0.25, "error_rate": 0.5})
+
+    original = mod._hierarchical_memory_predict
+    def record(train_rows, test_rows):
+        seen.append((len(train_rows), [r["experience_id"] for r in test_rows]))
+        return original(train_rows, test_rows)
+    monkeypatch.setattr(mod, "_hierarchical_memory_predict", record)
+
+    out = mod.evaluate_rows(rows, min_train_rows=2, test_block_rows=1, min_blocks=1)
+    assert out["status"] == "OK"
+    assert seen[0] == (3, [4])
+
+
 def test_evaluate_rows_has_multiple_prequential_blocks_and_latest_block():
     rows=[_row(i,int(i%3!=0)) for i in range(270)]
     out=mod.evaluate_rows(rows,min_train_rows=100,test_block_rows=50,min_blocks=3)
