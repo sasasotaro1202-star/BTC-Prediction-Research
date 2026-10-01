@@ -47,6 +47,14 @@ def test_case_key_is_horizon_specific():
     assert _case_key(a) != _case_key(b)
 
 
+def test_case_key_separates_production_mode():
+    primary = _row(mode="binance_primary")
+    shadow = _row(mode="shadow_candidate")
+    assert _case_key(primary)[-1] == "binance_primary"
+    assert _case_key(shadow)[-1] == "shadow_candidate"
+    assert _case_key(primary) != _case_key(shadow)
+
+
 def test_hierarchical_memory_uses_matching_case_history():
     matching = [_row(experience_id=i, correct=0) for i in range(1, 31)]
     other = [
