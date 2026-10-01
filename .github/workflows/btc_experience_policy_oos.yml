@@ -84,7 +84,34 @@ jobs:
           test -s data/historical_research/experience_policy_oos.json
 
       - name: Run focused tests
-        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py
+        run: python -m pytest -q tests/test_experience_ledger.py tests/test_experience_policy_oos.py tests/test_experience_policy_promotion_gate.py
+
+      - name: Evaluate experience policy promotion gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/experience_policy_promotion_gate.py
+          test -s data/historical_research/experience_policy_promotion_gate.json
+
+      - name: Verify promotion gate remains fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/historical_research/experience_policy_promotion_gate.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("experience promotion gate must remain research-only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("experience promotion gate changed production state")
+          if obj.get("promotion_evidence_eligible") is not False:
+              raise SystemExit("experience promotion gate cannot create production evidence")
+          if obj.get("decision") not in {"HOLD","REJECTED","PROMOTION_CANDIDATE"}:
+              raise SystemExit("invalid experience promotion decision")
+          print(f"BTC experience promotion gate: {obj.get('decision')}")
+          PY
 
       - name: Validate research-only and no-leakage contract
         shell: bash
