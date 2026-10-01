@@ -10,7 +10,8 @@ distribution is estimated hierarchically from the matching case, then blended
 conservatively with the current probability distribution. The resulting policy is
 evaluated prequentially against the unchanged baseline.
 
-This is not a production hook and does not create promotion evidence.
+
+from experience_pit_scope import load_strict_primary_rowsThis is not a production hook and does not create promotion evidence.
 """
 
 from __future__ import annotations
@@ -354,27 +355,24 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
     }
 
 
+def load_experience_rows_with_pit_scope() -> tuple[list[Any], dict[str, Any]]:
+    return load_strict_primary_rows(DB)
+
+
 def load_experience_rows() -> list[Any]:
-    init_db()
-    with sqlite3.connect(DB) as con:
-        con.row_factory = sqlite3.Row
-        return list(
-            con.execute(
-                """SELECT * FROM experience_ledger
-                   WHERE actual_direction IN ('DOWN','FLAT','UP')
-                     AND settled_at_utc IS NOT NULL
-                   ORDER BY settled_at_utc, experience_id"""
-            ).fetchall()
-        )
+    rows, _ = load_experience_rows_with_pit_scope()
+    return rows
 
 
 def build() -> dict[str, Any]:
-    rows = load_experience_rows()
+    rows, pit_scope = load_experience_rows_with_pit_scope()
     payload = {
         "schema_version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "research_only": True,
         "production_changed": False,
+        "strict_pit_scope": True,
+        "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "description": (
             "Prequential case-conditional probability correction combined with "
