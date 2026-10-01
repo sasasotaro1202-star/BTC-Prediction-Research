@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
 from experience_case_adaptive_controller_oos import (
@@ -63,6 +65,49 @@ def _eligible_prior(rows: list[Any], current: Any) -> list[Any]:
     return out
 
 
+def _meta_predictions(train_rows: list[Any], prediction_rows: list[Any]) -> np.ndarray:
+    baseline = _baseline_error(train_rows)
+    if not prediction_rows or len(train_rows) < CASE_MIN_TRAIN:
+        return np.full(len(prediction_rows), baseline, dtype=float)
+    try:
+        x_train_dict = [
+            {
+                k: v
+                for k, v in _meta_features(row).items()
+            }
+            for row in train_rows
+        ]
+        x_pred_dict = [
+            {
+                k: v
+                for k, v in _meta_features(row).items()
+            }
+            for row in prediction_rows
+        ]
+        y = np.asarray([1 - int(row["correct"]) for row in train_rows], dtype=int)
+        if len(np.unique(y)) < 2:
+            return np.full(len(prediction_rows), baseline, dtype=float)
+        vectorizer = DictVectorizer(sparse=True)
+        x_train = vectorizer.fit_transform(x_train_dict)
+        x_pred = vectorizer.transform(x_pred_dict)
+        model = LogisticRegression(
+            C=0.5,
+            class_weight=None,
+            max_iter=1000,
+            random_state=42,
+        )
+        model.fit(x_train, y)
+        class_index = {int(cls): idx for idx, cls in enumerate(model.classes_)}
+        if 1 not in class_index:
+            return np.full(len(prediction_rows), baseline, dtype=float)
+        return np.asarray(
+            model.predict_proba(x_pred)[:, class_index[1]],
+            dtype=float,
+        )
+    except (TypeError, ValueError, FloatingPointError):
+        return np.full(len(prediction_rows), baseline, dtype=float)
+
+
 def _risk(candidate: str, train_rows: list[Any], row: Any) -> float:
     if candidate == "global":
         return _baseline_error(train_rows)
@@ -96,9 +141,19 @@ def _choose_source(prior: list[Any], current: Any) -> tuple[str, dict[str, float
         dtype=int,
     )
     scores: dict[str, float] = {}
+    global_values = np.full(len(validation), _baseline_error(train), dtype=float)
+    memory_values = np.asarray(
+        [_hierarchical_prior(train, row) for row in validation],
+        dtype=float,
+    )
+    meta_values = _meta_predictions(train, validation)
+    candidate_values = {
+        "global": global_values,
+        "case_memory": memory_values,
+        "meta": meta_values,
+    }
     for candidate in CANDIDATES:
-        values = np.asarray([_risk(candidate, train, row) for row in validation], dtype=float)
-        scores[candidate] = _binary_logloss(labels, values)
+        scores[candidate] = _binary_logloss(labels, candidate_values[candidate])
 
     best = min(CANDIDATES, key=lambda c: (scores[c], CANDIDATES.index(c)))
     global_score = scores["global"]
