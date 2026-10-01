@@ -236,18 +236,8 @@ def _choose_source(matured: list[Any], current: Any) -> tuple[str, dict[str, flo
         },
     }
     best = _select_source_from_scores(scores)
-    if best != "global":
-        global_score = float(scores["global"])
-        required_full = global_score * (1.0 - MIN_RELATIVE_GAIN)
-        qualified = scores[best] < required_full
-        for split in ("first", "second"):
-            split_global = float(split_scores[split]["global"])
-            split_required = split_global * (1.0 - MIN_SPLIT_RELATIVE_GAIN)
-            if split_scores[split][best] >= split_required:
-                qualified = False
-                break
-        if not qualified:
-            best = "global"
+    if best != "global" and not _candidate_stable_gain(labels, candidate_values, best):
+        best = "global"
     return best, scores, len(validation)
 
 
@@ -261,6 +251,30 @@ def _select_source_from_scores(scores: dict[str, float]) -> str:
         if scores[best] >= required or scores[best] >= global_score - TIE_EPS:
             return "global"
     return best
+
+
+
+
+def _candidate_stable_gain(
+    labels: np.ndarray,
+    candidate_values: dict[str, np.ndarray],
+    candidate: str,
+) -> bool:
+    """Require material global-relative gain on full validation and both halves."""
+    labels = np.asarray(labels, dtype=int)
+    if candidate == "global" or len(labels) < 2:
+        return candidate == "global"
+    midpoint = len(labels) // 2
+    global_score = _binary_logloss(labels, candidate_values["global"])
+    candidate_score = _binary_logloss(labels, candidate_values[candidate])
+    if candidate_score >= global_score * (1.0 - MIN_RELATIVE_GAIN):
+        return False
+    for sl in (slice(0, midpoint), slice(midpoint, None)):
+        split_global = _binary_logloss(labels[sl], candidate_values["global"][sl])
+        split_candidate = _binary_logloss(labels[sl], candidate_values[candidate][sl])
+        if split_candidate >= split_global * (1.0 - MIN_SPLIT_RELATIVE_GAIN):
+            return False
+    return True
 
 
 
