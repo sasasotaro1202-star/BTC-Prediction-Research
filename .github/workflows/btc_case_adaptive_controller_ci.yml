@@ -31,6 +31,10 @@ on:
       - "tests/test_experience_case_conformal_set_oos.py"
   workflow_dispatch:
 
+concurrency:
+  group: btc-case-adaptive-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
