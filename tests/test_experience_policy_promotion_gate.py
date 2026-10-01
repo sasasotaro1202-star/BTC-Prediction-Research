@@ -42,7 +42,7 @@ def test_gate_holds_when_strict_pit_is_not_verified():
     report = mod.evaluate(
         _research(ll5=-0.05, br5=-0.02, ll10=-0.04, br10=-0.01),
         _fresh_pit(verified=False),
-        _stability(True),
+        stability=_stability(True),
     )
     assert report["decision"] == "HOLD"
     assert "strict_pit_not_verified" in report["reasons"]
