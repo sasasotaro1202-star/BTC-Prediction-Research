@@ -388,5 +388,44 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertFalse(code_rows[0]["production_eligible"])
         self.assertEqual(failures,[])
 
+
+    def test_hyperliquid_history_retries_rate_limit_without_promoting_data(self):
+        from urllib.error import HTTPError
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            fake_payload=[
+                {"t":1700000000000,"T":1700000299999,"o":"100","h":"101","l":"99","c":"100.5","v":"12","n":42}
+            ]
+            rate_limited=HTTPError("https://api.hyperliquid.xyz/info",429,"Too Many Requests",{},None)
+            calls=[]
+            def fake_get(url,method="GET",body=None,token=None):
+                calls.append(body["req"]["startTime"])
+                if len(calls)==1:
+                    raise rate_limited
+                return fake_payload
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(mod,"_get",side_effect=fake_get), patch.object(mod.time,"sleep"):
+                result=mod.acquire_hyperliquid_history(end_ms=1700000600000)
+            self.assertEqual(result["status"],"OK")
+            self.assertEqual(len(calls),2)
+            self.assertFalse(result["production_eligible"])
+
+    def test_hyperliquid_history_reduces_batch_after_oversized_response(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            fake_payload=[
+                {"t":1700000000000,"T":1700000299999,"o":"100","h":"101","l":"99","c":"100.5","v":"12","n":42}
+            ]
+            requested=[]
+            def fake_get(url,method="GET",body=None,token=None):
+                requested.append(body["req"]["endTime"]-body["req"]["startTime"])
+                if len(requested)==1:
+                    raise RuntimeError("response_too_large")
+                return fake_payload
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(mod,"_get",side_effect=fake_get):
+                result=mod.acquire_hyperliquid_history(end_ms=1700000600000)
+            self.assertEqual(result["status"],"OK")
+            self.assertEqual(result["history_requested_candles"],100)
+            self.assertEqual(requested[1],100*5*60*1000)
+
 if __name__=="__main__":
     main()
