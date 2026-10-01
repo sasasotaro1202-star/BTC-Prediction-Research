@@ -232,3 +232,33 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 if __name__=="__main__":
     main()
+
+    def test_bitget_history_acquisition_is_research_only_and_posthoc_pit_unverified(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            with patch.object(mod,"ROOT",root), patch.object(mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"), patch.object(
+                mod,"_get",return_value={"code":"00000","data":[["1700000000000","100","101","99","100.5","12","1206"]]}
+            ):
+                result=mod.acquire_bitget_history()
+            self.assertEqual(result["status"],"OK")
+            self.assertFalse(result["production_eligible"])
+            self.assertEqual(result["pit_status"],"UNVERIFIED_POSTHOC")
+            saved=list((root/"data/historical_research/frontier_acquisitions").glob("*.json"))
+            self.assertEqual(len(saved),1)
+            obj=__import__("json").loads(saved[0].read_text(encoding="utf-8"))
+            self.assertEqual(obj["temporal_basis"],"posthoc_historical_endpoint")
+            self.assertEqual(obj["record_count"],1)
+
+    def test_acquisition_is_forced_when_strict_primary_gap_remains(self):
+        frontier={"source_state":{},"candidates":{},"history":[]}
+        with patch.object(mod,"_acquisition_due",return_value=False):
+            result=mod.acquire_selected_research_data(frontier,{"gap":1},["mempool_space"])
+        self.assertEqual(result[0]["source_id"],"bitget_public_ws")
+        self.assertEqual(result[0]["status"],"SKIPPED_COOLDOWN")
+
+    def test_candidate_reselection_accepts_acquired_research_only_candidates(self):
+        frontier={"source_state":{},"candidates":{
+            "github:test/btc":{"candidate_id":"github:test/btc","name":"bitcoin historical dataset","description":"timestamp historical csv","query":"bitcoin dataset","license":"MIT","status":"ACQUIRED_RESEARCH_ONLY","production_eligible":False}
+        }}
+        selected=mod.select_sources(frontier,{"strict_primary":0,"target":300,"gap":300,"pit_verified":False},{})
+        self.assertIn("github:test/btc",selected)
