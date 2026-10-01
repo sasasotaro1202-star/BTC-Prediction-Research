@@ -222,5 +222,14 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertIn("Selector-state branch absent; bootstrapping it",section)
         self.assertIn("git worktree add --detach",section)
 
+
+    def test_atomic_json_write_round_trips_valid_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"state.json"
+            payload={"schema_version":1,"ok":True}
+            mod._atomic_write_json(path,payload)
+            loaded=__import__("json").loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(loaded,payload)
+
 if __name__=="__main__":
     main()

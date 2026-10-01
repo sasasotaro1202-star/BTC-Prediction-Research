@@ -31,7 +31,7 @@ def now_utc(): return datetime.now(timezone.utc).replace(microsecond=0).isoforma
 
 def _atomic_write_json(path: Path, payload: object) -> None:
  tmp = path.with_suffix(path.suffix + ".tmp")
- tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2,sort_keys=True)+"\\n",encoding="utf-8")
+ tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2,sort_keys=True)+"\n",encoding="utf-8")
  tmp.replace(path)
 
 
