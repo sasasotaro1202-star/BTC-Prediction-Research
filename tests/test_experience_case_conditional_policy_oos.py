@@ -140,6 +140,7 @@ def test_case_prior_is_shrunk_toward_global_when_support_is_small():
     global_history = [
         _row(
             experience_id=100 + i,
+            horizon="10m",
             actual="UP",
             direction="DOWN",
             mode="other_mode",
