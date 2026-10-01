@@ -405,30 +405,44 @@ def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retr
  }
 
 
-def summarize_acquisition_evidence():
- """Audit research acquisitions without allowing them into model inputs."""
+def summarize_acquisition_evidence(frontier=None):
+ """Audit durable acquisition state separately from current-workspace row artifacts."""
  result={
   "schema_version":1,
   "generated_at":now_utc(),
   "scope":"research_acquisition_evidence_integrity",
-  "note":"COMPLETE/PARTIAL/MISSING describe evidence integrity for acquired batches, not historical-dataset completeness.",
+  "note":"Source status uses durable acquisition state when provided; artifact_status only describes row files present in the current workspace.",
   "by_source":{},
-  "cross_source":{"unique_event_times":0,"duplicate_event_rows":0,"overlap_event_times":0},
+  "cross_source":{
+   "scope":"current_workspace_artifacts_only",
+   "unique_event_times":0,"duplicate_event_rows":0,"overlap_event_times":0,
+  },
   "invalid_files":[],
  }
  files=sorted(ACQUISITION_DIR.glob("*_history.json")) if ACQUISITION_DIR.exists() else []
  event_sources={}
+ source_state=(frontier or {}).get("source_state") if isinstance(frontier,dict) else {}
+ source_state=source_state if isinstance(source_state,dict) else {}
  for sid in ACQUISITION_SOURCE_IDS:
+  state=source_state.get(sid,{}) if isinstance(source_state.get(sid,{}),dict) else {}
   result["by_source"][sid]={
-   "status":"MISSING","file_count":0,"record_count":0,"valid_row_count":0,
+   "status":"MISSING",
+   "record_count":int(state.get("historical_total_records_acquired",0) or 0),
+   "batch_count":int(state.get("historical_batches_acquired",0) or 0),
+   "acquisition_failures":int(state.get("historical_acquisition_failures",0) or 0),
+   "payload_hash_present":bool(state.get("last_historical_payload_sha256")),
+   "file_count":0,"artifact_record_count":0,"valid_row_count":0,
    "invalid_row_count":0,"unique_event_times":0,"duplicate_event_rows":0,
-   "first_event_time":None,"last_event_time":None,
+   "first_event_time":state.get("historical_earliest_event_time"),
+   "last_event_time":state.get("last_historical_event_time"),
+   "artifact_status":"MISSING",
   }
  loaded=[]
  for path in files:
   try:
    obj=json.loads(path.read_text(encoding="utf-8"))
-   if not isinstance(obj,dict): raise ValueError("record_not_object")
+   if not isinstance(obj,dict):
+    raise ValueError("record_not_object")
    sid=str(obj.get("source_id") or "")
    if sid not in result["by_source"]:
     continue
@@ -436,13 +450,13 @@ def summarize_acquisition_evidence():
   except (OSError,ValueError,TypeError,json.JSONDecodeError) as exc:
    result["invalid_files"].append({"path":str(path.relative_to(ROOT)),"error":f"{type(exc).__name__}:{exc}"})
  for sid in ACQUISITION_SOURCE_IDS:
-  src_state=result["by_source"][sid]
+  summary=result["by_source"][sid]
   source_files=[(path,obj) for path,obj in loaded if str(obj.get("source_id") or "")==sid]
-  src_state["file_count"]=len(source_files)
+  summary["file_count"]=len(source_files)
   source_event_times=set()
   provenance_complete=True
   for path,obj in source_files:
-   src_state["record_count"]+=int(obj.get("record_count",0) or 0)
+   summary["artifact_record_count"]+=int(obj.get("record_count",0) or 0)
    if (
     obj.get("status")!="OK"
     or obj.get("research_only") is not True
@@ -461,27 +475,38 @@ def summarize_acquisition_evidence():
      if not all(math.isfinite(v) for v in values):
       raise ValueError("nonfinite_ohlcv")
     except (AttributeError,KeyError,TypeError,ValueError,OverflowError):
-     src_state["invalid_row_count"]+=1
+     summary["invalid_row_count"]+=1
      continue
-    src_state["valid_row_count"]+=1
+    summary["valid_row_count"]+=1
     source_event_times.add(event_time)
     event_sources.setdefault(event_time,set()).add(sid)
-    src_state["first_event_time"]=event_time if src_state["first_event_time"] is None else min(src_state["first_event_time"],event_time)
-    src_state["last_event_time"]=event_time if src_state["last_event_time"] is None else max(src_state["last_event_time"],event_time)
-  src_state["unique_event_times"]=len(source_event_times)
-  src_state["duplicate_event_rows"]=max(0,src_state["valid_row_count"]-src_state["unique_event_times"])
-  if src_state["file_count"]==0:
-   src_state["status"]="MISSING"
-  elif src_state["invalid_row_count"]>0 or not provenance_complete or src_state["valid_row_count"]==0:
-   src_state["status"]="PARTIAL"
+    summary["first_event_time"]=summary["first_event_time"] or event_time
+    summary["first_event_time"]=min(summary["first_event_time"],event_time)
+    summary["last_event_time"]=event_time if summary["last_event_time"] is None else max(summary["last_event_time"],event_time)
+  summary["unique_event_times"]=len(source_event_times)
+  summary["duplicate_event_rows"]=max(0,summary["valid_row_count"]-summary["unique_event_times"])
+  if summary["file_count"]==0:
+   summary["artifact_status"]="MISSING"
+  elif summary["invalid_row_count"]>0 or not provenance_complete or summary["valid_row_count"]==0:
+   summary["artifact_status"]="PARTIAL"
   else:
-   src_state["status"]="COMPLETE"
+   summary["artifact_status"]="COMPLETE"
+
+  if summary["record_count"]>0:
+   if summary["acquisition_failures"]>0 or not summary["payload_hash_present"] or summary["batch_count"]<=0:
+    summary["status"]="PARTIAL"
+   else:
+    summary["status"]="COMPLETE"
+  elif summary["file_count"]>0:
+   summary["record_count"]=summary["artifact_record_count"]
+   summary["batch_count"]=summary["file_count"]
+   summary["status"]="PARTIAL" if summary["artifact_status"]!="COMPLETE" else "COMPLETE"
+
  result["invalid_files_count"]=len(result["invalid_files"])
  result["cross_source"]["unique_event_times"]=len(event_sources)
  result["cross_source"]["overlap_event_times"]=sum(1 for sources in event_sources.values() if len(sources)>1)
  result["cross_source"]["duplicate_event_rows"]=sum(max(0,len(sources)-1) for sources in event_sources.values())
  return result
-
 
 def _get_hyperliquid_history_payload(body):
  url="https://api.hyperliquid.xyz/info"
@@ -920,7 +945,7 @@ def run():
   if s.source_id in selected:
    st["selection_reason"]="data_gap_and_source_diversity" if gap["gap"]>0 else "rotating_frontier_coverage"
    st["selection_count"]=int(st.get("selection_count",0))+1
- acquisition_evidence=summarize_acquisition_evidence()
+ acquisition_evidence=summarize_acquisition_evidence(frontier)
  secondary_gaps,repeat_until_data_sufficient,next_action=plan_for_gap(gap)
  runrec={
  "run_at":now_utc(),"cycle":cycle+1,"gap":gap,
