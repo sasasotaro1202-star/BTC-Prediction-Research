@@ -12,6 +12,7 @@ from src.experience_predictability_router_oos import (
     _eligible_prior,
     _meta_predictions,
     _risk,
+    _select_source_from_scores,
     evaluate_horizon,
 )
 
@@ -140,3 +141,13 @@ def test_router_evaluate_horizon_emits_case_metrics():
     assert "chronological_blocks" in result
     assert result["chronological_blocks"]
     assert all(block["n"] >= 20 for block in result["chronological_blocks"])
+
+
+def test_router_requires_material_relative_gain_before_switching():
+    scores = {"global": 0.70, "case_memory": 0.697, "meta": 0.699}
+    assert _select_source_from_scores(scores) == "global"
+
+
+def test_router_allows_material_relative_gain():
+    scores = {"global": 0.70, "case_memory": 0.68, "meta": 0.69}
+    assert _select_source_from_scores(scores) == "case_memory"
