@@ -178,6 +178,19 @@ def plan_for_gap(gap):
  secondary["acquisition_reasons"]=acquisition_reasons
  return secondary,needs_more,next_action
 def _norm(value): return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
+
+DISCOVERY_DIRECT_SIGNAL_TERMS=(
+ "bitcoin","btc","btcusdt","crypto","binance","bitget","hyperliquid","deribit",
+ "orderbook","ohlcv","onchain","funding","open interest","open_interest","liquidation",
+)
+
+def _has_direct_discovery_signal(candidate):
+ text_value=_norm(" ".join(
+  str(candidate.get(k,""))
+  for k in ("name","description","repository","path","full_name")
+ ))
+ return any(term in text_value for term in DISCOVERY_DIRECT_SIGNAL_TERMS)
+
 def _get(url,method="GET",body=None,token=None):
  headers={"User-Agent":"BTC-Prediction-Research-data-frontier/1.0","Accept":"application/json,text/plain,*/*"}
  if token:
@@ -738,6 +751,15 @@ def discover_public_sources():
     item_path=str(item.get("path") or item.get("name") or "")
     if not repo_name or not item_path: continue
     candidate_id=f"github-code:{repo_name}:{item_path}"
+    candidate_probe={
+     "candidate_id":candidate_id,
+     "name":f"{repo_name}/{item_path}",
+     "description":"GitHub code-search lead; file-level candidate requiring acquisition/PIT validation",
+     "repository":repo_name,
+     "path":item_path,
+    }
+    if not _has_direct_discovery_signal(candidate_probe):
+     continue
     found[candidate_id]={
      "candidate_id":candidate_id,
      "platform":"github_code",
