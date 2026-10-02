@@ -12,7 +12,7 @@ from __future__ import annotations
 try:
     from experience_pit_scope import load_strict_verified_rows
 except ModuleNotFoundError:
-    from src.experience_pit_scope import load_strict_primary_rows
+    from src.experience_pit_scope import load_strict_verified_rows
 import json
 import math
 import sqlite3
@@ -55,6 +55,8 @@ VALIDATION_SIZE = 60
 MIX_REFRESH = 20
 ETA = 1.0
 WEIGHT_FLOOR = 0.05
+MIX_MIN_RELATIVE_GAIN = 0.01
+MIX_MIN_SPLIT_RELATIVE_GAIN = 0.005
 TEMPORAL_K = 25
 MIN_TEMPORAL_TRAIN = 60
 BLOCK_SIZE = 40
@@ -233,12 +235,13 @@ def _predict_temporal_memory(
 def _validation_candidate_losses(
     matured: list[Any],
     current: Any,
-) -> tuple[dict[str, float], dict[str, np.ndarray]]:
+) -> tuple[dict[str, float], dict[str, np.ndarray], np.ndarray]:
     eligible = _eligible_prior(matured, current)
     if len(eligible) < MIN_TRAIN + VALIDATION_SIZE:
         return (
             {name: float("nan") for name in CANDIDATES},
             {name: np.asarray([], dtype=float) for name in CANDIDATES},
+            np.asarray([], dtype=int),
         )
 
     validation = eligible[-VALIDATION_SIZE:]
@@ -253,6 +256,7 @@ def _validation_candidate_losses(
         return (
             {name: float("nan") for name in CANDIDATES},
             {name: np.asarray([], dtype=float) for name in CANDIDATES},
+            np.asarray([], dtype=int),
         )
 
     labels = np.asarray(
@@ -273,7 +277,43 @@ def _validation_candidate_losses(
         name: _binary_logloss(labels, candidate_values[name])
         for name in CANDIDATES
     }
-    return losses, candidate_values
+    return losses, candidate_values, labels
+
+
+def _stable_mix_weights(
+    labels: np.ndarray,
+    candidate_values: dict[str, np.ndarray],
+    proposed_weights: dict[str, float],
+) -> tuple[dict[str, float], bool]:
+    """Use incumbent global risk unless the mixture has stable validation gain."""
+    labels = np.asarray(labels, dtype=int)
+    global_values = np.asarray(candidate_values["global"], dtype=float)
+    mixed_values = np.zeros_like(global_values, dtype=float)
+    for name in CANDIDATES:
+        mixed_values += float(proposed_weights.get(name, 0.0)) * np.asarray(
+            candidate_values[name], dtype=float
+        )
+
+    def global_only() -> dict[str, float]:
+        return {
+            name: (1.0 if name == "global" else 0.0)
+            for name in CANDIDATES
+        }
+
+    full_global = _binary_logloss(labels, global_values)
+    full_mixed = _binary_logloss(labels, mixed_values)
+    if full_mixed >= full_global * (1.0 - MIX_MIN_RELATIVE_GAIN):
+        return global_only(), False
+
+    midpoint = len(labels) // 2
+    if midpoint < 1:
+        return global_only(), False
+    for sl in (slice(0, midpoint), slice(midpoint, None)):
+        split_global = _binary_logloss(labels[sl], global_values[sl])
+        split_mixed = _binary_logloss(labels[sl], mixed_values[sl])
+        if split_mixed >= split_global * (1.0 - MIX_MIN_SPLIT_RELATIVE_GAIN):
+            return global_only(), False
+    return dict(proposed_weights), True
 
 
 def _update_weights(
@@ -430,14 +470,23 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             deferred += block_end - block_start
             continue
 
-        losses, _ = _validation_candidate_losses(matured, first_current)
+        losses, candidate_values, validation_labels = _validation_candidate_losses(
+            matured, first_current
+        )
         before = dict(weights)
-        weights = _update_weights(weights, losses)
+        proposed_weights = _update_weights(weights, losses)
+        weights, mixture_enabled = _stable_mix_weights(
+            validation_labels,
+            candidate_values,
+            proposed_weights,
+        )
         refresh_count += 1
         weight_trace.append({
             "block_start": int(block_start),
             "weights_before": before,
+            "proposed_weights": proposed_weights,
             "weights_after": dict(weights),
+            "mixture_enabled": bool(mixture_enabled),
             "validation_logloss": losses,
         })
         validation_trace.append({
@@ -634,6 +683,8 @@ def build() -> dict[str, Any]:
             "mix_refresh": MIX_REFRESH,
             "eta": ETA,
             "weight_floor": WEIGHT_FLOOR,
+            "mix_min_relative_gain": MIX_MIN_RELATIVE_GAIN,
+            "mix_min_split_relative_gain": MIX_MIN_SPLIT_RELATIVE_GAIN,
         },
         "horizons": result,
     }
