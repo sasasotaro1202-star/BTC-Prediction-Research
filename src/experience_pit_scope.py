@@ -23,6 +23,12 @@ except ModuleNotFoundError:
 
 MAX_TIME_SKEW_SECONDS = 60
 PRIMARY_SOURCE = "binance_futures"
+VERIFIED_RESEARCH_SOURCES = frozenset({
+    "binance_futures",
+    "bybit_futures",
+    "coinbase_futures",
+    "kraken_futures",
+})
 
 
 def _parse_utc(value: Any) -> datetime:
@@ -178,6 +184,8 @@ def _valid_source_names(
     for source_name, source_record in sources.items():
         if not isinstance(source_record, dict):
             continue
+        if str(source_name) not in VERIFIED_RESEARCH_SOURCES:
+            continue
         if str(source_record.get("status", "")) not in AVAILABLE_STATUSES:
             continue
         if not validate_provenance_envelope(source_record, f"experience:{source_name}"):
@@ -254,6 +262,7 @@ def load_strict_verified_rows(
         "primary_source": PRIMARY_SOURCE,
         "horizon": horizon,
         "population": "all_verified_production_sources",
+        "allowed_research_sources": sorted(VERIFIED_RESEARCH_SOURCES),
         "promotion_scope": "binance_futures_primary_only",
         "verified_primary_rows": int(primary_count),
         "verified_fallback_rows": int(fallback_count),
