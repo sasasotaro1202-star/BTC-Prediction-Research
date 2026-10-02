@@ -75,6 +75,10 @@ jobs:
               raise SystemExit('expert mix research population must be all PIT-verified production sources')
           if obj.get('promotion_primary_scope') != 'binance_futures_only':
               raise SystemExit('expert mix primary promotion scope must remain Binance-only')
+          if obj.get('research_population') != 'all_verified_production_sources':
+              raise SystemExit('expert mix research population must be all PIT-verified production sources')
+          if obj.get('promotion_primary_scope') != 'binance_futures_only':
+              raise SystemExit('expert mix primary promotion scope must remain Binance-only')
           if obj.get('research_only') is not True or obj.get('production_changed') is not False:
               raise SystemExit('expert mix must remain research-only')
           if obj.get('promotion_evidence_eligible') is not False:
