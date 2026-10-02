@@ -18,6 +18,10 @@ jobs:
   supervise:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      CI_GH_ATTEMPTS: '2'
+      CI_GH_TIMEOUT_SECONDS: '12'
+      CI_GH_BACKOFF_SECONDS: '1'
     steps:
       - uses: actions/checkout@v7
       - name: Verify supervisor prerequisites
