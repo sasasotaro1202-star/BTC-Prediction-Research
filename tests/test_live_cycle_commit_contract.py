@@ -36,6 +36,34 @@ def test_depth_cache_sources_network_retry_helper_before_fetch():
     assert "git push -f" not in block
 
 
+def test_prediction_boundary_fetches_source_network_retry_helper():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    sections = [
+        (
+            "Load latest Binance WebSocket cache from dedicated state branch",
+            "Load latest Binance depth cache from dedicated state branch",
+        ),
+        (
+            "Refresh latest Binance WebSocket cache immediately before prediction",
+            "Refresh latest Binance depth cache immediately before prediction",
+        ),
+        (
+            "Refresh latest Binance depth cache immediately before prediction",
+            "Generate next BTC prediction",
+        ),
+    ]
+    for start_label, end_label in sections:
+        start = text.index(f"      - name: {start_label}")
+        end = text.index(f"\n      - name: {end_label}", start)
+        section = text[start:end]
+        if "ci_git_fetch --no-tags --depth=1 origin binance-ws-cache" not in section:
+            continue
+        assert ". scripts/ci_network_retry.sh" in section
+        assert section.index(". scripts/ci_network_retry.sh") < section.index(
+            "ci_git_fetch --no-tags --depth=1 origin binance-ws-cache"
+        )
+
+
 def test_live_cycle_rebuild_preserves_state_and_merges_predictions_without_force_push():
     block = _commit_block()
     assert "STATE_ROOT=/tmp/btc_research_commit_state" in block
