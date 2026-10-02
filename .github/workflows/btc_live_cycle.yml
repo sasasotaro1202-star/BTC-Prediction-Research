@@ -31,10 +31,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
           mkdir -p data
           rm -f data/binance_ws_1m.json
           cache_loaded=false
+          . scripts/ci_network_retry.sh
           if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache; then
             if git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json; then
               if python - <<'PY'
@@ -73,8 +73,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
           . scripts/ci_network_retry.sh
+          set -euo pipefail
           cache='data/binance_ws_1m.json'
           stale=false
           if [ -s "$cache" ]; then
@@ -127,7 +127,7 @@ jobs:
           fi
 
           set +e
-          active_runs_json="$(gh run list --repo "$GITHUB_REPOSITORY" \
+          active_runs_json="$(ci_gh run list --repo "$GITHUB_REPOSITORY" \
             --workflow btc_binance_ws_collector.yml \
             --limit 20 \
             --json databaseId,headSha,status 2>/tmp/btc_ws_gh_list.err)"
@@ -162,7 +162,7 @@ jobs:
               if [ -n "$run_workflow_blob" ] && [ -n "$run_source_blob" ] \
                 && { [ "$run_workflow_blob" != "$current_workflow_blob" ] || [ "$run_source_blob" != "$current_source_blob" ]; }; then
                 set +e
-                gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
+                ci_gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
                 cancel_status=$?
                 set -e
                 if [ "$cancel_status" -eq 0 ]; then
@@ -175,7 +175,7 @@ jobs:
           fi
 
           set +e
-          active="$(gh run list --repo "$GITHUB_REPOSITORY" \
+          active="$(ci_gh run list --repo "$GITHUB_REPOSITORY" \
             --workflow btc_binance_ws_collector.yml \
             --limit 20 \
             --json status \
@@ -196,7 +196,7 @@ jobs:
           fi
 
           set +e
-          gh workflow run btc_binance_ws_collector.yml --repo "$GITHUB_REPOSITORY" --ref main
+          ci_gh workflow run btc_binance_ws_collector.yml --repo "$GITHUB_REPOSITORY" --ref main
           dispatch_status=$?
           set -e
           if [ "$dispatch_status" -ne 0 ]; then
@@ -210,8 +210,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
           rm -f data/binance_ws_depth.json
+          . scripts/ci_network_retry.sh
           if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache; then
             if git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
               echo 'Loaded Binance depth WS cache.'
@@ -691,7 +691,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
           tmp_depth="$(mktemp)"
           depth_loaded=false
           validate_depth() {
@@ -1088,7 +1087,7 @@ jobs:
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3 4 5; do
-            if timeout 90s git push origin HEAD:main; then exit 0; fi
+            if CI_GIT_PUSH_ATTEMPTS=1 ci_git_push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
