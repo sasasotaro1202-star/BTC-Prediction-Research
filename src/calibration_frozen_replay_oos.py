@@ -55,8 +55,15 @@ def _post_champion_cutoff_ms():
     return max(cutoffs)
 
 
+class DeferredReplayData(RuntimeError):
+    """Research input is temporarily unavailable; this is a fail-closed DEFER."""
+    
+
 def _dataset():
-    raw = binance_archive_rows(ARCHIVE_ROWS)
+    try:
+        raw = binance_archive_rows(ARCHIVE_ROWS)
+    except RuntimeError as exc:
+        raise DeferredReplayData(f"archive_unavailable: {exc}") from exc
     cutoff_ms = _post_champion_cutoff_ms()
     raw = [row for row in raw if int(row[0]) > cutoff_ms]
     rows = []
@@ -311,17 +318,35 @@ def evaluate(horizon, rows):
 
 
 def main():
-    rows = _dataset()
+    try:
+        rows = _dataset()
+        horizons = {
+            h: evaluate(h, rows)
+            for h in ("5m", "10m")
+        }
+        data_status = "OK"
+        data_reason = None
+    except DeferredReplayData as exc:
+        rows = []
+        horizons = {
+            h: {
+                "status": "DEFERRED",
+                "reason": "archive_unavailable",
+                "n": 0,
+            }
+            for h in ("5m", "10m")
+        }
+        data_status = "DEFERRED"
+        data_reason = str(exc)
     payload = {
         "schema_version": 1,
         "research_only": True,
         "production_changed": False,
         "promotion_evidence_eligible": False,
         "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
-        "horizons": {
-            h: evaluate(h, rows)
-            for h in ("5m", "10m")
-        },
+        "data_status": data_status,
+        "data_reason": data_reason,
+        "horizons": horizons,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
