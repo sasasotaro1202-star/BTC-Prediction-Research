@@ -7,7 +7,8 @@ import math
 import zipfile
 from datetime import datetime, timezone
 from functools import lru_cache
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from http_resilience import request_bytes
 from urllib.parse import urlencode
 
 from market_data import _binance, BINANCE_WS_CACHE
@@ -100,8 +101,13 @@ def _daily_archive_rows(date_text: str) -> dict[int, float]:
     url = f"https://data.binance.vision/data/futures/um/daily/klines/BTCUSDT/1m/{name}"
     req = Request(url, headers={"User-Agent": "BTC-Prediction-Research/9.0"})
     rows: dict[int, float] = {}
-    with urlopen(req, timeout=30) as response:
-        raw = response.read()
+    raw = request_bytes(
+        url,
+        headers={"User-Agent": "BTC-Prediction-Research/9.0"},
+        timeout=60,
+        attempts=5,
+        total_timeout=150,
+    )
     with zipfile.ZipFile(io.BytesIO(raw)) as zf:
         csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
         if not csv_names:
@@ -147,8 +153,17 @@ def _target_coinbase_exchange(target_iso: str) -> tuple[float | None, str]:
             "User-Agent": "BTC-Prediction-Research/settlement",
             "Accept": "application/json",
         })
-        with urlopen(req, timeout=20) as response:
-            rows = json.loads(response.read().decode("utf-8"))
+        raw = request_bytes(
+            url,
+            headers={
+                "User-Agent": "BTC-Prediction-Research/settlement",
+                "Accept": "application/json",
+            },
+            timeout=45,
+            attempts=5,
+            total_timeout=120,
+        )
+        rows = json.loads(raw.decode("utf-8"))
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, list) or len(row) < 5:
                 continue
@@ -181,8 +196,17 @@ def _target_bybit_linear(target_iso: str) -> tuple[float | None, str]:
             "User-Agent": "BTC-Prediction-Research/settlement",
             "Accept": "application/json",
         })
-        with urlopen(req, timeout=20) as response:
-            obj = json.loads(response.read().decode("utf-8"))
+        raw = request_bytes(
+            url,
+            headers={
+                "User-Agent": "BTC-Prediction-Research/settlement",
+                "Accept": "application/json",
+            },
+            timeout=45,
+            attempts=5,
+            total_timeout=120,
+        )
+        obj = json.loads(raw.decode("utf-8"))
         rows = ((obj.get("result") or {}).get("list") or []) if isinstance(obj, dict) else []
         for row in rows:
             if not isinstance(row, list) or len(row) < 5:
