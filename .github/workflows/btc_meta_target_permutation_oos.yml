@@ -76,11 +76,27 @@ jobs:
           for h,item in obj.get('horizons',{}).items():
               if item.get('status') in {'SEPARATED','SUSPICIOUS','NO_SEPARATION'}:
                   pit=item.get('pit') or {}
-                  for key in ('train_created_strictly_before_validation','train_settled_strictly_before_validation','validation_outcomes_used_only_after_model_fitted'):
+                  for key in (
+                      'every_validation_fold_training_created_strictly_before_validation',
+                      'every_validation_fold_training_settled_strictly_before_validation',
+                      'validation_outcomes_used_only_after_model_fitted',
+                  ):
                       if pit.get(key) is not True:
                           raise SystemExit(f'{h}: PIT contract failure: {key}')
-                  if int((item.get('null_summary') or {}).get('permutations',0)) < 3:
-                      raise SystemExit(f'{h}: insufficient null permutations')
+                  folds=item.get('folds') or []
+                  if len(folds) < 2:
+                      raise SystemExit(f'{h}: insufficient chronological audit folds')
+                  for i,fold in enumerate(folds):
+                      fold_pit=fold.get('pit') or {}
+                      for key in (
+                          'train_created_strictly_before_validation',
+                          'train_settled_strictly_before_validation',
+                          'validation_outcomes_used_only_after_model_fitted',
+                      ):
+                          if fold_pit.get(key) is not True:
+                              raise SystemExit(f'{h}: fold {i} PIT contract failure: {key}')
+                      if int((fold.get('null_summary') or {}).get('permutations',0)) < 3:
+                          raise SystemExit(f'{h}: fold {i}: insufficient null permutations')
           print('BTC meta target-permutation adversarial boundary: VERIFIED')
           PY
       - name: Run adversarial regression tests
