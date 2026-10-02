@@ -1130,7 +1130,7 @@ jobs:
             done
             if [ -d data/historical_research/pit_history ]; then
               mkdir -p "$STATE_ROOT/data/historical_research/pit_history"
-              find data/historical_research/pit_history -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} "$STATE_ROOT/data/historical_research/pit_history/" \\;
+              find data/historical_research/pit_history -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} "$STATE_ROOT/data/historical_research/pit_history/" \;
             fi
             if [ -d models ]; then
               cp -a models "$STATE_ROOT/models"
@@ -1162,7 +1162,7 @@ jobs:
             rm -rf data/historical_research/pit_history
             if [ -d "$STATE_ROOT/data/historical_research/pit_history" ]; then
               mkdir -p data/historical_research/pit_history
-              find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} data/historical_research/pit_history/ \\;
+              find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} data/historical_research/pit_history/ \;
             fi
             if [ -d "$STATE_ROOT/models" ]; then
               rm -rf models
@@ -1209,7 +1209,7 @@ jobs:
             local remote_sha
             remote_sha="$(git rev-parse origin/main)" || return 1
             local remote_workflow_sha
-            local_workflow_sha
+            local local_workflow_sha
             remote_workflow_sha="$(git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml | awk '{print $3}')" || return 1
             local_workflow_sha="$(git hash-object .github/workflows/btc_live_cycle.yml)" || return 1
             if [ -z "$remote_workflow_sha" ] || [ "$remote_workflow_sha" != "$local_workflow_sha" ]; then
