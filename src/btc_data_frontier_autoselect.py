@@ -28,6 +28,9 @@ MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
 ACQUISITION_SOURCE_IDS=("bitget_public_ws","hyperliquid_ws","deribit_public")
 PIT_AUDIT_MAX_AGE_SEC=3600
+GITHUB_DISCOVERY_MAX_RETRIES=2
+GITHUB_DISCOVERY_RETRY_BACKOFF_SEC=2.0
+GITHUB_DISCOVERY_MAX_DELAY_SEC=30.0
 
 # Discovery is deliberately broader than automatic acquisition. These gates
 # keep cost/licence uncertainty and PIT uncertainty fail-closed.
@@ -822,13 +825,52 @@ def _quarantine_discovery_noise(frontier):
    quarantined+=1
  return quarantined
 
+def _get_github_discovery(url, token=None):
+ # GitHub Search can transiently return 429/403 when the hourly search budget
+ # is exhausted. Treat that as a transport condition, not a "no candidates"
+ # result. Honor server-provided retry/reset hints with a bounded wait.
+ last_error=None
+ for attempt in range(GITHUB_DISCOVERY_MAX_RETRIES + 1):
+  try:
+   return _get(url, token=token)
+  except HTTPError as exc:
+   remaining = str(exc.headers.get("X-RateLimit-Remaining", "") if exc.headers else "").strip()
+   rate_limited = exc.code == 429 or (exc.code == 403 and remaining == "0")
+   if not rate_limited or attempt >= GITHUB_DISCOVERY_MAX_RETRIES:
+    raise
+   retry_after = exc.headers.get("Retry-After") if exc.headers else None
+   reset = exc.headers.get("X-RateLimit-Reset") if exc.headers else None
+   delay = None
+   try:
+    if retry_after is not None:
+     delay = float(retry_after)
+   except (TypeError,ValueError):
+    delay = None
+   if delay is None:
+    try:
+     if reset is not None:
+      delay = max(0.0, float(reset) - time.time())
+    except (TypeError,ValueError):
+     delay = None
+   if delay is None:
+    delay = GITHUB_DISCOVERY_RETRY_BACKOFF_SEC * (2 ** attempt)
+   delay = min(
+    GITHUB_DISCOVERY_MAX_DELAY_SEC,
+    max(0.1, float(delay)),
+   )
+   time.sleep(delay)
+   last_error=exc
+ if last_error is not None:
+  raise last_error
+ raise RuntimeError("github_discovery_request_failed")
+
 def discover_public_sources():
  found={}
  failures=[]
  for query in DISCOVERY_QUERIES:
   url="https://api.github.com/search/repositories?q="+quote(query)+"&sort=updated&order=desc&per_page="+str(DISCOVERY_RESULTS)
   try:
-   payload=_get(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
+   payload=_get_github_discovery(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
    for item in payload.get("items",[]) if isinstance(payload,dict) else []:
     name=str(item.get("full_name") or "")
     if name:
@@ -839,7 +881,7 @@ def discover_public_sources():
  for query in CODE_DISCOVERY_QUERIES:
   url="https://api.github.com/search/code?q="+quote(query)+"&per_page="+str(DISCOVERY_RESULTS)
   try:
-   payload=_get(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
+   payload=_get_github_discovery(url,token=os.getenv("GITHUB_TOKEN","").strip() or None)
    for item in payload.get("items",[]) if isinstance(payload,dict) else []:
     repo_name=str((item.get("repository") or {}).get("full_name") or "")
     item_path=str(item.get("path") or item.get("name") or "")

@@ -130,6 +130,44 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             self.assertEqual(gap["situation_meta_ready_min"],136)
             self.assertEqual(gap["online_expert_ready_min"],136)
 
+    def test_github_discovery_retries_rate_limit_and_records_success(self):
+        from urllib.error import HTTPError
+        rate_limited=HTTPError(
+            "https://api.github.com/search/code?q=BTCUSDT",
+            429,
+            "Too Many Requests",
+            {"Retry-After":"0"},
+            None,
+        )
+        calls=[]
+        def fake_get(url,method="GET",body=None,token=None):
+            if "search/code" in url:
+                calls.append(token)
+                if len(calls)==1:
+                    raise rate_limited
+            return {"items":[]}
+        with patch.object(mod,"_get",side_effect=fake_get), patch.object(mod.time,"sleep") as sleep:
+            rows, failures=mod.discover_public_sources()
+        self.assertEqual(rows,[])
+        self.assertEqual(failures,[])
+        self.assertGreaterEqual(len(calls),2)
+        sleep.assert_any_call(0.1)
+
+    def test_github_discovery_rate_limit_failure_is_fail_closed(self):
+        from urllib.error import HTTPError
+        rate_limited=HTTPError(
+            "https://api.github.com/search/code?q=BTCUSDT",
+            429,
+            "Too Many Requests",
+            {},
+            None,
+        )
+        with patch.object(mod,"_get",side_effect=rate_limited), patch.object(mod.time,"sleep") as sleep:
+            rows, failures=mod.discover_public_sources()
+        self.assertEqual(rows,[])
+        self.assertTrue(failures)
+        self.assertGreaterEqual(sleep.call_count,1)
+
     def test_discovery_errors_are_recorded(self):
         with patch.object(mod,"_get",side_effect=RuntimeError("offline")):
             rows, failures=mod.discover_public_sources()
