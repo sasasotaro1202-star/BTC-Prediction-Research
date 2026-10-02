@@ -109,15 +109,7 @@ def test_daily_archive_exposes_closed_taker_buy_volume_with_pit_timestamps():
         ])
     payload = _zip(rows)
 
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return None
-        def read(self):
-            return payload
-
-    with patch.object(market_data, "urlopen", return_value=Response()):
+    with patch.object(market_data, "request_bytes", return_value=payload):
         out = market_data.binance_archive_daily_taker_rows(5)
     after_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
