@@ -17,6 +17,8 @@ permissions:
 jobs:
   supervise:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
     timeout-minutes: 8
     steps:
       - name: Verify supervisor prerequisites
