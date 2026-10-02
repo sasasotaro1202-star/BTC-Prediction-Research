@@ -10,7 +10,7 @@ from __future__ import annotations
 
 
 try:
-    from experience_pit_scope import load_strict_primary_rows
+    from experience_pit_scope import load_strict_verified_rows
 except ModuleNotFoundError:
     from src.experience_pit_scope import load_strict_primary_rows
 import json
@@ -596,7 +596,7 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
 
 
 def load_rows_with_pit_scope() -> tuple[list[Any], dict[str, Any]]:
-    return load_strict_primary_rows(DB)
+    return load_strict_verified_rows(DB)
 
 
 def load_rows() -> list[Any]:
@@ -616,12 +616,16 @@ def build() -> dict[str, Any]:
         "research_only": True,
         "production_changed": False,
         "strict_pit_scope": True,
+        "research_population": "all_verified_production_sources",
+        "promotion_primary_scope": "binance_futures_only",
         "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "description": (
             "Prequential expert mixture: exponentially updates weights of "
-            "global, case-memory and meta predictability estimators using only "
-            "matured historical losses."
+            "global, case-memory, meta, and temporal-memory predictability estimators "
+            "using only matured historical losses. Research population includes all "
+            "PIT-verified production sources; primary Binance evidence remains separately "
+            "tracked and cannot be promoted by this lane."
         ),
         "config": {
             "candidates": CANDIDATES,
