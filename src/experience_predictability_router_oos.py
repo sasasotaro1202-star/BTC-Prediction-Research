@@ -249,6 +249,23 @@ def _select_source_from_scores(scores: dict[str, float]) -> str:
 
 
 
+def _apply_consecutive_selection_gate(
+    proposed_source: str,
+    previous_candidate: str | None,
+    candidate_streak: int,
+) -> tuple[str, str | None, int]:
+    """Require a non-global source to win two consecutive refresh selections."""
+    if proposed_source == "global":
+        return "global", None, 0
+    if proposed_source == previous_candidate:
+        next_streak = int(candidate_streak) + 1
+    else:
+        next_streak = 1
+    if next_streak >= MIN_CONSECUTIVE_SELECTIONS:
+        return proposed_source, proposed_source, next_streak
+    return "global", proposed_source, next_streak
+
+
 def _candidate_stable_gain(
     labels: np.ndarray,
     candidate_values: dict[str, np.ndarray],
@@ -331,7 +348,12 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             deferred_cases += block_end - block_start
             continue
 
-        source, validation_scores, validation_n = _choose_source(matured, first_current)
+        proposed_source, validation_scores, validation_n = _choose_source(matured, first_current)
+        source, previous_candidate, candidate_streak = _apply_consecutive_selection_gate(
+            proposed_source,
+            previous_candidate,
+            candidate_streak,
+        )
         refresh_count += 1
         for name, value in validation_scores.items():
             if math.isfinite(value):
@@ -476,7 +498,12 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "min_split_relative_gain": MIN_SPLIT_RELATIVE_GAIN,
         "source_changes": int(source_changes),
         "candidate_sources": CANDIDATES,
-        "selection_rule": f"lowest_validation_logloss_requires_{MIN_RELATIVE_GAIN:.3f}_relative_gain_and_{MIN_SPLIT_RELATIVE_GAIN:.3f}_gain_on_both_validation_halves_with_global_fallback_within_{TIE_EPS}",
+        "selection_rule": (
+            f"lowest_validation_logloss_requires_{MIN_RELATIVE_GAIN:.3f}_relative_gain_and_"
+            f"{MIN_SPLIT_RELATIVE_GAIN:.3f}_gain_on_both_validation_halves; "
+            f"non_global_source_requires_{MIN_CONSECUTIVE_SELECTIONS}_consecutive_refresh_selections; "
+            f"global_fallback_within_{TIE_EPS}"
+        ),
         "source_counts": source_counts,
         "raw_source_counts": raw_source_counts,
         "chronological_blocks": blocks,
