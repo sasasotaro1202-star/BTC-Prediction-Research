@@ -1,6 +1,10 @@
+import hashlib
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from src.promotion_gate import evaluate_promotion
+from src.promotion_gate import _production_artifact_bindings_ok, evaluate_promotion
 
 
 class PromotionGateTests(unittest.TestCase):
@@ -37,6 +41,30 @@ class PromotionGateTests(unittest.TestCase):
             "5m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.50, "candidate_logloss": 0.49, "baseline_brier": 0.30, "candidate_brier": 0.29},
             "10m": {"status": "accepted", "holdout_protected": True, "holdout_used_for_selection": False, "holdout_n": 100, "baseline_logloss": 0.55, "candidate_logloss": 0.54, "baseline_brier": 0.32, "candidate_brier": 0.31},
         }
+
+    def test_production_artifact_binding_rejects_stale_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models = root / "models"
+            models.mkdir()
+            artifacts = []
+            for horizon in ("5m", "10m"):
+                model = models / f"{horizon}.joblib"
+                metadata = models / f"{horizon}.json"
+                model.write_bytes(f"{horizon}-model".encode())
+                metadata.write_text(json.dumps({"horizon": horizon}), encoding="utf-8")
+                model_sha = hashlib.sha256(model.read_bytes()).hexdigest()
+                metadata_sha = hashlib.sha256(metadata.read_bytes()).hexdigest()
+                artifacts.append({
+                    "horizon": horizon,
+                    "model_sha256": model_sha,
+                    "metadata_sha256": metadata_sha,
+                })
+
+            self.assertTrue(_production_artifact_bindings_ok(root, artifacts))
+            artifacts[0]["model_sha256"] = "0" * 64
+            self.assertFalse(_production_artifact_bindings_ok(root, artifacts))
+
 
     def test_candidate_rejection_is_safe_hold(self):
         result = evaluate_promotion({"status": "PASS"}, self._robust(), {"5m": {"status": "rejected"}, "10m": {"status": "insufficient_history"}}, self._pit(), self._cal(), {"ok": True})

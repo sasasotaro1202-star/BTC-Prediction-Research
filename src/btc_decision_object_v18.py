@@ -29,6 +29,13 @@ Action = Literal[
 ]
 PITStatus = Literal["verified", "deferred", "failed"]
 
+_ACTIONS = frozenset((
+    "maintain", "revise", "recompute", "deep_recompute", "information_add",
+    "strategy_change", "model_change", "horizon_change", "output_change",
+    "scenario", "prediction_set", "abstain", "fallback",
+))
+_PIT_STATUSES = frozenset(("verified", "deferred", "failed"))
+
 
 def _finite_probability_map(values: Mapping[str, Any]) -> dict[str, float]:
     out = {}
@@ -103,6 +110,10 @@ class PredictionDecisionObject:
             raise ValueError("missing_prediction_identity")
         if not self.model or not self.strategy:
             raise ValueError("missing_model_strategy")
+        if self.action not in _ACTIONS:
+            raise ValueError(f"invalid_action:{self.action}")
+        if self.pit_status not in _PIT_STATUSES:
+            raise ValueError(f"invalid_pit_status:{self.pit_status}")
 
         probability = _finite_probability_map(self.probability)
         distribution = _finite_probability_map(self.distribution)
@@ -139,10 +150,15 @@ class PredictionDecisionObject:
 
         verified = 0
         for record in self.provenance:
+            if not isinstance(record, Mapping):
+                raise ValueError("invalid_provenance_record")
             available = record.get("available_at_ms")
             if available is None:
                 raise ValueError("provenance_missing_available_at")
-            available = int(available)
+            try:
+                available = int(available)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid_provenance_available_at") from exc
             if available > int(self.prediction_time_ms):
                 raise ValueError("future_information_in_provenance")
             verified += 1

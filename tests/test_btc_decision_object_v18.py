@@ -76,3 +76,17 @@ def test_pit_gate_is_fail_closed():
     obj = _base(pit_status="deferred")
     with pytest.raises(ValueError, match="pit_not_verified"):
         obj.require_verified_pit()
+
+def test_invalid_action_is_rejected_fail_closed():
+    with pytest.raises(ValueError, match="invalid_action"):
+        _base(action="unknown_action")
+
+
+def test_invalid_pit_status_is_rejected_fail_closed():
+    with pytest.raises(ValueError, match="invalid_pit_status"):
+        _base(pit_status="unknown")
+
+
+def test_malformed_provenance_record_is_rejected():
+    with pytest.raises(ValueError, match="invalid_provenance_record"):
+        _base(provenance=("not-a-record",))
