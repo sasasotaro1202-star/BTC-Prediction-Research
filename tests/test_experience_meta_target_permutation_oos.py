@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from src.experience_meta_target_permutation_oos import (
+    MIN_FOLDS,
     SEEDS,
+    VALIDATION_SIZE,
     _eligible_train,
     _metrics,
 )
@@ -46,3 +48,8 @@ def test_metrics_json_contract_and_seed_count():
     assert out["auc"] is None
     assert len(SEEDS) >= 3
     json.dumps(out)
+
+def test_multi_block_permutation_configuration_is_not_single_window():
+    assert VALIDATION_SIZE <= 40
+    assert MIN_FOLDS >= 2
+    assert len(SEEDS) >= 3
