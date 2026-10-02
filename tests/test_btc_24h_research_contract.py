@@ -119,7 +119,7 @@ def test_24h_only_stage1_requires_current_main_and_later_stages_use_snapshot():
     assert workflow.count('STALE_MAIN_RUN expected=') == 1
     assert workflow.count('name: Verify immutable research snapshot') == 4
     assert workflow.count('IMMUTABLE_RESEARCH_SNAPSHOT=') == 4
-    assert workflow.count('git/ref/heads/main') == 2
+    assert workflow.count('git/ref/heads/main') == 1
 
 def test_actions_cleanup_does_not_cancel_24h_for_main_lineage_drift():
     cleanup = Path('.github/workflows/btc_actions_cleanup.yml').read_text(encoding='utf-8')
