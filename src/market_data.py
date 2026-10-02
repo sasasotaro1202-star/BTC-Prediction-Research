@@ -4,7 +4,8 @@ import asyncio, csv, io, json, time, zipfile, math
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from http_resilience import request_bytes, request_json
 from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone, timedelta
 from binance_ws import capture_closed_klines, contiguous_suffix as ws_contiguous_suffix, load_cache as load_binance_ws_cache
@@ -17,10 +18,14 @@ BINANCE_WS_CACHE = ROOT / "data" / "binance_ws_1m.json"
 BINANCE_WS_MAX_AGE_MS = 180 * 1000
 
 
-def http_json(url: str, timeout: int = 12):
-    req = Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+def http_json(url: str, timeout: int = 25, attempts: int = 4):
+    return request_json(
+        url,
+        headers={"User-Agent": UA, "Accept": "application/json"},
+        timeout=max(15.0, float(timeout)),
+        attempts=max(1, int(attempts)),
+        total_timeout=max(90.0, float(timeout) * 3.0),
+    )
 
 
 def _error_label(exc: Exception) -> str:
@@ -33,16 +38,8 @@ def _error_label(exc: Exception) -> str:
     return type(exc).__name__
 
 
-def _get(url: str, attempts: int = 3):
-    last = None
-    for i in range(attempts):
-        try:
-            return http_json(url)
-        except Exception as e:
-            last = e
-            if i + 1 < attempts:
-                time.sleep(min(3.0, 0.8 * (i + 1)))
-    raise last
+def _get(url: str, attempts: int = 4):
+    return http_json(url, timeout=25, attempts=max(1, int(attempts)))
 
 
 BINANCE_FUTURES_REST_HOSTS = (
@@ -145,8 +142,13 @@ def binance_archive_daily_rows(target: int = 120) -> list[list[float]]:
         for url in _archive_daily_urls(day):
             try:
                 req = Request(url, headers={"User-Agent": UA})
-                with urlopen(req, timeout=20) as response:
-                    payload = response.read()
+                payload = request_bytes(
+                    url,
+                    headers={"User-Agent": UA, "Accept": "application/zip"},
+                    timeout=45,
+                    attempts=5,
+                    total_timeout=120,
+                )
                 with zipfile.ZipFile(io.BytesIO(payload)) as zf:
                     if zf.testzip() is not None:
                         raise RuntimeError("archive_zip_crc_failed")
