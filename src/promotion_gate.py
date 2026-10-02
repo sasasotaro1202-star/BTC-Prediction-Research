@@ -184,7 +184,26 @@ def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
 def run(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
     prod = _production_integrity_from_evidence(evidence)
-    robust = json.loads((evidence / "robustness_oos_report.json").read_text(encoding="utf-8"))
+    robust_path = evidence / "robustness_oos_report.json"
+    if robust_path.exists():
+        robust = json.loads(robust_path.read_text(encoding="utf-8"))
+        if not isinstance(robust, dict):
+            robust = {
+                "research_only": True,
+                "policy": "missing_or_malformed_robustness_evidence",
+                "horizons": {},
+                "status": "invalid",
+            }
+    else:
+        # Absence of robustness evidence is a safe HOLD, not a crash. The gate
+        # must remain fail-closed while still producing a complete readiness
+        # artifact that downstream audits can inspect.
+        robust = {
+            "research_only": True,
+            "policy": "missing_robustness_evidence",
+            "horizons": {},
+            "status": "missing",
+        }
     pit_path = evidence / "pit_oos_audit.json"
     pit = json.loads(pit_path.read_text(encoding="utf-8")) if pit_path.exists() else None
     research_input_path = evidence / "research_input_audit.json"
