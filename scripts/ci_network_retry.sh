@@ -14,7 +14,7 @@ ci_gh_api_get() {
   trap 'rm -f "$errfile"' RETURN
 
   for attempt in $(seq 1 "$attempts"); do
-    if out="$(timeout --signal=TERM --kill-after=5s "${timeout_s}s" gh api "$endpoint" "@" 2>"$errfile")"; then
+    if out="$(timeout --signal=TERM --kill-after=5s "${timeout_s}s" gh api "$endpoint" "$@" 2>"$errfile")"; then
       printf '%s\n' "$out"
       return 0
     fi
@@ -34,7 +34,7 @@ ci_git_fetch() {
   local backoff_s="${CI_GIT_FETCH_BACKOFF_SECONDS:-5}"
   local attempt
   for attempt in $(seq 1 "$attempts"); do
-    if timeout --signal=TERM --kill-after=10s "${timeout_s}s" git fetch "@"; then
+    if timeout --signal=TERM --kill-after=10s "${timeout_s}s" git fetch "$@"; then
       return 0
     fi
     echo "WARN: git fetch failed (attempt ${attempt}/${attempts})" >&2
