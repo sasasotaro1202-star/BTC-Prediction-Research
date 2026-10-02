@@ -172,3 +172,40 @@ def test_ci_git_fetch_cwd_retries_and_forwards_arguments(tmp_path):
     lines = log.read_text().splitlines()
     assert len(lines) == 2
     assert all(f"-C {worktree} fetch origin main --depth=1" in line for line in lines)
+
+
+def test_ci_git_push_retries_and_forwards_arguments(tmp_path):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    state = tmp_path / "git_push_count"
+    log = tmp_path / "git_push_args.log"
+
+    fake_git = bindir / "git"
+    fake_git.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" != \"push\" ]; then exit 2; fi\n"
+        "n=0; [ -f \"$STATE\" ] && n=$(cat \"$STATE\")\n"
+        "n=$((n+1)); printf '%s' \"$n\" > \"$STATE\"\n"
+        "printf '%s\\n' \"$*\" >> \"$LOG\"\n"
+        "if [ \"$n\" -lt 2 ]; then exit 1; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+
+    env = os.environ.copy()
+    env.update({
+        "PATH": f"{bindir}:{env['PATH']}",
+        "STATE": str(state),
+        "LOG": str(log),
+        "CI_GIT_PUSH_ATTEMPTS": "2",
+        "CI_GIT_PUSH_TIMEOUT_SECONDS": "2",
+        "CI_GIT_PUSH_BACKOFF_SECONDS": "0",
+    })
+    result = _run_bash(f'. "{HELPER}" && ci_git_push origin HEAD:main', env)
+
+    assert result.returncode == 0, result.stderr
+    assert state.read_text() == "2"
+    lines = log.read_text().splitlines()
+    assert len(lines) == 2
+    assert all("push origin HEAD:main" in line for line in lines)
