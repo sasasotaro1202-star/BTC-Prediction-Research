@@ -691,6 +691,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           tmp_depth="$(mktemp)"
           depth_loaded=false
           validate_depth() {
