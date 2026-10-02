@@ -16,11 +16,15 @@ import io
 import json
 import re
 import sys
-import urllib.request
 import zipfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(ROOT / 'src'))
+from http_resilience import request_bytes
 
 # GKG rows can contain very large embedded fields; raise the stdlib CSV parser
 # limit explicitly rather than failing a whole 15-minute slice at 128 KiB.
@@ -58,19 +62,18 @@ def _parse_gdelt_dt(value: str) -> datetime | None:
     except ValueError:
         return None
 
-def _download_slice(stamp: datetime, attempts: int = 3) -> bytes:
+def _download_slice(stamp: datetime, attempts: int = 5) -> bytes:
     url = f"{BASE}/{_stamp(stamp)}.gkg.csv.zip"
-    req = urllib.request.Request(url, headers={"User-Agent": "BTC-Prediction-Research/1.0"})
-    last = None
-    for attempt in range(attempts):
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                return r.read()
-        except Exception as exc:
-            last = exc
-            if attempt + 1 < attempts:
-                time.sleep(2 ** attempt)
-    raise RuntimeError(f"download failed after {attempts} attempts: {last}")
+    try:
+        return request_bytes(
+            url,
+            headers={"User-Agent": "BTC-Prediction-Research/1.0"},
+            timeout=60,
+            attempts=max(1, int(attempts)),
+            total_timeout=max(150.0, 60.0 * max(1, int(attempts))),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"download failed after {attempts} attempts: {exc}") from exc
 
 def _title(extras: str) -> str:
     m = re.search(r"<PAGE_TITLE>(.*?)</PAGE_TITLE>", extras or "", flags=re.S)
