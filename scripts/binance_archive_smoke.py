@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import io
-import urllib.request
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from http_resilience import request_bytes
 import zipfile
 from datetime import datetime, timezone, timedelta
 
@@ -12,9 +16,13 @@ SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
 
 def get(url: str, timeout: int = 60) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    return request_bytes(
+        url,
+        headers={"User-Agent": UA},
+        timeout=max(20.0, float(timeout)),
+        attempts=5,
+        total_timeout=max(90.0, float(timeout) * 2.5),
+    )
 
 
 def valid_zip(payload: bytes) -> bool:
