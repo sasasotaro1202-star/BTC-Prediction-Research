@@ -24,6 +24,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
+      CI_GH_ATTEMPTS: '3'
+      CI_GH_TIMEOUT_SECONDS: '30'
+      CI_GH_BACKOFF_SECONDS: '5'
     steps:
       - name: Enforce current-main execution
         shell: bash
@@ -35,27 +38,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           now="$(date -u +%s)"
-          retry_api() {
-            local endpoint="$1"
-            shift
-            for attempt in 1 2 3; do
-              if out="$(timeout --signal=TERM --kill-after=5s 30s gh api "$endpoint" "$@" 2>/dev/null)"; then
-                printf '%s\n' "$out"
-                return 0
-              fi
-              echo "WARN: GitHub API request failed (attempt ${attempt}/3): ${endpoint}" >&2
-              [ "$attempt" -lt 3 ] && sleep $((5 * attempt))
-            done
-            return 1
-          }
 
-          main_sha="$(retry_api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')" || {
+          main_sha="$(ci_gh_api_get "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')" || {
             echo "ERROR: unable to read current main SHA after 3 attempts." >&2
             exit 1
           }
 
-          live_json="$(retry_api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
+          live_json="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
             echo "ERROR: unable to read Live workflow runs after 3 attempts." >&2
             exit 1
           }
@@ -77,7 +68,7 @@ jobs:
               echo "Stale obsolete Live Cycle detected; cancelling run_id=$run_id."
               cancel_ok=false
               for attempt in 1 2 3; do
-                if timeout --signal=TERM --kill-after=5s 30s gh run cancel "$run_id" --repo "$REPO"; then
+                if ci_gh run cancel "$run_id" --repo "$REPO"; then
                   cancel_ok=true
                   break
                 fi
@@ -92,7 +83,7 @@ jobs:
               fi
             done <<<"$stale_ids"
             sleep 5
-            live_json="$(retry_api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
+            live_json="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")" || {
               echo "ERROR: unable to refresh Live workflow runs after stale-run cancellation." >&2
               exit 1
             }
@@ -114,7 +105,7 @@ jobs:
 
           if [ "$active" -eq 0 ] && { [ "$age" -ge 300 ] || [ "$head" != "$main_sha" ]; }; then
             echo "Production heartbeat stale; dispatching one Live Cycle from current main."
-            if retry_api "/repos/$REPO/actions/workflows/btc_live_cycle.yml/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
+            if ci_gh_api_get "/repos/$REPO/actions/workflows/btc_live_cycle.yml/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
               echo "Live Cycle recovery dispatch accepted."
             else
               echo "ERROR: Live Cycle recovery dispatch failed." >&2
@@ -128,9 +119,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           echo "Sleeping briefly before spawning next sentinel generation."
           sleep 240
-          if retry_api "/repos/$REPO/actions/workflows/btc_production_sentinel.yml/dispatches" --method POST -f ref=main >/dev/null; then
+          if ci_gh_api_get "/repos/$REPO/actions/workflows/btc_production_sentinel.yml/dispatches" --method POST -f ref=main >/dev/null; then
             echo "Next sentinel generation dispatch accepted."
           else
             echo "ERROR: next sentinel generation dispatch failed." >&2
