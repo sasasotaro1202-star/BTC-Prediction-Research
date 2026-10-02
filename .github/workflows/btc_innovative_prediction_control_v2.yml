@@ -179,7 +179,7 @@ jobs:
               ('innovative_fallback_config.json',fallback),
               ('innovative_leakage_audit.json',leakage),
           ):
-              (root/name).write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n',encoding='utf-8')
+              (root/name).write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           PY
 
       - name: Validate research artifacts and diff
