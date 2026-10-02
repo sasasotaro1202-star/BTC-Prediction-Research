@@ -4,9 +4,9 @@
 set -euo pipefail
 
 ci_gh() {
-  local attempts="${CI_GH_ATTEMPTS:-5}"
-  local timeout_s="${CI_GH_TIMEOUT_SECONDS:-30}"
-  local backoff_s="${CI_GH_BACKOFF_SECONDS:-3}"
+  local attempts="${CI_GH_ATTEMPTS:-${CI_GH_API_ATTEMPTS:-5}}"
+  local timeout_s="${CI_GH_TIMEOUT_SECONDS:-${CI_GH_API_TIMEOUT_SECONDS:-30}}"
+  local backoff_s="${CI_GH_BACKOFF_SECONDS:-${CI_GH_API_BACKOFF_SECONDS:-3}}"
   local attempt out errfile
   errfile="$(mktemp)"
   for attempt in $(seq 1 "$attempts"); do
