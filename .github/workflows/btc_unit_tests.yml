@@ -50,5 +50,8 @@ jobs:
 
       - name: Compile source and tests
         run: python -m compileall -q src tests scripts
+      - name: Validate CI network retry helper
+        run: bash -n scripts/ci_network_retry.sh
+
       - name: Run unit tests
         run: python -m pytest -q tests
