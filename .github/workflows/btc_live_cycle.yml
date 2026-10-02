@@ -31,10 +31,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           mkdir -p data
           rm -f data/binance_ws_1m.json
           cache_loaded=false
-          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+          if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache; then
             if git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json; then
               if python - <<'PY'
           import json
@@ -73,6 +74,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           cache='data/binance_ws_1m.json'
           stale=false
           if [ -s "$cache" ]; then
@@ -141,8 +143,8 @@ jobs:
           # the current main branch. Data/state-only commits keep the same code
           # blobs and therefore do not churn healthy collectors.
           set +e
-          current_workflow_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=main" --jq '.sha' 2>/tmp/btc_ws_workflow_sha.err)"
-          current_source_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=main" --jq '.sha' 2>/tmp/btc_ws_source_sha.err)"
+          current_workflow_blob="$(ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=main" --jq '.sha' 2>/tmp/btc_ws_workflow_sha.err)"
+          current_source_blob="$(ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=main" --jq '.sha' 2>/tmp/btc_ws_source_sha.err)"
           code_status=$?
           set -e
           if [ "$code_status" -ne 0 ] || [ -z "$current_workflow_blob" ] || [ -z "$current_source_blob" ]; then
@@ -154,8 +156,8 @@ jobs:
               [ "$run_status" = "queued" ] || [ "$run_status" = "in_progress" ] || continue
 
               set +e
-              run_workflow_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=$run_sha" --jq '.sha' 2>/dev/null)"
-              run_source_blob="$(gh api "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=$run_sha" --jq '.sha' 2>/dev/null)"
+              run_workflow_blob="$(ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=$run_sha" --jq '.sha' 2>/dev/null)"
+              run_source_blob="$(ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=$run_sha" --jq '.sha' 2>/dev/null)"
               set -e
               if [ -n "$run_workflow_blob" ] && [ -n "$run_source_blob" ] \
                 && { [ "$run_workflow_blob" != "$current_workflow_blob" ] || [ "$run_source_blob" != "$current_source_blob" ]; }; then
@@ -208,8 +210,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           rm -f data/binance_ws_depth.json
-          if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+          if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache; then
             if git show origin/binance-ws-cache:data/binance_ws_depth.json > data/binance_ws_depth.json 2>/dev/null; then
               echo 'Loaded Binance depth WS cache.'
             else
@@ -529,6 +532,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           tmp_cache="$(mktemp)"
           cache_loaded=false
 
@@ -568,7 +572,7 @@ jobs:
 
           # Keep a healthy persisted cache on the fast path. Only attempt REST
           # recovery when the cache is absent/stale/gappy.
-          if git fetch --no-tags --depth=1 origin binance-ws-cache             && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
+          if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache             && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
             if validate_boundary_cache; then
               cache_loaded=true
               echo 'Loaded fresh Binance Futures WS cache before direct REST recovery.'
@@ -659,7 +663,7 @@ jobs:
           if [ "$cache_loaded" != true ]; then
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_cache"
-            if git fetch --no-tags --depth=1 origin binance-ws-cache \
+            if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache \
               && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
               if validate_boundary_cache; then
                 cp "$tmp_cache" data/binance_ws_1m.json
@@ -687,6 +691,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           tmp_depth="$(mktemp)"
           depth_loaded=false
           validate_depth() {
@@ -719,7 +724,7 @@ jobs:
           }
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_depth"
-            if git fetch --no-tags --depth=1 origin binance-ws-cache && git show origin/binance-ws-cache:data/binance_ws_depth.json > "$tmp_depth" 2>/dev/null; then
+            if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache && git show origin/binance-ws-cache:data/binance_ws_depth.json > "$tmp_depth" 2>/dev/null; then
               if validate_depth; then
                 cp "$tmp_depth" data/binance_ws_depth.json
                 depth_loaded=true
@@ -1056,6 +1061,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -- data/predictions.db.gz data/live_cycle_status.json
@@ -1101,7 +1107,7 @@ jobs:
             if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
               git rebase --abort
             fi
-            timeout 90s git fetch --prune origin main
+            ci_git_fetch --prune origin main
             git reset --hard origin/main
             python - <<'PY'
           from pathlib import Path
