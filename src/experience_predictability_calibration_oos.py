@@ -222,10 +222,10 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         calibration_counts.append(int(count))
 
         base = _probabilities(current)
-        raw_probability, _ = _adjust_probabilities(
+        raw_probability, _, _ = _adjust_probabilities(
             base, raw_risk, baseline_error
         )
-        calibrated_probability, _ = _adjust_probabilities(
+        calibrated_probability, _, _ = _adjust_probabilities(
             base, calibrated_risk, baseline_error
         )
 
