@@ -311,18 +311,56 @@ def evaluate(horizon, rows):
 
 
 def main():
-    rows = _dataset()
-    payload = {
-        "schema_version": 1,
-        "research_only": True,
-        "production_changed": False,
-        "promotion_evidence_eligible": False,
-        "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
-        "horizons": {
-            h: evaluate(h, rows)
+    cutoff = _post_champion_cutoff_ms()
+    try:
+        rows = _dataset()
+    except RuntimeError as exc:
+        message = str(exc)
+        prefix = "insufficient archive rows for calibration replay:"
+        if not message.startswith(prefix):
+            raise
+        try:
+            available_rows = int(message[len(prefix):].strip())
+        except ValueError:
+            available_rows = None
+        horizons = {
+            h: {
+                "status": "DEFERRED",
+                "reason": "insufficient_archive_rows",
+                "n": available_rows,
+                "required_minimum": WINDOWS * MIN_WINDOW,
+                "replay_holdout_protected": True,
+                "replay_holdout_used_for_selection": False,
+            }
             for h in ("5m", "10m")
-        },
-    }
+        }
+        payload = {
+            "schema_version": 1,
+            "research_only": True,
+            "production_changed": False,
+            "promotion_evidence_eligible": False,
+            "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
+            "dataset_status": "DEFERRED",
+            "dataset_reason": "insufficient_archive_rows",
+            "dataset_rows": available_rows,
+            "post_champion_cutoff_ms": cutoff,
+            "horizons": horizons,
+        }
+    else:
+        payload = {
+            "schema_version": 1,
+            "research_only": True,
+            "production_changed": False,
+            "promotion_evidence_eligible": False,
+            "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
+            "dataset_status": "READY",
+            "dataset_rows": len(rows),
+            "post_champion_cutoff_ms": cutoff,
+            "horizons": {
+                h: evaluate(h, rows)
+                for h in ("5m", "10m")
+            },
+        }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(payload, indent=2, sort_keys=True))
