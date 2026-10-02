@@ -2,14 +2,24 @@
   "ok": true,
   "status": "PASS_WITH_LEGACY_UNVERIFIED",
   "pit_verified": false,
-  "pit_verified_reason": "insufficient_binance_primary_pit_rows:229/300",
-  "checked_predictions": 532,
-  "verified_predictions": 363,
-  "verified_primary_predictions": 229,
+  "pit_verified_reason": "insufficient_binance_primary_pit_rows:230/300",
+  "checked_predictions": 533,
+  "verified_predictions": 364,
+  "verified_primary_predictions": 230,
   "verified_fallback_predictions": 134,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 532,
+      "strict_primary_settled": 229,
+      "situation_meta_ready": 225,
+      "online_expert_ready": 225,
+      "situation_meta_rows_needed": 2775,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2775,
+      "estimated_days_lower_bound": 9.635416666666666
+    },
+    "10m": {
       "settled_predictions": 531,
       "strict_primary_settled": 228,
       "situation_meta_ready": 224,
@@ -18,16 +28,6 @@
       "online_expert_rows_needed": 0,
       "estimated_5m_cycles_lower_bound": 2776,
       "estimated_days_lower_bound": 9.63888888888889
-    },
-    "10m": {
-      "settled_predictions": 530,
-      "strict_primary_settled": 227,
-      "situation_meta_ready": 223,
-      "online_expert_ready": 223,
-      "situation_meta_rows_needed": 2777,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2777,
-      "estimated_days_lower_bound": 9.64236111111111
     }
   },
   "coverage_policy": "strict_primary_settled requires actual outcome + valid primary PIT; situation_meta_ready additionally requires persisted situation, microstructure, and components; estimated_days is a lower bound assuming one qualifying prediction every 5 minutes",
@@ -79,7 +79,7 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-02T23:23:18.904426+00:00",
+  "generated_at_utc": "2026-10-02T23:27:40.219730+00:00",
   "history": {
     "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-02T23:15:00+00:00",
