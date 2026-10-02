@@ -24,6 +24,18 @@ def test_live_cycle_syncs_to_current_main_before_every_research_state_push():
     assert block.count("ci_git_fetch --prune origin main") == 1
 
 
+def test_depth_cache_sources_network_retry_helper_before_fetch():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    start = text.index("      - name: Refresh latest Binance depth cache immediately before prediction")
+    end = text.index("\n      - name: Generate next BTC prediction", start)
+    block = text[start:end]
+    helper = block.index(". scripts/ci_network_retry.sh")
+    fetch = block.index("ci_git_fetch --no-tags --depth=1 origin binance-ws-cache")
+    assert helper < fetch
+    assert "git push --force" not in block
+    assert "git push -f" not in block
+
+
 def test_live_cycle_rebuild_preserves_state_and_merges_predictions_without_force_push():
     block = _commit_block()
     assert "STATE_ROOT=/tmp/btc_research_commit_state" in block
