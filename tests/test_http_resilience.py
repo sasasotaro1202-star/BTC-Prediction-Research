@@ -1,7 +1,7 @@
 import unittest
 from urllib.error import HTTPError
 
-from src import http_resilience
+from src import historical_research, historical_research_runner, http_resilience
 
 
 class TestHTTPResilience(unittest.TestCase):
@@ -63,6 +63,53 @@ class TestHTTPResilience(unittest.TestCase):
             http_resilience.time.sleep = original_sleep
 
         self.assertEqual(calls["n"], 1)
+
+    def test_historical_research_routes_json_through_shared_transport(self):
+        calls = []
+
+        def fake_request_json(url, *, headers, timeout, attempts, total_timeout):
+            calls.append((url, headers, timeout, attempts, total_timeout))
+            return {"ok": True}
+
+        original = historical_research.request_json
+        try:
+            historical_research.request_json = fake_request_json
+            result = historical_research.req_json(
+                "https://example.invalid/api",
+                timeout=20,
+                retries=4,
+            )
+        finally:
+            historical_research.request_json = original
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(calls[0][0], "https://example.invalid/api")
+        self.assertEqual(calls[0][1]["Accept"], "application/json")
+        self.assertEqual(calls[0][3], 4)
+        self.assertGreaterEqual(calls[0][4], 120.0)
+
+    def test_historical_runner_routes_archives_through_shared_transport(self):
+        calls = []
+
+        def fake_request_bytes(url, *, headers, timeout, attempts, total_timeout):
+            calls.append((url, headers, timeout, attempts, total_timeout))
+            return b"archive"
+
+        original = historical_research_runner.request_bytes
+        try:
+            historical_research_runner.request_bytes = fake_request_bytes
+            result = historical_research_runner._download(
+                "https://example.invalid/archive.zip",
+                timeout=40,
+            )
+        finally:
+            historical_research_runner.request_bytes = original
+
+        self.assertEqual(result, b"archive")
+        self.assertEqual(calls[0][0], "https://example.invalid/archive.zip")
+        self.assertEqual(calls[0][1]["User-Agent"], historical_research_runner.USER_AGENT)
+        self.assertEqual(calls[0][3], 5)
+        self.assertGreaterEqual(calls[0][4], 120.0)
 
 
 if __name__ == "__main__":
