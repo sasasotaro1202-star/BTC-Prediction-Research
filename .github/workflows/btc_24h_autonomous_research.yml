@@ -40,7 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          . scripts/ci_network_retry.sh
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
@@ -170,7 +171,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
@@ -265,7 +266,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
@@ -370,7 +371,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
@@ -527,7 +528,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
