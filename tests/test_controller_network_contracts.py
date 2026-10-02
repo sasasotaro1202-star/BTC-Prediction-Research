@@ -34,3 +34,7 @@ def test_controller_job_deadlines_are_finite():
     watchdog = _workflow(".github/workflows/btc_24h_watchdog.yml")
     assert "timeout-minutes: 8" in supervisor
     assert "timeout-minutes: 5" in watchdog
+    for text in (supervisor, watchdog):
+        assert "CI_GH_ATTEMPTS: '2'" in text
+        assert "CI_GH_TIMEOUT_SECONDS: '12'" in text
+        assert "CI_GH_BACKOFF_SECONDS: '1'" in text
