@@ -30,15 +30,7 @@ def test_daily_archive_returns_closed_contiguous_rows():
     start = now_ms - 150 * 60_000
     payload = _zip(_rows(start, 150))
 
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return None
-        def read(self):
-            return payload
-
-    with patch.object(market_data, "urlopen", return_value=Response()):
+    with patch.object(market_data, "request_bytes", return_value=payload):
         rows = market_data.binance_archive_daily_rows(120)
 
     assert len(rows) == 120
@@ -47,15 +39,7 @@ def test_daily_archive_returns_closed_contiguous_rows():
 
 
 def test_daily_archive_rejects_crc_corruption_and_fails_closed():
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return None
-        def read(self):
-            return b"not a zip"
-
-    with patch.object(market_data, "urlopen", return_value=Response()):
+    with patch.object(market_data, "request_bytes", return_value=b"not a zip"):
         try:
             market_data.binance_archive_daily_rows(120)
         except RuntimeError as exc:
@@ -71,15 +55,7 @@ def test_daily_archive_never_accepts_current_open_candle():
     rows[-1][0] = now_ms
     payload = _zip(rows)
 
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return None
-        def read(self):
-            return payload
-
-    with patch.object(market_data, "urlopen", return_value=Response()):
+    with patch.object(market_data, "request_bytes", return_value=payload):
         try:
             market_data.binance_archive_daily_rows(40)
         except RuntimeError:
@@ -133,15 +109,7 @@ def test_daily_archive_exposes_closed_taker_buy_volume_with_pit_timestamps():
         ])
     payload = _zip(rows)
 
-    class Response:
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return None
-        def read(self):
-            return payload
-
-    with patch.object(market_data, "urlopen", return_value=Response()):
+    with patch.object(market_data, "request_bytes", return_value=payload):
         out = market_data.binance_archive_daily_taker_rows(5)
     after_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 

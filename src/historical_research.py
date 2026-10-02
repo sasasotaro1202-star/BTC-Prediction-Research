@@ -14,7 +14,7 @@ Accuracy-first research engine:
 - diagnostic only: production promotion remains a separate 10k-OOS gate
 """
 from __future__ import annotations
-import concurrent.futures, csv, json, math, time, urllib.parse, urllib.request
+import concurrent.futures, csv, json, math, time, urllib.parse
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import numpy as np
@@ -28,19 +28,33 @@ OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
+from http_resilience import request_json
 DAYS=45; MIN_TRAIN=12000; TEST_BLOCK=5000; EMBARGO=10
 TARGETS={"5m":5,"10m":10}; SYMS={"btc":"BTCUSDT","eth":"ETHUSDT","sol":"SOLUSDT"}
 FEATURES=["ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30","rangepos10","rangepos30","body","upper","lower","volratio","voltrend","tradesratio","takerimb","basis","basis_delta","mark_gap","premium","eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","hour_sin","hour_cos","dow_sin","dow_cos","funding","funding_delta","oi_change","oi_z"]
 
 def req_json(url,timeout=30,retries=5):
-    last=None
-    for k in range(retries):
-        try:
-            req=urllib.request.Request(url,headers={"User-Agent":"BTC-Prediction-Research/6.0","Accept":"application/json"})
-            with urllib.request.urlopen(req,timeout=timeout) as r:return json.loads(r.read())
-        except Exception as e:
-            last=e; time.sleep(min(8,0.8*(k+1)))
-    raise RuntimeError(f"request failed: {url}: {last}")
+    """Fetch JSON through the bounded shared HTTP transport.
+
+    Keep the historical runner's RuntimeError contract so retryable Binance
+    failures can still activate its archive fallback logic.
+    """
+    try:
+        return request_json(
+            url,
+            headers={
+                "User-Agent": "BTC-Prediction-Research/6.0",
+                "Accept": "application/json",
+            },
+            timeout=max(10.0, float(timeout)),
+            attempts=max(1, int(retries)),
+            total_timeout=max(
+                90.0,
+                float(timeout) * max(1, int(retries)) * 1.5,
+            ),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"request failed: {url}: {exc}") from exc
 
 def _cache_path(kind,symbol,day): return CACHE/f"{kind}_{symbol}_{day:%Y%m%d}.json"
 

@@ -1,9 +1,10 @@
 """Fail-safe launcher for BTC historical research."""
 from __future__ import annotations
-import csv, hashlib, io, json, urllib.parse, urllib.request, zipfile
+import csv, hashlib, io, json, urllib.parse, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
+from http_resilience import request_bytes
 
 USER_AGENT="BTC-Prediction-Research/11.5"
 ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaws.com/data.binance.vision")
@@ -14,8 +15,13 @@ RETRYABLE_HTTP={403,418,429,451,500,502,503,504}
 _ORIGINAL_REQ_JSON=hr.req_json
 
 def _download(url,timeout=90):
-    req=urllib.request.Request(url,headers={"User-Agent":USER_AGENT})
-    with urllib.request.urlopen(req,timeout=timeout) as r:return r.read()
+    return request_bytes(
+        url,
+        headers={"User-Agent": USER_AGENT},
+        timeout=max(30.0, float(timeout)),
+        attempts=5,
+        total_timeout=max(120.0, float(timeout) * 2.0),
+    )
 
 def _archive_path(symbol,interval,endpoint,day,monthly):
     if monthly:

@@ -75,7 +75,7 @@ class TestSettlementSource(unittest.TestCase):
         payload.seek(0)
         ss._daily_archive_rows.cache_clear()
         try:
-            with patch.object(ss, 'urlopen', return_value=payload) as opener:
+            with patch.object(ss, 'request_bytes', return_value=payload.getvalue()) as opener:
                 self.assertEqual(ss._daily_archive_rows('2024-09-15')[1726394700000], 102.75)
                 self.assertEqual(ss._daily_archive_rows('2024-09-15')[1726394760000], 102.80)
             opener.assert_called_once()
@@ -120,26 +120,26 @@ class TestSettlementSource(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *args): return False
             def read(self): return b'[[1726394700,100,103,99,102.5,12]]'
-        with patch.object(ss, 'urlopen', return_value=Response()) as opener:
+        with patch.object(ss, 'request_bytes', return_value=b'[[1726394700,100,103,99,102.5,12]]') as opener:
             price, source = ss._target_coinbase_exchange('2024-09-15T10:06:00+00:00')
         self.assertEqual(price, 102.5)
         self.assertEqual(source, 'coinbase_exchange')
         opener.assert_called_once()
-        request = opener.call_args.args[0]
-        self.assertIn('granularity=60', request.full_url)
+        request_url = opener.call_args.args[0]
+        self.assertIn('granularity=60', request_url)
 
     def test_bybit_native_resolver_constructs_request_without_name_error(self):
         class Response:
             def __enter__(self): return self
             def __exit__(self, *args): return False
             def read(self): return b'{"result":{"list":[[1726394700000,"100","103","99","102.5","12"]]}}'
-        with patch.object(ss, 'urlopen', return_value=Response()) as opener:
+        with patch.object(ss, 'request_bytes', return_value=b'{"result":{"list":[[1726394700000,"100","103","99","102.5","12"]]}}') as opener:
             price, source = ss._target_bybit_linear('2024-09-15T10:06:00+00:00')
         self.assertEqual(price, 102.5)
         self.assertEqual(source, 'bybit_linear')
         opener.assert_called_once()
-        request = opener.call_args.args[0]
-        self.assertIn('category=linear', request.full_url)
+        request_url = opener.call_args.args[0]
+        self.assertIn('category=linear', request_url)
 if __name__ == '__main__':
     unittest.main()
 
