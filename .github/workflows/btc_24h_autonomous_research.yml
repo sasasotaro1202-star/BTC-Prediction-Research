@@ -40,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
+          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
@@ -169,6 +170,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
@@ -263,6 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
@@ -367,6 +370,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
@@ -523,6 +527,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           test "${remote_sha}" = "${GITHUB_SHA}" || {
             echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
