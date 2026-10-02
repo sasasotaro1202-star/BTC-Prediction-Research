@@ -161,7 +161,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
+      - name: Verify immutable research snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_SHA}"
+          actual="$(git rev-parse HEAD)"
+          test "${actual}" = "${GITHUB_SHA}" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=${GITHUB_SHA} actual=${actual}" >&2
+            exit 1
+          }
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -255,7 +265,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
+      - name: Verify immutable research snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_SHA}"
+          actual="$(git rev-parse HEAD)"
+          test "${actual}" = "${GITHUB_SHA}" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=${GITHUB_SHA} actual=${actual}" >&2
+            exit 1
+          }
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -359,7 +379,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
+      - name: Verify immutable research snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_SHA}"
+          actual="$(git rev-parse HEAD)"
+          test "${actual}" = "${GITHUB_SHA}" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=${GITHUB_SHA} actual=${actual}" >&2
+            exit 1
+          }
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -515,7 +545,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
+      - name: Verify immutable research snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_SHA}"
+          actual="$(git rev-parse HEAD)"
+          test "${actual}" = "${GITHUB_SHA}" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=${GITHUB_SHA} actual=${actual}" >&2
+            exit 1
+          }
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
