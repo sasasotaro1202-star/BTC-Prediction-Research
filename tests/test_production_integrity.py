@@ -62,6 +62,37 @@ class TestProductionIntegrityDeferred(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "stale or future-dated"):
                     production_integrity.check_db()
 
+    def test_archive_mode_allows_stale_snapshot_but_rejects_future_timestamp(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            db = root / "predictions.db"
+            stale = datetime.now(timezone.utc) - timedelta(hours=2)
+            self._db(db, stale)
+            with patch.object(production_integrity, "DB", db),                  patch.object(production_integrity, "LIVE_STATUS", root / "live_cycle_status.json"),                  patch.dict(
+                     production_integrity.os.environ,
+                     {
+                         "BTC_INTEGRITY_REQUIRE_FRESH": "false",
+                         "BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS": "900",
+                     },
+                     clear=False,
+                 ):
+                result = production_integrity.check_db()
+            self.assertTrue(result["prediction_ok"])
+            self.assertFalse(result["freshness_required"])
+
+            future_db = root / "future.db"
+            self._db(future_db, datetime.now(timezone.utc) + timedelta(seconds=120))
+            with patch.object(production_integrity, "DB", future_db),                  patch.dict(
+                     production_integrity.os.environ,
+                     {
+                         "BTC_INTEGRITY_REQUIRE_FRESH": "false",
+                         "BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS": "900",
+                     },
+                     clear=False,
+                 ):
+                with self.assertRaisesRegex(RuntimeError, "future-dated"):
+                    production_integrity.check_db()
+
     def test_fresh_deferred_status_allows_safe_stale_state(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
