@@ -1063,98 +1063,8 @@ jobs:
           . scripts/ci_network_retry.sh
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -- data/predictions.db.gz data/live_cycle_status.json
-          for path in \
-            data/historical_research/bootstrap_status.json \
-            data/historical_research/research_health.json \
-            data/historical_research/research_input_audit.json \
-            data/historical_research/production_artifact_audit.json \
-            data/historical_research/pit_oos_audit.json \
-            data/historical_research/venue_drift.json \
-            data/historical_research/flat_diagnostic.json \
-            data/historical_research/performance_snapshot.json \
-            data/historical_research/performance_change.json \
-            data/experience/experience_summary.json; do
-            if [ -f "$path" ]; then git add -- "$path"; fi
-          done
-          if [ -d data/historical_research/pit_history ]; then git add -- data/historical_research/pit_history; fi
-          for path in models/*.json models/*.joblib; do
-            if [ -f "$path" ]; then git add -- "$path"; fi
-          done
-          if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
-            git rm --cached -- data/predictions.db
-          fi
-          if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
-          git commit -m 'Update BTC research state'
-          for attempt in 1 2 3 4 5; do
-            if CI_GIT_PUSH_ATTEMPTS=1 ci_git_push origin HEAD:main; then exit 0; fi
-            echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
-            cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
-            if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
-            if [ -f data/historical_research/bootstrap_status.json ]; then cp data/historical_research/bootstrap_status.json /tmp/btc_local_bootstrap_status.json; fi
-            if [ -f data/historical_research/research_input_audit.json ]; then cp data/historical_research/research_input_audit.json /tmp/btc_local_research_input_audit.json; fi
-            if [ -f data/historical_research/production_artifact_audit.json ]; then cp data/historical_research/production_artifact_audit.json /tmp/btc_local_production_artifact_audit.json; fi
-            if [ -f data/historical_research/pit_oos_audit.json ]; then cp data/historical_research/pit_oos_audit.json /tmp/btc_local_pit_oos_audit.json; fi
-            if [ -d data/historical_research/pit_history ]; then rm -rf /tmp/btc_local_pit_history && cp -R data/historical_research/pit_history /tmp/btc_local_pit_history; fi
-            if [ -d models ]; then rm -rf /tmp/btc_local_models && cp -R models /tmp/btc_local_models; fi
-            if [ -f data/historical_research/research_health.json ]; then cp data/historical_research/research_health.json /tmp/btc_local_health.json; fi
-            if [ -f data/historical_research/venue_drift.json ]; then cp data/historical_research/venue_drift.json /tmp/btc_local_venue_drift.json; fi
-            if [ -f data/historical_research/flat_diagnostic.json ]; then cp data/historical_research/flat_diagnostic.json /tmp/btc_local_flat_diagnostic.json; fi
-            if [ -f data/historical_research/performance_snapshot.json ]; then cp data/historical_research/performance_snapshot.json /tmp/btc_local_performance_snapshot.json; fi
-            if [ -f data/historical_research/performance_change.json ]; then cp data/historical_research/performance_change.json /tmp/btc_local_performance_change.json; fi
-            if [ -f data/experience/experience_summary.json ]; then cp data/experience/experience_summary.json /tmp/btc_local_experience_summary.json; fi
-            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-              git rebase --abort
-            fi
-            ci_git_fetch --prune origin main
-            git reset --hard origin/main
-            python - <<'PY'
-          from pathlib import Path
-          from src.state_archive import restore_db, compress_db
-          import subprocess, shutil
-          archive=Path('data/predictions.db.gz')
-          if archive.exists():
-              restore_db(archive, Path('data/predictions.db'))
-          else:
-              Path('data').mkdir(exist_ok=True)
-          restore_db(Path('/tmp/btc_local_predictions.db.gz'), Path('/tmp/btc_local_predictions.db'))
-          if Path('data/predictions.db').exists():
-              subprocess.run(['python','scripts/merge_prediction_state.py','/tmp/btc_local_predictions.db','data/predictions.db'],check=True)
-          else:
-              shutil.copy2('/tmp/btc_local_predictions.db','data/predictions.db')
-          compress_db(Path('data/predictions.db'), archive)
-          Path('data/predictions.db').unlink()
-          PY
-            if [ -d /tmp/btc_local_models ]; then rm -rf models && cp -R /tmp/btc_local_models models; fi
-            # live_cycle_status belongs to this writer and records the exact
-            # run/prediction that just completed. Restore it after rebasing so
-            # a conflict cannot silently roll the status back to an older run.
-            if [ -f /tmp/btc_local_live_cycle_status.json ]; then cp /tmp/btc_local_live_cycle_status.json data/live_cycle_status.json; fi
-            if [ -d /tmp/btc_local_pit_history ]; then
-              mkdir -p data/historical_research/pit_history
-              for local_history in /tmp/btc_local_pit_history/pit_*.json; do
-                if [ -f "$local_history" ]; then
-                  target_history="data/historical_research/pit_history/$(basename "$local_history")"
-                  if [ ! -e "$target_history" ]; then cp "$local_history" "$target_history"; fi
-                fi
-              done
-            fi
-            if [ -f /tmp/btc_local_bootstrap_status.json ]; then
-              mkdir -p data/historical_research
-              cp /tmp/btc_local_bootstrap_status.json data/historical_research/bootstrap_status.json
-            fi
-            if [ -f /tmp/btc_local_research_input_audit.json ]; then cp /tmp/btc_local_research_input_audit.json data/historical_research/research_input_audit.json; fi
-            if [ -f /tmp/btc_local_production_artifact_audit.json ]; then cp /tmp/btc_local_production_artifact_audit.json data/historical_research/production_artifact_audit.json; fi
-            if [ -f /tmp/btc_local_pit_oos_audit.json ]; then cp /tmp/btc_local_pit_oos_audit.json data/historical_research/pit_oos_audit.json; fi
-            if [ -f /tmp/btc_local_health.json ]; then cp /tmp/btc_local_health.json data/historical_research/research_health.json; fi
-            if [ -f /tmp/btc_local_venue_drift.json ]; then cp /tmp/btc_local_venue_drift.json data/historical_research/venue_drift.json; fi
-            if [ -f /tmp/btc_local_flat_diagnostic.json ]; then cp /tmp/btc_local_flat_diagnostic.json data/historical_research/flat_diagnostic.json; fi
-            if [ -f /tmp/btc_local_performance_snapshot.json ]; then cp /tmp/btc_local_performance_snapshot.json data/historical_research/performance_snapshot.json; fi
-            if [ -f /tmp/btc_local_performance_change.json ]; then cp /tmp/btc_local_performance_change.json data/historical_research/performance_change.json; fi
-            if [ -f /tmp/btc_local_experience_summary.json ]; then
-              mkdir -p data/experience
-              cp /tmp/btc_local_experience_summary.json data/experience/experience_summary.json
-            fi
+
+          stage_research_state() {
             git add -- data/predictions.db.gz data/live_cycle_status.json
             for path in \
               data/historical_research/bootstrap_status.json \
@@ -1174,9 +1084,135 @@ jobs:
             if git ls-files --cached --error-unmatch data/predictions.db >/dev/null 2>&1; then
               git rm --cached -- data/predictions.db
             fi
-            git diff --cached --quiet || git commit -m 'Merge BTC research state safely'
-            sleep $((5 * attempt))
+          }
+
+          STATE_ROOT=/tmp/btc_research_commit_state
+          rm -rf "$STATE_ROOT"
+          mkdir -p "$STATE_ROOT"
+
+          snapshot_research_state() {
+            rm -rf "$STATE_ROOT/data" "$STATE_ROOT/models"
+            mkdir -p "$STATE_ROOT/data"
+            test -s data/predictions.db.gz
+            cp -a data/predictions.db.gz "$STATE_ROOT/data/predictions.db.gz"
+            if [ -f data/live_cycle_status.json ]; then
+              cp -a data/live_cycle_status.json "$STATE_ROOT/data/live_cycle_status.json"
+            fi
+            for path in \
+              data/historical_research/bootstrap_status.json \
+              data/historical_research/research_health.json \
+              data/historical_research/research_input_audit.json \
+              data/historical_research/production_artifact_audit.json \
+              data/historical_research/pit_oos_audit.json \
+              data/historical_research/venue_drift.json \
+              data/historical_research/flat_diagnostic.json \
+              data/experience/experience_summary.json; do
+              if [ -f "$path" ]; then
+                mkdir -p "$STATE_ROOT/$(dirname "$path")"
+                cp -a "$path" "$STATE_ROOT/$path"
+              fi
+            done
+            if [ -d data/historical_research/pit_history ]; then
+              mkdir -p "$STATE_ROOT/data/historical_research"
+              cp -a data/historical_research/pit_history "$STATE_ROOT/data/historical_research/pit_history"
+            fi
+            if [ -d models ]; then
+              cp -a models "$STATE_ROOT/models"
+            fi
+          }
+
+          restore_research_state() {
+            mkdir -p data
+            cp -a "$STATE_ROOT/data/predictions.db.gz" data/predictions.db.gz || return 1
+            if [ -f "$STATE_ROOT/data/live_cycle_status.json" ]; then
+              cp -a "$STATE_ROOT/data/live_cycle_status.json" data/live_cycle_status.json || return 1
+            fi
+            for path in \
+              data/historical_research/bootstrap_status.json \
+              data/historical_research/research_health.json \
+              data/historical_research/research_input_audit.json \
+              data/historical_research/production_artifact_audit.json \
+              data/historical_research/pit_oos_audit.json \
+              data/historical_research/venue_drift.json \
+              data/historical_research/flat_diagnostic.json \
+              data/experience/experience_summary.json; do
+              if [ -f "$STATE_ROOT/$path" ]; then
+                mkdir -p "$(dirname "$path")"
+                cp -a "$STATE_ROOT/$path" "$path" || return 1
+              fi
+            done
+            if [ -d "$STATE_ROOT/data/historical_research/pit_history" ]; then
+              mkdir -p data/historical_research
+              cp -a "$STATE_ROOT/data/historical_research/pit_history" data/historical_research/pit_history || return 1
+            fi
+            if [ -d "$STATE_ROOT/models" ]; then
+              rm -rf models
+              cp -a "$STATE_ROOT/models" models || return 1
+            fi
+          }
+
+          rebuild_on_current_main() {
+            ci_git_fetch --prune origin main || return 1
+            local remote_sha
+            remote_sha="$(git rev-parse origin/main)" || return 1
+            echo "Rebuilding BTC research state on current origin/main: $remote_sha"
+            git reset --hard "$remote_sha" || return 1
+            restore_research_state || return 1
+            python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db, compress_db
+          import subprocess
+
+          archive = Path('data/predictions.db.gz')
+          local_archive = Path('/tmp/btc_research_commit_state/data/predictions.db.gz')
+          restore_db(archive, Path('data/predictions.db'))
+          restore_db(local_archive, Path('/tmp/btc_local_predictions.db'))
+          subprocess.run(
+              ['python', 'scripts/merge_prediction_state.py', '/tmp/btc_local_predictions.db', 'data/predictions.db'],
+              check=True,
+          )
+          compress_db(Path('data/predictions.db'), archive)
+          Path('data/predictions.db').unlink()
+          PY
+            if [ "$?" -ne 0 ]; then return 1; fi
+            stage_research_state || return 1
+            git diff --check || return 1
+            if git diff --cached --quiet; then
+              echo 'No BTC research-state changes remain after rebuilding on current origin/main.'
+              return 2
+            fi
+            git commit -m 'Merge BTC research state safely' || return 1
+            return 0
+          }
+
+          # Snapshot once before any fetch/reset so the generated state cannot be
+          # lost when origin/main advances concurrently with this run.
+          snapshot_research_state
+
+          for attempt in 1 2 3 4 5; do
+            echo "Preparing conflict-safe BTC research-state push attempt $attempt/5."
+            rebuild_rc=0
+            rebuild_on_current_main || rebuild_rc=$?
+            if [ "$rebuild_rc" -eq 2 ]; then
+              exit 0
+            fi
+            if [ "$rebuild_rc" -ne 0 ]; then
+              echo "ERROR: failed to rebuild BTC research state on current origin/main." >&2
+              exit 1
+            fi
+
+            echo 'Pushing BTC research state from synchronized origin/main base.'
+            if CI_GIT_PUSH_ATTEMPTS=1 ci_git_push origin HEAD:main; then
+              exit 0
+            fi
+
+            echo "push attempt $attempt rejected; retrying from a fresh origin/main snapshot" >&2
+            if [ "$attempt" -lt 5 ]; then
+              sleep $((5 * attempt))
+            fi
           done
+
+          echo 'ERROR: failed to publish BTC research state after 5 synchronized attempts.' >&2
           exit 1
 
 # Operational trigger: keep the scheduled production cycle recoverable and auditable.
