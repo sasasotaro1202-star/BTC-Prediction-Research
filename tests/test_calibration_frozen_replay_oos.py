@@ -56,5 +56,38 @@ class TestCalibrationFrozenReplay(unittest.TestCase):
         self.assertIn("brier", q)
 
 
+    def test_main_records_deferred_when_archive_is_sparse(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from src import calibration_frozen_replay_oos as r
+
+        with TemporaryDirectory() as tmp:
+            original_out = r.OUT
+            original_cutoff = r._post_champion_cutoff_ms
+            original_dataset = r._dataset
+            try:
+                r.OUT = Path(tmp) / "calibration.json"
+                r._post_champion_cutoff_ms = lambda: 1234567890000
+
+                def sparse_dataset():
+                    raise RuntimeError("insufficient archive rows for calibration replay: 42")
+
+                r._dataset = sparse_dataset
+                r.main()
+
+                import json
+                obj = json.loads(r.OUT.read_text(encoding="utf-8"))
+                self.assertEqual(obj["dataset_status"], "DEFERRED")
+                self.assertEqual(obj["dataset_rows"], 42)
+                self.assertEqual(set(obj["horizons"]), {"5m", "10m"})
+                self.assertTrue(
+                    all(item["status"] == "DEFERRED" for item in obj["horizons"].values())
+                )
+            finally:
+                r.OUT = original_out
+                r._post_champion_cutoff_ms = original_cutoff
+                r._dataset = original_dataset
+
+
 if __name__ == "__main__":
     unittest.main()
