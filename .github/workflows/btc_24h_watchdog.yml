@@ -29,12 +29,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          CI_GH_ATTEMPTS: '2'
+          CI_GH_TIMEOUT_SECONDS: '12'
+          CI_GH_BACKOFF_SECONDS: '1'
         shell: bash
         run: |
           set -euo pipefail
-          MAIN_SHA="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          . scripts/ci_network_retry.sh
+          MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
           echo "BTC 24H watchdog main SHA: $MAIN_SHA"
-          gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=50" > /tmp/btc24_runs.json
+          ci_gh_api_get "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=50" > /tmp/btc24_runs.json
 
           python - "$MAIN_SHA" <<'PY' > /tmp/btc24_decision
           import json, sys
@@ -126,13 +130,13 @@ jobs:
             while IFS='|' read -r tag run_id kind age; do
               [ "$tag" = "STALE" ] || continue
               echo "Cancelling stale BTC 24H run: id=$run_id kind=$kind age_minutes=$age"
-              gh run cancel "$run_id" --repo "$REPO"
+              ci_gh run cancel "$run_id" --repo "$REPO"
             done < /tmp/btc24_decision
           fi
 
           dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           for attempt in 1 2 3 4; do
-            if ! gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
+            if ! ci_gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
               echo "dispatch attempt $attempt failed; retrying" >&2
               sleep $((attempt * 5))
               continue
@@ -141,7 +145,7 @@ jobs:
             echo "BTC 24H dispatch command accepted; verifying run creation..."
             for check in 1 2 3 4 5 6; do
               sleep 5
-              created="$(gh api "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=20"                 --jq '[.workflow_runs[] | select(.head_sha == "'$MAIN_SHA'") | select(.created_at >= "'$dispatch_started_at'")] | sort_by(.created_at) | reverse | .[0] // empty')"
+              created="$(ci_gh_api_get "repos/$REPO/actions/workflows/btc_24h_autonomous_research.yml/runs?per_page=20"                 --jq '[.workflow_runs[] | select(.head_sha == "'$MAIN_SHA'") | select(.created_at >= "'$dispatch_started_at'")] | sort_by(.created_at) | reverse | .[0] // empty')"
               if [ -n "$created" ]; then
                 run_id="$(printf '%s' "$created" | jq -r '.id')"
                 run_status="$(printf '%s' "$created" | jq -r '.status')"
