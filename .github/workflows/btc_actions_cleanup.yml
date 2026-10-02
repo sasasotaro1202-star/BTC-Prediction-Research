@@ -78,9 +78,16 @@ jobs:
               # it is not based on the current main lineage. Multiple active
               # runs are collapsed to the newest surviving run.
               stale=0
-              if [ "${age}" -ge 1800 ] && [ "${head}" != "${main_sha}" ]; then
+              # The 24H marathon is intentionally bound to its immutable
+              # workflow-trigger snapshot; main may advance while its stages run.
+              if [ "${workflow}" = "btc_24h_autonomous_research.yml" ]; then
+                if [ "${age}" -ge 90000 ]; then
+                  stale=1
+                fi
+              elif [ "${age}" -ge 1800 ] && [ "${head}" != "${main_sha}" ]; then
                 stale=1
-              elif [ "${keep}" -eq 1 ]; then
+              fi
+              if [ "${stale}" -eq 0 ] && [ "${keep}" -eq 1 ]; then
                 stale=1
               fi
 
