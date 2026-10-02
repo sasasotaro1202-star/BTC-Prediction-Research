@@ -145,7 +145,6 @@ def binance_archive_daily_rows(target: int = 120) -> list[list[float]]:
     for day in days:
         for url in _archive_daily_urls(day):
             try:
-                req = Request(url, headers={"User-Agent": UA})
                 payload = request_bytes(
                     url,
                     headers={"User-Agent": UA, "Accept": "application/zip"},
