@@ -532,6 +532,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           tmp_cache="$(mktemp)"
           cache_loaded=false
 
@@ -571,7 +572,7 @@ jobs:
 
           # Keep a healthy persisted cache on the fast path. Only attempt REST
           # recovery when the cache is absent/stale/gappy.
-          if git fetch --no-tags --depth=1 origin binance-ws-cache             && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
+          if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache             && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
             if validate_boundary_cache; then
               cache_loaded=true
               echo 'Loaded fresh Binance Futures WS cache before direct REST recovery.'
@@ -662,7 +663,7 @@ jobs:
           if [ "$cache_loaded" != true ]; then
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_cache"
-            if git fetch --no-tags --depth=1 origin binance-ws-cache \
+            if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache \
               && git show origin/binance-ws-cache:data/binance_ws_1m.json > "$tmp_cache" 2>/dev/null; then
               if validate_boundary_cache; then
                 cp "$tmp_cache" data/binance_ws_1m.json
@@ -722,7 +723,7 @@ jobs:
           }
           for attempt in 1 2 3 4 5 6; do
             rm -f "$tmp_depth"
-            if git fetch --no-tags --depth=1 origin binance-ws-cache && git show origin/binance-ws-cache:data/binance_ws_depth.json > "$tmp_depth" 2>/dev/null; then
+            if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache && git show origin/binance-ws-cache:data/binance_ws_depth.json > "$tmp_depth" 2>/dev/null; then
               if validate_depth; then
                 cp "$tmp_depth" data/binance_ws_depth.json
                 depth_loaded=true
@@ -1059,6 +1060,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -- data/predictions.db.gz data/live_cycle_status.json
