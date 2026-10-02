@@ -112,3 +112,17 @@ def test_strict_verified_rejects_invalid_fallback_source():
 
     assert ok is False
     assert reason == "no_valid_production_source"
+
+
+def test_strict_verified_ignores_unknown_source_even_with_valid_envelope():
+    row = _row()
+    scenario = json.loads(row["scenario_json"])
+    source = scenario["provenance"]["sources"].pop("binance_futures")
+    scenario["provenance"]["sources"]["unknown_exchange"] = source
+    row["scenario_json"] = json.dumps(scenario)
+
+    ok, reason = _strict_prediction_ok(row, "5m", required_source=None)
+
+    assert ok is False
+    assert reason == "no_valid_production_source"
+    assert _valid_source_names(row) == set()
