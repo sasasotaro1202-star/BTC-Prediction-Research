@@ -21,7 +21,9 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
   # The hourly audit is the repository-wide integrity backstop; push-time checks
   # are handled by Unit Tests and Ops Preflight to avoid expensive queue buildup.
-  BTC_INTEGRITY_REQUIRE_FRESH: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+  # Repository archives are snapshots and can legitimately lag the live heartbeat.
+  # Production freshness is enforced by Live Cycle/Sentinel, not by this archive audit.
+  BTC_INTEGRITY_REQUIRE_FRESH: 'false'
   BTC_INTEGRITY_MAX_PREDICTION_AGE_SECONDS: '900'
 
 jobs:
@@ -78,6 +80,46 @@ jobs:
         run: |
           mkdir -p data/historical_research
           python src/production_integrity.py > data/historical_research/production_integrity.json
+      - name: Record production freshness observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          out = Path('data/historical_research/production_freshness_observation.json')
+          status_path = Path('data/live_cycle_status.json')
+          observed = datetime.now(timezone.utc)
+          payload = {
+              'schema_version': 1,
+              'observed_at_utc': observed.isoformat(),
+              'source': 'data/live_cycle_status.json',
+              'freshness_policy': 'informational_only_in_archive_integrity',
+              'production_freshness_enforced_by': ['btc_live_cycle', 'btc_production_sentinel'],
+          }
+          if not status_path.is_file():
+              payload.update({'status': 'UNKNOWN', 'reason': 'live_cycle_status_missing'})
+          else:
+              try:
+                  status = json.loads(status_path.read_text(encoding='utf-8'))
+                  completed = datetime.fromisoformat(str(status['completed_at_utc']).replace('Z', '+00:00'))
+                  age = (observed - completed).total_seconds()
+                  payload.update({
+                      'status': 'FRESH' if -60 <= age <= 900 else 'STALE',
+                      'mode': status.get('mode'),
+                      'completed_at_utc': completed.isoformat(),
+                      'age_seconds': age,
+                      'workflow_run_id': status.get('workflow_run_id'),
+                      'workflow_run_number': status.get('workflow_run_number'),
+                  })
+              except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                  payload.update({'status': 'UNKNOWN', 'reason': f'invalid_live_cycle_status:{type(exc).__name__}'})
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(payload, sort_keys=True))
+          PY
+          test -s data/historical_research/production_freshness_observation.json
       - name: Run strict research input audit
         run: python src/research_input_audit.py
 
