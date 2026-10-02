@@ -1065,7 +1065,15 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
+          prune_pit_history() {
+            local root=data/historical_research/pit_history
+            if [ -d "$root" ]; then
+              find "$root" -mindepth 1 -maxdepth 1 -type d -exec rm -rf -- {} +
+            fi
+          }
+
           stage_research_state() {
+            prune_pit_history
             git add -- data/predictions.db.gz data/live_cycle_status.json
             for path in \
               data/historical_research/bootstrap_status.json \
@@ -1073,12 +1081,16 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/performance_snapshot.json \
+              data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
               data/experience/experience_summary.json; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
-            if [ -d data/historical_research/pit_history ]; then git add -- data/historical_research/pit_history; fi
+            if [ -d data/historical_research/pit_history ]; then
+              git add -A -- data/historical_research/pit_history
+            fi
             for path in models/*.json models/*.joblib; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
@@ -1092,6 +1104,7 @@ jobs:
           mkdir -p "$STATE_ROOT"
 
           snapshot_research_state() {
+            prune_pit_history
             rm -rf "$STATE_ROOT/data" "$STATE_ROOT/models"
             mkdir -p "$STATE_ROOT/data"
             test -s data/predictions.db.gz
@@ -1105,6 +1118,8 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/performance_snapshot.json \
+              data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
               data/experience/experience_summary.json; do
@@ -1114,8 +1129,8 @@ jobs:
               fi
             done
             if [ -d data/historical_research/pit_history ]; then
-              mkdir -p "$STATE_ROOT/data/historical_research"
-              cp -a data/historical_research/pit_history "$STATE_ROOT/data/historical_research/pit_history"
+              mkdir -p "$STATE_ROOT/data/historical_research/pit_history"
+              find data/historical_research/pit_history -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} "$STATE_ROOT/data/historical_research/pit_history/" \\;
             fi
             if [ -d models ]; then
               cp -a models "$STATE_ROOT/models"
@@ -1134,6 +1149,8 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/performance_snapshot.json \
+              data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
               data/experience/experience_summary.json; do
@@ -1142,9 +1159,10 @@ jobs:
                 cp -a "$STATE_ROOT/$path" "$path" || return 1
               fi
             done
+            rm -rf data/historical_research/pit_history
             if [ -d "$STATE_ROOT/data/historical_research/pit_history" ]; then
-              mkdir -p data/historical_research
-              cp -a "$STATE_ROOT/data/historical_research/pit_history" data/historical_research/pit_history || return 1
+              mkdir -p data/historical_research/pit_history
+              find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name 'pit_*.json' -exec cp -a {} data/historical_research/pit_history/ \\;
             fi
             if [ -d "$STATE_ROOT/models" ]; then
               rm -rf models

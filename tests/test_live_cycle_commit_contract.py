@@ -73,3 +73,22 @@ def test_live_cycle_rebuild_preserves_state_and_merges_predictions_without_force
     assert "git push -f" not in block
     assert "failed to publish BTC research state after 5 synchronized attempts" in block
     assert "return 1" in block
+
+
+def test_live_cycle_persists_performance_monitor_artifacts_across_conflict_rebuild():
+    block = _commit_block()
+    for path in (
+        "data/historical_research/performance_snapshot.json",
+        "data/historical_research/performance_change.json",
+    ):
+        assert block.count(path) >= 3
+
+
+def test_live_cycle_pit_history_restore_is_flat_and_prunes_nested_state():
+    block = _commit_block()
+    assert "prune_pit_history()" in block
+    assert 'find "$root" -mindepth 1 -maxdepth 1 -type d -exec rm -rf -- {} +' in block
+    assert "rm -rf data/historical_research/pit_history" in block
+    assert 'cp -a data/historical_research/pit_history "$STATE_ROOT/data/historical_research/pit_history"' not in block
+    assert 'find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name \'pit_*.json\'' in block
+
