@@ -185,24 +185,31 @@ def run(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
     prod = _production_integrity_from_evidence(evidence)
     robust_path = evidence / "robustness_oos_report.json"
+    robust = None
+    robust_failure = None
     if robust_path.exists():
-        robust = json.loads(robust_path.read_text(encoding="utf-8"))
-        if not isinstance(robust, dict):
-            robust = {
-                "research_only": True,
-                "policy": "missing_or_malformed_robustness_evidence",
-                "horizons": {},
-                "status": "invalid",
-            }
+        try:
+            robust = json.loads(robust_path.read_text(encoding="utf-8"))
+            if not isinstance(robust, dict):
+                robust_failure = "malformed"
+        except (OSError, json.JSONDecodeError):
+            robust_failure = "malformed"
     else:
-        # Absence of robustness evidence is a safe HOLD, not a crash. The gate
-        # must remain fail-closed while still producing a complete readiness
-        # artifact that downstream audits can inspect.
+        robust_failure = "missing"
+
+    if robust_failure is not None:
+        # Absence or corruption of robustness evidence is a safe HOLD, not a
+        # crash. The gate remains fail-closed while still producing a complete
+        # readiness artifact that downstream audits can inspect.
         robust = {
             "research_only": True,
-            "policy": "missing_robustness_evidence",
+            "policy": (
+                "missing_robustness_evidence"
+                if robust_failure == "missing"
+                else "malformed_robustness_evidence"
+            ),
             "horizons": {},
-            "status": "missing",
+            "status": robust_failure,
         }
     pit_path = evidence / "pit_oos_audit.json"
     pit = json.loads(pit_path.read_text(encoding="utf-8")) if pit_path.exists() else None
