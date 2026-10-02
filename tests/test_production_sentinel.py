@@ -17,10 +17,11 @@ def test_production_sentinel_has_real_shell_variable_expansion():
         assert token not in text
 
 
-def test_production_sentinel_retries_control_plane_reads_and_fails_closed():
+def test_production_sentinel_uses_shared_bounded_retry_and_fails_closed():
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "retry_api()" in text
-    assert "after 3 attempts" in text
+    assert ". scripts/ci_network_retry.sh" in text
+    assert "ci_gh_api_get" in text
+    assert "ci_gh run cancel" in text
     assert "unable to read current main SHA after 3 attempts" in text
     assert "unable to read Live workflow runs after 3 attempts" in text
     assert "ERROR: Live Cycle recovery dispatch failed." in text
