@@ -4,6 +4,9 @@ import numpy as np
 
 from src.calibration_frozen_replay_oos import (
     CALIBRATORS,
+    MIN_ROWS,
+    InsufficientArchiveData,
+    _deferred_payload,
     _ece_mce,
     _quality,
     _post_champion_cutoff_ms,
@@ -33,6 +36,22 @@ class TestCalibrationFrozenReplay(unittest.TestCase):
             self.assertEqual(q.shape, p.shape)
             self.assertTrue(np.isfinite(q).all())
             np.testing.assert_allclose(q.sum(axis=1), 1.0, rtol=0.0, atol=1e-10)
+
+    def test_insufficient_archive_data_is_explicitly_deferred(self):
+        exc = InsufficientArchiveData(0, MIN_ROWS, 123456)
+        payload = _deferred_payload(exc.cutoff_ms, exc.available_rows)
+        self.assertEqual(payload["status"], "DEFERRED")
+        self.assertTrue(payload["research_only"])
+        self.assertFalse(payload["production_changed"])
+        self.assertFalse(payload["promotion_evidence_eligible"])
+        self.assertEqual(payload["rows_available"], 0)
+        self.assertEqual(payload["rows_required"], MIN_ROWS)
+        self.assertEqual(
+            payload["deferred_reason"],
+            "INSUFFICIENT_POST_CHAMPION_ARCHIVE",
+        )
+        for horizon in ("5m", "10m"):
+            self.assertEqual(payload["horizons"][horizon]["status"], "DEFERRED")
 
     def test_ece_and_mce_are_bounded(self):
         y = ["DOWN", "UP"] * 50
