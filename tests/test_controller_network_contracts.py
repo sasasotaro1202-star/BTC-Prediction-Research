@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -14,8 +15,8 @@ def test_continuous_supervisor_sources_bounded_network_helper():
     assert ". scripts/ci_network_retry.sh" in text
     assert "ci_gh_api_get" in text
     assert "ci_gh api --method POST" in text
-    assert "gh api " not in text
-    assert "gh workflow run" not in text
+    assert not re.search(r"(?<![\\w-])gh api\\s", text)
+    assert not re.search(r"(?<![\\w-])gh workflow run\\s", text)
 
 
 def test_24h_watchdog_sources_bounded_network_helper():
@@ -25,8 +26,8 @@ def test_24h_watchdog_sources_bounded_network_helper():
     assert "ci_gh_api_get" in text
     assert "ci_gh workflow run" in text
     assert "gh api " not in text
-    assert "gh workflow run" not in text.replace("ci_gh workflow run", "")
-    assert "gh run cancel" not in text
+    assert not re.search(r"(?<![\\w-])gh workflow run\\s", text.replace("ci_gh workflow run", ""))
+    assert not re.search(r"(?<![\\w-])gh run cancel\\s", text)
 
 
 def test_controller_job_deadlines_are_finite():
