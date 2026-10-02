@@ -36,10 +36,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           rm -f data/historical_research/data_frontier_state.json
           state_tmp="$(mktemp)"
           trap 'rm -f "$state_tmp"' EXIT
-          if git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+          if ci_git_fetch --no-tags --depth=1 origin btc-data-frontier-state; then
             if git show origin/btc-data-frontier-state:data/historical_research/data_frontier_state.json > "$state_tmp" 2>/dev/null && [ -s "$state_tmp" ]; then
               mv "$state_tmp" data/historical_research/data_frontier_state.json
               echo "Loaded persistent frontier selector state."
@@ -102,6 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           actions_state="$(python - <<'PY'
           import json
           from pathlib import Path
@@ -113,11 +115,11 @@ jobs:
           need_ws="$(jq -r '.warm_binance_ws // false' <<<"$actions_state")"
           need_archive="$(jq -r '.acquire_historical_archive // false' <<<"$actions_state")"
           need_pit="$(jq -r '.refresh_pit_audit // false' <<<"$actions_state")"
-          main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          main_sha="$(ci_gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
           dispatch_verified() {
             workflow="$1"
             threshold="$2"
-            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20")"
+            response="$(ci_gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=20")"
             active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress") | select(.head_sha==$sha)] | length' --arg sha "$main_sha" <<<"$response")"
             latest="$(jq -r --arg sha "$main_sha" '[.workflow_runs[]? | select(.status=="completed" and .head_sha==$sha and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.id] | @tsv' <<<"$response")"
             updated="$(cut -f1 <<<"$latest")"
@@ -126,12 +128,12 @@ jobs:
             echo "${workflow}: active_current_main=${active} latest_current_main=${latest_id:-none} age=${age}s threshold=${threshold}s"
             if [ "$active" -gt 0 ] || [ "$age" -lt "$threshold" ]; then return 0; fi
             started="$(date -u +%s)"
-            gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null
+            ci_gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null
             # Dispatch creation can be delayed behind an already-running research lane.
             # Verify for up to 120s, while remaining fail-closed on missing evidence.
             for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
               sleep 10
-              fresh="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
+              fresh="$(ci_gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
               if [ -n "$fresh" ]; then echo "${workflow}: dispatch verified ${fresh}"; return 0; fi
             done
             echo "${workflow}: dispatch verification failed" >&2
@@ -158,11 +160,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           test -s data/historical_research/data_frontier_state.json
           state_worktree="/tmp/btc-frontier-state-worktree"
           rm -rf "$state_worktree"
           state_ref="origin/btc-data-frontier-state"
-          if git fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+          if ci_git_fetch --no-tags --depth=1 origin btc-data-frontier-state; then
             echo "Using existing selector-state branch."
           else
             # First successful cycle bootstraps the dedicated state branch from
@@ -186,13 +189,13 @@ jobs:
           fi
           git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
           for attempt in 1 2 3 4; do
-            if git -C "$state_worktree" push origin HEAD:btc-data-frontier-state; then
+            if ci_git_push -C "$state_worktree" origin HEAD:btc-data-frontier-state; then
               echo "Persistent selector state published."
               exit 0
             fi
             # A concurrent first writer may have created the branch. Reconcile
             # onto the now-visible remote state before retrying.
-            if git -C "$state_worktree" fetch --no-tags --depth=1 origin btc-data-frontier-state; then
+            if ci_git_fetch_cwd "$state_worktree" --no-tags --depth=1 origin btc-data-frontier-state; then
               git -C "$state_worktree" reset --hard origin/btc-data-frontier-state
               mkdir -p "$state_worktree/data/historical_research"
               cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
@@ -213,6 +216,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           if [ ! -s data/historical_research/data_frontier.json ]; then
             echo "No durable frontier output was produced; nothing to persist."
             exit 0
@@ -226,8 +230,8 @@ jobs:
           fi
           git commit -m "chore: advance autonomous BTC data frontier"
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
-            git fetch origin main
+            if ci_git_push origin HEAD:main; then exit 0; fi
+            ci_git_fetch origin main
             git rebase origin/main
           done
           echo "bounded frontier push recovery exhausted" >&2
