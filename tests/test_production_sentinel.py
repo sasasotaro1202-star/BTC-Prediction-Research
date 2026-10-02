@@ -17,9 +17,11 @@ def test_production_sentinel_has_real_shell_variable_expansion():
         assert token not in text
 
 
-def test_production_sentinel_retries_control_plane_reads_and_fails_closed():
+def test_production_sentinel_uses_shared_bounded_retry_and_fails_closed():
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "retry_api()" in text
+    assert ". scripts/ci_network_retry.sh" in text
+    assert "ci_gh_api_get" in text
+    assert "ci_gh run cancel" in text
     assert "after 3 attempts" in text
     assert "unable to read current main SHA after 3 attempts" in text
     assert "unable to read Live workflow runs after 3 attempts" in text
@@ -35,6 +37,6 @@ def test_production_sentinel_cancels_only_old_obsolete_active_runs():
     assert '[ "$active" -eq 0 ]' in text
     assert 'select(.head_sha != $main_sha)' in text
     assert '>= 720' in text
-    assert 'gh run cancel "$run_id" --repo "$REPO"' in text
+    assert 'ci_gh run cancel "$run_id" --repo "$REPO"' in text
     assert 'ERROR: failed to cancel stale obsolete Live Cycle run_id=' in text
     assert 'Production heartbeat stale; dispatching one Live Cycle from current main.' in text
