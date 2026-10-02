@@ -2,7 +2,13 @@ import unittest
 
 import numpy as np
 
-from src.adaptive_calibration_replay_oos import _fit_temperature, _quality
+from src.adaptive_calibration_replay_oos import (
+    MIN_ROWS,
+    _deferred_payload,
+    _fit_temperature,
+    _quality,
+    InsufficientArchiveData,
+)
 
 
 class TestAdaptiveCalibrationReplay(unittest.TestCase):
@@ -20,6 +26,22 @@ class TestAdaptiveCalibrationReplay(unittest.TestCase):
         y_small = ["UP"] * 20
         p_small = np.tile(np.asarray([[0.2, 0.2, 0.6]]), (20, 1))
         self.assertEqual(_fit_temperature(p_small, y_small), 1.0)
+
+    def test_insufficient_archive_data_is_explicitly_deferred(self):
+        exc = InsufficientArchiveData(0, MIN_ROWS, 123456)
+        payload = _deferred_payload(exc.cutoff_ms, exc.available_rows)
+        self.assertEqual(payload["status"], "DEFERRED")
+        self.assertTrue(payload["research_only"])
+        self.assertFalse(payload["production_changed"])
+        self.assertFalse(payload["promotion_evidence_eligible"])
+        self.assertEqual(payload["rows_available"], 0)
+        self.assertEqual(payload["rows_required"], MIN_ROWS)
+        self.assertEqual(
+            payload["deferred_reason"],
+            "INSUFFICIENT_POST_CHAMPION_ARCHIVE",
+        )
+        for horizon in ("5m", "10m"):
+            self.assertEqual(payload["horizons"][horizon]["status"], "DEFERRED")
 
     def test_temperature_is_finite_and_bounded_on_balanced_history(self):
         y = ["DOWN", "FLAT", "UP"] * 400
