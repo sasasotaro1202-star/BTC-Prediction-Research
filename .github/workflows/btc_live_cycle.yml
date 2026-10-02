@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: btc-state-main
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   actions: write
@@ -1203,6 +1203,32 @@ jobs:
             git commit -m 'Merge BTC research state safely' || return 1
             return 0
           }
+
+          assert_current_workflow_is_not_stale() {
+            ci_git_fetch --prune origin main || return 1
+            local remote_sha
+            remote_sha="$(git rev-parse origin/main)" || return 1
+            local remote_workflow_sha
+            local_workflow_sha
+            remote_workflow_sha="$(git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml | awk '{print $3}')" || return 1
+            local_workflow_sha="$(git hash-object .github/workflows/btc_live_cycle.yml)" || return 1
+            if [ -z "$remote_workflow_sha" ] || [ "$remote_workflow_sha" != "$local_workflow_sha" ]; then
+              echo "SKIP: stale BTC Live Cycle workflow detected; refusing to publish state from an older workflow revision." >&2
+              return 2
+            fi
+          }
+
+          # A workflow run already in flight can finish after a newer workflow revision
+          # reaches main. Refuse to let that stale writer overwrite the newer state.
+          assert_current_workflow_is_not_stale_rc=0
+          assert_current_workflow_is_not_stale || assert_current_workflow_is_not_stale_rc=$?
+          if [ "$assert_current_workflow_is_not_stale_rc" -eq 2 ]; then
+            exit 0
+          fi
+          if [ "$assert_current_workflow_is_not_stale_rc" -ne 0 ]; then
+            echo 'ERROR: unable to verify Live Cycle workflow freshness; refusing state publication.' >&2
+            exit 1
+          fi
 
           # Snapshot once before any fetch/reset so the generated state cannot be
           # lost when origin/main advances concurrently with this run.

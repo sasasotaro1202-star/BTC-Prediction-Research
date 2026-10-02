@@ -92,3 +92,18 @@ def test_live_cycle_pit_history_restore_is_flat_and_prunes_nested_state():
     assert 'cp -a data/historical_research/pit_history "$STATE_ROOT/data/historical_research/pit_history"' not in block
     assert 'find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name \'pit_*.json\'' in block
 
+
+def test_live_cycle_cancels_overlapping_state_writers():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "group: btc-state-main" in workflow
+    assert "cancel-in-progress: true" in workflow
+
+
+def test_live_cycle_refuses_stale_workflow_state_publication():
+    block = _commit_block()
+    assert "assert_current_workflow_is_not_stale()" in block
+    assert 'git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml' in block
+    assert 'git hash-object .github/workflows/btc_live_cycle.yml' in block
+    assert "stale BTC Live Cycle workflow detected" in block
+    assert 'if [ "$assert_current_workflow_is_not_stale_rc" -eq 2 ]; then' in block
+
