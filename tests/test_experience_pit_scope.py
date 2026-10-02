@@ -1,6 +1,6 @@
 import json
 
-from src.experience_pit_scope import _strict_prediction_ok
+from src.experience_pit_scope import _strict_prediction_ok, _valid_source_names
 
 
 def _row(*, valid=True, target10_after=True):
@@ -49,3 +49,35 @@ def test_strict_primary_rejects_non_chronological_10m_target():
     ok, reason = _strict_prediction_ok(_row(target10_after=False), "10m")
     assert ok is False
     assert reason == "10m_target_not_after_5m_target"
+
+
+def test_strict_verified_accepts_fallback_source_without_upgrading_primary():
+    row = _row()
+    scenario = json.loads(row["scenario_json"])
+    source = scenario["provenance"]["sources"].pop("binance_futures")
+    source["prediction_cutoff"] = "2026-10-01T01:00:00+00:00"
+    scenario["provenance"]["sources"]["coinbase_futures"] = source
+    row["scenario_json"] = json.dumps(scenario)
+
+    ok_primary, reason_primary = _strict_prediction_ok(row, "5m")
+    ok_any, reason_any = _strict_prediction_ok(row, "5m", required_source=None)
+
+    assert ok_primary is False
+    assert reason_primary == "missing_binance_futures_provenance"
+    assert ok_any is True
+    assert reason_any == "ok"
+    assert _valid_source_names(row) == {"coinbase_futures"}
+
+
+def test_strict_verified_rejects_invalid_fallback_source():
+    row = _row()
+    scenario = json.loads(row["scenario_json"])
+    source = scenario["provenance"]["sources"].pop("binance_futures")
+    source["status"] = "error:HTTPError:451"
+    scenario["provenance"]["sources"]["coinbase_futures"] = source
+    row["scenario_json"] = json.dumps(scenario)
+
+    ok, reason = _strict_prediction_ok(row, "5m", required_source=None)
+
+    assert ok is False
+    assert reason == "no_valid_production_source"
