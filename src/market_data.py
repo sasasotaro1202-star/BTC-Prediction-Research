@@ -4,7 +4,7 @@ import asyncio, csv, io, json, time, zipfile, math
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlencode
-from urllib.request import Request
+
 from http_resilience import request_bytes, request_json
 from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone, timedelta
@@ -92,9 +92,13 @@ def binance_archive_month(month: datetime):
     """Read Binance's static monthly UM-futures 1m archive."""
     name = f"BTCUSDT-1m-{month.year:04d}-{month.month:02d}.zip"
     url = f"https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/{name}"
-    req = Request(url, headers={"User-Agent": UA})
-    with urlopen(req, timeout=45) as r:
-        raw = r.read()
+    raw = request_bytes(
+        url,
+        headers={"User-Agent": UA},
+        timeout=60,
+        attempts=5,
+        total_timeout=150,
+    )
     rows = []
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         csv_names = [n for n in z.namelist() if n.lower().endswith('.csv')]
@@ -210,9 +214,13 @@ def binance_archive_daily_taker_rows(target: int = 5) -> list[dict]:
     for day in days:
         for url in _archive_daily_urls(day):
             try:
-                req = Request(url, headers={"User-Agent": UA})
-                with urlopen(req, timeout=20) as response:
-                    payload = response.read()
+                payload = request_bytes(
+                    url,
+                    headers={"User-Agent": UA, "Accept": "application/zip"},
+                    timeout=45,
+                    attempts=5,
+                    total_timeout=120,
+                )
                 with zipfile.ZipFile(io.BytesIO(payload)) as zf:
                     if zf.testzip() is not None:
                         raise RuntimeError("archive_zip_crc_failed")
