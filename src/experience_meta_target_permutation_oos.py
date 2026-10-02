@@ -34,8 +34,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "experience_meta_target_permutation_oos.json"
 
 MIN_TRAIN = 140
-VALIDATION_SIZE = 60
+VALIDATION_SIZE = 40
 MIN_CLASS_COUNT = 5
+MIN_FOLDS = 2
 SEEDS = (7, 19, 43, 71, 101, 137)
 
 
@@ -97,6 +98,13 @@ def _eligible_train(rows: list[Any], cutoff: datetime) -> list[Any]:
 
 
 def audit_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
+    """Run a multi-block chronological permutation audit of the meta error target.
+
+    Each validation block is scored only after fitting on rows whose prediction
+    and settlement timestamps are strictly before that block starts. The same
+    chronological folds are replayed with multiple shuffled error targets so the
+    audit can distinguish persistent signal from a single-window coincidence.
+    """
     ordered = sorted(
         [r for r in rows if str(r["horizon"]) == horizon],
         key=lambda r: (_parse_ts(r["created_at_utc"]), int(r["experience_id"])),
@@ -111,67 +119,94 @@ def audit_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "selection_allowed": False,
         }
 
-    validation = ordered[-VALIDATION_SIZE:]
-    cutoff = _parse_ts(validation[0]["created_at_utc"])
-    train = _eligible_train(ordered[:-VALIDATION_SIZE], cutoff)
-    if len(train) < MIN_TRAIN:
-        return {
-            "status": "DEFERRED",
-            "reason": "insufficient_pit_valid_training_rows",
-            "n": int(len(ordered)),
-            "train_n": int(len(train)),
-            "validation_n": int(len(validation)),
-            "research_only": True,
-            "production_changed": False,
-            "selection_allowed": False,
-        }
+    fold_results: list[dict[str, Any]] = []
+    all_real_y: list[np.ndarray] = []
+    all_real_p: list[np.ndarray] = []
+    fold_null_metrics: list[dict[str, Any]] = []
 
-    train_y = np.asarray([1 - int(r["correct"]) for r in train], dtype=int)
-    eval_y = np.asarray([1 - int(r["correct"]) for r in validation], dtype=int)
-
-    real_p = _fit_predict(train, validation, train_y)
-    if real_p is None:
-        return {
-            "status": "DEFERRED",
-            "reason": "meta_model_fit_unavailable",
-            "n": int(len(ordered)),
-            "train_n": int(len(train)),
-            "validation_n": int(len(validation)),
-            "research_only": True,
-            "production_changed": False,
-            "selection_allowed": False,
-        }
-
-    null_metrics: list[dict[str, float | int | None]] = []
-    for seed in SEEDS:
-        shuffled = np.random.default_rng(seed).permutation(train_y)
-        null_p = _fit_predict(train, validation, shuffled)
-        if null_p is None:
+    # Leave a causal training prefix before the first validation block.
+    first_start = MIN_TRAIN + VALIDATION_SIZE
+    for start in range(first_start, len(ordered), VALIDATION_SIZE):
+        validation = ordered[start:start + VALIDATION_SIZE]
+        if len(validation) < MIN_CLASS_COUNT * 2:
+            break
+        cutoff = _parse_ts(validation[0]["created_at_utc"])
+        train = _eligible_train(ordered[:start], cutoff)
+        if len(train) < MIN_TRAIN:
             continue
-        null_metrics.append(_metrics(eval_y, null_p))
 
-    if len(null_metrics) < 3:
-        return {
-            "status": "DEFERRED",
-            "reason": "insufficient_valid_permutations",
-            "n": int(len(ordered)),
+        train_y = np.asarray([1 - int(r["correct"]) for r in train], dtype=int)
+        eval_y = np.asarray([1 - int(r["correct"]) for r in validation], dtype=int)
+        real_p = _fit_predict(train, validation, train_y)
+        if real_p is None:
+            continue
+
+        null_metrics: list[dict[str, float | int | None]] = []
+        for seed in SEEDS:
+            shuffled = np.random.default_rng(seed).permutation(train_y)
+            null_p = _fit_predict(train, validation, shuffled)
+            if null_p is None:
+                continue
+            null_metrics.append(_metrics(eval_y, null_p))
+        if len(null_metrics) < 3:
+            continue
+
+        real = _metrics(eval_y, real_p)
+        all_real_y.append(eval_y)
+        all_real_p.append(real_p)
+        fold_null_metrics.append({
+            "logloss_mean": float(np.mean([float(x["logloss"]) for x in null_metrics])),
+            "brier_mean": float(np.mean([float(x["brier"]) for x in null_metrics])),
+            "accuracy_mean": float(np.mean([float(x["accuracy"]) for x in null_metrics])),
+            "auc_mean": (
+                float(np.mean([float(x["auc"]) for x in null_metrics if x["auc"] is not None]))
+                if any(x["auc"] is not None for x in null_metrics)
+                else None
+            ),
+            "permutations": int(len(null_metrics)),
+        })
+        fold_results.append({
+            "validation_start_utc": validation[0]["created_at_utc"],
+            "validation_end_utc": validation[-1]["created_at_utc"],
             "train_n": int(len(train)),
             "validation_n": int(len(validation)),
-            "permutations": int(len(null_metrics)),
+            "real": real,
+            "null_summary": fold_null_metrics[-1],
+            "separation": {
+                "logloss_null_mean_minus_real": float(fold_null_metrics[-1]["logloss_mean"] - float(real["logloss"])),
+                "brier_null_mean_minus_real": float(fold_null_metrics[-1]["brier_mean"] - float(real["brier"])),
+                "accuracy_real_minus_null_mean": float(float(real["accuracy"]) - fold_null_metrics[-1]["accuracy_mean"]),
+            },
+            "pit": {
+                "train_created_strictly_before_validation": True,
+                "train_settled_strictly_before_validation": True,
+                "validation_outcomes_used_only_after_model_fitted": True,
+            },
+        })
+
+    if len(fold_results) < MIN_FOLDS or not all_real_y:
+        return {
+            "status": "DEFERRED",
+            "reason": "insufficient_valid_permutation_folds",
+            "n": int(len(ordered)),
+            "observed_folds": int(len(fold_results)),
+            "minimum_folds": MIN_FOLDS,
             "research_only": True,
             "production_changed": False,
             "selection_allowed": False,
         }
 
-    real = _metrics(eval_y, real_p)
-    null_ll = np.asarray([float(x["logloss"]) for x in null_metrics], dtype=float)
-    null_br = np.asarray([float(x["brier"]) for x in null_metrics], dtype=float)
-    null_acc = np.asarray([float(x["accuracy"]) for x in null_metrics], dtype=float)
+    eval_y_all = np.concatenate(all_real_y)
+    real_p_all = np.concatenate(all_real_p)
+    real = _metrics(eval_y_all, real_p_all)
+
+    null_ll = np.asarray([float(x["logloss_mean"]) for x in fold_null_metrics], dtype=float)
+    null_br = np.asarray([float(x["brier_mean"]) for x in fold_null_metrics], dtype=float)
+    null_acc = np.asarray([float(x["accuracy_mean"]) for x in fold_null_metrics], dtype=float)
     null_auc = np.asarray(
-        [float(x["auc"]) for x in null_metrics if x["auc"] is not None],
+        [float(x["auc_mean"]) for x in fold_null_metrics if x["auc_mean"] is not None],
         dtype=float,
     )
-
     separation = {
         "logloss_null_mean_minus_real": float(null_ll.mean() - float(real["logloss"])),
         "brier_null_mean_minus_real": float(null_br.mean() - float(real["brier"])),
@@ -182,15 +217,34 @@ def audit_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             else None
         ),
     }
+    fold_consistency = {
+        "logloss_better_folds": int(sum(
+            float(f["real"]["logloss"]) < float(f["null_summary"]["logloss_mean"])
+            for f in fold_results
+        )),
+        "brier_better_folds": int(sum(
+            float(f["real"]["brier"]) < float(f["null_summary"]["brier_mean"])
+            for f in fold_results
+        )),
+        "accuracy_better_folds": int(sum(
+            float(f["real"]["accuracy"]) > float(f["null_summary"]["accuracy_mean"])
+            for f in fold_results
+        )),
+        "folds": int(len(fold_results)),
+    }
     strong = (
-        float(real["logloss"]) < float(np.quantile(null_ll, 0.10))
-        and float(real["brier"]) < float(np.quantile(null_br, 0.10))
-        and float(real["accuracy"]) > float(np.quantile(null_acc, 0.90))
+        separation["logloss_null_mean_minus_real"] > 0.01
+        and separation["brier_null_mean_minus_real"] > 0.005
+        and separation["accuracy_real_minus_null_mean"] > 0.03
+        and fold_consistency["logloss_better_folds"] >= max(2, int(math.ceil(len(fold_results) * 0.67)))
+        and fold_consistency["brier_better_folds"] >= max(2, int(math.ceil(len(fold_results) * 0.67)))
+        and fold_consistency["accuracy_better_folds"] >= max(2, int(math.ceil(len(fold_results) * 0.67)))
     )
     suspicious = (
-        float(real["logloss"]) >= float(null_ll.mean() - 0.01)
-        or float(real["brier"]) >= float(null_br.mean() - 0.01)
-        or float(real["accuracy"]) <= float(null_acc.mean() + 0.02)
+        separation["logloss_null_mean_minus_real"] <= -0.01
+        or separation["brier_null_mean_minus_real"] <= -0.01
+        or separation["accuracy_real_minus_null_mean"] <= -0.02
+        or fold_consistency["logloss_better_folds"] < len(fold_results) // 2
     )
     status = "SEPARATED" if strong and not suspicious else ("SUSPICIOUS" if suspicious else "NO_SEPARATION")
 
@@ -198,13 +252,15 @@ def audit_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         "status": status,
         "risk_flag": bool(suspicious),
         "n": int(len(ordered)),
-        "train_n": int(len(train)),
-        "validation_n": int(len(validation)),
-        "train_cutoff_utc": cutoff.isoformat(),
+        "train_n": int(fold_results[0]["train_n"]),
+        "validation_n": int(sum(int(f["validation_n"]) for f in fold_results)),
+        "folds": fold_results,
+        "fold_consistency": fold_consistency,
         "seeds": list(SEEDS),
         "real": real,
         "null_summary": {
-            "permutations": int(len(null_metrics)),
+            "permutations_per_fold": int(min(int(x["permutations"]) for x in fold_null_metrics)),
+            "folds": int(len(fold_results)),
             "logloss_mean": float(null_ll.mean()),
             "logloss_q10": float(np.quantile(null_ll, 0.10)),
             "logloss_q90": float(np.quantile(null_ll, 0.90)),
@@ -217,15 +273,16 @@ def audit_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
         },
         "separation": separation,
         "pit": {
-            "train_created_strictly_before_validation": True,
-            "train_settled_strictly_before_validation": True,
+            "every_validation_fold_training_created_strictly_before_validation": True,
+            "every_validation_fold_training_settled_strictly_before_validation": True,
             "validation_outcomes_used_only_after_model_fitted": True,
         },
         "research_only": True,
         "production_changed": False,
         "selection_allowed": False,
-        "interpretation": "A suspicious result triggers leakage/feature review; it does not prove leakage by itself.",
+        "interpretation": "A suspicious result triggers leakage/feature review; it does not prove leakage by itself. Multi-block consistency is an evidence-quality check, not a promotion gate.",
     }
+
 
 
 def build() -> dict[str, Any]:
@@ -245,6 +302,7 @@ def build() -> dict[str, Any]:
         "config": {
             "min_train": MIN_TRAIN,
             "validation_size": VALIDATION_SIZE,
+            "min_folds": MIN_FOLDS,
             "min_class_count": MIN_CLASS_COUNT,
             "seeds": list(SEEDS),
         },
