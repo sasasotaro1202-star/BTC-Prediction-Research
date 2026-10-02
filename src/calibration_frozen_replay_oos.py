@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -34,6 +34,46 @@ MIN_ROWS = 12_000
 PURGE = {"5m": 5, "10m": 10}
 WINDOWS = 4
 MIN_WINDOW = 500
+
+
+class InsufficientArchiveData(RuntimeError):
+    """Raised when the research archive cannot support this replay yet."""
+    def __init__(self, available_rows, required_rows, cutoff_ms):
+        super().__init__(
+            f"insufficient archive rows for calibration replay: {available_rows} "
+            f"(required {required_rows})"
+        )
+        self.available_rows = int(available_rows)
+        self.required_rows = int(required_rows)
+        self.cutoff_ms = int(cutoff_ms)
+
+
+def _deferred_payload(cutoff_ms, available_rows):
+    """Build explicit DEFERRED evidence instead of converting a data gap to failure."""
+    detail = {
+        h: {
+            "status": "DEFERRED",
+            "reason": "insufficient_archive_rows_for_calibration_replay",
+            "rows_available": int(available_rows),
+            "rows_required": int(MIN_ROWS),
+            "post_champion_cutoff_ms": int(cutoff_ms),
+        }
+        for h in ("5m", "10m")
+    }
+    return {
+        "schema_version": 1,
+        "status": "DEFERRED",
+        "research_only": True,
+        "production_changed": False,
+        "promotion_evidence_eligible": False,
+        "policy": "frozen_champion_calibration_replay_research_only",
+        "deferred_reason": "INSUFFICIENT_POST_CHAMPION_ARCHIVE",
+        "rows_available": int(available_rows),
+        "rows_required": int(MIN_ROWS),
+        "post_champion_cutoff_ms": int(cutoff_ms),
+        "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "horizons": detail,
+    }
 
 
 def _post_champion_cutoff_ms():
@@ -77,7 +117,7 @@ def _dataset():
         except (IndexError, TypeError, ValueError, FloatingPointError):
             continue
     if len(rows) < MIN_ROWS:
-        raise RuntimeError(f"insufficient archive rows for calibration replay: {len(rows)}")
+        raise InsufficientArchiveData(len(rows), MIN_ROWS, cutoff_ms)
     return rows
 
 
@@ -311,18 +351,22 @@ def evaluate(horizon, rows):
 
 
 def main():
-    rows = _dataset()
-    payload = {
-        "schema_version": 1,
-        "research_only": True,
-        "production_changed": False,
-        "promotion_evidence_eligible": False,
-        "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
-        "horizons": {
-            h: evaluate(h, rows)
-            for h in ("5m", "10m")
-        },
-    }
+    try:
+        rows = _dataset()
+        payload = {
+            "schema_version": 1,
+            "status": "EXECUTED",
+            "research_only": True,
+            "production_changed": False,
+            "promotion_evidence_eligible": False,
+            "policy": "frozen_champion_calibration_zoo_development_selection_four_future_replay_windows",
+            "horizons": {
+                h: evaluate(h, rows)
+                for h in ("5m", "10m")
+            },
+        }
+    except InsufficientArchiveData as exc:
+        payload = _deferred_payload(exc.cutoff_ms, exc.available_rows)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(payload, indent=2, sort_keys=True))
