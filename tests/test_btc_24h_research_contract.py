@@ -113,14 +113,17 @@ def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
     assert "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha" in workflow
     assert "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA" in workflow
 
-def test_24h_all_jobs_fail_closed_when_main_moves():
+def test_24h_only_stage1_requires_current_main_and_later_stages_use_snapshot():
     workflow = WORKFLOW.read_text(encoding='utf-8')
-    assert workflow.count('name: Fail closed if run is not latest main') == 5
-    assert workflow.count('git/ref/heads/main') == 5
-    assert workflow.count('STALE_MAIN_RUN expected=') == 5
+    assert workflow.count('name: Fail closed if run is not latest main') == 1
+    assert workflow.count('STALE_MAIN_RUN expected=') == 1
+    assert workflow.count('name: Verify immutable research snapshot') == 4
+    assert workflow.count('IMMUTABLE_RESEARCH_SNAPSHOT=') == 4
+    assert workflow.count('git/ref/heads/main') == 2
 
-def test_actions_cleanup_cancels_stale_24h_research_runs():
+def test_actions_cleanup_does_not_cancel_24h_for_main_lineage_drift():
     cleanup = Path('.github/workflows/btc_actions_cleanup.yml').read_text(encoding='utf-8')
     assert 'btc_24h_autonomous_research.yml' in cleanup
+    assert 'if [ "${workflow}" = "btc_24h_autonomous_research.yml" ]; then' in cleanup
+    assert '[ "${age}" -ge 90000 ]' in cleanup
     assert '[ "${head}" != "${main_sha}" ]' in cleanup
-    assert '[ "${age}" -ge 1800 ]' in cleanup
