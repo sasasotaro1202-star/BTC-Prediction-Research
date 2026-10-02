@@ -23,6 +23,8 @@ concurrency:
 jobs:
   reconcile:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
     timeout-minutes: 5
     steps:
       - name: Reconcile BTC 24H marathon
