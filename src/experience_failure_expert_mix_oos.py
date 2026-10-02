@@ -1,10 +1,12 @@
 """Research-only prequential expert mixture for prediction-error risk.
 
-The candidate risk estimators (global, case_memory, meta) are combined instead
-of winner-take-all routing. Expert weights are updated from matured historical
-losses at fixed refresh boundaries, then frozen for the next prediction block.
-This borrows the online/local-performance idea from adaptive dynamic model
-selection while preserving the project's PIT and research-only boundaries.
+The candidate risk estimators (global, case_memory, meta, temporal_memory) are
+combined instead of winner-take-all routing. Expert weights are updated from
+matured historical losses at fixed refresh boundaries, then frozen for the next
+prediction block. An incumbent fallback gate keeps the mixture disabled unless
+its validation gain is material and stable across both validation halves. This
+borrows the online/local-performance idea from adaptive dynamic model selection
+while preserving the project's PIT and research-only boundaries.
 """
 from __future__ import annotations
 
@@ -639,6 +641,13 @@ def evaluate_horizon(rows: list[Any], horizon: str) -> dict[str, Any]:
             "baseline_confidence_aurc": baseline_aurc,
             "aurc_improvement": float(baseline_aurc - aurc_value) if np.isfinite(aurc_value) and np.isfinite(baseline_aurc) else None,
         },
+        "chronological_blocks": blocks,
+        "mixture_enabled_refreshes": int(sum(
+            1 for item in weight_trace if item.get("mixture_enabled") is True
+        )),
+        "mixture_disabled_refreshes": int(sum(
+            1 for item in weight_trace if item.get("mixture_enabled") is False
+        )),
         "action_counts": {
             name: int(actions.count(name))
             for name in sorted(set(actions))
