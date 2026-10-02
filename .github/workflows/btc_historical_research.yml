@@ -112,7 +112,8 @@ jobs:
             cp data/historical_research/report.json /tmp/btc_local_historical_report.json
             find data/historical_research -maxdepth 1 -type f -name 'oos_*.csv' -print0 | tar --null -T - -cf /tmp/btc_local_historical_oos.tar
             git rebase --abort 2>/dev/null || true
-            git fetch --prune origin main
+            . scripts/ci_network_retry.sh
+            ci_git_fetch --prune origin main
             git reset --hard origin/main
             # Restore only files owned by this workflow. Never replace the
             # complete historical_research directory, because parallel
