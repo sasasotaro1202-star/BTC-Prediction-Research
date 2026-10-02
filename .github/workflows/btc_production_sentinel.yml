@@ -28,6 +28,7 @@ jobs:
       CI_GH_TIMEOUT_SECONDS: '30'
       CI_GH_BACKOFF_SECONDS: '5'
     steps:
+      - uses: actions/checkout@v7
       - name: Enforce current-main execution
         shell: bash
         run: |
