@@ -17,16 +17,16 @@ permissions:
 jobs:
   supervise:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v7
       - name: Verify supervisor prerequisites
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           test "${GITHUB_REF_NAME}" = "main"
           ci_gh_api_get "/repos/${REPO}" --jq '.default_branch' | grep -qx main
 
