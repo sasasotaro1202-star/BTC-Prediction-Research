@@ -21,7 +21,7 @@ def test_live_cycle_syncs_to_current_main_before_every_research_state_push():
 
     assert snapshot < fetch < reset < first_commit < push
     assert "for attempt in 1 2 3 4 5; do" in block
-    assert block.count("ci_git_fetch --prune origin main") == 1
+    assert block.count("ci_git_fetch --prune origin main") >= 2
 
 
 def test_depth_cache_sources_network_retry_helper_before_fetch():
