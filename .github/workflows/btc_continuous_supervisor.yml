@@ -23,10 +23,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          CI_GH_ATTEMPTS: '2'
+          CI_GH_TIMEOUT_SECONDS: '12'
+          CI_GH_BACKOFF_SECONDS: '1'
         run: |
           set -euo pipefail
+          . scripts/ci_network_retry.sh
           test "${GITHUB_REF_NAME}" = "main"
-          gh api "/repos/${REPO}" --jq '.default_branch' | grep -qx main
+          ci_gh_api_get "/repos/${REPO}" --jq '.default_branch' | grep -qx main
 
       - name: Dispatch only stale production/research workflows
         env:
@@ -35,13 +39,14 @@ jobs:
         shell: bash
         run: |
           set -u
+          . scripts/ci_network_retry.sh
           degraded=0
 
           dispatch_if_stale() {
             workflow="$1"
             threshold="$2"
 
-            response="$(gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null)" || {
+            response="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null)" || {
               echo "ERROR: cannot inspect ${workflow}" >&2
               degraded=1
               return 0
@@ -78,9 +83,9 @@ jobs:
               echo "Dispatching stale ${workflow}"
               # Use explicit REST workflow_dispatch first. This is the path proven
               # by the independent Watchdog and avoids gh CLI discovery variance.
-              if gh api --method POST "/repos/${REPO}/actions/workflows/${workflow}/dispatches" -f ref=main >/dev/null 2>&1; then
+              if ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via workflow_dispatch API: ${workflow}"
-              elif gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
+              elif ci_gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via gh workflow run: ${workflow}"
               else
                 echo "ERROR: dispatch failed through both REST and gh CLI: ${workflow}" >&2
