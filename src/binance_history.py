@@ -12,6 +12,8 @@ import io
 import json
 import time
 import urllib.request
+
+from http_resilience import request_bytes
 from urllib.parse import urlencode
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -26,17 +28,13 @@ REST_MAX_PAGES = 48
 
 
 def _download(url: str, timeout: int = 45) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    last = None
-    for attempt in range(4):
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read()
-        except Exception as exc:
-            last = exc
-            if attempt < 3:
-                time.sleep(min(6.0, 0.8 * (attempt + 1)))
-    raise last
+    return request_bytes(
+        url,
+        headers={"User-Agent": UA},
+        timeout=max(30.0, float(timeout)),
+        attempts=5,
+        total_timeout=max(120.0, float(timeout) * 3.0),
+    )
 
 
 def _rows_from_zip(raw: bytes, label: str):
