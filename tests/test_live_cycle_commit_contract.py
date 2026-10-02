@@ -93,10 +93,10 @@ def test_live_cycle_pit_history_restore_is_flat_and_prunes_nested_state():
     assert 'find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name \'pit_*.json\'' in block
 
 
-def test_live_cycle_cancels_overlapping_state_writers():
+def test_live_cycle_does_not_cancel_overlapping_state_writers():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "group: btc-state-main" in workflow
-    assert "cancel-in-progress: true" in workflow
+    assert "cancel-in-progress: false" in workflow
 
 
 def test_live_cycle_refuses_stale_workflow_state_publication():
