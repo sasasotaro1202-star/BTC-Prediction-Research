@@ -92,6 +92,9 @@ jobs:
                           value=item[name].get(metric)
                           if not isinstance(value,(int,float)):
                               raise SystemExit(f'{horizon}: missing numeric {name}.{metric}')
+                  for block in item.get('chronological_blocks',[]):
+                      if int(block.get('n',0)) < 20:
+                          raise SystemExit(f'{horizon}: undersized chronological block')
           print('BTC failure expert mix safety boundary: VERIFIED')
           PY
       - name: Run expert mixture regression tests
