@@ -162,7 +162,7 @@ jobs:
               if [ -n "$run_workflow_blob" ] && [ -n "$run_source_blob" ] \
                 && { [ "$run_workflow_blob" != "$current_workflow_blob" ] || [ "$run_source_blob" != "$current_source_blob" ]; }; then
                 set +e
-                gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
+                ci_gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
                 cancel_status=$?
                 set -e
                 if [ "$cancel_status" -eq 0 ]; then
@@ -1087,7 +1087,7 @@ jobs:
           if git diff --cached --quiet; then echo 'No BTC research-state changes to commit.'; exit 0; fi
           git commit -m 'Update BTC research state'
           for attempt in 1 2 3 4 5; do
-            if timeout 90s git push origin HEAD:main; then exit 0; fi
+            if CI_GIT_PUSH_ATTEMPTS=1 ci_git_push origin HEAD:main; then exit 0; fi
             echo "push attempt ${attempt} rejected; preserving local state and rebuilding on origin/main"
             cp data/predictions.db.gz /tmp/btc_local_predictions.db.gz
             if [ -f data/live_cycle_status.json ]; then cp data/live_cycle_status.json /tmp/btc_local_live_cycle_status.json; fi
