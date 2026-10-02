@@ -14,6 +14,7 @@ from src.experience_predictability_router_oos import (
     _meta_predictions,
     _risk,
     _select_source_from_scores,
+    _apply_consecutive_selection_gate,
     evaluate_horizon,
 )
 
@@ -163,3 +164,10 @@ def test_router_stable_gain_rejects_gain_only_in_one_validation_half():
         {"global": global_risk, "case_memory": candidate_risk, "meta": candidate_risk},
         "case_memory",
     ) is False
+
+
+def test_router_requires_persistent_non_global_source_selection():
+    assert _apply_consecutive_selection_gate("case_memory", None, 0) == ("global", "case_memory", 1)
+    assert _apply_consecutive_selection_gate("case_memory", "case_memory", 1) == ("case_memory", "case_memory", 2)
+    assert _apply_consecutive_selection_gate("global", "case_memory", 2) == ("global", None, 0)
+    assert _apply_consecutive_selection_gate("meta", "case_memory", 1) == ("global", "meta", 1)
