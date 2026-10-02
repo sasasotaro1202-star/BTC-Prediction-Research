@@ -111,11 +111,13 @@ def check_db() -> dict:
         max_age = max_prediction_age_seconds()
         fresh_required = require_fresh_prediction()
         deferred_safe = False
-        if fresh_required and (age < -60 or age > max_age):
+        if age < -60:
+            fail(f"latest prediction is future-dated: {age:.0f}s")
+        if fresh_required and age > max_age:
             # A primary-venue outage is allowed to produce an explicit deferred
             # Live Cycle instead of a fabricated prediction. Treat that state as
             # healthy only when the deferred status file itself is fresh enough.
-            if age > max_age and LIVE_STATUS.is_file():
+            if LIVE_STATUS.is_file():
                 try:
                     status_obj = json.loads(LIVE_STATUS.read_text(encoding="utf-8"))
                     completed = datetime.fromisoformat(
