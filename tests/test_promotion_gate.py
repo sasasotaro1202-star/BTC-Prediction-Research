@@ -59,6 +59,20 @@ class PromotionGateTests(unittest.TestCase):
         self.assertIn("robustness_evidence_invalid_or_incomplete", result["reason"])
 
 
+    def test_missing_robustness_is_safe_hold(self):
+        from src.promotion_gate import evaluate_promotion
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            {"research_only": True, "policy": "missing_robustness_evidence", "horizons": {}, "status": "missing"},
+            self._accepted_blends(),
+            self._pit(),
+            self._cal(),
+            {"ok": True},
+        )
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("robustness_evidence_invalid_or_incomplete", result["reason"])
+
     def test_zero_settled_calibration_blocks_promotion(self):
         cal = self._cal()
         cal["5m"]["n_settled"] = 0
