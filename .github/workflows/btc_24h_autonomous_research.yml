@@ -172,17 +172,6 @@ jobs:
             exit 1
           }
           echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
-            exit 1
-          }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -276,17 +265,6 @@ jobs:
             exit 1
           }
           echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
-            exit 1
-          }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -390,17 +368,6 @@ jobs:
             exit 1
           }
           echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
-            exit 1
-          }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -556,17 +523,6 @@ jobs:
             exit 1
           }
           echo "IMMUTABLE_RESEARCH_SNAPSHOT=${GITHUB_SHA}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
-            exit 1
-          }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
       - name: Download available stage evidence
         if: always()
         continue-on-error: true
