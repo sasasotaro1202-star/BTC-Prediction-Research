@@ -1,7 +1,12 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
+import src.calibration_frozen_replay_oos as replay
 from src.calibration_frozen_replay_oos import (
     CALIBRATORS,
     _ece_mce,
@@ -43,6 +48,27 @@ class TestCalibrationFrozenReplay(unittest.TestCase):
         self.assertGreaterEqual(mce, 0.0)
         self.assertLessEqual(ece, 1.0)
         self.assertLessEqual(mce, 1.0)
+
+
+    def test_archive_unavailable_is_explicitly_deferred(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "calibration.json"
+            with patch.object(replay, "OUT", out), \
+                 patch.object(
+                     replay,
+                     "_dataset",
+                     side_effect=replay.DeferredReplayData("archive_unavailable: simulated"),
+                 ):
+                replay.main()
+
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["data_status"], "DEFERRED")
+            self.assertFalse(payload["production_changed"])
+            self.assertFalse(payload["promotion_evidence_eligible"])
+            self.assertEqual(
+                {h: payload["horizons"][h]["status"] for h in ("5m", "10m")},
+                {"5m": "DEFERRED", "10m": "DEFERRED"},
+            )
 
     def test_quality_contains_calibration_metrics(self):
         y = ["DOWN", "FLAT", "UP"] * 20
