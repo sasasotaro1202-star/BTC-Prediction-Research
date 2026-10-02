@@ -18,6 +18,7 @@ from src.experience_failure_expert_mix_oos import (
     _aurc,
     _sequential_validation_risks,
     _update_weights,
+    _stable_mix_weights,
 )
 
 
@@ -176,3 +177,33 @@ def test_risk_coverage_prefers_low_risk_rows():
     rc = _risk_coverage(errors, risk, coverages=(0.50,))
     assert rc["0.50"]["error_rate"] == 0.0
     assert rc["0.50"]["accuracy"] == 1.0
+
+
+def test_stable_mix_gate_falls_back_to_global_when_gain_is_insufficient():
+    labels = np.asarray([0, 1, 1, 0, 1, 0, 1, 0], dtype=int)
+    candidate_values = {
+        "global": np.full(8, 0.5),
+        "case_memory": np.full(8, 0.5),
+        "meta": np.full(8, 0.5),
+        "temporal_memory": np.full(8, 0.5),
+    }
+    proposed = {name: 0.25 for name in CANDIDATES}
+    selected, enabled = _stable_mix_weights(labels, candidate_values, proposed)
+    assert enabled is False
+    assert selected["global"] == 1.0
+    assert all(selected[name] == 0.0 for name in CANDIDATES if name != "global")
+
+
+def test_stable_mix_gate_accepts_material_gain_on_both_halves():
+    labels = np.asarray([0, 1, 0, 1, 0, 1, 0, 1], dtype=int)
+    candidate_values = {
+        "global": np.asarray([0.5] * 8, dtype=float),
+        "case_memory": np.asarray([0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9], dtype=float),
+        "meta": np.asarray([0.5] * 8, dtype=float),
+        "temporal_memory": np.asarray([0.5] * 8, dtype=float),
+    }
+    proposed = {"global": 0.1, "case_memory": 0.7, "meta": 0.1, "temporal_memory": 0.1}
+    selected, enabled = _stable_mix_weights(labels, candidate_values, proposed)
+    assert enabled is True
+    assert np.isclose(sum(selected.values()), 1.0)
+    assert selected["case_memory"] > selected["global"]
