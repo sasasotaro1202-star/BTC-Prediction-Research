@@ -40,7 +40,8 @@ jobs:
           set -euo pipefail
           mkdir -p data
           rm -f data/binance_ws_1m.json data/binance_ws_depth.json
-           if git fetch --no-tags --depth=1 origin binance-ws-cache; then
+           . scripts/ci_network_retry.sh
+           if ci_git_fetch --no-tags --depth=1 origin binance-ws-cache; then
              if ! git show origin/binance-ws-cache:data/binance_ws_1m.json > data/binance_ws_1m.json 2>/dev/null; then
                echo 'WARN: Binance kline WS cache unavailable; predictor will use its fail-closed market-data path.'
              fi
