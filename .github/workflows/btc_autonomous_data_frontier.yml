@@ -189,7 +189,7 @@ jobs:
           fi
           git -C "$state_worktree" commit -m "chore: persist autonomous BTC frontier selector state"
           for attempt in 1 2 3 4; do
-            if ci_git_push -C "$state_worktree" origin HEAD:btc-data-frontier-state; then
+            if ci_git_push_cwd "$state_worktree" origin HEAD:btc-data-frontier-state; then
               echo "Persistent selector state published."
               exit 0
             fi
