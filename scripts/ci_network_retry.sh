@@ -59,3 +59,20 @@ ci_git_fetch_cwd() {
   done
   return 1
 }
+
+ci_git_push() {
+  local attempts="${CI_GIT_PUSH_ATTEMPTS:-5}"
+  local timeout_s="${CI_GIT_PUSH_TIMEOUT_SECONDS:-60}"
+  local backoff_s="${CI_GIT_PUSH_BACKOFF_SECONDS:-5}"
+  local attempt
+  for attempt in $(seq 1 "$attempts"); do
+    if timeout --signal=TERM --kill-after=10s "${timeout_s}s" git push "$@"; then
+      return 0
+    fi
+    echo "WARN: git push failed (attempt ${attempt}/${attempts})" >&2
+    if [ "$attempt" -lt "$attempts" ]; then
+      sleep "$((backoff_s * attempt))"
+    fi
+  done
+  return 1
+}
