@@ -1,6 +1,6 @@
 """Historical research launcher with a verified Binance Vision spot fallback."""
 from __future__ import annotations
-import csv, hashlib, io, urllib.parse, urllib.request, zipfile
+import csv, hashlib, io, urllib.parse, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import sys
@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import historical_research as hr
 import historical_research_runner as runner
+from http_resilience import request_bytes
 
 ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaws.com/data.binance.vision")
 CACHE=Path("/tmp/btc_prediction_archive_cache"); CACHE.mkdir(parents=True,exist_ok=True)
@@ -15,8 +16,13 @@ _ORIGINAL_CHUNK=hr.fetch_klines_chunk
 
 
 def _download(url,timeout=90):
-    req=urllib.request.Request(url,headers={"User-Agent":"BTC-Prediction-Research/12.0"})
-    with urllib.request.urlopen(req,timeout=timeout) as r:return r.read()
+    return request_bytes(
+        url,
+        headers={"User-Agent":"BTC-Prediction-Research/12.0"},
+        timeout=max(30.0,float(timeout)),
+        attempts=5,
+        total_timeout=max(120.0,float(timeout)*2.0),
+    )
 
 
 def _urls(symbol,interval,day,monthly):
