@@ -90,7 +90,10 @@ def test_live_cycle_pit_history_restore_is_flat_and_prunes_nested_state():
     assert 'find "$root" -mindepth 1 -maxdepth 1 -type d -exec rm -rf -- {} +' in block
     assert "rm -rf data/historical_research/pit_history" in block
     assert 'cp -a data/historical_research/pit_history "$STATE_ROOT/data/historical_research/pit_history"' not in block
-    assert 'find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name \'pit_*.json\'' in block
+    assert 'find "$STATE_ROOT/data/historical_research/pit_history" -maxdepth 1 -type f -name \'pit_*.json\' -exec cp -a {} data/historical_research/pit_history/ \\;' in block
+    assert "local local_workflow_sha" in block
+    assert "\n          local_workflow_sha\n" not in block
+    assert " \\\\;" not in block
 
 
 def test_live_cycle_does_not_cancel_overlapping_state_writers():
