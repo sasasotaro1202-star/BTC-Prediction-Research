@@ -54,3 +54,7 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+def test_screen_worker_count_is_bounded():
+    assert 1 <= fp.SCREEN_WORKERS <= 8
