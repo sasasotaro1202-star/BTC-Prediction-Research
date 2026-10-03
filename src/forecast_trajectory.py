@@ -30,7 +30,7 @@ def _ensure_horizon_columns(con, horizons):
             ("actual_price_", "REAL"),
             ("actual_direction_", "TEXT"),
             ("correct_", "INTEGER"),
-            ("settled_", "TEXT"),
+            ("settled_at_utc_", "TEXT"),
         ):
             name = prefix + horizon
             if name not in existing:
