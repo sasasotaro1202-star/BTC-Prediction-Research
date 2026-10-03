@@ -17,7 +17,8 @@ def test_dashboard_refresh_rebuilds_controls_without_duplication():
     text = DASHBOARD.read_text(encoding="utf-8")
     assert 'h.innerHTML="";' in text
     assert 'rg.innerHTML="";' in text
-    assert 'data-r="24h"' in text
+    assert 'currentRange="24h"' in text
+    assert 'RANGES=[["1h",3600000],["6h",21600000],["24h",86400000]' in text
     assert 'z.classList.toggle("active",z.dataset.r===currentRange)' in text
 
 
