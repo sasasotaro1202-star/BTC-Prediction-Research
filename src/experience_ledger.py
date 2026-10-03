@@ -16,6 +16,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from db import DB, init_db
+try:
+    from horizon_registry import ALL_HORIZONS
+except ModuleNotFoundError:
+    from src.horizon_registry import ALL_HORIZONS
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "experience"
@@ -33,10 +37,7 @@ def _entropy(p: list[float]) -> float:
 
 
 def _prob_tuple(row, horizon: str) -> list[float]:
-    if horizon == "5m":
-        vals = [row["p_down_5m"], row["p_flat_5m"], row["p_up_5m"]]
-    else:
-        vals = [row["p_down_10m"], row["p_flat_10m"], row["p_up_10m"]]
+    vals = [row[f"p_down_{horizon}"], row[f"p_flat_{horizon}"], row[f"p_up_{horizon}"]]
     p = [float(x) for x in vals]
     if not all(math.isfinite(x) and x >= 0.0 for x in p):
         raise ValueError("invalid_probability")
@@ -161,15 +162,15 @@ def build():
     with sqlite3.connect(DB) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
-            """SELECT * FROM predictions
-               WHERE actual_direction_5m IS NOT NULL OR actual_direction_10m IS NOT NULL
+            f"""SELECT * FROM predictions
+               WHERE actual_direction_5m IS NOT NULL OR actual_direction_10m IS NOT NULL OR actual_direction_15m IS NOT NULL OR actual_direction_30m IS NOT NULL OR actual_direction_1h IS NOT NULL OR actual_direction_3h IS NOT NULL OR actual_direction_6h IS NOT NULL OR actual_direction_12h IS NOT NULL OR actual_direction_24h IS NOT NULL
                ORDER BY prediction_id"""
         ).fetchall()
 
         inserted = 0
         parse_errors = 0
         for row in rows:
-            for horizon in ("5m", "10m"):
+            for horizon in ALL_HORIZONS:
                 try:
                     experience = _experience_from_row(row, horizon)
                     if experience is None:
@@ -204,7 +205,7 @@ def build():
         "horizons": {},
     }
 
-    for horizon in ("5m", "10m"):
+    for horizon in ALL_HORIZONS:
         hrows = [r for r in ledger_rows if r["horizon"] == horizon]
         serial = hrows
         recent = {}
