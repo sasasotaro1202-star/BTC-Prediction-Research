@@ -19,9 +19,11 @@ class ExtendedHorizonSchemaTests(unittest.TestCase):
                     for prefix in (
                         "target_", "p_up_", "p_down_", "p_flat_",
                         "actual_price_", "actual_direction_", "correct_",
-                        "settled_", "settlement_source_",
+                        "settlement_source_",
                     ):
                         self.assertIn(prefix + horizon, columns)
+                    self.assertIn(f"settled_{horizon}_at_utc", columns)
+                    self.assertNotIn(f"settled_{horizon}", columns)
             finally:
                 db.DB = old_db
 
