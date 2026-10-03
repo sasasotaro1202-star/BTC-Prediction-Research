@@ -6,6 +6,7 @@ from src.rich_production_research import (
     LEGACY_FEATURES,
     LEGACY_INDICES,
     RICH_FEATURES,
+    PANEL_LOOKBACK_MINUTES,
     _block_bootstrap_ci,
     _metrics,
     _relative_gain,
@@ -166,3 +167,7 @@ def test_candlestick_features_are_append_only():
         "bullish_engulfing","bearish_engulfing","inside_bar","outside_bar",
         "marubozu_score",
     ]
+
+
+def test_panel_lookback_supports_all_60m_features():
+    assert PANEL_LOOKBACK_MINUTES >= 60
