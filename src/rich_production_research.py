@@ -126,6 +126,58 @@ def _ema(values: np.ndarray, span: int) -> float:
 def _ret(values: np.ndarray, n: int) -> float:
     return float(values[-1] / values[-1-n] - 1.0)
 
+def _candlestick_pattern_features(
+    curr_open: float,
+    curr_high: float,
+    curr_low: float,
+    curr_close: float,
+    prev_open: float,
+    prev_high: float,
+    prev_low: float,
+    prev_close: float,
+) -> tuple[float, ...]:
+    """Return causal continuous/binary pattern descriptors for two closed candles."""
+    curr_range = max(curr_high - curr_low, 1e-12)
+    curr_body_abs = abs(curr_close - curr_open)
+    curr_upper = max(0.0, curr_high - max(curr_open, curr_close))
+    curr_lower = max(0.0, min(curr_open, curr_close) - curr_low)
+    close_pos = (curr_close - curr_low) / curr_range
+    body_frac = curr_body_abs / curr_range
+    upper_frac = curr_upper / curr_range
+    lower_frac = curr_lower / curr_range
+
+    doji_score = 1.0 - min(1.0, body_frac / 0.20)
+    hammer_score = lower_frac * (1.0 - min(1.0, upper_frac / 0.25)) * close_pos
+    shooting_star_score = (
+        upper_frac * (1.0 - min(1.0, lower_frac / 0.25)) * (1.0 - close_pos)
+    )
+    bullish_engulfing = float(
+        prev_close < prev_open
+        and curr_close > curr_open
+        and curr_open <= prev_close
+        and curr_close >= prev_open
+    )
+    bearish_engulfing = float(
+        prev_close > prev_open
+        and curr_close < curr_open
+        and curr_open >= prev_close
+        and curr_close <= prev_open
+    )
+    inside_bar = float(curr_high <= prev_high and curr_low >= prev_low)
+    outside_bar = float(curr_high >= prev_high and curr_low <= prev_low)
+    marubozu_score = max(0.0, 1.0 - upper_frac - lower_frac)
+
+    return (
+        doji_score,
+        hammer_score,
+        shooting_star_score,
+        bullish_engulfing,
+        bearish_engulfing,
+        inside_bar,
+        outside_bar,
+        marubozu_score,
+    )
+
 def _metrics(y: list[str], probs: np.ndarray) -> dict[str, float | int]:
     p = np.asarray(probs, dtype=float)
     p = np.clip(p, 1e-8, 1.0)
@@ -337,44 +389,21 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
             np.mean((bh[-10:] - bl[-10:]) / np.maximum(b[-10:], 1e-12))
         )
 
-        # Explicit candlestick-pattern features. All are measurable from the
-        # current closed candle and the immediately prior closed candle only.
-        curr_open = float(bo[-1])
-        curr_high = float(bh[-1])
-        curr_low = float(bl[-1])
-        prev_open = float(bo[-2])
-        prev_high = float(bh[-2])
-        prev_low = float(bl[-2])
-        prev_close = float(b[-2])
-        curr_close = p
-
-        curr_range = max(curr_high - curr_low, 1e-12)
-        curr_body_abs = abs(curr_close - curr_open)
-        curr_upper = max(0.0, curr_high - max(curr_open, curr_close))
-        curr_lower = max(0.0, min(curr_open, curr_close) - curr_low)
-        close_pos = (curr_close - curr_low) / curr_range
-        body_frac = curr_body_abs / curr_range
-        upper_frac = curr_upper / curr_range
-        lower_frac = curr_lower / curr_range
-
-        doji_score = 1.0 - min(1.0, body_frac / 0.20)
-        hammer_score = lower_frac * (1.0 - min(1.0, upper_frac / 0.25)) * close_pos
-        shooting_star_score = upper_frac * (1.0 - min(1.0, lower_frac / 0.25)) * (1.0 - close_pos)
-        bullish_engulfing = float(
-            prev_close < prev_open
-            and curr_close > curr_open
-            and curr_open <= prev_close
-            and curr_close >= prev_open
+        # Explicit candlestick-pattern features. All use the current and prior
+        # closed candles only; no future rows are accessed.
+        (
+            doji_score,
+            hammer_score,
+            shooting_star_score,
+            bullish_engulfing,
+            bearish_engulfing,
+            inside_bar,
+            outside_bar,
+            marubozu_score,
+        ) = _candlestick_pattern_features(
+            float(bo[-1]), float(bh[-1]), float(bl[-1]), p,
+            float(bo[-2]), float(bh[-2]), float(bl[-2]), float(b[-2]),
         )
-        bearish_engulfing = float(
-            prev_close > prev_open
-            and curr_close < curr_open
-            and curr_open >= prev_close
-            and curr_close <= prev_open
-        )
-        inside_bar = float(curr_high <= prev_high and curr_low >= prev_low)
-        outside_bar = float(curr_high >= prev_high and curr_low <= prev_low)
-        marubozu_score = max(0.0, 1.0 - upper_frac - lower_frac)
 
         dt = datetime.fromtimestamp(t / 1000.0, timezone.utc)
         hour = dt.hour + dt.minute / 60.0
