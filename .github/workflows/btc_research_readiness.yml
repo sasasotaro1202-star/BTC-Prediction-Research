@@ -85,6 +85,11 @@ jobs:
               raise SystemExit("implicit activation is forbidden")
           if obj.get("source_frontier", {}).get("production_eligible_from_catalog") != 0:
               raise SystemExit("catalog metadata cannot grant production eligibility")
+          calibration = obj.get("calibration", {})
+          if calibration.get("effective_minimum_rows") != 400:
+              raise SystemExit("unexpected effective calibration minimum")
+          if set(calibration.get("horizons", {})) != {"5m", "10m"}:
+              raise SystemExit("calibration readiness horizon evidence is incomplete")
           print("BTC research readiness contract: VERIFIED")
           PY
       - name: Upload readiness evidence
