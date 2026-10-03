@@ -296,7 +296,14 @@ def audit() -> dict:
     # forecasts inherit the same prediction cutoff/provenance envelope, but they
     # remain research-only and never affect the 5m/10m promotion gate.
     with sqlite3.connect(DB) as con:
+        extended_columns = table_columns(con, "predictions")
         for horizon in EXTENDED_RESEARCH_HORIZONS:
+            required_extended = {
+                f"target_{horizon}",
+                f"actual_direction_{horizon}",
+            }
+            if not required_extended.issubset(extended_columns):
+                continue
             rows_ext = con.execute(
                 f"""SELECT prediction_id, created_at_utc, target_{horizon},
                            actual_direction_{horizon}, scenario_json
