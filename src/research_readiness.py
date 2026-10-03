@@ -15,6 +15,7 @@ from btc_source_frontier_catalog import SOURCES, direct_high_priority_sources, f
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "data" / "historical_research"
 MIN_STRICT_PIT_ROWS = 300
+MIN_EFFECTIVE_CALIBRATION_ROWS = 400
 HORIZONS = ("5m", "10m")
 
 
@@ -53,6 +54,58 @@ def classify_state(
     return "RESEARCH_VALIDATION", ["safety_or_candidate_evidence_not_ready"]
 
 
+def _calibration_state(root: Path) -> dict[str, dict[str, Any]]:
+    """Summarize current-generation calibration readiness without changing calibration."""
+    result: dict[str, dict[str, Any]] = {}
+    for horizon in HORIZONS:
+        path = root / "models" / f"{horizon}.calibration.json"
+        if not path.is_file():
+            result[horizon] = {
+                "status": "MISSING",
+                "n_settled": 0,
+                "minimum_effective_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+                "remaining_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+                "fit_logloss_available": False,
+                "holdout_logloss_available": False,
+            }
+            continue
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(obj, dict):
+                raise ValueError("calibration_artifact_not_object")
+            n = int(obj.get("n_settled", 0))
+            fit_ok = obj.get("fit_logloss") is not None
+            holdout_ok = obj.get("holdout_logloss") is not None
+            version = str(obj.get("model_version", "")).strip()
+            status = (
+                "READY"
+                if n >= MIN_EFFECTIVE_CALIBRATION_ROWS and fit_ok and holdout_ok and version
+                else "WAITING"
+            )
+            result[horizon] = {
+                "status": status,
+                "n_settled": n,
+                "minimum_effective_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+                "remaining_rows": max(0, MIN_EFFECTIVE_CALIBRATION_ROWS - n),
+                "fit_logloss_available": fit_ok,
+                "holdout_logloss_available": holdout_ok,
+                "model_version": version,
+                "artifact": path.name,
+            }
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            result[horizon] = {
+                "status": "INVALID",
+                "n_settled": 0,
+                "minimum_effective_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+                "remaining_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+                "fit_logloss_available": False,
+                "holdout_logloss_available": False,
+                "error": type(exc).__name__,
+                "artifact": path.name,
+            }
+    return result
+
+
 def source_frontier() -> dict[str, Any]:
     candidates = []
     for source in SOURCES:
@@ -87,9 +140,15 @@ def build_readiness(
     research_health: dict[str, Any],
     pit: dict[str, Any],
     promotion: dict[str, Any],
+    calibration: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     minimum = max(MIN_STRICT_PIT_ROWS, int(pit.get("min_strict_pit_rows", MIN_STRICT_PIT_ROWS)))
     primary = int(pit.get("verified_primary_predictions", 0))
+    calibration = calibration if isinstance(calibration, dict) else {}
+    calibration_ready = bool(calibration) and all(
+        isinstance(calibration.get(h), dict) and calibration[h].get("status") == "READY"
+        for h in HORIZONS
+    )
     state, reasons = classify_state(
         production_integrity=str(production_integrity.get("status", "UNKNOWN")),
         research_health_ok=research_health.get("ok") is True,
@@ -98,6 +157,10 @@ def build_readiness(
         min_strict_pit_rows=minimum,
         promotion_status=str(promotion.get("promotion_status", "HOLD")),
     )
+    if state == "RESEARCH_VALIDATION" and not calibration_ready:
+        state = "CALIBRATION_COLLECTION"
+        reasons = ["calibration_evidence_not_ready"]
+
     horizon_health = {}
     for horizon in HORIZONS:
         item = (research_health.get("checks") or {}).get(horizon, {})
@@ -121,6 +184,11 @@ def build_readiness(
             "remaining": max(0, minimum - primary),
             "violation_count": int(pit.get("violation_count", -1)),
         },
+        "calibration": {
+            "all_horizons_ready": calibration_ready,
+            "effective_minimum_rows": MIN_EFFECTIVE_CALIBRATION_ROWS,
+            "horizons": calibration,
+        },
         "production": {
             "integrity_status": production_integrity.get("status", "UNKNOWN"),
             "promotion_status": promotion.get("promotion_status", "UNKNOWN"),
@@ -143,6 +211,7 @@ def run(root: Path = ROOT) -> dict[str, Any]:
         _load(evidence / "research_health.json"),
         _load(evidence / "pit_oos_audit.json"),
         _load(evidence / "promotion_gate.json"),
+        _calibration_state(root),
     )
     out = evidence / "research_readiness.json"
     out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
