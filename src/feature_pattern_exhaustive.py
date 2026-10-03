@@ -121,6 +121,18 @@ def pattern_features(mask):
             families.append(name); selected.update(FAMILY_GROUPS[name])
     return families,tuple(f for f in FEATURES if f in selected)
 
+def development_selection_key(record):
+    """Rank patterns on development OOS only, prioritizing probabilistic quality."""
+    metrics_row=record["development_metrics"]
+    return (
+        float(metrics_row["logloss"]),
+        float(metrics_row["brier"]),
+        float(metrics_row["ece"]),
+        -float(metrics_row["accuracy"]),
+        int(record["feature_count"]),
+        str(record["pattern_id"]),
+    )
+
 def screen_with_slices(X,y,fold_spec):
     """Fit each fold once and return full/development/frozen-holdout metrics."""
     ps=[]; ys=[]; per_fold=[]
@@ -247,6 +259,7 @@ def main():
         "fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False,"selection_folds":[0,1],"frozen_holdout_fold":2,"holdout_excluded_from_selection":True},
         "model_role":"screening_only_logistic_regression",
         "selection_leakage_guard":"rank_candidates_on_development_folds_only; evaluate_latest_fold_as_frozen_holdout",
+        "selection_metric_order":["development_logloss","development_brier","development_ece","development_accuracy","feature_count"],
         "fine_grained_single_feature_ablation":True,
         "horizons":{}
     }
@@ -270,7 +283,7 @@ def main():
                 r["frozen_holdout_delta_vs_base"]={k:float(r["frozen_holdout_metrics"][k]-bh[k]) for k in ("logloss","accuracy","brier","ece")}
         # Rank only on development folds. The latest fold remains a frozen holdout
         # and is intentionally excluded from candidate selection.
-        ranked=sorted(valid,key=lambda r:(r["development_metrics"]["logloss"],-r["development_metrics"]["accuracy"],r["feature_count"]))
+        ranked=sorted(valid,key=development_selection_key)
         result["horizons"][h]={
             "samples":int(len(y)),
             "folds":fs,
