@@ -73,6 +73,19 @@ def req_json(url,timeout=30,retries=5):
     except Exception as exc:
         raise RuntimeError(f"request failed: {url}: {exc}") from exc
 
+def _normalize_epoch_ms(value):
+    """Normalize seconds, milliseconds, microseconds, or nanoseconds to epoch ms."""
+    ts=float(value)
+    if not math.isfinite(ts) or ts<=0:
+        raise ValueError("invalid epoch timestamp")
+    if ts>=1e17:
+        ts/=1e6
+    elif ts>=1e14:
+        ts/=1e3
+    elif ts<1e11:
+        ts*=1e3
+    return int(ts)
+
 def _cache_path(kind,symbol,day): return CACHE/f"{kind}_{symbol}_{day:%Y%m%d}.json"
 
 def _load_nonempty_cached_rows(path):

@@ -29,6 +29,13 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertEqual(ids.tolist(), [60_000])
         self.assertEqual(y.tolist(), ["UP"])
 
+    def test_archive_epoch_timestamp_normalization_handles_seconds_ms_us_ns(self):
+        expected=1_700_000_000_000
+        self.assertEqual(hr._normalize_epoch_ms(1_700_000_000), expected)
+        self.assertEqual(hr._normalize_epoch_ms(expected), expected)
+        self.assertEqual(hr._normalize_epoch_ms(1_700_000_000_000_000), expected)
+        self.assertEqual(hr._normalize_epoch_ms(1_700_000_000_000_000_000), expected)
+
     def test_feature_window_must_be_contiguous(self):
         self.assertTrue(hr._window_is_contiguous([0, 60_000, 120_000]))
         self.assertFalse(hr._window_is_contiguous([0, 60_000, 180_000]))
