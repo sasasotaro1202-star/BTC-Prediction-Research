@@ -63,6 +63,11 @@ except ImportError:
     XGBClassifier = None
 
 try:
+    from bootstrap_train import EncodedXGBClassifier
+except ImportError:
+    from src.bootstrap_train import EncodedXGBClassifier
+
+try:
     from historical_research import load_market, exists, _window_is_contiguous
 except ModuleNotFoundError:
     from src.historical_research import load_market, exists, _window_is_contiguous
@@ -189,7 +194,7 @@ def _factories() -> dict[str, callable]:
             )
         } if LGBMClassifier is not None else {}),
         **({
-            "xgboost": lambda: XGBClassifier(
+            "xgboost": lambda: EncodedXGBClassifier(
                 objective="multi:softprob", num_class=3, n_estimators=320,
                 max_depth=5, learning_rate=0.03, min_child_weight=12,
                 subsample=0.9, colsample_bytree=0.9, reg_lambda=2.0,
