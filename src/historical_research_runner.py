@@ -72,7 +72,7 @@ def _zip_rows(urls,start_ms,end_ms):
             text=io.TextIOWrapper(fh,encoding="utf-8",newline="")
             for row in csv.reader(text):
                 if not row:continue
-                try:ts=int(float(row[0]))
+                try:ts=hr._normalize_epoch_ms(row[0])
                 except (ValueError,TypeError):continue
                 if start_ms<=ts<end_ms:rows.append(row)
     return rows
@@ -98,16 +98,12 @@ def _funding_zip_rows(urls,start_ms,end_ms):
                             return None
                         ts_raw=col(["fundingtime","funding_time","calc_time","timestamp"]); rate_raw=col(["last_funding_rate","fundingrate","funding_rate"])
                         if ts_raw is None or rate_raw is None:continue
-                        ts=float(ts_raw)
-                        if ts<10_000_000_000:ts*=1000
-                        ts=int(ts)
+                        ts=hr._normalize_epoch_ms(ts_raw)
                         if start_ms<=ts<end_ms:rows.append({"symbol":"BTCUSDT","fundingTime":ts,"fundingRate":str(rate_raw)})
                     except (ValueError,TypeError,IndexError):continue
                 else:
                     try:
-                        ts=float(raw[0]); rate=raw[-1]
-                        if ts<10_000_000_000:ts*=1000
-                        ts=int(ts)
+                        ts=hr._normalize_epoch_ms(raw[0]); rate=raw[-1]
                         if start_ms<=ts<end_ms:rows.append({"symbol":"BTCUSDT","fundingTime":ts,"fundingRate":str(rate)})
                     except (ValueError,TypeError,IndexError):continue
     dedup={int(r["fundingTime"]):r for r in rows}; return [dedup[k] for k in sorted(dedup)]
