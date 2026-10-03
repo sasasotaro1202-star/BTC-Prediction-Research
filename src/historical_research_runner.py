@@ -85,6 +85,20 @@ def _zip_rows(urls,start_ms,end_ms):
                     normalized=list(row); normalized[0]=str(ts); rows.append(normalized)
     return rows
 
+def _normalize_metrics_timestamp(value):
+    try:
+        return hr._normalize_epoch_ms(value)
+    except (ValueError,TypeError,OverflowError):
+        text_value=str(value).strip()
+        if not text_value:
+            raise ValueError("empty metrics timestamp")
+        if text_value.endswith("Z"):
+            text_value=text_value[:-1]+"+00:00"
+        parsed=datetime.fromisoformat(text_value)
+        if parsed.tzinfo is None:
+            parsed=parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.astimezone(timezone.utc).timestamp()*1000)
+
 def _oi_metrics_zip_rows(urls,start_ms,end_ms):
     """Read Binance Vision USD-M metrics archives into OI-stat rows.
     
@@ -115,7 +129,7 @@ def _oi_metrics_zip_rows(urls,start_ms,end_ms):
                 try:
                     ts_raw=raw[header.index("create_time")]
                     oi_raw=raw[header.index("sum_open_interest")]
-                    ts=hr._normalize_epoch_ms(ts_raw)
+                    ts=_normalize_metrics_timestamp(ts_raw)
                     oi=float(oi_raw)
                     if not math.isfinite(oi) or oi<=0.0:
                         continue
