@@ -178,9 +178,53 @@ class TestCalibration(unittest.TestCase):
         self.assertEqual(con.params, ('%|5m:bootstrap.example.v1|%',))
 
     def test_settled_rows_excludes_fallback_venue_from_production_calibration(self):
+        import json
+
+        pit_time = "2026-10-03T08:00:00+00:00"
+        primary_sources = {
+            name: {
+                "status": "ok",
+                "available_at": pit_time,
+                "retrieved_at": pit_time,
+                "prediction_cutoff": pit_time,
+                "event_time": pit_time,
+            }
+            for name in (
+                "binance_futures",
+                "binance_depth",
+                "binance_taker",
+                "binance_premium",
+            )
+        }
+        primary_scenario = json.dumps({
+            "production_mode": "binance_primary",
+            "decision_time_utc": pit_time,
+            "provenance": {
+                "available_at": pit_time,
+                "retrieved_at": pit_time,
+                "prediction_cutoff": pit_time,
+                "sources": primary_sources,
+            },
+        })
         rows = [
-            ('2026-10-03T08:00:00+00:00', '2026-10-03T08:05:00+00:00', 0.80, 0.10, 0.10, 'UP', '{"production_mode":"coinbase_fallback"}'),
-            ('2026-10-03T08:00:00+00:00', '2026-10-03T08:05:00+00:00', 0.70, 0.20, 0.10, 'UP', '{"production_mode":"binance_primary","decision_time_utc":"2026-10-03T08:00:00+00:00","provenance":{"available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","sources":{"binance_futures":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_depth":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_taker":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_premium":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"}}}}}'),
+            (
+                pit_time,
+                "2026-10-03T08:05:00+00:00",
+                0.80,
+                0.10,
+                0.10,
+                "UP",
+                '{"production_mode":"coinbase_fallback"}',
+            ),
+            (
+                pit_time,
+                "2026-10-03T08:05:00+00:00",
+                0.70,
+                0.20,
+                0.10,
+                "UP",
+                primary_scenario,
+            ),
         ]
         con = _FakeConnection(rows)
         out = calibration._settled_rows(
