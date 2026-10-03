@@ -47,13 +47,15 @@ jobs:
             btc_rolling_challenger.yml
             btc_unit_tests.yml
           )
-          main_sha=$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)
-          if [ -z "$main_sha" ]; then
+          if ! main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)"; then
             echo "ERROR: unable to resolve current main SHA; watchdog recovery cannot be trusted." >&2
-            watchdog_degraded=1
-          else
-            echo "Current main SHA: ${main_sha}"
+            exit 1
           fi
+          if [ -z "$main_sha" ]; then
+            echo "ERROR: GitHub returned an empty main SHA; watchdog recovery cannot be trusted." >&2
+            exit 1
+          fi
+          echo "Current main SHA: ${main_sha}"
           now=$(date -u +%s)
           live_status_stale=0
           live_status_file=$(mktemp)
