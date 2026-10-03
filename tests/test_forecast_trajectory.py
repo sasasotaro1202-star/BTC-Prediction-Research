@@ -34,6 +34,41 @@ class ForecastTrajectoryTests(unittest.TestCase):
             self.assertTrue(out["horizons"]["24h"]["research_only"])
             self.assertFalse(out["horizons"]["5m"]["research_only"])
 
+    def test_restored_legacy_schema_is_migrated_before_export(self):
+        with tempfile.TemporaryDirectory() as td:
+            db=Path(td)/"predictions.db"
+            with sqlite3.connect(db) as con:
+                con.execute(
+                    """CREATE TABLE predictions (
+                      prediction_id INTEGER PRIMARY KEY,
+                      created_at_utc TEXT NOT NULL,
+                      base_price REAL NOT NULL,
+                      target_5m TEXT, p_down_5m REAL, p_flat_5m REAL, p_up_5m REAL,
+                      actual_price_5m REAL, actual_direction_5m TEXT, correct_5m INTEGER,
+                      settled_5m_at_utc TEXT,
+                      target_10m TEXT, p_down_10m REAL, p_flat_10m REAL, p_up_10m REAL,
+                      actual_price_10m REAL, actual_direction_10m TEXT, correct_10m INTEGER,
+                      settled_10m_at_utc TEXT
+                    )"""
+                )
+                con.execute(
+                    "INSERT INTO predictions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (1,"2026-10-03T04:10:00+00:00",100000.0,
+                     "2026-10-03T04:15:00+00:00",0.2,0.3,0.5,None,None,None,None,
+                     "2026-10-03T04:20:00+00:00",0.2,0.3,0.5,None,None,None,None),
+                )
+            with patch.object(forecast_trajectory,"DB",db), patch.object(forecast_trajectory,"init_db",lambda: None):
+                out=forecast_trajectory.build()
+            self.assertEqual(out["horizon_order"],list(forecast_trajectory.ALL_HORIZONS))
+            self.assertEqual(out["horizons"]["5m"]["point_count"],1)
+            self.assertEqual(out["horizons"]["10m"]["point_count"],1)
+            for h in forecast_trajectory.EXTENDED_RESEARCH_HORIZONS:
+                self.assertEqual(out["horizons"][h]["point_count"],0)
+                self.assertEqual(out["horizons"][h]["availability_status"],"PENDING_FIRST_LIVE_SAMPLE")
+            with sqlite3.connect(db) as con:
+                columns={row[1] for row in con.execute("PRAGMA table_info(predictions)").fetchall()}
+            self.assertIn("settled_24h_at_utc",columns)
+
     def test_extended_horizons_can_be_pending_without_inventing_history(self):
         with tempfile.TemporaryDirectory() as td:
             db=Path(td)/"predictions.db"
