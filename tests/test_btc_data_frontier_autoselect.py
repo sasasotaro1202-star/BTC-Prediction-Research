@@ -690,5 +690,21 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             ("bitget_public_ws","hyperliquid_ws","deribit_public"),
         )
 
+
+    def test_dispatch_verification_accepts_main_sha_advancement(self):
+        workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "btc_autonomous_data_frontier.yml"
+        text = workflow.read_text(encoding="utf-8")
+        fresh_lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip().startswith('fresh="$(ci_gh api ')
+        ]
+        self.assertEqual(len(fresh_lines), 1)
+        self.assertIn('.head_branch=="main"', fresh_lines[0])
+        self.assertIn('.event=="workflow_dispatch"', fresh_lines[0])
+        self.assertIn('.created_at | fromdateiso8601) >= $started', fresh_lines[0])
+        self.assertNotIn('select(.head_sha==$sha', fresh_lines[0])
+
+
 if __name__=="__main__":
     main()
