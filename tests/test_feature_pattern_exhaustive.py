@@ -8,8 +8,8 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(set(flat),set(fp.FEATURES))
         self.assertEqual(len(fp.FEATURES),92)
     def test_all_nonempty_family_patterns(self):
-        self.assertEqual(len(fp.FAMILY_NAMES),8)
-        self.assertEqual(fp.PATTERN_COUNT,255)
+        self.assertEqual(len(fp.FAMILY_NAMES),9)
+        self.assertEqual(fp.PATTERN_COUNT,511)
     def test_base_and_full_masks(self):
         fam,features=fp.pattern_features(1)
         self.assertEqual(fam,["base"])
