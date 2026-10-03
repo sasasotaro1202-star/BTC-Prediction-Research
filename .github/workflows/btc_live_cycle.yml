@@ -276,6 +276,8 @@ jobs:
             tests/test_horizon_registry.py
             tests/test_extended_horizons.py
             tests/test_extended_horizon_schema.py
+            tests/test_forecast_trajectory.py
+            tests/test_forecast_trajectory_contract.py
             tests/test_settle.py
             tests/test_experience_ledger.py
             tests/test_settlement_source.py
@@ -418,6 +420,29 @@ jobs:
 
       - name: Settle due BTC predictions
         run: python src/settle.py
+      - name: Build chart-ready BTC multi-horizon trajectory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/forecast_trajectory.py --limit 2880
+          test -s data/historical_research/forecast_trajectory.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("data/historical_research/forecast_trajectory.json")
+          obj=json.loads(path.read_text(encoding="utf-8"))
+          expected=["5m","10m","15m","30m","1h","3h","6h","12h","24h"]
+          if obj.get("horizon_order") != expected: raise SystemExit("trajectory horizon order mismatch")
+          if obj.get("primary_horizons") != ["5m","10m"]: raise SystemExit("5m/10m primary contract mismatch")
+          if obj.get("extended_research_horizons") != expected[2:]: raise SystemExit("extended trajectory coverage mismatch")
+          if obj.get("no_missing_as_zero") is not True: raise SystemExit("trajectory missing-value policy mismatch")
+          if obj.get("research_only_extended") is not True: raise SystemExit("extended trajectory research policy mismatch")
+          for h in expected:
+              item=obj.get("horizons",{}).get(h)
+              if not isinstance(item,dict): raise SystemExit(f"trajectory missing horizon: {h}")
+              if item.get("point_count",0) < 1: raise SystemExit(f"trajectory has no points: {h}")
+          print("BTC multi-horizon trajectory: VERIFIED")
+          PY
       - name: Monitor BTC extended research horizons
         run: |
           set -euo pipefail
@@ -1148,6 +1173,13 @@ jobs:
           db.unlink()
           print('Exact archive round-trip verified before deleting uncompressed DB.')
           PY
+      - name: Upload BTC multi-horizon trajectory artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-forecast-trajectory
+          path: data/historical_research/forecast_trajectory.json
+          if-no-files-found: error
+          retention-days: 3
       - name: Upload minimal BTC cycle handoff artifact
         uses: actions/upload-artifact@v6
         with:
