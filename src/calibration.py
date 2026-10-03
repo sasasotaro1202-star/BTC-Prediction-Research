@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / 'models'
 MIN_CALIBRATION = 300
 HOLDOUT_FRACTION = 0.25
+MIN_CALIBRATION_HOLDOUT = 100
+# The calibration routine requires at least MIN_CALIBRATION settled rows *and*
+# at least MIN_CALIBRATION_HOLDOUT rows in its 25% chronological holdout.
+# The latter implies 400 total rows, so keep the contract internally consistent
+# instead of silently returning an uncalibrated artifact for 300-399 rows.
+MIN_CALIBRATION_EFFECTIVE = max(
+    MIN_CALIBRATION,
+    int(math.ceil(MIN_CALIBRATION_HOLDOUT / HOLDOUT_FRACTION)),
+)
 
 
 def _model_artifact_sha256(horizon):
@@ -66,7 +75,7 @@ def _logloss_at_temperature(logits,y,t):
 
 
 def temperature_scale(rows, purge_gap=0):
-    if len(rows) < MIN_CALIBRATION:
+    if len(rows) < MIN_CALIBRATION_EFFECTIVE:
         return 1.0, None, None
     logits,y=_probs_and_labels(rows)
     split=max(int(len(rows)*(1-HOLDOUT_FRACTION)),1)

@@ -297,5 +297,18 @@ class TestCalibration(unittest.TestCase):
         self.assertFalse(calibration._can_reuse_cached_calibration(cached, '5m', 'bootstrap.example.v1', 500, None))
 
 
+    def test_effective_calibration_minimum_matches_holdout_requirement(self):
+        self.assertEqual(calibration_module.MIN_CALIBRATION, 300)
+        self.assertEqual(calibration_module.MIN_CALIBRATION_HOLDOUT, 100)
+        self.assertEqual(calibration_module.MIN_CALIBRATION_EFFECTIVE, 400)
+
+    def test_temperature_scale_defers_until_holdout_can_reach_minimum(self):
+        import numpy as np
+        rows = []
+        for i in range(399):
+            labels = ["UP", "DOWN", "FLAT"]
+            rows.append((0.34, 0.33, 0.33, labels[i % 3]))
+        self.assertEqual(calibration_module.temperature_scale(rows), (1.0, None, None))
+
 if __name__ == '__main__':
     unittest.main()
