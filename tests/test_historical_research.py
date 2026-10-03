@@ -59,6 +59,15 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertNotIn('using BTC futures as explicit spot proxy', source)
         self.assertIn('if ft is None or prev_f is None or ot is None or prev_oi is None:', source)
 
+    def test_spot_proxy_state_is_explicitly_disabled(self):
+        source = Path("src/historical_research.py").read_text(encoding="utf-8")
+        launcher = Path("scripts/historical_research_spot_fallback.py").read_text(encoding="utf-8")
+        self.assertIn("spot_proxy=False", source)
+        self.assertNotIn("if spot_proxy: basis=bd=0.0", source)
+        self.assertIn("hr.spot_proxy=False", launcher)
+        self.assertNotIn("hr.spot_proxy=not any(", launcher)
+
+
     def test_invalid_base_price_is_skipped(self):
         rows = [
             (0, [1, 2], 0.0),

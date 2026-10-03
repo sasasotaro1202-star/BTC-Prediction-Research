@@ -26,6 +26,7 @@ from sklearn.metrics import log_loss
 
 OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
+spot_proxy=False
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
 from http_resilience import request_json
@@ -254,7 +255,6 @@ def build_panel():
         body=(p-bo[-1])/p; upper=(bh[-1]-max(bo[-1],p))/p; lower=(min(bo[-1],p)-bl[-1])/p
         vr=float(np.mean(bv[-5:]))/max(1e-12,float(np.mean(bv[-15:-5]))); vt=float(np.mean(bv[-5:]))/max(1e-12,float(np.mean(bv[-10:]))); tr=float(np.mean(bt[-5:]))/max(1e-12,float(np.mean(bt[-15:-5]))); flow=2*float(np.sum(tb[-5:]))/max(1e-12,float(np.sum(bv[-5:])))-1
         basis=p/max(1e-12,s[-1])-1; bd=basis-(b[-2]/max(1e-12,s[-2])-1); mg=mark[-1]/p-1; pr=float(prem[-1]); er5,sr5,er10,sr10=ret(ec,5),ret(sc,5),ret(ec,10),ret(sc,10); erbtc5=er5-r5; srb5=sr5-r5
-        if spot_proxy: basis=bd=0.0
         ft=max([k for k in fk if k<=t],default=None)
         prev_f=max([k for k in fk if k<ft],default=None) if ft is not None else None
         ot=max([k for k in ok if k<=t],default=None)
