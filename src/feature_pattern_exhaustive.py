@@ -1,9 +1,9 @@
 """Exhaustive tractable BTC feature-pattern screen.
 
 Exact individual subset enumeration for 92 features is 2^92, so this research-only
-screen exhaustively evaluates every non-empty combination of eight semantic feature
-families (255 patterns) for both 5m and 10m using identical expanding chronological
-WFO folds. It never mutates production state.
+screen exhaustively evaluates every non-empty combination of seven disjoint semantic
+feature families (127 patterns) for both 5m and 10m using identical expanding
+chronological WFO folds. It never mutates production state.
 """
 from __future__ import annotations
 import csv
