@@ -125,12 +125,24 @@ jobs:
               raise SystemExit('feature pattern screen must remain research-only')
           if o.get('status') != 'COMPLETE' or o.get('pattern_count_expected') != 127:
               raise SystemExit(f"exhaustive feature pattern screen incomplete: {o.get('status')}")
+          if o.get('promotion_evidence_eligible') is not False:
+              raise SystemExit('feature pattern screen must never become promotion evidence')
+          if o.get('pit_evidence_status') != 'NON_STRICT_ARCHIVE_TIMING':
+              raise SystemExit('feature pattern PIT status contract missing')
+          target=o.get('target_contract', {})
+          if target.get('version') != 'label-policy-v1' or target.get('neutral_bps') != 2.0:
+              raise SystemExit('feature pattern target contract drifted')
           for h in ('5m','10m'):
               hz=o.get('horizons',{}).get(h,{})
               if hz.get('status') != 'COMPLETE' or hz.get('patterns_completed') != 127:
                   raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/127")
               if len(hz.get('all_patterns',[])) != 127:
                   raise SystemExit(f"{h}: all pattern records were not materialized")
+              sel=hz.get('selection_protocol', {})
+              if sel.get('selection_folds') != [0,1] or sel.get('frozen_holdout_fold') != 2 or sel.get('holdout_touched_by_ranking') is not False:
+                  raise SystemExit(f"{h}: frozen holdout selection contract invalid")
+              if not hz.get('top_20_by_development_logloss'):
+                  raise SystemExit(f"{h}: development-ranked candidate list missing")
           fine=o.get('fine_grained_ablation',{})
           for h in ('5m','10m'):
               fh=fine.get(h,{})
