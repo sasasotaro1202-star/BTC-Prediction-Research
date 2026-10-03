@@ -9,8 +9,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/btc_historical_research.yml'
+      - 'src/historical_research.py'
       - 'src/historical_research_runner.py'
       - 'scripts/historical_research_spot_fallback.py'
+      - 'tests/test_historical_research.py'
   schedule:
     - cron: '17 1,7,13,19 * * *'
   workflow_dispatch:
@@ -82,7 +84,10 @@ jobs:
           p=Path('data/historical_research/report.json')
           if not p.exists(): raise SystemExit('report.json was not produced')
           r=json.loads(p.read_text())
-          assert r.get('protocol_version') == 'historical-v6-microstructure-incremental-cache'
+          assert r.get('protocol_version') == 'historical-v7-feature-frontier'
+          assert r.get('feature_count') == 72
+          assert r.get('base_feature_count') == 41
+          assert r.get('frontier_feature_count') == 31
           assert set(r.get('horizons', {})) >= {'5m','10m'}
           for h in ('5m','10m'):
               hz=r['horizons'][h]
