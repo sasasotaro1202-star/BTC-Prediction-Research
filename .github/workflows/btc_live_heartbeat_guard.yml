@@ -1,8 +1,8 @@
 name: BTC Live Heartbeat Guard
 
 on:
-  schedule:
-    - cron: '2-59/5 * * * *'
+  # Automatic recovery is centralized in BTC Production Sentinel.
+  # Keep this controller manual-only as an independent emergency fallback.
   workflow_dispatch:
 
 permissions:
