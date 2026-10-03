@@ -3,13 +3,23 @@
   "status": "PASS",
   "pit_verified": true,
   "pit_verified_reason": "strict_binance_primary_scope_verified",
-  "checked_predictions": 677,
-  "verified_predictions": 508,
-  "verified_primary_predictions": 364,
+  "checked_predictions": 678,
+  "verified_predictions": 509,
+  "verified_primary_predictions": 365,
   "verified_fallback_predictions": 144,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 677,
+      "strict_primary_settled": 364,
+      "situation_meta_ready": 360,
+      "online_expert_ready": 360,
+      "situation_meta_rows_needed": 2640,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2640,
+      "estimated_days_lower_bound": 9.166666666666666
+    },
+    "10m": {
       "settled_predictions": 676,
       "strict_primary_settled": 363,
       "situation_meta_ready": 359,
@@ -18,16 +28,6 @@
       "online_expert_rows_needed": 0,
       "estimated_5m_cycles_lower_bound": 2641,
       "estimated_days_lower_bound": 9.17013888888889
-    },
-    "10m": {
-      "settled_predictions": 675,
-      "strict_primary_settled": 362,
-      "situation_meta_ready": 358,
-      "online_expert_ready": 358,
-      "situation_meta_rows_needed": 2642,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2642,
-      "estimated_days_lower_bound": 9.17361111111111
     },
     "15m": {
       "settled_predictions": 96,
@@ -134,9 +134,9 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-03T14:32:39.060135+00:00",
+  "generated_at_utc": "2026-10-03T14:36:57.628878+00:00",
   "history": {
-    "status": "RECORDED",
+    "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-03T14:30:00+00:00",
     "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261003T1430Z.json",
     "retention": 672,
