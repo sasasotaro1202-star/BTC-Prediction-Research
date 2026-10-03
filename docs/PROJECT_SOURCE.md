@@ -2,28 +2,31 @@
 
 ## Verified state 2026-10-03
 
-This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot. Recent implementation work includes:
+This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot. At this refresh, main HEAD is `f6c5b6319d2ff3913e4fbaeb0af5e115aa0096b6`.
+
+Recent implementation work includes:
 - repaired GitHub Pages workflow YAML quoting;
 - mobile dashboard idempotent refresh, 7-day range, stale-data indication and gap-safe plotting;
 - explicit extended-horizon pending state;
 - vector/mapping probability compatibility for extended research baselines;
 - legacy-schema compatibility for the experience ledger and trajectory exporter;
-- dashboard contract and restored-DB migration tests.
+- restored-DB trajectory regression coverage;
+- fixed the trajectory exporter migration path so every requested horizon now additively creates its canonical `settled_<horizon>_at_utc` column before the SELECT.
 
-Published production state at the latest completed Live Cycle checkpoint remains:
+Published production state at the latest completed successful Live Cycle checkpoint remains:
 - 5m: `bootstrap.soft_ensemble.v5.4`
 - 10m: `bootstrap.bootstrap_rf`
 - latest published prediction: `96970`
 - latest completed successful prediction cycle: `#1345` (`37095010446`), completed 2026-10-03T04:01:12Z
 - promotion state remains HOLD.
 
-A later manual Live Cycle `#1353` reached the production-critical guard suite successfully, then failed at trajectory export because the restored database lacked extended settlement columns. That failure is the reason for the current explicit trajectory-side additive migration fix. No historical rows were rewritten.
+Manual Live Cycles `#1353`, `#1354`, `#1355` and `#1356` failed on pre-fix revisions at trajectory export. The production-critical guard suite reached the trajectory step, where restored legacy databases lacked the extended settlement columns. The fix is now present in `f6c5b6319d2ff3913e4fbaeb0af5e115aa0096b6`; no historical prediction rows were rewritten.
 
-Unit Test evidence:
-- `BTC Unit Tests #2041`: 697 passed, 1 failed; the sole failure was a brittle dashboard contract assertion.
-- `BTC Ops Preflight #403`: SUCCESS after the workflow YAML repair.
-- `BTC Unit Tests #2044`: queued at the time of this source refresh after the restored-DB trajectory fix.
-- Do not treat queued/in-progress runs as verified.
+Verification evidence after the fix:
+- `BTC Unit Tests #2049` on `f6c5b6319d2ff3913e4fbaeb0af5e115aa0096b6`: queued at this snapshot and therefore NOT YET VERIFIED.
+- `BTC Ops Preflight #405` on the same SHA: queued at this snapshot and therefore NOT YET VERIFIED.
+- The pre-fix Live Cycle failures remain recorded as failures and are not relabeled as success.
+- A fresh successful Live Cycle on the fixed SHA has not yet been observed in this snapshot.
 
 Strict PIT checkpoint remains HOLD because Binance-primary verified rows are `273/300`. The recent 20-prediction window is strict-PIT clean for both 5m and 10m, while legacy pre-contract rows remain quarantined.
 
