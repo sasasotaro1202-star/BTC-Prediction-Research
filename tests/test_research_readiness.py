@@ -76,6 +76,20 @@ class TestResearchReadiness(unittest.TestCase):
         self.assertFalse(result["calibration"]["all_horizons_ready"])
         self.assertEqual(result["calibration"]["horizons"]["10m"]["remaining_rows"], 8)
 
+    def test_calibration_waits_on_generation_or_artifact_hash_mismatch(self):
+        result = build_readiness(
+            {"status": "PASS"},
+            {"ok": True, "checks": {"5m": {}, "10m": {}}},
+            {"pit_verified": True, "verified_primary_predictions": 500, "min_strict_pit_rows": 300, "violation_count": 0},
+            {"promotion_status": "HOLD"},
+            {
+                "5m": {"status": "READY", "n_settled": 500, "model_version": "old.v1", "binding_ok": False},
+                "10m": {"status": "READY", "n_settled": 500, "model_version": "current.v1", "binding_ok": True},
+            },
+        )
+        self.assertEqual(result["readiness_state"], "CALIBRATION_COLLECTION")
+        self.assertFalse(result["calibration"]["all_horizons_ready"])
+
 
 if __name__ == "__main__":
     unittest.main()
