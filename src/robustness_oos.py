@@ -53,8 +53,9 @@ def _regimes(rows):
         out.append(f"{trend}|{vol}")
     return out
 
-def robust_generation_prefix(horizon, generation):
-    return f"{horizon}:{generation}|%"
+def robust_generation_token(horizon, generation):
+    """Return the exact horizon:model token stored in a combined generation string."""
+    return f"{horizon}:{generation}"
 
 
 def current_generation(horizon):
@@ -71,16 +72,19 @@ def load(h):
     generation=current_generation(h)
     if not generation:
         return []
-    prefix=robust_generation_prefix(h, generation)
+    token=robust_generation_token(h, generation)
+    # model_version is a combined, horizon-qualified bundle such as
+    # "5m:...|10m:...". Match the exact token anywhere in the bundle so the
+    # secondary 10m segment is not silently excluded by a first-token prefix.
     with sqlite3.connect(DB) as con:
         rows=con.execute(f"""
           SELECT prediction_id,created_at_utc,feature_json,{actual},
                  p_up_{h},p_down_{h},p_flat_{h},model_version,scenario_json
           FROM predictions
           WHERE {actual} IS NOT NULL
-            AND model_version LIKE ?
+            AND instr('|' || model_version || '|', '|' || ? || '|') > 0
           ORDER BY created_at_utc,prediction_id
-        """,(prefix,)).fetchall()
+        """,(token,)).fetchall()
     result=[]
     for r in rows:
         try:
