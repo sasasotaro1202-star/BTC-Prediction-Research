@@ -382,6 +382,8 @@ def load_variants(horizon: str):
         "cross_venue_no_oi": [],
         "cross_venue": [],
         "orderbook_v2": [],
+        "orderbook_v3": [],
+        "orderbook_v2_v3": [],
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]))
@@ -506,6 +508,7 @@ def coverage_diagnostics(horizon: str) -> dict:
                 *EXTENDED_FEATURES,
                 *CROSS_VENUE,
                 *ORDERBOOK_V2,
+                *ORDERBOOK_V3,
             )
         },
         "variant_coverage": {},
@@ -832,7 +835,7 @@ def main():
     for h in HORIZONS:
         variants = load_variants(h)
         coverage = coverage_diagnostics(h)
-        family_count = max(1, len(factories()) * 9)
+        family_count = max(1, len(factories()) * 11)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
@@ -846,6 +849,8 @@ def main():
             "cross_venue_no_oi_rows": len(variants["cross_venue_no_oi"]),
             "cross_venue_rows": len(variants["cross_venue"]),
             "orderbook_v2_rows": len(variants["orderbook_v2"]),
+            "orderbook_v3_rows": len(variants["orderbook_v3"]),
+            "orderbook_v2_v3_rows": len(variants["orderbook_v2_v3"]),
             "binance_core": evaluate_variant(
                 h, variants["binance_core"], corrected_alpha=corrected_alpha
             ),
@@ -872,6 +877,12 @@ def main():
             ),
             "orderbook_v2": evaluate_variant(
                 h, variants["orderbook_v2"], corrected_alpha=corrected_alpha
+            ),
+            "orderbook_v3": evaluate_variant(
+                h, variants["orderbook_v3"], corrected_alpha=corrected_alpha
+            ),
+            "orderbook_v2_v3": evaluate_variant(
+                h, variants["orderbook_v2_v3"], corrected_alpha=corrected_alpha
             ),
             "corrected_alpha": corrected_alpha,
         }
