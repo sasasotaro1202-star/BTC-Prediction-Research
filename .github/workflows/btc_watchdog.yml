@@ -125,7 +125,11 @@ jobs:
             if [ -z "$main_sha" ] || [ -z "$active_head" ] || [ "$active_head" = "$main_sha" ]; then
               return 1
             fi
-            compare=$(gh api "/repos/${REPO}/compare/${active_head}...${main_sha}" 2>/dev/null || true)
+            if ! compare="$(gh api "/repos/${REPO}/compare/${active_head}...${main_sha}" 2>/dev/null)"; then
+              echo "ERROR: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is degraded." >&2
+              watchdog_degraded=1
+              return 1
+            fi
             if [ -z "$compare" ]; then
               echo "ERROR: unable to compare active head ${active_head} with current main ${main_sha}; stale-head cancellation is degraded." >&2
               watchdog_degraded=1
