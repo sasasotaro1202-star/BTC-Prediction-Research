@@ -1195,6 +1195,15 @@ jobs:
             data/live_cycle_status.json
           if-no-files-found: error
           retention-days: 3
+
+      - name: Upload latest BTC horizon chart artifact
+        if: hashFiles('docs/horizon_curve_latest.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-horizon-chart
+          path: docs/horizon_curve_latest.json
+          if-no-files-found: error
+          retention-days: 3
       - name: Check repository diff before commit
         run: git diff --check
       - name: Commit BTC research state with conflict-safe merge retry
@@ -1215,6 +1224,7 @@ jobs:
           stage_research_state() {
             prune_pit_history
             git add -- data/predictions.db.gz data/live_cycle_status.json
+            if [ -f docs/horizon_curve_latest.json ]; then git add -- docs/horizon_curve_latest.json; fi
             for path in \
               data/historical_research/bootstrap_status.json \
               data/historical_research/research_health.json \
@@ -1256,6 +1266,10 @@ jobs:
             if [ -f data/live_cycle_status.json ]; then
               cp -a data/live_cycle_status.json "$STATE_ROOT/data/live_cycle_status.json"
             fi
+            if [ -f docs/horizon_curve_latest.json ]; then
+              mkdir -p "$STATE_ROOT/docs"
+              cp -a docs/horizon_curve_latest.json "$STATE_ROOT/docs/horizon_curve_latest.json"
+            fi
             for path in \
               data/historical_research/bootstrap_status.json \
               data/historical_research/research_health.json \
@@ -1290,6 +1304,10 @@ jobs:
             cp -a "$STATE_ROOT/data/predictions.db.gz" data/predictions.db.gz || return 1
             if [ -f "$STATE_ROOT/data/live_cycle_status.json" ]; then
               cp -a "$STATE_ROOT/data/live_cycle_status.json" data/live_cycle_status.json || return 1
+            fi
+            if [ -f "$STATE_ROOT/docs/horizon_curve_latest.json" ]; then
+              mkdir -p docs
+              cp -a "$STATE_ROOT/docs/horizon_curve_latest.json" docs/horizon_curve_latest.json || return 1
             fi
             for path in \
               data/historical_research/bootstrap_status.json \
