@@ -122,8 +122,23 @@ function drawChart(points){
   const first=points[0],last=points[points.length-1];s+=`<text x="${L}" y="${H-12}" fill="#8b98a8" font-size="11">${fmtTime(first?.prediction_time_utc)}</text><text x="${W-R}" y="${H-12}" text-anchor="end" fill="#8b98a8" font-size="11">${fmtTime(last?.prediction_time_utc)}</text>`;
   svg.innerHTML=s;lastPoints=points;
 }
+function clearCards(message){
+  document.getElementById("latestTime").textContent="—";
+  document.getElementById("direction").textContent="—";
+  document.getElementById("up").textContent="—";
+  document.getElementById("flat").textContent="—";
+  document.getElementById("down").textContent="—";
+  document.getElementById("meta").textContent=message||"—";
+}
 function updateCards(){
-  const rows=horizonRows(),last=rows[rows.length-1];if(!last)return;
+  const rows=horizonRows(),last=rows[rows.length-1];
+  if(!last){
+    const item=payload?.horizons?.[currentH];
+    clearCards(item?.availability_status==="PENDING_FIRST_LIVE_SAMPLE"
+      ? `${currentH}: 最初の実運用サンプルを待機中。過去値は補間しません。`
+      : `${currentH}: データなし`);
+    return;
+  }
   document.getElementById("latestTime").textContent=fmtTime(last.prediction_time_utc);
   document.getElementById("direction").textContent=last.predicted_direction||"—";
   document.getElementById("up").textContent=pct(last.p_up);document.getElementById("flat").textContent=pct(last.p_flat);document.getElementById("down").textContent=pct(last.p_down);
@@ -135,9 +150,10 @@ function updateLegend(){
 }
 function updateSummary(){
   const body=document.getElementById("summary");body.innerHTML=HORIZONS.map(h=>{
-    const rows=payload.horizons[h]?.points||[],p=rows[rows.length-1];
-    if(!p)return "";
-    return `<tr class="${h==="5m"?"primary":h==="10m"?"primary":"research"}"><td>${h}${h==="5m"?" ★":""}</td><td>${pct(p.p_up)}</td><td>${pct(p.p_flat)}</td><td>${pct(p.p_down)}</td><td>${p.research_only?"Research":"Production"}</td></tr>`;
+    const item=payload.horizons[h]||{},rows=item.points||[],p=rows[rows.length-1];
+    const cls=h==="5m"||h==="10m"?"primary":"research";
+    if(!p)return `<tr class="${cls}"><td>${h}${h==="5m"?" ★":""}</td><td>—</td><td>—</td><td>—</td><td>${item.availability_status==="PENDING_FIRST_LIVE_SAMPLE"?"待機中":"データなし"}</td></tr>`;
+    return `<tr class="${cls}"><td>${h}${h==="5m"?" ★":""}</td><td>${pct(p.p_up)}</td><td>${pct(p.p_flat)}</td><td>${pct(p.p_down)}</td><td>${p.research_only?"Research":"Production"}</td></tr>`;
   }).join("");
 }
 function updateStatus(){
