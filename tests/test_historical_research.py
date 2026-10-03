@@ -31,11 +31,11 @@ class HistoricalTargetTests(unittest.TestCase):
 
     def test_feature_frontier_schema_is_distinct_from_production_schema(self):
         self.assertEqual(len(hr.BASE_FEATURES), 41)
-        self.assertEqual(len(hr.FRONTIER_FEATURES), 31)
-        self.assertEqual(len(hr.FEATURES), 72)
+        self.assertEqual(len(hr.FRONTIER_FEATURES), 51)
+        self.assertEqual(len(hr.FEATURES), 92)
         self.assertEqual(len(set(hr.FEATURES)), len(hr.FEATURES))
         self.assertEqual(hr.FEATURES[:41], hr.BASE_FEATURES)
-        self.assertTrue({"rsi14","bb_z60","ema_slope30","autocorr5","oi_x_return5"}.issubset(set(hr.FRONTIER_FEATURES)))
+        self.assertTrue({"rsi14","bb_z60","ema_slope30","oi_x_return5","ret120","rv120","vol_of_vol20","trend_efficiency60","garman_klass_vol20"}.issubset(set(hr.FRONTIER_FEATURES)))
 
     def test_feature_frontier_helpers_are_finite_and_shape_safe(self):
         prices=np.linspace(100.0,110.0,121)
