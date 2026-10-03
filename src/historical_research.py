@@ -32,6 +32,7 @@ CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
 from http_resilience import request_json
 DAYS=45; MIN_TRAIN=12000; TEST_BLOCK=5000; EMBARGO=10
+MAX_OI_STALENESS_MS=16*60_000
 TARGETS={"5m":5,"10m":10}; SYMS={"btc":"BTCUSDT","eth":"ETHUSDT","sol":"SOLUSDT"}
 
 BASE_FEATURES=["ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30","rangepos10","rangepos30","body","upper","lower","volratio","voltrend","tradesratio","takerimb","basis","basis_delta","mark_gap","premium","eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","hour_sin","hour_cos","dow_sin","dow_cos","funding","funding_delta","oi_change","oi_z"]
@@ -333,6 +334,9 @@ def build_panel():
         prev_f=max([k for k in fk if k<ft],default=None) if ft is not None else None
         ot=max([k for k in ok if k<=t],default=None)
         prev_oi=max([k for k in ok if k<ot],default=None) if ot is not None else None
+        if ot is not None and int(t)-int(ot) > MAX_OI_STALENESS_MS:
+            ot=None
+            prev_oi=None
         if ft is None or prev_f is None or ot is None or prev_oi is None:
             # Strict availability gate: an unavailable source is UNKNOWN, not zero.
             continue
