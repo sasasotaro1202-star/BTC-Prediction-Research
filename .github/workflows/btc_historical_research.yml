@@ -121,13 +121,13 @@ jobs:
           o=json.loads(p.read_text(encoding='utf-8'))
           if o.get('research_only') is not True or o.get('production_changed') is not False:
               raise SystemExit('feature pattern screen must remain research-only')
-          if o.get('status') != 'COMPLETE' or o.get('pattern_count_expected') != 255:
+          if o.get('status') != 'COMPLETE' or o.get('pattern_count_expected') != 511:
               raise SystemExit(f"exhaustive feature pattern screen incomplete: {o.get('status')}")
           for h in ('5m','10m'):
               hz=o.get('horizons',{}).get(h,{})
-              if hz.get('status') != 'COMPLETE' or hz.get('patterns_completed') != 255:
+              if hz.get('status') != 'COMPLETE' or hz.get('patterns_completed') != 511:
                   raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/255")
-              if len(hz.get('all_patterns',[])) != 255:
+              if len(hz.get('all_patterns',[])) != 511:
                   raise SystemExit(f"{h}: all pattern records were not materialized")
           print('exhaustive feature-family pattern screen: COMPLETE')
           PY
@@ -165,7 +165,7 @@ jobs:
               tar -xf /tmp/btc_local_historical_oos.tar -C data/historical_research
             fi
             git rm -r --cached --ignore-unmatch data/historical_research/cache data/historical_research/aligned_panel.csv
-            git add data/historical_research/report.json data/historical_research/oos_*.csv
+            git add data/historical_research/report.json data/historical_research/feature_pattern_exhaustive.json data/historical_research/oos_*.csv
             git diff --cached --quiet || git commit -m 'Merge BTC historical research state safely'
             sleep $((5 * attempt))
           done
