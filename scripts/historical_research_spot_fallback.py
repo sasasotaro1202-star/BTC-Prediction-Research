@@ -60,7 +60,8 @@ def _rows(urls,start_ms,end_ms):
                 if not row:continue
                 try:ts=hr._normalize_epoch_ms(row[0])
                 except (ValueError,TypeError):continue
-                if start_ms<=ts<end_ms:out.append(row)
+                if start_ms<=ts<end_ms:
+                    normalized=list(row); normalized[0]=str(ts); out.append(normalized)
     return out
 
 

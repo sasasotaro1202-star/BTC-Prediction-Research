@@ -74,7 +74,8 @@ def _zip_rows(urls,start_ms,end_ms):
                 if not row:continue
                 try:ts=hr._normalize_epoch_ms(row[0])
                 except (ValueError,TypeError):continue
-                if start_ms<=ts<end_ms:rows.append(row)
+                if start_ms<=ts<end_ms:
+                    normalized=list(row); normalized[0]=str(ts); rows.append(normalized)
     return rows
 
 def _funding_zip_rows(urls,start_ms,end_ms):
