@@ -30,7 +30,7 @@ def _ensure_horizon_columns(con, horizons):
             ("actual_price_", "REAL"),
             ("actual_direction_", "TEXT"),
             ("correct_", "INTEGER"),
-            # settlement timestamps use canonical settled_<horizon>_at_utc names.
+            ("settled_", "TEXT"),
         ):
             name = prefix + horizon
             if prefix == "settled_":
