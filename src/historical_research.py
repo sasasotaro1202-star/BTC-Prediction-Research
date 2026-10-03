@@ -75,11 +75,27 @@ def req_json(url,timeout=30,retries=5):
 
 def _cache_path(kind,symbol,day): return CACHE/f"{kind}_{symbol}_{day:%Y%m%d}.json"
 
+def _load_nonempty_cached_rows(path):
+    """Treat empty/corrupt historical cache entries as invalid and retryable."""
+    if not path.exists():
+        return None
+    try:
+        cached=json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(cached,list) and cached:
+            return cached
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return None
+
 def fetch_klines_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
     path=_cache_path(kind,symbol,day)
-    if path.exists():
-        try:return json.loads(path.read_text())
-        except Exception:pass
+    cached=_load_nonempty_cached_rows(path)
+    if cached is not None:
+        return cached
     base="https://fapi.binance.com" if endpoint.startswith("/fapi") else "https://api.binance.com"
     out=[]; cur=start_ms
     while cur<end_ms:
@@ -92,7 +108,9 @@ def fetch_klines_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
         cur=last+60_000
         if len(rows)<limit:break
     d={int(r[0]):r for r in out}; out=[d[k] for k in sorted(d)]
-    path.write_text(json.dumps(out),encoding="utf-8"); return out
+    if out:
+        path.write_text(json.dumps(out),encoding="utf-8")
+    return out
 
 def fetch_klines_range(symbol,start,end,endpoint,kind,limit):
     jobs=[]; day=start.replace(hour=0,minute=0,second=0,microsecond=0)
