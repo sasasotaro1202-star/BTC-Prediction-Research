@@ -580,8 +580,8 @@ def main() -> int:
         "features": list(RICH_FEATURES),
         "legacy_feature_indices": list(LEGACY_INDICES),
         "horizons": {
-            "5m": evaluate_horizon("5m", *X5),
-            "10m": evaluate_horizon("10m", *X10),
+            "5m": evaluate_horizon("5m", X5, y5, t5),
+            "10m": evaluate_horizon("10m", X10, y10, t10),
         },
     }
     OUT.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
