@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>BTC Prediction Monitor</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#121821;--line:#273241;--text:#e9eef5;--muted:#8b98a8;--accent:#dfe7ef}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:auto;padding:14px 12px 32px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}
+h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px}.badge{border:1px solid #425064;border-radius:999px;padding:5px 9px;font-size:11px;white-space:nowrap}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls label{color:var(--muted);font-size:11px;display:block;margin-bottom:4px}
+select,button{width:100%;border:1px solid #334051;background:#0f151d;color:var(--text);border-radius:10px;min-height:40px;padding:8px 10px;font:inherit}
+.range{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:9px}.range button{min-height:34px;font-size:12px}.range button.active{border-color:#8d9aac;background:#1b2430}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.card{background:#0f151d;border:1px solid var(--line);border-radius:11px;padding:9px}.k{color:var(--muted);font-size:10px}.v{font-size:17px;font-weight:600;margin-top:2px}.small{font-size:11px;color:var(--muted)}
+.chartWrap{position:relative;height:420px;margin-top:4px}.chart{width:100%;height:100%;display:block;touch-action:none}.tip{position:absolute;pointer-events:none;display:none;background:#0a0f15;border:1px solid #536174;border-radius:9px;padding:8px;font-size:11px;min-width:170px;box-shadow:0 8px 28px #0008}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;color:var(--muted);font-size:11px}.legend span{display:flex;gap:5px;align-items:center}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.status{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status .item{border:1px solid var(--line);border-radius:10px;padding:9px}.status .label{font-size:10px;color:var(--muted)}.status .value{margin-top:3px}
+.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}.table th{color:var(--muted);font-weight:500}.primary{font-weight:700}.research{color:#9aa6b5}
+.notice{color:var(--muted);font-size:12px}.error{color:#ffb8b8}
+@media(max-width:760px){main{padding:10px 9px 24px}.top{align-items:center}.controls{grid-template-columns:1fr 1fr}.cards{grid-template-columns:repeat(3,1fr)}.chartWrap{height:330px}.status{grid-template-columns:1fr}.range{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:430px){.cards{grid-template-columns:repeat(2,1fr)}.controls{grid-template-columns:1fr}.range button{font-size:11px;padding:5px}.chartWrap{height:300px}h1{font-size:18px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div><h1>BTC Prediction Monitor</h1><div class="sub">5m Production Champion → 10m → 15m → 30m → 1h → 3h → 6h → 12h → 24h</div></div>
+    <div class="badge">5m PRIMARY</div>
+  </div>
+
+  <section class="panel">
+    <div class="controls">
+      <div><label>時間軸</label><select id="horizon"></select></div>
+      <div><label>表示</label><select id="metric">
+        <option value="prob">確率（DOWN / FLAT / UP）</option>
+        <option value="price">価格（基準 / 実績）</option>
+        <option value="accuracy">正解率（決済済み）</option>
+      </select></div>
+    </div>
+    <div class="range" id="range"></div>
+  </section>
+
+  <section class="panel">
+    <div class="cards">
+      <div class="card"><div class="k">最新時刻</div><div id="latestTime" class="v">—</div></div>
+      <div class="card"><div class="k">予測方向</div><div id="direction" class="v">—</div></div>
+      <div class="card"><div class="k">UP</div><div id="up" class="v">—</div></div>
+      <div class="card"><div class="k">FLAT</div><div id="flat" class="v">—</div></div>
+      <div class="card"><div class="k">DOWN</div><div id="down" class="v">—</div></div>
+    </div>
+    <div class="small" id="meta" style="margin-top:8px">—</div>
+    <div class="chartWrap">
+      <svg id="chart" class="chart" viewBox="0 0 1000 420" preserveAspectRatio="none" aria-label="BTC prediction chart"></svg>
+      <div id="tip" class="tip"></div>
+    </div>
+    <div id="legend" class="legend"></div>
+  </section>
+
+  <section class="panel">
+    <div class="status">
+      <div class="item"><div class="label">Live cycle</div><div id="liveStatus" class="value">—</div></div>
+      <div class="item"><div class="label">PIT</div><div id="pitStatus" class="value">—</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div style="font-weight:600;margin-bottom:6px">全時間軸 最新値</div>
+    <div class="notice">5m/10mはPrimary、15m〜24hはResearch-only。未決済は未決済のまま表示します。</div>
+    <table class="table"><thead><tr><th>Horizon</th><th>UP</th><th>FLAT</th><th>DOWN</th><th>状態</th></tr></thead><tbody id="summary"></tbody></table>
+  </section>
+
+  <div id="message" class="notice">Loading…</div>
+</main>
+
+<script>
+const HORIZONS=["5m","10m","15m","30m","1h","3h","6h","12h","24h"];
+const RANGES=[["1h",3600000],["6h",21600000],["24h",86400000],["3d",259200000],["All",null]];
+let payload=null,currentH="5m",currentMetric="prob",currentRange="24h",svg=document.getElementById("chart"),tip=document.getElementById("tip"),lastPoints=[];
+
+function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",""":"&quot;"}[m]))}
+function fmtTime(s){if(!s)return "—";const d=new Date(s);return d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+function pct(v){return Number.isFinite(v)?(v*100).toFixed(1)+"%":"—"}
+function money(v){return Number.isFinite(v)?v.toLocaleString("en-US",{maximumFractionDigits:2}):"—"}
+function horizonRows(){return payload?.horizons?.[currentH]?.points||[]}
+function rangeRows(){
+  const rows=horizonRows(); if(!rows.length)return [];
+  if(currentRange==="All")return rows;
+  const ms=RANGES.find(x=>x[0]===currentRange)[1], last=new Date(rows[rows.length-1].prediction_time_utc).getTime();
+  return rows.filter(r=>last-new Date(r.prediction_time_utc).getTime()<=ms);
+}
+function setOptions(){
+  const h=document.getElementById("horizon");
+  HORIZONS.forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x+(x==="5m"?"  (PRIMARY)":"");h.appendChild(o)});
+  h.value=currentH;
+  const rg=document.getElementById("range");
+  RANGES.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.dataset.r=x[0];b.onclick=()=>{currentRange=x[0];document.querySelectorAll("#range button").forEach(z=>z.classList.toggle("active",z.dataset.r===currentRange));render()};rg.appendChild(b)});
+  rg.querySelector('[data-r="24h"]').classList.add("active");
+  h.onchange=e=>{currentH=e.target.value;render()};
+  document.getElementById("metric").onchange=e=>{currentMetric=e.target.value;render()};
+}
+function linePath(points,fn,x0,y0,w,h,yMin,yMax){
+  let path=""; let valid=0;
+  points.forEach((p,i)=>{const y=fn(p);if(y==null||!Number.isFinite(y))return;const x=x0+(points.length===1?0:(i/(points.length-1))*w);const yy=y0+h-(y-yMin)/(yMax-yMin)*h;path+=(valid++?" L":"M")+x.toFixed(2)+" "+yy.toFixed(2)});
+  return path;
+}
+function drawChart(points){
+  const W=1000,H=420,L=54,R=18,T=18,B=42,w=W-L-R,h=H-T-B;
+  let vals=[], f=[], series=[];
+  if(currentMetric==="prob"){series=[["p_down","DOWN","#8b98a8"],["p_flat","FLAT","#d7dee8"],["p_up","UP","#ffffff"]];f=k=>p=>p[k];vals=points.flatMap(p=>["p_down","p_flat","p_up"].map(k=>p[k]))}
+  if(currentMetric==="price"){series=[["base_price","BASE","#8b98a8"],["actual_price","ACTUAL","#ffffff"]];f=k=>p=>p[k];vals=points.flatMap(p=>[p.base_price,p.actual_price]).filter(Number.isFinite)}
+  if(currentMetric==="accuracy"){series=[["correct","CORRECT","#ffffff"]];f=k=>p=>p.correct==null?null:p.correct;vals=points.map(p=>p.correct).filter(v=>v!=null)}
+  const ymin=currentMetric==="prob"||currentMetric==="accuracy"?0:Math.min(...vals,0);
+  const ymax=currentMetric==="prob"||currentMetric==="accuracy"?1:(Math.max(...vals,1)*(1+0.02));
+  let s="<rect x='0' y='0' width='1000' height='420' fill='transparent'/>";
+  for(let i=0;i<=4;i++){const y=T+h-i*h/4;const val=ymin+(ymax-ymin)*i/4;s+=`<line x1='${L}' x2='${W-R}' y1='${y}' y2='${y}' stroke='#273241' stroke-width='1'/><text x='${L-8}' y='${y+4}' text-anchor='end' fill='#8b98a8' font-size='11'>${currentMetric==="prob"||currentMetric==="accuracy"?pct(val):money(val)}</text>`}
+  if(points.length>1){
+    series.forEach(([k,label,stroke])=>{s+=`<path d="${linePath(points,p=>f(k)(p),L,T,w,h,ymin,ymax)}" fill="none" stroke="${stroke}" stroke-width="${currentH==="5m"?3:2}" stroke-linejoin="round" stroke-linecap="round"/>`})
+  }
+  const first=points[0],last=points[points.length-1];s+=`<text x="${L}" y="${H-12}" fill="#8b98a8" font-size="11">${fmtTime(first?.prediction_time_utc)}</text><text x="${W-R}" y="${H-12}" text-anchor="end" fill="#8b98a8" font-size="11">${fmtTime(last?.prediction_time_utc)}</text>`;
+  svg.innerHTML=s;lastPoints=points;
+}
+function updateCards(){
+  const rows=horizonRows(),last=rows[rows.length-1];if(!last)return;
+  document.getElementById("latestTime").textContent=fmtTime(last.prediction_time_utc);
+  document.getElementById("direction").textContent=last.predicted_direction||"—";
+  document.getElementById("up").textContent=pct(last.p_up);document.getElementById("flat").textContent=pct(last.p_flat);document.getElementById("down").textContent=pct(last.p_down);
+  document.getElementById("meta").textContent=`target ${fmtTime(last.target_time_utc)} · BTC ${money(last.base_price)} · ${last.settled?"settled":"not settled"} · ${last.research_only?"research-only":"production"}`;
+}
+function updateLegend(){
+  const l=document.getElementById("legend");let items=currentMetric==="prob"?[["DOWN","#8b98a8"],["FLAT","#d7dee8"],["UP","#ffffff"]]:currentMetric==="price"?[["BASE","#8b98a8"],["ACTUAL","#ffffff"]]:[["CORRECT","#ffffff"]];
+  l.innerHTML=items.map(x=>`<span><i class="dot" style="background:${x[1]}"></i>${x[0]}</span>`).join("");
+}
+function updateSummary(){
+  const body=document.getElementById("summary");body.innerHTML=HORIZONS.map(h=>{
+    const rows=payload.horizons[h]?.points||[],p=rows[rows.length-1];
+    if(!p)return "";
+    return `<tr class="${h==="5m"?"primary":h==="10m"?"primary":"research"}"><td>${h}${h==="5m"?" ★":""}</td><td>${pct(p.p_up)}</td><td>${pct(p.p_flat)}</td><td>${pct(p.p_down)}</td><td>${p.research_only?"Research":"Production"}</td></tr>`;
+  }).join("");
+}
+function updateStatus(){
+  document.getElementById("liveStatus").textContent=payload.live_cycle?(`#${payload.live_cycle.latest_prediction_id||"—"} · ${fmtTime(payload.live_cycle.completed_at_utc)}`):"UNKNOWN";
+  document.getElementById("pitStatus").textContent=payload.pit?(`${payload.pit.verified_primary_predictions||0}/${payload.pit.min_strict_pit_rows||0} primary PIT · ${payload.pit.pit_verified?"VERIFIED":"HOLD"}`):"UNKNOWN";
+}
+function render(){const rows=rangeRows();updateCards();drawChart(rows);updateLegend();updateSummary()}
+svg.addEventListener("mousemove",e=>{
+  if(!lastPoints.length)return;const rect=svg.getBoundingClientRect();const rel=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));const i=Math.min(lastPoints.length-1,Math.max(0,Math.round(rel*(lastPoints.length-1)))),p=lastPoints[i];
+  tip.style.display="block";tip.style.left=Math.min(e.clientX-rect.left+10,rect.width-190)+"px";tip.style.top=Math.max(4,e.clientY-rect.top-20)+"px";
+  tip.innerHTML=`<b>${fmtTime(p.prediction_time_utc)}</b><br>DOWN ${pct(p.p_down)} · FLAT ${pct(p.p_flat)} · UP ${pct(p.p_up)}<br>Direction: ${esc(p.predicted_direction)}<br>BTC: ${money(p.base_price)} · ${p.settled?"settled":"pending"}`;
+});
+svg.addEventListener("mouseleave",()=>tip.style.display="none");
+async function load(){
+  try{
+    const [t,l,p]=await Promise.all([
+      fetch("data/forecast_trajectory.json",{cache:"no-store"}),
+      fetch("data/live_cycle_status.json",{cache:"no-store"}).catch(()=>null),
+      fetch("data/historical_research/pit_oos_audit.json",{cache:"no-store"}).catch(()=>null)
+    ]);
+    if(!t.ok)throw new Error("forecast trajectory is not available yet");
+    payload=await t.json();
+    payload.live_cycle=l&&l.ok?await l.json():null;payload.pit=p&&p.ok?await p.json():null;
+    if(!payload.horizons)throw new Error("trajectory schema invalid");
+    setOptions();updateStatus();render();document.getElementById("message").textContent=`Data generated: ${fmtTime(payload.generated_at_utc)} · ${payload.source_of_truth||"canonical ledger"}`;
+  }catch(e){document.getElementById("message").className="error";document.getElementById("message").textContent="データ未生成: "+e.message}
+}
+load();
+</script>
+</body>
+</html>
