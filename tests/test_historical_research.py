@@ -1,4 +1,5 @@
 import unittest
+import numpy as np
 from src import historical_research as hr
 
 
