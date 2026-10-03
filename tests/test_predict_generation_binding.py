@@ -60,10 +60,18 @@ class TestPredictGenerationBinding(unittest.TestCase):
                         'n': 800,
                         'status': 'accepted',
                         'model_version': 'generation-A',
+                        'model_sha256': 'b' * 64,
                     }),
                     encoding='utf-8',
                 )
-                with patch.object(predict, 'regver', return_value='generation-A'):
+                bundle = type(
+                    'Bundle',
+                    (),
+                    {'model_version': 'generation-A', 'sha256': 'b' * 64},
+                )()
+                with patch.object(predict, 'regver', return_value='generation-A'), patch.object(
+                    predict, 'resolve_production_model', return_value=bundle
+                ):
                     self.assertAlmostEqual(predict.load_blend_weight('5m'), 0.35)
             finally:
                 predict.DB = old_db
