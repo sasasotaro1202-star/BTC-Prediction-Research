@@ -181,7 +181,7 @@ class TestCalibration(unittest.TestCase):
         rows = [
             ('2026-10-03T08:00:00+00:00', '2026-10-03T08:05:00+00:00', 0.80, 0.10, 0.10, 'UP', '{"production_mode":"coinbase_fallback"}'),
             ('2026-10-03T08:00:00+00:00', '2026-10-03T08:05:00+00:00', 0.70, 0.20, 0.10, 'UP', '{"production_mode":"binance_primary","decision_time_utc":"2026-10-03T08:00:00+00:00","provenance":{"available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","sources":{"binance_futures":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_depth":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_taker":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_premium":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"}}}}}'),
-+        ]
+        ]
         con = _FakeConnection(rows)
         out = calibration._settled_rows(
             con, '5m', 'actual_direction_5m', 'bootstrap.example.v1'
@@ -203,8 +203,8 @@ class TestCalibration(unittest.TestCase):
     def test_settled_rows_matches_10m_segment_in_combined_model_version(self):
         rows = [
             ('2026-10-03T08:00:00+00:00', '2026-10-03T08:10:00+00:00', 0.80, 0.10, 0.10, 'DOWN', '{"production_mode":"binance_primary","decision_time_utc":"2026-10-03T08:00:00+00:00","provenance":{"available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","sources":{"binance_futures":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_depth":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_taker":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"},"binance_premium":{"status":"ok","available_at":"2026-10-03T08:00:00+00:00","retrieved_at":"2026-10-03T08:00:00+00:00","prediction_cutoff":"2026-10-03T08:00:00+00:00","event_time":"2026-10-03T08:00:00+00:00"}}}}'),
-+            ('2026-10-03T08:00:00+00:00', '2026-10-03T08:10:00+00:00', 0.10, 0.20, 0.70, 'UP', '{"production_mode":"coinbase_fallback"}'),
-+        ]
+            ('2026-10-03T08:00:00+00:00', '2026-10-03T08:10:00+00:00', 0.10, 0.20, 0.70, 'UP', '{"production_mode":"coinbase_fallback"}'),
+        ]
         con = _FakeConnection(rows)
         out = calibration._settled_rows(
             con, '10m', 'actual_direction_10m', 'bootstrap.example.v1'
