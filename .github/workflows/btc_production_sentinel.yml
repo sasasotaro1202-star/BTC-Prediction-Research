@@ -1,10 +1,11 @@
 name: BTC Production Sentinel
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/btc_production_sentinel.yml'
+  # The Live Cycle is the sole production writer. Sentinel is a lightweight
+  # recovery/audit controller and is intentionally offset from the 5-minute
+  # Live schedule.
+  schedule:
+    - cron: '4-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -193,16 +194,3 @@ jobs:
             echo "Production heartbeat healthy, deferred recovery conditions not met, or Live Cycle already active."
           fi
 
-      - name: Spawn next sentinel generation
-        shell: bash
-        run: |
-          set -euo pipefail
-          . scripts/ci_network_retry.sh
-          echo "Sleeping briefly before spawning next sentinel generation."
-          sleep 240
-          if ci_gh_api_get "/repos/$REPO/actions/workflows/btc_production_sentinel.yml/dispatches" --method POST -f ref=main >/dev/null; then
-            echo "Next sentinel generation dispatch accepted."
-          else
-            echo "ERROR: next sentinel generation dispatch failed." >&2
-            exit 1
-          fi
