@@ -26,6 +26,7 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(fp.BASE_FEATURES, hr.BASE_FEATURES)
         self.assertEqual(fp.FRONTIER_FEATURES, hr.FRONTIER_FEATURES)
         self.assertEqual(fp.FEATURES, hr.FEATURES)
+        self.assertEqual(fp.NEUTRAL_BPS, hr.NEUTRAL_BPS)
 
 
 if __name__=="__main__":
