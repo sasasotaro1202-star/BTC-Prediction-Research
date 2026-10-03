@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE '\\|\\|[[:space:]]*true' .github/workflows; then
+          if grep -RInE '\|\|[[:space:]]*true' .github/workflows; then
             echo "ERROR: forbidden fail-open '|| true' found in GitHub workflows." >&2
             exit 1
           fi
