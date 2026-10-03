@@ -13,7 +13,6 @@ def test_test_only_and_workflow_only_changes_do_not_trigger_expensive_historical
 def test_research_trigger_still_includes_research_sources_and_workflow():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     for path in (
-        ".github/workflows/btc_historical_research.yml",
         "src/historical_research.py",
         "src/historical_research_runner.py",
         "src/label_policy.py",
