@@ -27,6 +27,7 @@ from sklearn.metrics import log_loss
 OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
 spot_proxy=False
+oi_source_variant="direct_binance_api"
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
 from http_resilience import request_json
