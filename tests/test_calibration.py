@@ -178,37 +178,11 @@ class TestCalibration(unittest.TestCase):
         self.assertEqual(con.params, ('%|5m:bootstrap.example.v1|%',))
 
     def test_settled_rows_excludes_fallback_venue_from_production_calibration(self):
-        import json
+        from unittest.mock import patch
 
-        pit_time = "2026-10-03T08:00:00+00:00"
-        primary_sources = {
-            name: {
-                "status": "ok",
-                "available_at": pit_time,
-                "retrieved_at": pit_time,
-                "prediction_cutoff": pit_time,
-                "event_time": pit_time,
-            }
-            for name in (
-                "binance_futures",
-                "binance_depth",
-                "binance_taker",
-                "binance_premium",
-            )
-        }
-        primary_scenario = json.dumps({
-            "production_mode": "binance_primary",
-            "decision_time_utc": pit_time,
-            "provenance": {
-                "available_at": pit_time,
-                "retrieved_at": pit_time,
-                "prediction_cutoff": pit_time,
-                "sources": primary_sources,
-            },
-        })
         rows = [
             (
-                pit_time,
+                "2026-10-03T08:00:00+00:00",
                 "2026-10-03T08:05:00+00:00",
                 0.80,
                 0.10,
@@ -217,19 +191,21 @@ class TestCalibration(unittest.TestCase):
                 '{"production_mode":"coinbase_fallback"}',
             ),
             (
-                pit_time,
+                "2026-10-03T08:00:00+00:00",
                 "2026-10-03T08:05:00+00:00",
                 0.70,
                 0.20,
                 0.10,
                 "UP",
-                primary_scenario,
+                '{"production_mode":"binance_primary"}',
             ),
         ]
         con = _FakeConnection(rows)
-        out = calibration._settled_rows(
-            con, '5m', 'actual_direction_5m', 'bootstrap.example.v1'
-        )
+        with patch("model_compare.prediction_precedes_target", return_value=True), \
+             patch("model_compare.strict_pit_provenance_reason", return_value=None):
+            out = calibration._settled_rows(
+                con, '5m', 'actual_direction_5m', 'bootstrap.example.v1'
+            )
         self.assertEqual(out, [(0.70, 0.20, 0.10, 'UP')])
 
     def test_settled_rows_uses_10m_schema(self):
