@@ -79,3 +79,33 @@ def test_model_factories_include_xgboost_when_dependency_is_available():
 def test_archive_resilient_request_patch_is_wired():
     import historical_research as hr
     assert hr.req_json.__module__ in {"historical_research_runner", "src.historical_research_runner"}
+
+
+def test_main_passes_horizon_arrays_as_three_arguments(monkeypatch, tmp_path):
+    from src import rich_production_research as r
+
+    X5 = np.zeros((4, 53), dtype=float)
+    y5 = np.asarray(["DOWN", "FLAT", "UP", "DOWN"], dtype=object)
+    t5 = np.arange(4, dtype=np.int64)
+    X10 = np.ones((3, 53), dtype=float)
+    y10 = np.asarray(["UP", "FLAT", "DOWN"], dtype=object)
+    t10 = np.arange(10, 13, dtype=np.int64)
+
+    seen = []
+
+    def fake_build_panel():
+        return (X5, y5, t5), (X10, y10, t10), np.arange(4, dtype=np.int64)
+
+    def fake_evaluate(horizon, X, y, t):
+        seen.append((horizon, X, y, t))
+        return {"status": "OK", "horizon": horizon}
+
+    monkeypatch.setattr(r, "build_panel", fake_build_panel)
+    monkeypatch.setattr(r, "evaluate_horizon", fake_evaluate)
+    monkeypatch.setattr(r, "OUT", tmp_path / "rich.json")
+
+    assert r.main() == 0
+    assert [(h, len(X), len(y), len(t)) for h, X, y, t in seen] == [
+        ("5m", 4, 4, 4),
+        ("10m", 3, 3, 3),
+    ]
