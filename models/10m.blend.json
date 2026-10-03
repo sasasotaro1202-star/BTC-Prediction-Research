@@ -2,6 +2,49 @@
   "horizon": "10m",
   "model_version": "bootstrap.bootstrap_rf",
   "base_weight": 0.0,
-  "n": 399,
-  "status": "insufficient_history"
+  "n": 400,
+  "fit_n": 290,
+  "holdout_n": 100,
+  "holdout_fraction": 0.25,
+  "baseline_logloss": 1.1281493205413466,
+  "candidate_logloss": 1.150958428356498,
+  "baseline_brier": 0.684054687793424,
+  "candidate_brier": 0.6989895724063031,
+  "structural_logloss": 1.8065640537891807,
+  "structural_brier": 1.120251236914745,
+  "candidate_weight": 0.07500000000000001,
+  "stability": {
+    "blocks": 4,
+    "improved_logloss_ratio": 0.0,
+    "improved_brier_ratio": 0.0,
+    "stable": false,
+    "deltas": [
+      {
+        "start": 0,
+        "stop": 25,
+        "logloss_delta": 0.028841012874336824,
+        "brier_delta": 0.019783390890993346
+      },
+      {
+        "start": 25,
+        "stop": 50,
+        "logloss_delta": 0.02452869397586155,
+        "brier_delta": 0.016356091582678034
+      },
+      {
+        "start": 50,
+        "stop": 75,
+        "logloss_delta": 0.009582066786136156,
+        "brier_delta": 0.00469853766856243
+      },
+      {
+        "start": 75,
+        "stop": 100,
+        "logloss_delta": 0.028284657624270793,
+        "brier_delta": 0.01890151830928255
+      }
+    ]
+  },
+  "status": "rejected",
+  "updated_at_utc": "2026-10-03T09:17:50.151088+00:00"
 }
