@@ -539,6 +539,14 @@ def _block_bootstrap_ci(y: np.ndarray, rich_p: np.ndarray, base_p: np.ndarray, s
         "ci95_high": float(np.quantile(boot, 0.975)),
     }
 
+def _eligibility_from_gates(metric_eligible: bool, pit_status: str) -> tuple[bool, str | None]:
+    """Allow candidate artifacts only when both metric and strict-PIT gates pass."""
+    if pit_status != "STRICT_PIT_VERIFIED":
+        return False, "pit_evidence_non_strict"
+    if not metric_eligible:
+        return False, "metric_gate_failed"
+    return True, None
+
 def _relative_gain(base: float, cand: float, higher_is_better: bool = False) -> float:
     if higher_is_better:
         return (cand - base) / max(abs(base), 1e-12)
@@ -605,15 +613,9 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
         and stability_vs_champion["accuracy_non_worse_ratio"] >= 0.70
         and (ci_vs_champion["ci95_low"] is None or ci_vs_champion["ci95_low"] > 0.0)
     )
-    eligible = bool(metric_eligible and PIT_EVIDENCE_STATUS == "STRICT_PIT_VERIFIED")
-    eligibility_block_reason = (
-        None
-        if eligible
-        else (
-            "pit_evidence_non_strict"
-            if PIT_EVIDENCE_STATUS != "STRICT_PIT_VERIFIED"
-            else "metric_gate_failed"
-        )
+    eligible, eligibility_block_reason = _eligibility_from_gates(
+        metric_eligible,
+        PIT_EVIDENCE_STATUS,
     )
 
     candidate_artifact = None
