@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "historical_research" / "btc_bootstrap_1m.json"
 CACHE_MAX_AGE_MS = 15 * 60 * 1000
 BINANCE_WS_CACHE = ROOT / "data" / "binance_ws_1m.json"
-BINANCE_WS_MAX_AGE_MS = 180 * 1000
+PRIMARY_SERIES_MAX_EVENT_AGE_MS = 180 * 1000
+BINANCE_WS_MAX_AGE_MS = PRIMARY_SERIES_MAX_EVENT_AGE_MS
 
 
 def http_json(url: str, timeout: int = 25, attempts: int = 4):
@@ -360,6 +361,23 @@ def _fresh_closed_candle_suffix(rows, minimum: int = 40, max_age_ms: int = BINAN
     return suffix
 
 
+def _fresh_primary_suffix(rows, minimum: int = 40):
+    """Return a contiguous primary 1m suffix whose newest candle event is recent.
+
+    Cache creation/retrieval time is not sufficient freshness evidence because a
+    state writer can republish an old snapshot after a transport outage.
+    """
+    suffix = _latest_contiguous_suffix(rows, minimum)
+    if not suffix:
+        return []
+    now_ms = int(time.time() * 1000)
+    latest_open_ms = int(suffix[-1][0])
+    event_age_ms = now_ms - latest_open_ms
+    if event_age_ms < 0 or event_age_ms > PRIMARY_SERIES_MAX_EVENT_AGE_MS:
+        return []
+    return suffix
+
+
 def cache_rows(limit=120):
     try:
         obj = json.loads(CACHE.read_text(encoding="utf-8"))
@@ -371,9 +389,14 @@ def cache_rows(limit=120):
         created_ms = None
         if created_raw:
             created_ms = int(datetime.fromisoformat(created_raw.replace("Z", "+00:00")).timestamp() * 1000)
-        age_ms = None if created_ms is None else max(0, now - created_ms)
-        fresh = age_ms is not None and age_ms <= CACHE_MAX_AGE_MS
-        return _latest_contiguous_suffix(rows, min(limit, len(rows))), created_raw, age_ms, fresh
+        age_ms = None if created_ms is None else now - created_ms
+        contiguous = _fresh_primary_suffix(rows, 40)
+        fresh = (
+            age_ms is not None
+            and 0 <= age_ms <= CACHE_MAX_AGE_MS
+            and len(contiguous) >= 40
+        )
+        return contiguous[-min(limit, len(contiguous)):], created_raw, age_ms, fresh
     except Exception:
         return [], "", None, False
 
