@@ -15,6 +15,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from label_policy import NEUTRAL_BPS, direction_from_return
 
 ROOT=Path(__file__).resolve().parents[1]
 PANEL=ROOT/"data/historical_research/aligned_panel.csv"
@@ -97,7 +98,7 @@ def labels(ts,price,h):
         if j is None: continue
         if not (price[i]>0 and np.isfinite(price[i]) and np.isfinite(price[j])): continue
         rbps=(price[j]/price[i]-1.0)*10000.0
-        y.append("UP" if rbps>2.0 else "DOWN" if rbps<-2.0 else "FLAT")
+        y.append(direction_from_return(rbps / 10000.0))
         keep.append(i)
     return np.asarray(keep,dtype=np.int64),np.asarray(y,dtype=object)
 
