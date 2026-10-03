@@ -9,6 +9,11 @@ class ForecastTrajectoryContractTests(unittest.TestCase):
         self.assertIn("tests/test_forecast_trajectory.py",text)
         self.assertIn("forecast_trajectory.json",text)
         self.assertIn("btc-forecast-trajectory",text)
+    def test_extended_horizon_bootstrap_is_explicit(self):
+        workflow=(ROOT/".github"/"workflows"/"btc_live_cycle.yml").read_text(encoding="utf-8")
+        self.assertIn('if h in {"5m","10m"} and item.get("point_count",0) < 1',workflow)
+        self.assertIn("PENDING_FIRST_LIVE_SAMPLE",workflow)
+
     def test_five_minute_is_primary(self):
         text=(ROOT/"src"/"forecast_trajectory.py").read_text(encoding="utf-8")
         self.assertIn('"primary_5m"',text)
