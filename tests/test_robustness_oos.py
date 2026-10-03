@@ -3,18 +3,72 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src import robustness_oos
-from src.robustness_oos import _metrics, _regimes, robust_generation_prefix
+from src.robustness_oos import _metrics, _regimes, robust_generation_token
 
 class RobustnessTests(unittest.TestCase):
-    def test_generation_prefix_is_horizon_specific(self):
+    def test_generation_token_is_horizon_specific(self):
         self.assertEqual(
-            robust_generation_prefix("5m", "bootstrap.bootstrap_rf"),
-            "5m:bootstrap.bootstrap_rf|%",
+            robust_generation_token("5m", "bootstrap.bootstrap_rf"),
+            "5m:bootstrap.bootstrap_rf",
         )
         self.assertEqual(
-            robust_generation_prefix("10m", "bootstrap.bootstrap_rf"),
-            "10m:bootstrap.bootstrap_rf|%",
+            robust_generation_token("10m", "bootstrap.bootstrap_rf"),
+            "10m:bootstrap.bootstrap_rf",
         )
+
+    def test_load_matches_secondary_horizon_in_combined_generation(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            import sqlite3
+
+            feature_json = json.dumps({"ret_10m": 0.001, "volatility_10m": 0.002})
+            scenario_json = json.dumps({
+                "production_mode": "binance_primary",
+                "provenance": {"available_at": "2026-10-03T07:00:00+00:00"},
+            })
+            with sqlite3.connect(db) as con:
+                con.execute(
+                    "CREATE TABLE model_registry (horizon TEXT, production_version TEXT)"
+                )
+                con.execute(
+                    """CREATE TABLE predictions (
+                        prediction_id INTEGER,
+                        created_at_utc TEXT,
+                        feature_json TEXT,
+                        actual_direction_10m TEXT,
+                        p_up_10m REAL,
+                        p_down_10m REAL,
+                        p_flat_10m REAL,
+                        model_version TEXT,
+                        scenario_json TEXT
+                    )"""
+                )
+                con.execute(
+                    "INSERT INTO model_registry VALUES (?, ?)",
+                    ("10m", "bootstrap.bootstrap_rf"),
+                )
+                con.execute(
+                    "INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        1,
+                        "2026-10-03T07:10:00+00:00",
+                        feature_json,
+                        "UP",
+                        0.1,
+                        0.2,
+                        0.7,
+                        "5m:bootstrap.soft_ensemble.v5.4|10m:bootstrap.bootstrap_rf",
+                        scenario_json,
+                    ),
+                )
+                con.commit()
+
+            with patch.object(robustness_oos, "DB", db),                  patch.object(robustness_oos, "_strict_pit_provenance_ok", return_value=True):
+                rows = robustness_oos.load("10m")
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["id"], 1)
+            self.assertEqual(rows[0]["model_version"], "5m:bootstrap.soft_ensemble.v5.4|10m:bootstrap.bootstrap_rf")
     def test_metrics_normalize_probabilities(self):
         m=_metrics(["UP","DOWN","FLAT"],[[2,0,0],[0,3,0],[0,0,4]])
         self.assertEqual(m["n"],3)
