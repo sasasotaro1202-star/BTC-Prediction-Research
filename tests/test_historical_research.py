@@ -55,6 +55,8 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertNotIn('np.zeros_like(b)', source)
         self.assertNotIn('funding.get(ft,0.0)', source)
         self.assertIn('if not exists(maps["btc_mark"],w) or not exists(maps["btc_premium"],w):', source)
+        self.assertIn('raise RuntimeError("both BTC spot and futures historical data are unavailable")', source)
+        self.assertNotIn('using BTC futures as explicit spot proxy', source)
         self.assertIn('if ft is None or prev_f is None or ot is None or prev_oi is None:', source)
 
     def test_invalid_base_price_is_skipped(self):
