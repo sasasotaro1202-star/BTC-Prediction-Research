@@ -49,7 +49,8 @@ class TestMarketDataFallbackChain(unittest.TestCase):
         from datetime import datetime, timezone
         from pathlib import Path
 
-        now_ms = int(time.time() * 1000)
+        created_dt = datetime.now(timezone.utc)
+        now_ms = int(created_dt.timestamp() * 1000)
         stale_latest = (int(time.time() // 60) - 10) * 60_000
         rows = [
             [stale_latest - (39 - i) * 60_000, 1.0, 1.1, 0.9, 1.05, 10.0]
@@ -60,7 +61,7 @@ class TestMarketDataFallbackChain(unittest.TestCase):
             cache_path.write_text(
                 json.dumps(
                     {
-                        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "created_at_utc": created_dt.isoformat(),
                         "rows": rows,
                     }
                 ),
