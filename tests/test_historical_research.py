@@ -1,5 +1,6 @@
 import unittest
 import numpy as np
+from tempfile import TemporaryDirectory
 from src import historical_research as hr
 
 
@@ -67,6 +68,24 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertIn("hr.spot_proxy=False", launcher)
         self.assertNotIn("hr.spot_proxy=not any(", launcher)
 
+
+
+    def test_empty_or_corrupt_historical_cache_is_invalidated(self):
+        with TemporaryDirectory() as tmp:
+            empty=Path(tmp)/"empty.json"
+            empty.write_text("[]",encoding="utf-8")
+            self.assertIsNone(hr._load_nonempty_cached_rows(empty))
+            self.assertFalse(empty.exists())
+
+            corrupt=Path(tmp)/"corrupt.json"
+            corrupt.write_text("{not-json",encoding="utf-8")
+            self.assertIsNone(hr._load_nonempty_cached_rows(corrupt))
+            self.assertFalse(corrupt.exists())
+
+            valid=Path(tmp)/"valid.json"
+            valid.write_text('[["x"]]',encoding="utf-8")
+            self.assertEqual(hr._load_nonempty_cached_rows(valid), [["x"]])
+            self.assertTrue(valid.exists())
 
     def test_invalid_base_price_is_skipped(self):
         rows = [
