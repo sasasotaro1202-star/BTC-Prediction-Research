@@ -161,16 +161,33 @@ def build():
     init_db()
     with sqlite3.connect(DB) as con:
         con.row_factory = sqlite3.Row
+        # Backward-compatible read path for pre-extension replay fixtures.
+        # The canonical init_db() migrates the live DB; fixtures may patch it
+        # out and intentionally expose only the historical 5m/10m schema.
+        prediction_columns = {
+            str(row[1]) for row in con.execute("PRAGMA table_info(predictions)").fetchall()
+        }
+        available_horizons = tuple(
+            horizon for horizon in ALL_HORIZONS
+            if f"actual_direction_{horizon}" in prediction_columns
+            and f"settled_{horizon}_at_utc" in prediction_columns
+            and f"p_down_{horizon}" in prediction_columns
+            and f"p_flat_{horizon}" in prediction_columns
+            and f"p_up_{horizon}" in prediction_columns
+        )
+        where = " OR ".join(
+            f"actual_direction_{horizon} IS NOT NULL" for horizon in available_horizons
+        )
         rows = con.execute(
-            f"""SELECT * FROM predictions
-               WHERE actual_direction_5m IS NOT NULL OR actual_direction_10m IS NOT NULL OR actual_direction_15m IS NOT NULL OR actual_direction_30m IS NOT NULL OR actual_direction_1h IS NOT NULL OR actual_direction_3h IS NOT NULL OR actual_direction_6h IS NOT NULL OR actual_direction_12h IS NOT NULL OR actual_direction_24h IS NOT NULL
-               ORDER BY prediction_id"""
+            "SELECT * FROM predictions"
+            + (f" WHERE {where}" if where else "")
+            + " ORDER BY prediction_id"
         ).fetchall()
 
         inserted = 0
         parse_errors = 0
         for row in rows:
-            for horizon in ALL_HORIZONS:
+            for horizon in available_horizons:
                 try:
                     experience = _experience_from_row(row, horizon)
                     if experience is None:
