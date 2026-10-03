@@ -109,3 +109,37 @@ def test_main_passes_horizon_arrays_as_three_arguments(monkeypatch, tmp_path):
         ("5m", 4, 4, 4),
         ("10m", 3, 3, 3),
     ]
+
+
+def test_xgboost_factory_preserves_canonical_string_labels_when_available():
+    from src import rich_production_research as r
+
+    if r.XGBClassifier is None:
+        return
+
+    model = r._factories()["xgboost"]()
+    X = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.1, 0.0, 0.0],
+            [0.0, 0.1, 0.0],
+            [1.0, 1.0, 1.0],
+            [1.1, 1.0, 1.0],
+            [1.0, 1.1, 1.0],
+            [-1.0, -1.0, -1.0],
+            [-1.1, -1.0, -1.0],
+            [-1.0, -1.1, -1.0],
+        ],
+        dtype=float,
+    )
+    y = np.asarray(
+        ["FLAT", "FLAT", "FLAT", "UP", "UP", "UP", "DOWN", "DOWN", "DOWN"]
+    )
+    model.fit(X, y)
+    probs = model.predict_proba(X)
+    pred = model.predict(X)
+
+    assert model.classes_.tolist() == ["DOWN", "FLAT", "UP"]
+    assert probs.shape == (len(y), 3)
+    assert np.isfinite(probs).all()
+    assert set(pred.tolist()) <= {"DOWN", "FLAT", "UP"}
