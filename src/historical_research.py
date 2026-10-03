@@ -397,7 +397,7 @@ def main():
     report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
     frontier_evidence={
         "schema_version":1,
-        "experiment_id":"btc_feature_frontier_v7",
+        "experiment_id":"btc_feature_frontier_v8",
         "hypothesis":"strictly causal technical, distributional and cross-state interaction features add incremental information beyond the existing 41-feature historical research set",
         "research_question":"Do the 51 frontier features improve future-generalization metrics over the identical 41-feature baseline under identical chronological WFO/PIT-safe observations, before any production consideration?",
         "research_only":True,
