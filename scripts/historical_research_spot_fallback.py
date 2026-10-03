@@ -58,7 +58,7 @@ def _rows(urls,start_ms,end_ms):
             text=io.TextIOWrapper(fh,encoding="utf-8",newline="")
             for row in csv.reader(text):
                 if not row:continue
-                try:ts=int(float(row[0]))
+                try:ts=hr._normalize_epoch_ms(row[0])
                 except (ValueError,TypeError):continue
                 if start_ms<=ts<end_ms:out.append(row)
     return out
