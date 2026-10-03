@@ -47,11 +47,11 @@ FAMILY_GROUPS={
 "base":tuple(BASE_FEATURES),
 "momentum":("rsi5","rsi14","rsi30","bb_z20","bb_z60","ema_slope5","ema_slope15","ema_slope30","ret20","ret60","ret120","trend_efficiency20","trend_efficiency60","price_to_ema20"),
 "volatility":("rv60","rv120","vol_of_vol20","atr_ratio14","return_skew20","return_kurtosis20","vol_term_ratio","range_z20","range_compression20","range_compression60","parkinson_vol20","garman_klass_vol20"),
-"price_action":("rangepos10","rangepos30","body","upper","lower","range_asymmetry10","wick_imbalance10","drawdown30","runup30","close_location10","close_location30","breakout_high20","breakout_low20"),
-"flow":("volratio","voltrend","tradesratio","takerimb","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","volume_z20","trades_z20","dollar_volume_z20","flow_accel5","flow_z20","amihud10","volume_price_corr20","flow_return_corr20","body_pressure20","up_volume_ratio20","signed_volume_pressure20","trade_size_z20","signed_flow_accel20"),
-"derivatives":("basis","basis_delta","mark_gap","premium","funding","funding_delta","oi_change","oi_z","oi_x_return5","funding_x_oi","basis_x_vol"),
-"cross_asset":("eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5"),
-"calendar":("hour_sin","hour_cos","dow_sin","dow_cos"),
+"price_action":("range_asymmetry10","wick_imbalance10","drawdown30","runup30","close_location10","close_location30","breakout_high20","breakout_low20"),
+"flow":("volume_z20","trades_z20","dollar_volume_z20","flow_accel5","flow_z20","amihud10","volume_price_corr20","flow_return_corr20","body_pressure20","up_volume_ratio20","signed_volume_pressure20","trade_size_z20","signed_flow_accel20"),
+"derivatives":("basis_x_vol","oi_x_return5","funding_x_oi"),
+"cross_asset":(),
+"calendar":(),
 "dependence":("autocorr5",),
 }
 assert set(FEATURES)=={f for g in FAMILY_GROUPS.values() for f in g}
@@ -134,7 +134,7 @@ def screen(X,y,fold_spec):
 
 def main():
     ts,price,X=load()
-    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_8_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
+    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_9_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
     for h,minutes in HORIZONS.items():
         idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
         for mask in range(1,PATTERN_COUNT+1):
