@@ -74,3 +74,18 @@ def test_archive_oi_fallback_deduplicates_deterministically():
     assert len(rows) == 2
     assert [r["timestamp"] for r in rows] == [start + 5 * 60_000, start + 10 * 60_000]
     assert [float(r["sumOpenInterest"]) for r in rows] == [101.0, 102.0]
+
+
+def test_archive_oi_fallback_returns_empty_for_valid_trailing_window():
+    raw = _zip([
+        ["create_time", "symbol", "sum_open_interest"],
+        ["2026-09-29 23:50:00", "BTCUSDT", "100"],
+    ])
+    start = int(datetime(2026, 9, 29, 23, 55, tzinfo=timezone.utc).timestamp() * 1000) + 1
+    end = int(datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    with patch.object(runner, "_get_zip", return_value=(raw, "fixture")),          patch.object(runner, "_safe_end", return_value=end):
+        rows = runner._archive_oi_fallback(
+            "https://fapi.binance.com/futures/data/openInterestHist?"
+            f"symbol=BTCUSDT&period=15m&startTime={start}&endTime={end}&limit=500"
+        )
+    assert rows == []
