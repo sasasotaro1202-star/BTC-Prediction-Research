@@ -10,7 +10,7 @@ from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
 from market_data import BINANCE_WS_CACHE, resilient_1m_series, derive_binance_taker_from_closed_klines, binance_archive_daily_taker_rows, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
-from microstructure_features import derive_market_flow_features
+from microstructure_features import derive_market_flow_features, derive_orderbook_features, ORDERBOOK_V2
 from runtime_production_model import resolve_production_model
 from situation import summarize_situation
 from extended_horizons import forecast_extended_horizons
@@ -486,6 +486,19 @@ def main():
             status['binance_depth_transport']='rest'
     except Exception as exc:
         status['binance_depth']=f'error:{type(exc).__name__}'
+    # Research-only order-book frontier. These features are derived from the
+    # already captured 20-level Binance snapshot and are persisted for causal OOS
+    # testing. They are deliberately not appended to the Production Champion input.
+    try:
+        orderbook_features = derive_orderbook_features(depth_result)
+        if orderbook_features is None:
+            raise RuntimeError('orderbook_v2_incomplete')
+        m.update(orderbook_features)
+        status['orderbook_v2'] = 'ok'
+        status['orderbook_v2_feature_levels'] = 20
+        status['orderbook_v2_source'] = 'binance_depth'
+    except Exception as exc:
+        status['orderbook_v2'] = f'error:{type(exc).__name__}'
 
     bybit_book = market_calls.get("bybit_depth")
     try:
