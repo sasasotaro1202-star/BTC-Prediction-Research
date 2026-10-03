@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from db import DB, init_db
 from settlement_source import preferred_source_from_scenario, target_close_preferred
 from label_policy import direction_from_prices, direction_from_return, NEUTRAL_BPS
+try:
+    from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+except ModuleNotFoundError:
+    from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
 
 MAX_TARGET_WORKERS = 4
 
@@ -106,6 +110,76 @@ def settle():
                     settled += 1
                 else:
                     unavailable += 1
+    # Extended horizons are research-only forecasts stored on the same immutable
+    # prediction event. Their outcomes use the fixed source selected at prediction time.
+    with sqlite3.connect(DB) as con:
+        fields = []
+        for h in EXTENDED_RESEARCH_HORIZONS:
+            fields.extend([
+                f'target_{h}', f'p_up_{h}', f'p_down_{h}', f'p_flat_{h}',
+                f'actual_price_{h}',
+            ])
+        rows_ext = con.execute(
+            f"SELECT prediction_id,base_price,model_version,scenario_json,{','.join(fields)} "
+            "FROM predictions ORDER BY prediction_id"
+        ).fetchall()
+        pending = []
+        for row in rows_ext:
+            prediction_id, base, model_version, scenario_json = row[:4]
+            if model_version == 'DEGRADED_NO_FRESH_DATA' or not isinstance(base, (int, float)) or base <= 0:
+                continue
+            try:
+                source = scenario_source(scenario_json)
+            except Exception:
+                continue
+            pos = 4
+            for h in EXTENDED_RESEARCH_HORIZONS:
+                target, up, down, flat, actual = row[pos:pos + 5]
+                pos += 5
+                if actual is None and target is not None and target <= now.isoformat():
+                    pending.append((str(target), source))
+
+        resolved = resolve_targets(pending)
+        for row in rows_ext:
+            prediction_id, base, model_version, scenario_json = row[:4]
+            if model_version == 'DEGRADED_NO_FRESH_DATA' or not isinstance(base, (int, float)) or base <= 0:
+                continue
+            try:
+                source = scenario_source(scenario_json)
+            except Exception:
+                continue
+            pos = 4
+            for h in EXTENDED_RESEARCH_HORIZONS:
+                target, up, down, flat, actual = row[pos:pos + 5]
+                pos += 5
+                if actual is not None or target is None or target > now.isoformat():
+                    continue
+                px, resolved_source = resolved.get((str(target), source), (None, 'unavailable'))
+                if px is None:
+                    unavailable += 1
+                    continue
+                probs = [up, down, flat]
+                if not all(isinstance(v, (int, float)) and math.isfinite(float(v)) for v in probs):
+                    unavailable += 1
+                    continue
+                actual_dir = direction_from_prices(base, px)
+                pred_dir = max((('UP', up), ('DOWN', down), ('FLAT', flat)), key=lambda x: x[1])[0]
+                con.execute(
+                    f'''UPDATE predictions
+                        SET actual_price_{h}=?, actual_direction_{h}=?, correct_{h}=?,
+                            settled_{h}_at_utc=?, settlement_source_{h}=?
+                        WHERE prediction_id=? AND actual_price_{h} IS NULL''',
+                    (
+                        px,
+                        actual_dir,
+                        int(actual_dir == pred_dir),
+                        now.isoformat(),
+                        resolved_source,
+                        prediction_id,
+                    ),
+                )
+                settled += 1
+
     print('settled_fields', settled, 'unavailable_fields', unavailable, 'skipped_degraded', skipped_degraded, 'threshold_bps', NEUTRAL_BPS)
 
 
