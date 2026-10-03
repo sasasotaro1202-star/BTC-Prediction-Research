@@ -774,7 +774,7 @@ def main():
     for h in HORIZONS:
         variants = load_variants(h)
         coverage = coverage_diagnostics(h)
-        family_count = max(1, len(factories()) * 8)
+        family_count = max(1, len(factories()) * 9)
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
