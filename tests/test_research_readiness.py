@@ -83,7 +83,7 @@ class TestResearchReadiness(unittest.TestCase):
             {"pit_verified": True, "verified_primary_predictions": 500, "min_strict_pit_rows": 300, "violation_count": 0},
             {"promotion_status": "HOLD"},
             {
-                "5m": {"status": "READY", "n_settled": 500, "model_version": "old.v1", "binding_ok": False},
+                "5m": {"status": "WAITING", "n_settled": 500, "model_version": "old.v1", "binding_ok": False},
                 "10m": {"status": "READY", "n_settled": 500, "model_version": "current.v1", "binding_ok": True},
             },
         )
