@@ -195,7 +195,7 @@ class MicrostructureOOSTests(unittest.TestCase):
             "retrieved_at_ms": 1790035259500,
         }
         values = derive_orderbook_features(snapshot)
-        self.assertEqual(set(values), set(ORDERBOOK_V2))
+        self.assertEqual(set(values), set(ORDERBOOK_V2 + ORDERBOOK_V3))
         self.assertGreater(values["depth_imbalance_5"], values["depth_imbalance_20"])
         self.assertGreater(values["spread_bps"], 0.0)
         self.assertGreater(values["microprice_gap"], 0.0)
