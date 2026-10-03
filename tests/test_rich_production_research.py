@@ -186,3 +186,19 @@ def test_model_selection_prioritizes_logloss_then_brier_then_ece():
     assert [item["model"] for item in ranked] == [
         "ece_winner", "brier_winner", "logloss_winner", "accuracy_winner"
     ]
+
+
+def test_candidate_eligibility_requires_strict_pit():
+    from src import rich_production_research as r
+    assert r._eligibility_from_gates(True, "NON_STRICT_ARCHIVE_TIMING") == (
+        False,
+        "pit_evidence_non_strict",
+    )
+    assert r._eligibility_from_gates(False, "STRICT_PIT_VERIFIED") == (
+        False,
+        "metric_gate_failed",
+    )
+    assert r._eligibility_from_gates(True, "STRICT_PIT_VERIFIED") == (
+        True,
+        None,
+    )
