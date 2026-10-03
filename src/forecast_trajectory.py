@@ -30,9 +30,11 @@ def _ensure_horizon_columns(con, horizons):
             ("actual_price_", "REAL"),
             ("actual_direction_", "TEXT"),
             ("correct_", "INTEGER"),
-            ("settled_", "TEXT"),
+            # settlement timestamps use canonical settled_<horizon>_at_utc names.
         ):
             name = prefix + horizon
+            if prefix == "settled_":
+                name = f"settled_{horizon}_at_utc"
             if name not in existing:
                 con.execute(f"ALTER TABLE predictions ADD COLUMN {name} {sql_type}")
                 existing.add(name)
