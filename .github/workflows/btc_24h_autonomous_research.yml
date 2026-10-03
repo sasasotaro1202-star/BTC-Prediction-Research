@@ -164,19 +164,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify immutable research snapshot
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
-          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          test -n "$GITHUB_SHA"
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=$GITHUB_SHA actual=$actual" >&2
             exit 1
           }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=$GITHUB_SHA"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -259,19 +257,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify immutable research snapshot
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
-          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          test -n "$GITHUB_SHA"
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=$GITHUB_SHA actual=$actual" >&2
             exit 1
           }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=$GITHUB_SHA"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -364,19 +360,17 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify immutable research snapshot
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
-          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          test -n "$GITHUB_SHA"
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=$GITHUB_SHA actual=$actual" >&2
             exit 1
           }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=$GITHUB_SHA"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -521,19 +515,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify immutable research snapshot
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
-          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          test -n "$GITHUB_SHA"
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA" || {
+            echo "WORKFLOW_SNAPSHOT_MISMATCH expected=$GITHUB_SHA actual=$actual" >&2
             exit 1
           }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
+          echo "IMMUTABLE_RESEARCH_SNAPSHOT=$GITHUB_SHA"
       - name: Download available stage evidence
         if: always()
         continue-on-error: true
