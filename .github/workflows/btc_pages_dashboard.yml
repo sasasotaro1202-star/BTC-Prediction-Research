@@ -43,8 +43,7 @@ jobs:
           if [ -s data/historical_research/forecast_trajectory.json ]; then
             cp data/historical_research/forecast_trajectory.json _site/data/forecast_trajectory.json
           else
-            printf '%s
-' '{"schema_version":1,"status":"UNAVAILABLE","horizons":{}}' > _site/data/forecast_trajectory.json
+            printf '%s\n' '{"schema_version":1,"status":"UNAVAILABLE","horizons":{}}' > _site/data/forecast_trajectory.json
           fi
           for path in data/historical_research/pit_oos_audit.json data/live_cycle_status.json; do
             if [ -s "$path" ]; then
