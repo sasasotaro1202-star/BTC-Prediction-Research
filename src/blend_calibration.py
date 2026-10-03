@@ -69,6 +69,11 @@ def _current_registry_version(con, horizon: str):
     return str(row[0]) if row and row[0] else None
 
 
+def blend_generation_token(horizon: str, model_version: str) -> str:
+    """Return the exact horizon:model token stored in combined prediction metadata."""
+    return f"{horizon}:{model_version}"
+
+
 def _rows(horizon: str):
     """Load settled rows for the currently registered production generation only."""
     actual = _actual_column(horizon)
@@ -79,17 +84,19 @@ def _rows(horizon: str):
         if not model_version:
             return rows
         # Predictions store both horizon versions as "5m:<version>|10m:<version>".
-        prefix = f"{horizon}:{model_version}|%"
+        # Match the exact horizon:model token anywhere in the combined value so
+        # the secondary 10m horizon is not silently excluded.
+        token = blend_generation_token(horizon, model_version)
         raw = con.execute(
             f"""SELECT created_at_utc,scenario_json,
                        p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},
                        {actual}
                 FROM predictions
                 WHERE {actual} IS NOT NULL
-                  AND model_version LIKE ?
+                  AND instr('|' || model_version || '|', '|' || ? || '|') > 0
                   AND model_version NOT LIKE 'DEGRADED_NO_FRESH_DATA%'
                 ORDER BY created_at_utc""",
-            (prefix,),
+            (token,),
         ).fetchall()
 
     for created, scenario_text, up, down, flat, y in raw:

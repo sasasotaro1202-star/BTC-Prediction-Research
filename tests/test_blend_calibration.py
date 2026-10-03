@@ -1,6 +1,10 @@
+import json
+import sqlite3
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
@@ -24,6 +28,61 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertEqual(blend_calibration._actual_column('10m'), 'actual_direction_10m')
         with self.assertRaises(ValueError):
             blend_calibration._actual_column('5')
+
+    def test_generation_token_is_horizon_specific(self):
+        self.assertEqual(
+            blend_calibration.blend_generation_token('5m', 'bootstrap.soft_ensemble.v5.4'),
+            '5m:bootstrap.soft_ensemble.v5.4',
+        )
+        self.assertEqual(
+            blend_calibration.blend_generation_token('10m', 'bootstrap.bootstrap_rf'),
+            '10m:bootstrap.bootstrap_rf',
+        )
+
+    def test_rows_match_secondary_horizon_in_combined_generation(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / 'predictions.db'
+            scenario_json = json.dumps({
+                'components': {
+                    'model_raw_10m': {'UP': 0.30, 'DOWN': 0.40, 'FLAT': 0.30},
+                    'structural_10m': {'UP': 0.35, 'DOWN': 0.35, 'FLAT': 0.30},
+                }
+            })
+            with sqlite3.connect(db) as con:
+                con.execute('CREATE TABLE model_registry (horizon TEXT, production_version TEXT)')
+                con.execute('''CREATE TABLE predictions (
+                    created_at_utc TEXT,
+                    scenario_json TEXT,
+                    p_up_10m REAL,
+                    p_down_10m REAL,
+                    p_flat_10m REAL,
+                    actual_direction_10m TEXT,
+                    model_version TEXT
+                )''')
+                con.execute(
+                    'INSERT INTO model_registry VALUES (?, ?)',
+                    ('10m', 'bootstrap.bootstrap_rf'),
+                )
+                con.execute(
+                    'INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        '2026-10-03T08:00:00+00:00',
+                        scenario_json,
+                        0.30,
+                        0.40,
+                        0.30,
+                        'DOWN',
+                        '5m:bootstrap.soft_ensemble.v5.4|10m:bootstrap.bootstrap_rf',
+                    ),
+                )
+                con.commit()
+
+            with patch.object(blend_calibration, 'DB', db):
+                rows = blend_calibration._rows('10m')
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0][0], '2026-10-03T08:00:00+00:00')
+            self.assertEqual(rows[0][3], 'DOWN')
 
     def test_probability_suffix_does_not_double_append_m(self):
         self.assertEqual('p_up_5m', f'p_up_{"5m"}')
