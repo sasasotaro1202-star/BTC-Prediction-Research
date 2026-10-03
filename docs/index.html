@@ -13,14 +13,14 @@ h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls label{color:var(--muted);font-size:11px;display:block;margin-bottom:4px}
 select,button{width:100%;border:1px solid #334051;background:#0f151d;color:var(--text);border-radius:10px;min-height:40px;padding:8px 10px;font:inherit}
-.range{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:9px}.range button{min-height:34px;font-size:12px}.range button.active{border-color:#8d9aac;background:#1b2430}
+.range{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:9px}.range button{min-height:34px;font-size:12px}.range button.active{border-color:#8d9aac;background:#1b2430}
 .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.card{background:#0f151d;border:1px solid var(--line);border-radius:11px;padding:9px}.k{color:var(--muted);font-size:10px}.v{font-size:17px;font-weight:600;margin-top:2px}.small{font-size:11px;color:var(--muted)}
 .chartWrap{position:relative;height:420px;margin-top:4px}.chart{width:100%;height:100%;display:block;touch-action:none}.tip{position:absolute;pointer-events:none;display:none;background:#0a0f15;border:1px solid #536174;border-radius:9px;padding:8px;font-size:11px;min-width:170px;box-shadow:0 8px 28px #0008}
 .legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;color:var(--muted);font-size:11px}.legend span{display:flex;gap:5px;align-items:center}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 .status{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status .item{border:1px solid var(--line);border-radius:10px;padding:9px}.status .label{font-size:10px;color:var(--muted)}.status .value{margin-top:3px}
 .table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}.table th{color:var(--muted);font-weight:500}.primary{font-weight:700}.research{color:#9aa6b5}
 .notice{color:var(--muted);font-size:12px}.error{color:#ffb8b8}
-@media(max-width:760px){main{padding:10px 9px 24px}.top{align-items:center}.controls{grid-template-columns:1fr 1fr}.cards{grid-template-columns:repeat(3,1fr)}.chartWrap{height:330px}.status{grid-template-columns:1fr}.range{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:760px){main{padding:10px 9px 24px}.top{align-items:center}.controls{grid-template-columns:1fr 1fr}.cards{grid-template-columns:repeat(3,1fr)}.chartWrap{height:330px}.status{grid-template-columns:1fr}.range{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:430px){.cards{grid-template-columns:repeat(2,1fr)}.controls{grid-template-columns:1fr}.range button{font-size:11px;padding:5px}.chartWrap{height:300px}h1{font-size:18px}}
 </style>
 </head>
@@ -77,8 +77,8 @@ select,button{width:100%;border:1px solid #334051;background:#0f151d;color:var(-
 
 <script>
 const HORIZONS=["5m","10m","15m","30m","1h","3h","6h","12h","24h"];
-const RANGES=[["1h",3600000],["6h",21600000],["24h",86400000],["3d",259200000],["All",null]];
-let payload=null,currentH="5m",currentMetric="prob",currentRange="24h",svg=document.getElementById("chart"),tip=document.getElementById("tip"),lastPoints=[];
+const RANGES=[["1h",3600000],["6h",21600000],["24h",86400000],["3d",259200000],["7d",604800000],["All",null]];
+let payload=null,currentH="5m",currentMetric="prob",currentRange="24h",svg=document.getElementById("chart"),tip=document.getElementById("tip"),lastPoints=[]; const STALE_MS=15*60*1000;
 
 function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
 function fmtTime(s){if(!s)return "—";const d=new Date(s);return d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}
@@ -103,7 +103,7 @@ function setOptions(){
 }
 function linePath(points,fn,x0,y0,w,h,yMin,yMax){
   let path=""; let valid=0;
-  points.forEach((p,i)=>{const y=fn(p);if(y==null||!Number.isFinite(y))return;const x=x0+(points.length===1?0:(i/(points.length-1))*w);const yy=y0+h-(y-yMin)/(yMax-yMin)*h;path+=(valid++?" L":"M")+x.toFixed(2)+" "+yy.toFixed(2)});
+  points.forEach((p,i)=>{const y=fn(p);if(y==null||!Number.isFinite(y)){valid=0;return;}const x=x0+(points.length===1?0:(i/(points.length-1))*w);const yy=y0+h-(y-yMin)/(yMax-yMin)*h;path+=(valid++?" L":"M")+x.toFixed(2)+" "+yy.toFixed(2)});
   return path;
 }
 function drawChart(points){
@@ -141,8 +141,14 @@ function updateSummary(){
   }).join("");
 }
 function updateStatus(){
-  document.getElementById("liveStatus").textContent=payload.live_cycle?(`#${payload.live_cycle.latest_prediction_id||"—"} · ${fmtTime(payload.live_cycle.completed_at_utc)}`):"UNKNOWN";
+  const liveTime=payload.live_cycle?.completed_at_utc?new Date(payload.live_cycle.completed_at_utc).getTime():NaN;
+  const generated=payload.generated_at_utc?new Date(payload.generated_at_utc).getTime():NaN;
+  const freshest=Number.isFinite(generated)?generated:liveTime;
+  const age=Number.isFinite(freshest)?Math.max(0,Date.now()-freshest):Infinity;
+  document.getElementById("liveStatus").textContent=payload.live_cycle?(`#${payload.live_cycle.latest_prediction_id||"—"} · ${fmtTime(payload.live_cycle.completed_at_utc)}${liveTime && Date.now()-liveTime>STALE_MS?" · STALE":""}`):"UNKNOWN";
   document.getElementById("pitStatus").textContent=payload.pit?(`${payload.pit.verified_primary_predictions||0}/${payload.pit.min_strict_pit_rows||0} primary PIT · ${payload.pit.pit_verified?"VERIFIED":"HOLD"}`):"UNKNOWN";
+  const msg=document.getElementById("message");
+  if(Number.isFinite(age) && age>STALE_MS){msg.className="error";msg.textContent=`データ鮮度: STALE · 最終生成 ${fmtTime(new Date(freshest).toISOString())}`;}
 }
 function render(){const rows=rangeRows();updateCards();drawChart(rows);updateLegend();updateSummary()}
 svg.addEventListener("mousemove",e=>{
@@ -154,9 +160,9 @@ svg.addEventListener("mouseleave",()=>tip.style.display="none");
 async function load(){
   try{
     const [t,l,p]=await Promise.all([
-      fetch("data/forecast_trajectory.json",{cache:"no-store"}),
-      fetch("data/live_cycle_status.json",{cache:"no-store"}).catch(()=>null),
-      fetch("data/historical_research/pit_oos_audit.json",{cache:"no-store"}).catch(()=>null)
+      fetch("data/forecast_trajectory.json?ts="+Date.now(),{cache:"no-store"}),
+      fetch("data/live_cycle_status.json?ts="+Date.now(),{cache:"no-store"}).catch(()=>null),
+      fetch("data/historical_research/pit_oos_audit.json?ts="+Date.now(),{cache:"no-store"}).catch(()=>null)
     ]);
     if(!t.ok)throw new Error("forecast trajectory is not available yet");
     payload=await t.json();
@@ -166,6 +172,7 @@ async function load(){
   }catch(e){document.getElementById("message").className="error";document.getElementById("message").textContent="データ未生成: "+e.message}
 }
 load();
+setInterval(()=>load(),60000);
 </script>
 </body>
 </html>
