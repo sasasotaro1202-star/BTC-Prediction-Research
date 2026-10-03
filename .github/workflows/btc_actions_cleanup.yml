@@ -74,11 +74,16 @@ jobs:
               created_epoch=$(date -d "${created}" +%s 2>/dev/null || echo 0)
               age=$((now-created_epoch))
 
-              # A running research job older than 30m is considered stale when
-              # it is not based on the current main lineage. Multiple active
-              # runs are collapsed to the newest surviving run.
+              # Most research lanes should be rebuilt when an old run drifts
+              # behind main. The 24H marathon is different: each run is bound
+              # to its immutable trigger snapshot and may legitimately outlive
+              # later main commits.
               stale=0
-              if [ "${age}" -ge 1800 ] && [ "${head}" != "${main_sha}" ]; then
+              if [ "${workflow}" = "btc_24h_autonomous_research.yml" ]; then
+                if [ "${age}" -ge 90000 ]; then
+                  stale=1
+                fi
+              elif [ "${age}" -ge 1800 ] && [ "${head}" != "${main_sha}" ]; then
                 stale=1
               elif [ "${keep}" -eq 1 ]; then
                 stale=1
