@@ -10,6 +10,7 @@ import csv
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
@@ -26,6 +27,13 @@ CLASSES=("DOWN","FLAT","UP")
 HORIZONS={"5m":5,"10m":10}
 MIN_TRAIN=12000
 EMBARGO=10
+# The workflow pins BLAS/OpenMP to one thread. Multiple independent feature
+# patterns can therefore run concurrently without uncontrolled thread
+# oversubscription. Default to serial locally unless the runner opts in.
+try:
+    SCREEN_WORKERS=max(1,min(8,int(os.environ.get("BTC_FEATURE_SCREEN_WORKERS","1"))))
+except ValueError:
+    SCREEN_WORKERS=1
 
 BASE_FEATURES=[
 "ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30",
@@ -176,12 +184,11 @@ def run_single_feature_ablation(ts,price,X):
         fs=folds(len(y))
         base_cols=np.arange(len(BASE_FEATURES),dtype=np.int64)
         base_all,base_dev,base_holdout,_=screen_with_slices(XX[:,base_cols],y,fs)
-        add_records=[]
-        for feature in FRONTIER_FEATURES:
+        def run_frontier_single_add(feature):
             col=FEATURES.index(feature)
             cols=np.concatenate((base_cols,np.asarray([col],dtype=np.int64)))
             mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
-            add_records.append({
+            return {
                 "feature":feature,
                 "metrics":mm,
                 "development_metrics":dm,
@@ -191,12 +198,12 @@ def run_single_feature_ablation(ts,price,X):
                 "development_delta_vs_base":{k:float(dm[k]-base_dev[k]) for k in ("logloss","accuracy","brier","ece")},
                 "frozen_holdout_delta_vs_base":{k:float(hm[k]-base_holdout[k]) for k in ("logloss","accuracy","brier","ece")},
                 "status":"OK",
-            })
-        remove_records=[]
-        for feature in BASE_FEATURES:
+            }
+
+        def run_base_single_remove(feature):
             cols=np.asarray([i for i,f in enumerate(BASE_FEATURES) if f!=feature],dtype=np.int64)
             mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
-            remove_records.append({
+            return {
                 "feature":feature,
                 "metrics":mm,
                 "development_metrics":dm,
@@ -206,7 +213,11 @@ def run_single_feature_ablation(ts,price,X):
                 "development_delta_vs_base":{k:float(dm[k]-base_dev[k]) for k in ("logloss","accuracy","brier","ece")},
                 "frozen_holdout_delta_vs_base":{k:float(hm[k]-base_holdout[k]) for k in ("logloss","accuracy","brier","ece")},
                 "status":"OK",
-            })
+            }
+
+        with ThreadPoolExecutor(max_workers=SCREEN_WORKERS) as executor:
+            add_records=list(executor.map(run_frontier_single_add,FRONTIER_FEATURES))
+            remove_records=list(executor.map(run_base_single_remove,BASE_FEATURES))
         add_rank=sorted(add_records,key=lambda r:(r["development_delta_vs_base"]["logloss"],-r["development_delta_vs_base"]["accuracy"]))
         remove_rank=sorted(remove_records,key=lambda r:(-r["development_delta_vs_base"]["logloss"],r["development_delta_vs_base"]["accuracy"]))
         result[horizon]={
@@ -265,18 +276,24 @@ def main():
         "selection_leakage_guard":"rank_candidates_on_development_folds_only; evaluate_latest_fold_as_frozen_holdout",
         "selection_metric_order":["development_logloss","development_brier","development_ece","development_accuracy","feature_count"],
         "fine_grained_single_feature_ablation":True,
+        "screen_workers":SCREEN_WORKERS,
         "horizons":{}
     }
     for h,minutes in HORIZONS.items():
-        idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
-        for mask in range(1,PATTERN_COUNT+1):
-            fam,fn=pattern_features(mask); cols=np.asarray([FEATURES.index(f) for f in fn],dtype=np.int64)
+        idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y))
+
+        def run_mask(mask):
+            fam,fn=pattern_features(mask)
+            cols=np.asarray([FEATURES.index(f) for f in fn],dtype=np.int64)
             try:
                 mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
-                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"metrics":mm,"development_metrics":dm,"frozen_holdout_metrics":hm,"fold_metrics":ff,"status":"OK"})
+                return {"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"metrics":mm,"development_metrics":dm,"frozen_holdout_metrics":hm,"fold_metrics":ff,"status":"OK"}
             except (ValueError,RuntimeError,np.linalg.LinAlgError) as exc:
-                failures+=1
-                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"status":"FAILED","error":f"{type(exc).__name__}:{exc}"})
+                return {"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"status":"FAILED","error":f"{type(exc).__name__}:{exc}"}
+
+        with ThreadPoolExecutor(max_workers=SCREEN_WORKERS) as executor:
+            records=list(executor.map(run_mask,range(1,PATTERN_COUNT+1)))
+        failures=sum(1 for record in records if record["status"]=="FAILED")
         base=next((r for r in records if r["families"]==["base"]),None)
         valid=[r for r in records if r["status"]=="OK"]
         if base and base.get("metrics"):
