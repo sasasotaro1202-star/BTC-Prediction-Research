@@ -1,6 +1,7 @@
 """Strict production-integrity gate for BTC prediction runs."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -47,6 +48,82 @@ def max_prediction_age_seconds() -> float:
 def finite_probs(values) -> bool:
     vals = [float(x) for x in values]
     return all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in vals) and abs(sum(vals) - 1.0) <= 1e-5
+
+
+
+
+def artifact_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def check_calibration_bindings(horizon: str, model_version: str, model_sha256: str) -> dict:
+    path = MODEL_DIR / f"{horizon}.calibration.json"
+    if not path.is_file() or path.stat().st_size <= 0:
+        return {"status": "MISSING", "horizon": horizon}
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"{horizon}: calibration artifact malformed: {type(exc).__name__}")
+    if obj.get("model_version") != model_version:
+        fail(f"{horizon}: calibration model generation mismatch")
+    recorded_sha = str(obj.get("model_sha256", "")).strip()
+    if recorded_sha and recorded_sha != model_sha256:
+        fail(f"{horizon}: calibration artifact hash mismatch")
+    try:
+        n = int(obj.get("n_settled", 0))
+        temperature = float(obj.get("temperature", 1.0))
+    except (TypeError, ValueError):
+        fail(f"{horizon}: calibration numeric contract invalid")
+    if n < 0 or not math.isfinite(temperature) or not (0.5 <= temperature <= 3.0):
+        fail(f"{horizon}: calibration bounds invalid")
+    return {
+        "status": "BOUND",
+        "horizon": horizon,
+        "n_settled": n,
+        "temperature": temperature,
+        "model_version": model_version,
+        "model_sha256": model_sha256,
+    }
+
+
+def check_blend_binding(horizon: str, model_version: str, model_sha256: str) -> dict:
+    path = MODEL_DIR / f"{horizon}.blend.json"
+    if not path.is_file() or path.stat().st_size <= 0:
+        return {"status": "MISSING", "horizon": horizon}
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"{horizon}: blend artifact malformed: {type(exc).__name__}")
+    status = str(obj.get("status", ""))
+    if obj.get("model_version") != model_version:
+        fail(f"{horizon}: blend model generation mismatch")
+    recorded_sha = str(obj.get("model_sha256", "")).strip()
+    if status == "accepted" and recorded_sha != model_sha256:
+        fail(f"{horizon}: accepted blend artifact hash mismatch")
+    if "base_weight" in obj:
+        try:
+            weight = float(obj["base_weight"])
+        except (TypeError, ValueError):
+            fail(f"{horizon}: blend base_weight invalid")
+        if not math.isfinite(weight) or not (0.0 <= weight <= 0.45):
+            fail(f"{horizon}: blend base_weight bounds invalid")
+    if "n" in obj:
+        try:
+            n = int(obj["n"])
+        except (TypeError, ValueError):
+            fail(f"{horizon}: blend n invalid")
+        if n < 0:
+            fail(f"{horizon}: blend n invalid")
+    return {
+        "status": "BOUND" if status == "accepted" and recorded_sha == model_sha256 else status or "UNVALIDATED",
+        "horizon": horizon,
+        "model_version": model_version,
+        "model_sha256": recorded_sha or None,
+    }
 
 
 def check_model(horizon: str) -> dict:
@@ -96,7 +173,17 @@ def check_model(horizon: str) -> dict:
             f"{horizon}: production registry metadata mismatch: "
             f"registry={registry_row[0]!r} metadata={meta['model_version']!r}"
         )
-    return {"horizon": horizon, "model_version": meta["model_version"], "feature_count": len(FEATURES)}
+    model_sha = artifact_sha256(model_path)
+    calibration = check_calibration_bindings(horizon, str(meta["model_version"]), model_sha)
+    blend = check_blend_binding(horizon, str(meta["model_version"]), model_sha)
+    return {
+        "horizon": horizon,
+        "model_version": meta["model_version"],
+        "model_sha256": model_sha,
+        "feature_count": len(FEATURES),
+        "calibration": calibration,
+        "blend": blend,
+    }
 
 
 def check_db() -> dict:
