@@ -1,17 +1,16 @@
 import sqlite3
 from pathlib import Path
 
+try:
+    from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+except ModuleNotFoundError:
+    from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
+
 DB = Path(__file__).resolve().parents[1] / "data" / "predictions.db"
 
-def connect():
-    DB.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB)
-    con.row_factory = sqlite3.Row
-    return con
-
-def init_db():
-    with connect() as con:
-        con.executescript('''
+def init_connection(con):
+    """Create the canonical schema and apply additive extended-horizon migrations."""
+    con.executescript('''
         CREATE TABLE IF NOT EXISTS predictions (
           prediction_id INTEGER PRIMARY KEY AUTOINCREMENT,
           created_at_utc TEXT NOT NULL,
@@ -74,11 +73,35 @@ def init_db():
           ON experience_ledger(horizon, settled_at_utc);
         CREATE INDEX IF NOT EXISTS idx_experience_case
           ON experience_ledger(horizon, regime, predicted_direction, correct);
-        ''')
-        columns = {str(row[1]) for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
-        for name in ('settlement_source_5m', 'settlement_source_10m'):
+    ''')
+    columns = {str(row[1]) for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
+    for horizon in EXTENDED_RESEARCH_HORIZONS:
+        for prefix, sql_type in (
+            ('target_', 'TEXT'),
+            ('p_up_', 'REAL'),
+            ('p_down_', 'REAL'),
+            ('p_flat_', 'REAL'),
+            ('actual_price_', 'REAL'),
+            ('actual_direction_', 'TEXT'),
+            ('correct_', 'INTEGER'),
+            ('settled_', 'TEXT'),
+            ('settlement_source_', 'TEXT'),
+        ):
+            name = prefix + horizon
             if name not in columns:
-                con.execute(f'ALTER TABLE predictions ADD COLUMN {name} TEXT')
+                con.execute(f'ALTER TABLE predictions ADD COLUMN {name} {sql_type}')
+                columns.add(name)
+
+
+def connect():
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB)
+    con.row_factory = sqlite3.Row
+    return con
+
+def init_db():
+    with connect() as con:
+        init_connection(con)
 
 if __name__ == '__main__':
     init_db()
