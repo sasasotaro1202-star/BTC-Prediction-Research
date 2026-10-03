@@ -40,3 +40,22 @@ def test_production_sentinel_cancels_only_old_obsolete_active_runs():
     assert 'ci_gh run cancel "$run_id" --repo "$REPO"' in text
     assert 'ERROR: failed to cancel stale obsolete Live Cycle run_id=' in text
     assert 'Production heartbeat stale; dispatching one Live Cycle from current main.' in text
+
+
+def test_production_sentinel_deferred_recovery_requires_post_defer_fresh_cache_event():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "data/live_cycle_status.json?ref=main" in text
+    assert "data/binance_ws_1m.json?ref=binance-ws-cache" in text
+    assert '[ "$cycle_mode" = "deferred" ]' in text
+    assert "deferred_completed_ms=0" in text
+    assert "cache_age_ms=$((now*1000-cache_event_ms))" in text
+    assert '[ "$cache_age_ms" -le 180000 ]' in text
+    assert '[ "$cache_event_ms" -gt "$deferred_completed_ms" ]' in text
+    assert '[ "$deferred_cache_recovery" -eq 1 ]' in text
+
+
+def test_production_sentinel_fails_closed_for_deferred_cache_recovery_read_failures():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "deferred-cache recovery disabled." in text
+    assert "cache_fresh=0" in text
+    assert "cache_event_ms=0" in text
