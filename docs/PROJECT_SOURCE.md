@@ -4,23 +4,25 @@
 
 This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot.
 
-Recent verified implementation sequence:
+Recent implementation sequence:
 - fixed restored/pre-extension trajectory database compatibility and canonical `settled_<horizon>_at_utc` migration;
 - verified the repaired trajectory path in `BTC Live Cycle #1357` (`37097981489`), which completed successfully and generated prediction `96971`;
 - added all-horizon trajectory coverage and aligned extended settlement schema names;
 - fixed `src/settle.py` missing `math` import discovered by `BTC Live Cycle #1359` (`37098473703`);
-- added regression coverage for extended settlement finite-probability validation and activated two previously hidden settlement fallback tests;
-- separated dashboard packaging from GitHub Pages enablement so dashboard site packaging can succeed even when Pages deployment is blocked.
+- added regression coverage for extended settlement finite-probability validation and activated previously hidden settlement fallback tests;
+- separated dashboard packaging from GitHub Pages enablement so site packaging remains verifiable even when Pages deployment is blocked;
+- completed the settlement fixture schema so the new regression path exercises the real 5m/10m and extended settlement columns.
 
-Current main at this snapshot is `3b4daa94e8a147e65f6a6ab6bc2d88d311832199`. Latest code-bearing settlement fix is `4ac119a3044b06328b929f2228a15d464d282771`; the current HEAD also contains test-only activation/coverage commit `3b4daa94e8a147e65f6a6ab6bc2d88d311832199`.
+The latest code-bearing settlement fix is `4ac119a3044b06328b929f2228a15d464d282771`. The latest test-fixture correction is `b7d0c4a787e271cdbf8b4c2c2c6e254f5dcaa809`.
 
 Verification evidence:
 - `BTC Unit Tests #2055` on `e10eca658920b5c31fc19c9bb1bcfef5092d556f`: SUCCESS.
 - `BTC Ops Preflight #408` on `4ac119a3044b06328b929f2228a15d464d282771`: SUCCESS.
-- `BTC Unit Tests #2062` on current HEAD `3b4daa94e8a147e65f6a6ab6bc2d88d311832199`: IN PROGRESS at this snapshot; do not treat as verified until completion.
-- `BTC Live Cycle #1357` on `9c66a8236271326e5db1f11fb1bcf92ef7b58108`: SUCCESS, latest published prediction `96971`.
+- `BTC Live Cycle #1357` on `9c66a8236271326e5db1f11fb1bcf92ef7b58108`: SUCCESS; latest published prediction `96971`.
 - `BTC Live Cycle #1359` on `e10eca658920b5c31fc19c9bb1bcfef5092d556f`: FAILED during settlement because `math` was referenced without import. This remains recorded as a failure; the import fix is now in `4ac119a3044b06328b929f2228a15d464d282771`.
-- `BTC Prediction Dashboard #29`: packaging job SUCCESS and `github-pages` artifact created (non-expired); the Pages deployment leg remains subject to the existing GitHub integration permission block.
+- `BTC Unit Tests #2062` on `3b4daa94e8a147e65f6a6ab6bc2d88d311832199`: FAILED only because the newly added settlement fixture omitted required 5m/10m outcome columns; the fixture has since been corrected in `b7d0c4a787e271cdbf8b4c2c2c6e254f5dcaa809`.
+- `BTC Unit Tests #2063` on `b7d0c4a787e271cdbf8b4c2c2c6e254f5dcaa809`: IN PROGRESS at this snapshot; do not treat as verified until completion.
+- `BTC Prediction Dashboard #29`: packaging job SUCCESS and a non-expired `github-pages` artifact was created; the deployment leg FAILED at GitHub Pages configuration, preserving the known integration permission block rather than hiding it.
 
 Published production state remains:
 - 5m: `bootstrap.soft_ensemble.v5.4`
@@ -35,7 +37,7 @@ Latest strict PIT/OOS checkpoint remains:
 - recent 20-prediction windows remain strict-PIT clean for 5m and 10m;
 - legacy unverified observations remain quarantined.
 
-Latest performance snapshot after prediction `96971`:
+Latest performance snapshot remains:
 - 5m final: accuracy `0.3851468`, LogLoss `1.1548209`, Brier `0.7005714`, ECE `0.0857422`, n=`579`;
 - 5m strict-PIT: accuracy `0.4578755`, LogLoss `1.0794920`, Brier `0.6508760`, ECE `0.0570938`, n=`273`;
 - 10m final: accuracy `0.4214162`, LogLoss `1.1476375`, Brier `0.6906639`, ECE `0.0842570`, n=`579`;
@@ -43,7 +45,7 @@ Latest performance snapshot after prediction `96971`:
 
 Extended horizons `15m, 30m, 1h, 3h, 6h, 12h, 24h` remain research-only with no settled observations yet. No promotion effect is derived from their dashboard presence.
 
-GitHub Pages deployment remains BLOCKED at the platform/integration permission layer. The new dashboard workflow now isolates site packaging from that deployment step, preserving a verifiable `github-pages` artifact without relabeling the Pages deployment as successful.
+GitHub Pages deployment remains BLOCKED at the platform/integration permission layer. Dashboard packaging is now an independently verified job/artifact path, while the deployment failure remains explicit.
 
 ## Canonical rules
 - BTC is a continuous market; do not apply weekday/market-close assumptions from equities.
