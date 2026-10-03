@@ -13,6 +13,8 @@ on:
       - 'src/historical_research_runner.py'
       - 'scripts/historical_research_spot_fallback.py'
       - 'tests/test_historical_research.py'
+      - 'src/feature_pattern_exhaustive.py'
+      - 'tests/test_feature_pattern_exhaustive.py'
   schedule:
     - cron: '17 1,7,13,19 * * *'
   workflow_dispatch:
@@ -84,10 +86,10 @@ jobs:
           p=Path('data/historical_research/report.json')
           if not p.exists(): raise SystemExit('report.json was not produced')
           r=json.loads(p.read_text())
-          assert r.get('protocol_version') == 'historical-v7-feature-frontier'
-          assert r.get('feature_count') == 72
+          assert r.get('protocol_version') == 'historical-v8-feature-frontier'
+          assert r.get('feature_count') == 92
           assert r.get('base_feature_count') == 41
-          assert r.get('frontier_feature_count') == 31
+          assert r.get('frontier_feature_count') == 51
           assert r.get('ablation_artifact') == 'feature_frontier_oos.json'
           a=Path('data/historical_research/feature_frontier_oos.json')
           assert a.exists(), 'feature frontier ablation artifact missing'
@@ -102,6 +104,34 @@ jobs:
               assert 'baseline' in hz and 'models' in hz and 'ensemble' in hz
           print('research artifact validation: OK')
           PY
+      - name: Run exhaustive feature-family pattern screen
+        shell: bash
+        env:
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_feature_pattern_exhaustive.py
+          python src/feature_pattern_exhaustive.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/feature_pattern_exhaustive.json')
+          o=json.loads(p.read_text(encoding='utf-8'))
+          if o.get('research_only') is not True or o.get('production_changed') is not False:
+              raise SystemExit('feature pattern screen must remain research-only')
+          if o.get('status') != 'COMPLETE' or o.get('pattern_count_expected') != 255:
+              raise SystemExit(f"exhaustive feature pattern screen incomplete: {o.get('status')}")
+          for h in ('5m','10m'):
+              hz=o.get('horizons',{}).get(h,{})
+              if hz.get('status') != 'COMPLETE' or hz.get('patterns_completed') != 255:
+                  raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/255")
+              if len(hz.get('all_patterns',[])) != 255:
+                  raise SystemExit(f"{h}: all pattern records were not materialized")
+          print('exhaustive feature-family pattern screen: COMPLETE')
+          PY
+
       - name: Reject raw archive files in Git workspace
         run: |
           if find data/historical_research -type f \( -name '*.zip' -o -name '*.CHECKSUM' -o -name '*.sha256' \) -print -quit | grep -q .; then exit 1; fi
@@ -115,7 +145,7 @@ jobs:
           # Actions artifacts/cache rather than the Git repository. This avoids
           # repository bloat and reduces state-writer conflict surface.
           git rm -r --cached --ignore-unmatch data/historical_research/cache data/historical_research/aligned_panel.csv
-          git add data/historical_research/report.json data/historical_research/feature_frontier_oos.json data/historical_research/oos_*.csv
+          git add data/historical_research/report.json data/historical_research/feature_frontier_oos.json data/historical_research/feature_pattern_exhaustive.json data/historical_research/oos_*.csv
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'Update BTC historical research results'
           for attempt in 1 2 3 4 5; do
@@ -149,5 +179,6 @@ jobs:
             data/historical_research/production_artifact_audit.json
             data/historical_research/venue_drift.json
             data/historical_research/feature_frontier_oos.json
+            data/historical_research/feature_pattern_exhaustive.json
           if-no-files-found: error
           retention-days: 3
