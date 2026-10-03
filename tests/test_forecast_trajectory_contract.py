@@ -5,8 +5,10 @@ class ForecastTrajectoryContractTests(unittest.TestCase):
     def test_live_cycle_wires_chart_ready_export(self):
         text=(ROOT/".github"/"workflows"/"btc_live_cycle.yml").read_text(encoding="utf-8")
         self.assertIn("python src/forecast_trajectory.py --limit 2880",text)
-        self.assertIn("forecast_trajectory.json",text)
+        self.assertGreaterEqual(text.count("data/historical_research/forecast_trajectory.json"), 5)
         self.assertIn("tests/test_forecast_trajectory.py",text)
+        self.assertIn("forecast_trajectory.json",text)
+        self.assertIn("btc-forecast-trajectory",text)
     def test_five_minute_is_primary(self):
         text=(ROOT/"src"/"forecast_trajectory.py").read_text(encoding="utf-8")
         self.assertIn('"primary_5m"',text)
