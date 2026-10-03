@@ -34,7 +34,7 @@ th:first-child,td:first-child{text-align:left}
 <script>
 const HORIZON_FILE="horizon_curve_latest.json";
 const pct=x=>(100*x).toFixed(1)+"%";
-const esc=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function draw(data){
  const pts=data.points||[], cvs=document.getElementById("chart"), ctx=cvs.getContext("2d");
  const dpr=window.devicePixelRatio||1, cssW=cvs.clientWidth||1000, cssH=360;
