@@ -87,6 +87,7 @@ DEV_FRACTION = 0.70
 MIN_COMMON_ROWS = 20_000
 MIN_HOLDOUT_ROWS = 2_000
 TEST_BLOCK = 1_000
+PANEL_LOOKBACK_MINUTES = 60
 
 # Original historical-v6 features (41) + the exact two EMA gaps used by the
 # current Champion, so the legacy 15-feature slice is bit-compatible in meaning.
@@ -288,9 +289,9 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
     rows: list[tuple[int, list[float], float]] = []
 
     for i, t in enumerate(common):
-        if i < 50:
+        if i < PANEL_LOOKBACK_MINUTES:
             continue
-        w = common[i-50:i+1]
+        w = common[i-PANEL_LOOKBACK_MINUTES:i+1]
         if not _window_is_contiguous(w):
             continue
 
