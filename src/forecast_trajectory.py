@@ -30,12 +30,15 @@ def _ensure_horizon_columns(con, horizons):
             ("actual_price_", "REAL"),
             ("actual_direction_", "TEXT"),
             ("correct_", "INTEGER"),
-            ("settled_at_utc_", "TEXT"),
         ):
             name = prefix + horizon
             if name not in existing:
                 con.execute(f"ALTER TABLE predictions ADD COLUMN {name} {sql_type}")
                 existing.add(name)
+        settlement_name = f"settled_{horizon}_at_utc"
+        if settlement_name not in existing:
+            con.execute(f"ALTER TABLE predictions ADD COLUMN {settlement_name} TEXT")
+            existing.add(settlement_name)
 
 
 def build(limit=2880, horizons=ALL_HORIZONS):
