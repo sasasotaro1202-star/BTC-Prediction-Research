@@ -221,13 +221,11 @@ def build_panel():
     start=end-timedelta(days=DAYS)
     raw=load_market(start,end)
     maps={k:{int(r[0]):r for r in v} for k,v in raw.items() if k not in ("funding","oi")}
-    spot_proxy=False
+    # BTC spot is a critical independent source for the historical feature
+    # contract. Missing spot history is UNKNOWN, not a signal to substitute
+    # futures or manufacture a zero basis.
     if not maps.get("btc_spot"):
-        if maps.get("btc_fut"):
-            maps["btc_spot"]=dict(maps["btc_fut"]); spot_proxy=True
-            print("[WARN] BTC spot history unavailable; using BTC futures as explicit spot proxy. basis features disabled.")
-        else:
-            raise RuntimeError("both BTC spot and futures historical data are unavailable")
+        raise RuntimeError("both BTC spot and futures historical data are unavailable")
     funding={int(r["fundingTime"]):float(r["fundingRate"]) for r in raw.get("funding",[])}; oi={int(r["timestamp"]):float(r["sumOpenInterest"]) for r in raw.get("oi",[])}
     common=sorted(set(maps["btc_fut"])&set(maps["btc_spot"])&set(maps["eth_fut"])&set(maps["sol_fut"]))
     if len(common)<MIN_TRAIN+TEST_BLOCK:raise RuntimeError(f"insufficient aligned Binance history: {len(common)}")
@@ -486,7 +484,7 @@ def main():
         report["horizons"][h]=hz
     report["ablation_artifact"]="feature_frontier_oos.json"
     report["finished_utc"]=datetime.now(timezone.utc).isoformat()
-    report["spot_proxy"] = bool(spot_proxy)
+    report["spot_proxy"] = False
     (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     (OUT/"feature_frontier_oos.json").write_text(json.dumps(frontier_evidence,indent=2),encoding="utf-8")
     print(json.dumps(frontier_evidence,indent=2))
