@@ -132,18 +132,13 @@ def audit() -> dict:
 
     now = datetime.now(timezone.utc)
     coverage = {
-        "5m": {
+        horizon: {
             "settled_predictions": 0,
             "strict_primary_settled": 0,
             "situation_meta_ready": 0,
             "online_expert_ready": 0,
-        },
-        "10m": {
-            "settled_predictions": 0,
-            "strict_primary_settled": 0,
-            "situation_meta_ready": 0,
-            "online_expert_ready": 0,
-        },
+        }
+        for horizon in ALL_AUDIT_HORIZONS
     }
 
     for (
