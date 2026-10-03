@@ -163,22 +163,46 @@ def fetch_funding(symbol,start,end):
     path.write_text(json.dumps(rows),encoding="utf-8"); return rows
 
 def fetch_oi(symbol,start,end):
-    start=max(start,end-timedelta(days=30)); path=CACHE/f"oi_{symbol}_{start:%Y%m%d}_{end:%Y%m%d}.json"
+    # Binance USDⓈ-M Open Interest Statistics are exposed through the public
+    # /futures/data path on fapi.binance.com and are limited to recent history.
+    # Keep only the last 30 completed days, and fail closed on source failure
+    # instead of silently returning an empty series that later masquerades as
+    # missing-but-valid data.
+    start=max(start,end-timedelta(days=30))
+    path=CACHE/f"oi_{symbol}_{start:%Y%m%d}_{end:%Y%m%d}.json"
     if path.exists():
-        try:return json.loads(path.read_text())
-        except Exception:pass
+        try:
+            cached=json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(cached,list) and cached:
+                return cached
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+        try:path.unlink()
+        except OSError:pass
     out=[]; cur=int(start.timestamp()*1000); finish=int(end.timestamp()*1000)
     while cur<finish:
-        q=urllib.parse.urlencode({"symbol":symbol,"period":"15m","startTime":cur,"endTime":min(finish,cur+500*15*60_000),"limit":500})
-        try:rows=req_json(f"https://futures.binance.com/futures/data/openInterestHist?{q}")
-        except Exception:break
-        if not rows:break
-        out.extend(rows); last=int(rows[-1]["timestamp"])
-        if last<cur:break
+        window_end=min(finish,cur+500*15*60_000)
+        q=urllib.parse.urlencode({"symbol":symbol,"period":"15m","startTime":cur,"endTime":window_end,"limit":500})
+        try:
+            rows=req_json(f"https://fapi.binance.com/futures/data/openInterestHist?{q}")
+        except Exception as exc:
+            raise RuntimeError(f"historical_open_interest_unavailable:{symbol}:{cur}:{window_end}:{type(exc).__name__}:{exc}") from exc
+        if not isinstance(rows,list) or not rows:
+            raise RuntimeError(f"historical_open_interest_empty:{symbol}:{cur}:{window_end}")
+        out.extend(rows)
+        try:last=int(rows[-1]["timestamp"])
+        except (KeyError,TypeError,ValueError) as exc:
+            raise RuntimeError(f"historical_open_interest_invalid_row:{symbol}:{type(exc).__name__}:{exc}") from exc
+        if last<cur:
+            raise RuntimeError(f"historical_open_interest_non_monotonic:{symbol}:{cur}:{last}")
         cur=last+1
         if len(rows)<500:break
-    d={int(r["timestamp"]):r for r in out}; out=[d[k] for k in sorted(d)]
-    path.write_text(json.dumps(out),encoding="utf-8"); return out
+    d={int(r["timestamp"]):r for r in out}
+    out=[d[k] for k in sorted(d)]
+    if not out:
+        raise RuntimeError(f"historical_open_interest_empty:{symbol}:{start}:{end}")
+    path.write_text(json.dumps(out),encoding="utf-8")
+    return out
 
 def load_market(start,end):
     jobs=[]
