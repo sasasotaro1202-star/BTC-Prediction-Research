@@ -10,6 +10,8 @@ sys.path.insert(0, str(ROOT / 'src'))
 
 import predict  # noqa: E402
 import db as db_module  # noqa: E402
+from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+from extended_horizons import forecast_extended_horizons
 
 
 class TestPredictFeatureSafety(unittest.TestCase):
@@ -133,6 +135,64 @@ class TestPredictGenerationBinding(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_ohlc_relationship"):
             predict.features(bad)
 
+
+    def test_insert_prediction_persists_extended_horizon_fields(self):
+        now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
+        stamp = now.isoformat()
+        scenario = {
+            "decision_time_utc": stamp,
+            "provenance": {
+                "available_at": stamp,
+                "retrieved_at": stamp,
+                "prediction_cutoff": stamp,
+                "sources": {
+                    "binance_futures": {
+                        "available_at": stamp,
+                        "retrieved_at": stamp,
+                        "prediction_cutoff": stamp,
+                        "event_time": stamp,
+                        "status": "ok",
+                    }
+                },
+            },
+        }
+        extended = {
+            "15m": {
+                "target_at": now + predict.timedelta(minutes=15),
+                "probabilities": {"UP": 0.5, "DOWN": 0.2, "FLAT": 0.3},
+            }
+        }
+        with tempfile.TemporaryDirectory() as td:
+            old_db = predict.DB
+            old_db_module = db_module.DB
+            try:
+                temp_db = Path(td) / "predictions.db"
+                predict.DB = temp_db
+                db_module.DB = temp_db
+                db_module.init_db()
+                predict.insert_prediction(
+                    now,
+                    now + predict.timedelta(minutes=5),
+                    now + predict.timedelta(minutes=10),
+                    100.0,
+                    {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                    {"UP": 0.4, "DOWN": 0.4, "FLAT": 0.2},
+                    "5m:v1|10m:v1",
+                    {k: 0.0 for k in predict.FEATURES},
+                    scenario,
+                    extended,
+                )
+                with __import__("sqlite3").connect(temp_db) as con:
+                    row = con.execute(
+                        "SELECT target_15m,p_up_15m,p_down_15m,p_flat_15m,actual_price_15m "
+                        "FROM predictions"
+                    ).fetchone()
+                self.assertEqual(row[0], (now + predict.timedelta(minutes=15)).isoformat())
+                self.assertAlmostEqual(sum(row[1:4]), 1.0)
+                self.assertIsNone(row[4])
+            finally:
+                predict.DB = old_db
+                db_module.DB = old_db_module
 
     def test_insert_prediction_rejects_missing_pit_provenance(self):
         now = predict.datetime(2026, 9, 23, 5, 0, tzinfo=predict.timezone.utc)
