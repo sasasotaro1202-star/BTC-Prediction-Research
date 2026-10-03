@@ -273,6 +273,8 @@ jobs:
             tests/test_bootstrap_train.py
             tests/test_robustness_oos.py
             tests/test_live_research_evidence_contract.py
+            tests/test_horizon_registry.py
+            tests/test_extended_horizons.py
             tests/test_settle.py
             tests/test_experience_ledger.py
             tests/test_settlement_source.py
@@ -415,6 +417,24 @@ jobs:
 
       - name: Settle due BTC predictions
         run: python src/settle.py
+      - name: Monitor BTC extended research horizons
+        run: |
+          set -euo pipefail
+          python src/extended_horizon_monitor.py
+          test -s data/historical_research/extended_horizon_performance.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("data/historical_research/extended_horizon_performance.json")
+          obj=json.loads(path.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("extended horizon monitor must be research-only")
+          if obj.get("policy") != "diagnostic_only_no_model_input_no_promotion_effect":
+              raise SystemExit("extended horizon monitor policy mismatch")
+          if set(obj.get("horizons",{})) != {"15m","30m","1h","3h","6h","12h","24h"}:
+              raise SystemExit("extended horizon coverage mismatch")
+          print("BTC extended horizon monitoring: VERIFIED")
+          PY
       - name: Build post-settlement BTC experience ledger
         shell: bash
         run: |
@@ -1036,6 +1056,24 @@ jobs:
           flat_obj=json.loads(flat.read_text())
           if flat_obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('FLAT diagnostic policy mismatch')
           if not isinstance(flat_obj.get('counts'),dict) or not isinstance(flat_obj.get('window'),int) or flat_obj.get('window',0) <= 0: raise SystemExit('FLAT diagnostic malformed')
+          extended=Path('data/historical_research/extended_horizon_performance.json')
+          if not extended.exists(): raise SystemExit('extended horizon performance evidence missing')
+          ext_obj=json.loads(extended.read_text())
+          if ext_obj.get('research_only') is not True: raise SystemExit('extended horizon evidence must be research-only')
+          if set(ext_obj.get('horizons',{})) != {'15m','30m','1h','3h','6h','12h','24h'}: raise SystemExit('extended horizon evidence coverage mismatch')
+          from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+          with sqlite3.connect(p) as con:
+              columns={row[1] for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
+              latest_ext=con.execute('SELECT prediction_id,' + ','.join(f'target_{h},p_up_{h},p_down_{h},p_flat_{h}' for h in EXTENDED_RESEARCH_HORIZONS) + ' FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
+          for h in EXTENDED_RESEARCH_HORIZONS:
+              for field in (f'target_{h}',f'p_up_{h}',f'p_down_{h}',f'p_flat_{h}',f'actual_price_{h}',f'actual_direction_{h}',f'correct_{h}'):
+                  if field not in columns: raise SystemExit(f'extended horizon column missing: {field}')
+          if latest_ext:
+              pos=1
+              for h in EXTENDED_RESEARCH_HORIZONS:
+                  target,up,down,flat=latest_ext[pos:pos+4]; pos += 4
+                  if target is None or not all(isinstance(v,(int,float)) and float(v)>=0 for v in (up,down,flat)): raise SystemExit(f'extended horizon latest row malformed: {h}')
+                  if abs(float(up)+float(down)+float(flat)-1.0) > 1e-5: raise SystemExit(f'extended horizon probability sum invalid: {h}')
           robustness=Path('data/historical_research/robustness_oos_report.json')
           if not robustness.exists(): raise SystemExit('BTC robustness OOS evidence missing')
           robustness_obj=json.loads(robustness.read_text())
@@ -1146,6 +1184,7 @@ jobs:
               data/historical_research/pit_oos_audit.json \
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
+              data/historical_research/extended_horizon_performance.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1185,6 +1224,7 @@ jobs:
               data/historical_research/pit_oos_audit.json \
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
+              data/historical_research/extended_horizon_performance.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1218,6 +1258,7 @@ jobs:
               data/historical_research/pit_oos_audit.json \
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
+              data/historical_research/extended_horizon_performance.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
