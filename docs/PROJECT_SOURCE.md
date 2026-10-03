@@ -998,3 +998,720 @@ different routing
 
 をsimulate/replayし、
 failure sourceを切り分ける。
+
+⸻
+
+41. DRIFT
+
+Separate:
+
+Covariate Shift
+Label Shift
+Prior Shift
+Concept Drift
+Source Drift
+Schema Drift
+Entity Drift
+Coverage Drift
+Timing Drift
+Regime Transition
+
+Drift detector自身のfalse positive / false negativeも評価する。
+
+⸻
+
+42. REGIME
+
+regimeを単一labelに限定しない。
+
+候補:
+
+volatility
+trend
+liquidity
+correlation
+microstructure
+calendar
+information
+macro
+market structure
+
+Transition state:
+STABLE_A
+TRANSITION
+STABLE_B
+UNKNOWN
+
+⸻
+
+43. SCOPE FRONTIER
+
+BTC research scope:
+
+L0:
+primary market/data
+
+L1:
+independent spot/perpetual venues
+
+L2:
+derivatives/options
+
+L3:
+on-chain
+
+L4:
+macro / central-bank / rates
+
+L5:
+public news/social/event information
+
+L6:
+novel / unknown frontier
+
+各scopeは別々にPIT/OOS/robustness検証。
+
+⸻
+
+44. SOURCE VALUE
+
+Source追加の価値を、
+
+coverage improvement
+incremental information
+OOS improvement
+calibration improvement
+failure reduction
+latency
+cost
+maintenance
+
+で評価する。
+
+「source数増加」を成功としない。
+
+⸻
+
+45. FEATURE RETIREMENT
+
+Featureを追加するだけでなく、
+
+redundant
+unstable
+drifting
+leakage-prone
+high-maintenance
+low-value
+
+featureを削除候補にする。
+
+⸻
+
+46. COMPLEXITY BUDGET
+
+監視:
+
+feature count
+source count
+model count
+router complexity
+calibration layers
+workflow count
+dependencies
+latency
+maintenance burden
+failure surface
+
+performance gainに対するcomplexity増加を評価する。
+
+⸻
+
+47. FAILURE SURFACE
+
+新機能追加時に、
+
+new dependencies
+new failure modes
+new data assumptions
+new fallback paths
+new state transitions
+
+を評価。
+
+小さなgainのための過剰なfailure surface増加を警戒する。
+
+⸻
+
+48. ONLINE / OFFLINE PARITY
+
+同一input snapshotについて、
+
+Historical pipeline
+Production-like pipeline
+
+を比較。
+
+チェック:
+
+features
+missingness
+timestamps
+model inputs
+probabilities
+calibration
+routing
+state
+
+⸻
+
+49. DETERMINISTIC REPLAY
+
+可能な限り:
+
+Git SHA
+Data Snapshot
+Feature Schema
+Config
+Environment
+Seed
+
+を固定し、
+同じ入力から同等結果が得られることを確認する。
+
+⸻
+
+50. CHAOS TEST
+
+定期的に想定:
+
+source timeout
+API outage
+schema change
+duplicate
+corrupt timestamp
+stale data
+bad artifact
+cancelled workflow
+dependency failure
+resource exhaustion
+
+Safe DegradationとRecoveryを検証。
+
+⸻
+
+51. SAFE DEGRADATION
+
+Full
+→ Reduced
+→ Fallback
+→ Selective
+→ Abstain
+→ Recovery
+
+Critical integrity violationはBLOCK。
+
+単なるdata availability低下とPIT violationを同一扱いしない。
+
+⸻
+
+52. RECOVERY
+
+Checkpoint:
+
+checkpoint_id
+stage
+scope
+input_snapshot
+completed_outputs
+pending_work
+expected_next_state
+artifact_hashes
+recovery_safety
+
+を保存。
+
+必要:
+retry
+backoff
+resume
+idempotency
+rollback
+replay
+watchdog
+
+⸻
+
+53. ARTIFACT INTEGRITY
+
+重要artifact:
+
+model
+dataset
+calibration
+registry
+report
+checkpoint
+
+にhash/manifest/versionを付与。
+
+⸻
+
+54. STATE MACHINE
+
+許可状態遷移を明示する。
+
+例:
+
+RESEARCH
+→ CANDIDATE
+→ OOS
+→ ROBUST
+→ HOLDOUT
+→ SHADOW
+→ PROMOTION
+→ PRODUCTION
+
+異常:
+
+PRODUCTION
+→ DEGRADING
+→ INVESTIGATING
+→ RECALIBRATION / RETRAIN
+→ SHADOW
+→ REPLACE / ROLLBACK
+
+⸻
+
+55. STATE CONSISTENCY
+
+以下の矛盾をBLOCK:
+
+PIT FAIL + PRODUCTION ACTIVE
+
+REGISTRY PRODUCTION + MODEL MISSING
+
+MODEL HASH MISMATCH
+
+HOLDOUT INVALID + PROMOTION VALID
+
+STALE SOURCE + TRUSTED PRODUCTION
+
+Snapshot mismatch
+
+⸻
+
+56. HOLDOUT FIREWALL
+
+Frozen Holdoutを、
+
+model selection
+feature selection
+hyperparameter tuning
+router tuning
+calibration tuning
+source selection
+research prioritization
+
+に使用禁止。
+
+Holdout accessそのものをaudit eventにする。
+
+⸻
+
+57. RESEARCH PRIORITIZER
+
+次の研究を、
+
+expected OOS gain
+information gain
+failure reduction
+coverage debt
+urgency
+novelty
+transferability
+cost
+runtime
+reproducibility
+risk
+
+からprioritizeする。
+
+⸻
+
+58. RESEARCH STOPPING
+
+以下で停止・延期:
+
+no progress
+duplicate
+low information gain
+poor reproducibility
+high complexity
+high failure surface
+PIT uncertainty
+
+状態:
+STOP
+DEFER
+REDIRECT
+SUPERSEDE
+
+⸻
+
+59. RESEARCH SATURATION
+
+Research Yieldを監視。
+
+new information rate
+OOS improvement rate
+failure reduction
+coverage improvement
+
+が長期停滞した場合、
+adjacent/frontier/new-data/new-targetへ探索を移す。
+
+⸻
+
+60. UNKNOWN FRONTIER
+
+探索対象:
+
+unknown source
+unknown feature
+unknown regime
+unknown target
+unknown timing
+unknown failure
+unknown interaction
+unknown market structure
+unknown model family
+
+未知を「存在しない」と仮定しない。
+
+⸻
+
+61. CROSS-PROJECT TRANSFER
+
+他4 Projectのmechanismを利用する場合:
+
+DISCOVER
+→ ABSTRACT MECHANISM
+→ COMPATIBILITY
+→ LOCAL IMPLEMENTATION
+→ LOCAL PIT
+→ LOCAL OOS
+→ LOCAL ROBUSTNESS
+→ LOCAL HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+他Projectのperformanceをそのままtransfer evidenceにしない。
+
+⸻
+
+62. EXTERNAL INTELLIGENCE TRANSLATION
+
+Web / Search / Paper / OSS / Plugin / external forecast等の情報は、
+
+Discovery
+→ Source verification
+→ Reproducibility check
+→ GitHub-compatible implementation
+→ Local evaluation
+
+へ変換する。
+
+ChatGPT UI専用PluginをGitHub Actionsから直接使用できると仮定しない。
+
+必要ならAPI/CLI/OSS/public endpoint/local implementation/cacheへ変換する。
+
+⸻
+
+63. COST FIREWALL
+
+優先:
+
+Verified Free
+→ Free Quota
+→ OSS/local
+→ Cached
+→ Lightweight compute
+
+Paid-only
+Billing-risk
+Unknown-cost
+Trial with billing risk
+
+は自動導入しない。
+
+UNKNOWN COST = HOLD / UNCONFIRMED
+
+⸻
+
+64. SECURITY
+
+監視:
+
+secret exposure
+dependency vulnerability
+workflow permission
+action pinning
+artifact tampering
+untrusted code
+supply-chain risk
+
+Security uncertaintyがあるCandidateはproductionに入れない。
+
+⸻
+
+65. AUTOMATION HEALTH
+
+Automation metrics:
+
+false success
+false recovery
+retry rate
+duplicate execution
+checkpoint recovery
+mean recovery time
+stale artifacts
+resource waste
+workflow failure frequency
+
+を保存する。
+
+⸻
+
+66. REPORT INTEGRITY
+
+Raw result
+→ Stored result
+→ Computed metric
+→ Report
+→ Dashboard
+
+をcross-checkする。
+
+Report formattingによる数値誤りもFailureとして扱う。
+
+⸻
+
+67. PERFORMANCE CHANGE REPORT
+
+性能変更時は必ず:
+
+metric
+previous
+current
+absolute delta
+relative delta
+sample size
+effective sample size
+confidence interval
+worst fold
+newest fold
+calibration change
+
+を記録。
+
+ユーザーへの作業報告でもPerformance Deltaを明示する。
+
+⸻
+
+68. ABNORMAL IMPROVEMENT
+
+急激な性能改善は自動的にaudit triggerとする。
+
+疑う対象:
+
+leakage
+duplicate
+label contamination
+selection bias
+data revision
+target change
+future information
+benchmark contamination
+evaluation bug
+
+⸻
+
+69. REPRODUCIBILITY
+
+最低限保持:
+
+Git SHA
+environment
+dependencies
+config
+seed
+data snapshot
+feature schema
+model artifact
+calibration
+router
+target definition
+
+⸻
+
+70. PRODUCTION BUNDLE
+
+Production stateはmodel fileだけでは成立しない。
+
+Bundle:
+
+model
+feature schema
+source registry version
+PIT policy
+target definition
+calibration
+router
+fallback
+output schema
+monitoring
+rollback target
+manifest
+
+を一体としてversion管理する。
+
+⸻
+
+71. PRODUCTION SENTINEL
+
+Production sentinelは、
+
+Data Health
+PIT Health
+Model Health
+Calibration
+Drift
+OOD
+Failure Risk
+Latency
+Source Health
+Artifact Integrity
+State Consistency
+
+を監視する。
+
+⸻
+
+72. ABSTENTION
+
+Abstentionはfailureではない。
+
+適切な条件下で、
+
+ABSTAIN
+
+を成功状態として記録できるようにする。
+
+ただしabstention policy自体をOOSで評価する。
+
+⸻
+
+73. FORECAST QUALITY ≠ SYSTEM QUALITY
+
+分離指標:
+
+Forecast Quality
+Data Quality
+Decision Quality
+Automation Quality
+Research Quality
+Recovery Quality
+Security Quality
+
+総合状態を一つの平均値だけで表現しない。
+
+⸻
+
+74. SELF-EVOLUTION
+
+Source/Code/Workflow/Research Policyの改善は、
+
+Gap
+→ Hypothesis
+→ Proposed Change
+→ Impact Analysis
+→ Test
+→ PIT/OOS if relevant
+→ Independent Validation
+→ Promotion
+→ Version Update
+
+で行う。
+
+自己生成変更が自己承認のみでProductionへ入ることを禁止する。
+
+⸻
+
+75. FINAL COMPLETION EVIDENCE
+
+「Action Green」
+「コードが存在」
+「モデルが動く」
+だけでは完成ではない。
+
+Evidence Bundleとして、
+
+SPEC
+CODE
+DATA
+PIT
+LEAKAGE
+OOS
+CALIBRATION
+ROBUSTNESS
+HOLDOUT
+REPRODUCIBILITY
+RECOVERY
+MONITORING
+ROLLBACK
+STATE CONSISTENCY
+RESULT PRESENTATION
+KNOWLEDGE LINEAGE
+
+を検証する。
+
+⸻
+
+76. ULTIMATE PRINCIPLE
+
+このProjectは「最も複雑なBTC予測システム」を作ることを目的としない。
+
+最終的に残すべきものは、
+
+* 将来一般化に寄与する
+* PITが証明できる
+* 再現できる
+* robustである
+* maintenance可能
+* failureを検出できる
+* 必要な場合に予測を拒否できる
+* 現在の状態を正しく説明できる
+* 次の改善につながる
+
+というEvidenceを持つ機構だけである。
+
+追加より統合。
+複雑化より情報効率。
+平均性能より将来一般化。
+予測数より正しい予測。
+自信よりcalibration。
+成功数よりfailure理解。
+自動化率より安全な自律性。
+
+常に、
+
+MONITOR
+→ DETECT
+→ RESEARCH
+→ IMPLEMENT
+→ VERIFY
+→ ADOPT / HOLD / REJECT
+→ MONITOR
+
+を繰り返す。
+=== COPY END ===
