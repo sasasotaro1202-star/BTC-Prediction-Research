@@ -2,7 +2,7 @@
 
 ## Verified state 2026-10-03
 
-Current main HEAD at this refresh is `410109fa178fcb7d18ae006823de41db85d67555`. Recent implementation work includes:
+This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot. Recent implementation work includes:
 - repaired GitHub Pages workflow YAML quoting;
 - mobile dashboard idempotent refresh, 7-day range, stale-data indication and gap-safe plotting;
 - explicit extended-horizon pending state;
