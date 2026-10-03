@@ -215,6 +215,21 @@ def _predict_aligned(model, X: np.ndarray) -> np.ndarray:
     out = np.clip(out, 1e-8, 1.0)
     return out / out.sum(axis=1, keepdims=True)
 
+def _model_selection_key(result: dict) -> tuple:
+    """Deterministic development-selection order aligned to predictive metrics.
+
+    LogLoss is primary for probabilistic forecast quality, followed by Brier and
+    ECE; Accuracy is a secondary directional tie-breaker. Frozen-holdout metrics
+    are never used here.
+    """
+    return (
+        float(result["logloss"]),
+        float(result["brier"]),
+        float(result["ece"]),
+        -float(result["accuracy"]),
+        str(result["model"]),
+    )
+
 def _factories() -> dict[str, callable]:
     return {
         "logreg": lambda: Pipeline([
@@ -460,7 +475,7 @@ def _fit_selected(X_dev: np.ndarray, y_dev: np.ndarray, X_val: np.ndarray, y_val
         p = _predict_aligned(model, X_val[:, feature_indices])
         m = _metrics(y_val.tolist(), p)
         results.append({"model": name, **m})
-    results.sort(key=lambda r: (-r["accuracy"], r["logloss"], r["brier"]))
+    results.sort(key=_model_selection_key)
     winner_name = str(results[0]["model"])
     winner = fac[winner_name]()
     winner.fit(X_dev[:, feature_indices], y_dev)
