@@ -275,6 +275,7 @@ jobs:
             tests/test_live_research_evidence_contract.py
             tests/test_horizon_registry.py
             tests/test_extended_horizons.py
+            tests/test_extended_horizon_schema.py
             tests/test_settle.py
             tests/test_experience_ledger.py
             tests/test_settlement_source.py
@@ -1061,7 +1062,7 @@ jobs:
           ext_obj=json.loads(extended.read_text())
           if ext_obj.get('research_only') is not True: raise SystemExit('extended horizon evidence must be research-only')
           if set(ext_obj.get('horizons',{})) != {'15m','30m','1h','3h','6h','12h','24h'}: raise SystemExit('extended horizon evidence coverage mismatch')
-          from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+          from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
           with sqlite3.connect(p) as con:
               columns={row[1] for row in con.execute('PRAGMA table_info(predictions)').fetchall()}
               latest_ext=con.execute('SELECT prediction_id,' + ','.join(f'target_{h},p_up_{h},p_down_{h},p_flat_{h}' for h in EXTENDED_RESEARCH_HORIZONS) + ' FROM predictions ORDER BY prediction_id DESC LIMIT 1').fetchone()
