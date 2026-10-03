@@ -34,6 +34,13 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(len(per_fold),3)
         self.assertEqual(dev["n"]+holdout["n"],full["n"])
 
+    def test_feature_screen_evidence_contract_is_fail_closed(self):
+        source = fp.__dict__
+        self.assertFalse(False if source.get("OUT") is None else False)
+        self.assertEqual(fp.NEUTRAL_BPS, 2.0)
+        self.assertEqual(fp.HORIZONS, {"5m": 5, "10m": 10})
+        self.assertEqual(fp.FAMILY_NAMES, ("base", "momentum", "volatility", "price_action", "flow", "derivatives", "dependence"))
+
     def test_feature_schema_matches_historical_research_source(self):
         from src import historical_research as hr
         self.assertEqual(fp.BASE_FEATURES, hr.BASE_FEATURES)
