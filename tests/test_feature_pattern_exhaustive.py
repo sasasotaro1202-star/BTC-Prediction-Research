@@ -19,3 +19,10 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(set(full),set(fp.FEATURES))
 
 if __name__=="__main__": unittest.main()
+
+
+    def test_feature_schema_matches_historical_research_source():
+        from src import historical_research as hr
+        self.assertEqual(fp.BASE_FEATURES, hr.BASE_FEATURES)
+        self.assertEqual(fp.FRONTIER_FEATURES, hr.FRONTIER_FEATURES)
+        self.assertEqual(fp.FEATURES, hr.FEATURES)
