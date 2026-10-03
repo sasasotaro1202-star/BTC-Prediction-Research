@@ -69,7 +69,7 @@ jobs:
           if obj.get('final_holdout_protected') is not True:
               raise SystemExit('microstructure holdout protection missing')
           for h, result in obj.get('horizons', {}).items():
-              for variant in ('binance_micro', 'market_flow_v2', 'full_stack', 'cross_venue', 'orderbook_v2'):
+              for variant in ('binance_micro', 'market_flow_v2', 'full_stack', 'cross_venue', 'orderbook_v2', 'orderbook_v3', 'orderbook_v2_v3'):
                   item=result.get(variant,{})
                   if item.get('status') not in {'OK','DEFERRED'}:
                       raise SystemExit(f'{h}/{variant}: invalid status')
