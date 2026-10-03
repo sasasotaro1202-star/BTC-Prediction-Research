@@ -32,3 +32,22 @@ def test_dashboard_fetches_dynamic_state_without_browser_cache():
     assert re.search(r'forecast_trajectory\.json\?ts="\+Date\.now\(\)', text)
     assert re.search(r'live_cycle_status\.json\?ts="\+Date\.now\(\)', text)
     assert re.search(r'pit_oos_audit\.json\?ts="\+Date\.now\(\)', text)
+
+
+
+def test_dashboard_renders_all_horizon_overview_in_same_range_and_metric():
+    text = DASHBOARD.read_text(encoding="utf-8")
+    assert 'id="overviewGrid" class="overviewGrid"' in text
+    assert 'function overviewRangeRows(h)' in text
+    assert 'function overviewMetricSpec(points)' in text
+    assert 'function drawOverview()' in text
+    assert 'drawChart(rows);drawOverview();updateLegend();updateSummary()' in text
+    for horizon in ("5m", "10m", "15m", "30m", "1h", "3h", "6h", "12h", "24h"):
+        assert horizon in text
+
+
+def test_dashboard_overview_never_invents_missing_points():
+    text = DASHBOARD.read_text(encoding="utf-8")
+    assert 'if(!last){' in text
+    assert '最初の実運用サンプル待ち' in text
+    assert '未取得・未決済は線を補完しません' in text
