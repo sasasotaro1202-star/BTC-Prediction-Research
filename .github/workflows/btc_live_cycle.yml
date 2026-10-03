@@ -271,6 +271,8 @@ jobs:
             tests/test_promotion_gate.py
             tests/test_model_compare_promotion_boundary.py
             tests/test_bootstrap_train.py
+            tests/test_robustness_oos.py
+            tests/test_live_research_evidence_contract.py
             tests/test_settle.py
             tests/test_experience_ledger.py
             tests/test_settlement_source.py
@@ -853,6 +855,56 @@ jobs:
           python src/pit_oos_audit.py
           test -s data/historical_research/pit_oos_audit.json
 
+      - name: Generate BTC research-only robustness OOS evidence
+        env:
+          BTC_ROBUSTNESS_LIVE_ONLY: '1'
+        run: |
+          set -euo pipefail
+          python src/robustness_oos.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("data/historical_research/robustness_oos_report.json")
+          if not path.is_file():
+              raise SystemExit("robustness OOS evidence missing")
+          obj = json.loads(path.read_text(encoding="utf-8"))
+          if obj.get("schema_version") != 1:
+              raise SystemExit("robustness OOS schema mismatch")
+          if obj.get("research_only") is not True:
+              raise SystemExit("robustness OOS must be research-only")
+          if obj.get("policy") != "diagnostic_only_no_model_input_no_promotion_effect":
+              raise SystemExit("robustness OOS policy mismatch")
+          horizons = obj.get("horizons")
+          if not isinstance(horizons, dict) or set(horizons) != {"5m", "10m"}:
+              raise SystemExit("robustness OOS horizon coverage mismatch")
+          print("BTC robustness OOS evidence: VERIFIED")
+          PY
+
+      - name: Evaluate BTC promotion safety gate (research-only)
+        run: |
+          set -euo pipefail
+          python src/promotion_gate.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("data/historical_research/promotion_gate.json")
+          if not path.is_file():
+              raise SystemExit("promotion gate evidence missing")
+          obj = json.loads(path.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("promotion gate must be research-only")
+          if obj.get("production_safety_gate") not in {"PASS", "HOLD"}:
+              raise SystemExit("promotion safety gate state invalid")
+          if not isinstance(obj.get("promotion_allowed"), bool):
+              raise SystemExit("promotion_allowed must be boolean")
+          if obj.get("promotion_allowed") and obj.get("promotion_status") != "ELIGIBLE_PENDING_EXPLICIT_PROMOTION":
+              raise SystemExit("eligible promotion state mismatch")
+          print(
+              "BTC promotion safety gate: VERIFIED "
+              f"safety={obj.get('production_safety_gate')} allowed={obj.get('promotion_allowed')}"
+          )
+          PY
+
       - name: Record bounded PIT audit history
         shell: bash
         run: |
@@ -984,6 +1036,16 @@ jobs:
           flat_obj=json.loads(flat.read_text())
           if flat_obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('FLAT diagnostic policy mismatch')
           if not isinstance(flat_obj.get('counts'),dict) or not isinstance(flat_obj.get('window'),int) or flat_obj.get('window',0) <= 0: raise SystemExit('FLAT diagnostic malformed')
+          robustness=Path('data/historical_research/robustness_oos_report.json')
+          if not robustness.exists(): raise SystemExit('BTC robustness OOS evidence missing')
+          robustness_obj=json.loads(robustness.read_text())
+          if robustness_obj.get('research_only') is not True or robustness_obj.get('policy') != 'diagnostic_only_no_model_input_no_promotion_effect': raise SystemExit('BTC robustness OOS evidence contract mismatch')
+          if set(robustness_obj.get('horizons',{})) != {'5m','10m'}: raise SystemExit('BTC robustness OOS horizon coverage mismatch')
+          promotion=Path('data/historical_research/promotion_gate.json')
+          if not promotion.exists(): raise SystemExit('BTC promotion gate evidence missing')
+          promotion_obj=json.loads(promotion.read_text())
+          if promotion_obj.get('research_only') is not True or promotion_obj.get('production_safety_gate') not in {'PASS','HOLD'}: raise SystemExit('BTC promotion gate evidence contract mismatch')
+          if not isinstance(promotion_obj.get('promotion_allowed'),bool): raise SystemExit('BTC promotion gate allowed-state malformed')
           print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, venue-drift, and FLAT diagnostic validation: OK')
           PY
       - name: Record BTC live cycle outcome for downstream integrity gate
@@ -1082,6 +1144,8 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/robustness_oos_report.json \
+              data/historical_research/promotion_gate.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1119,6 +1183,8 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/robustness_oos_report.json \
+              data/historical_research/promotion_gate.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1150,6 +1216,8 @@ jobs:
               data/historical_research/research_input_audit.json \
               data/historical_research/production_artifact_audit.json \
               data/historical_research/pit_oos_audit.json \
+              data/historical_research/robustness_oos_report.json \
+              data/historical_research/promotion_gate.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \

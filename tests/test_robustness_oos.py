@@ -66,6 +66,13 @@ class RobustnessTests(unittest.TestCase):
                 )
             )
 
+    def test_live_only_disables_archive_fallback(self):
+        live = [{"id": 1}]
+        with patch.object(robustness_oos, "load_research_archive", side_effect=AssertionError("archive fallback must be disabled")):
+            data, source = robustness_oos.select_input_rows("5m", live, live_only=True)
+        self.assertIs(data, live)
+        self.assertEqual(source, "live_binance_primary")
+
     def test_regime_labels_use_current_and_past_only(self):
         rows=[
             {"ret":1.0,"vol":1.0},

@@ -4,7 +4,7 @@ No model artifacts or production state are changed. Regimes use only cutoff-avai
 features already stored with each prediction.
 """
 from __future__ import annotations
-import json, math, sqlite3
+import json, math, os, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 import joblib
@@ -178,18 +178,28 @@ def evaluate(h, rows):
         result["regimes"][regime]=entry
     return result
 
+def select_input_rows(h, live, live_only=False):
+    """Select live evidence first; archive fallback is disabled for scheduled production cycles."""
+    source = "live_binance_primary"
+    data = live
+    if len(live) < 1000 and not live_only:
+        archive = load_research_archive(h)
+        if len(archive) > len(live):
+            data = archive
+            source = "binance_vision_archive"
+    return data, source
+
+
 def main():
     if not DB.exists(): raise SystemExit("prediction database missing")
     payload={"schema_version":1,"research_only":True,"policy":"diagnostic_only_no_model_input_no_promotion_effect","horizons":{}}
     for h in HORIZONS:
         live = load(h)
-        source = "live_binance_primary"
-        data = live
-        if len(live) < 1000:
-            archive = load_research_archive(h)
-            if len(archive) > len(live):
-                data = archive
-                source = "binance_vision_archive"
+        data, source = select_input_rows(
+            h,
+            live,
+            live_only=os.environ.get("BTC_ROBUSTNESS_LIVE_ONLY") == "1",
+        )
         result = evaluate(h, data)
         result["data_source"] = source
         result["promotion_evidence_eligible"] = bool(
