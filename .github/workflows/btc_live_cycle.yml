@@ -1110,6 +1110,12 @@ jobs:
           promotion_obj=json.loads(promotion.read_text())
           if promotion_obj.get('research_only') is not True or promotion_obj.get('production_safety_gate') not in {'PASS','HOLD'}: raise SystemExit('BTC promotion gate evidence contract mismatch')
           if not isinstance(promotion_obj.get('promotion_allowed'),bool): raise SystemExit('BTC promotion gate allowed-state malformed')
+          trajectory=Path('data/historical_research/forecast_trajectory.json')
+          if not trajectory.exists(): raise SystemExit('BTC forecast trajectory evidence missing')
+          trajectory_obj=json.loads(trajectory.read_text())
+          if trajectory_obj.get('horizon_order') != ['5m','10m','15m','30m','1h','3h','6h','12h','24h']: raise SystemExit('BTC forecast trajectory horizon order mismatch')
+          if trajectory_obj.get('primary_horizons') != ['5m','10m']: raise SystemExit('BTC forecast trajectory primary contract mismatch')
+          if trajectory_obj.get('no_missing_as_zero') is not True: raise SystemExit('BTC forecast trajectory missing-value policy mismatch')
           print('BTC prediction database, models, calibration, blend, artifact provenance, research-health, venue-drift, and FLAT diagnostic validation: OK')
           PY
       - name: Record BTC live cycle outcome for downstream integrity gate
@@ -1218,6 +1224,7 @@ jobs:
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
               data/historical_research/extended_horizon_performance.json \
+              data/historical_research/forecast_trajectory.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1258,6 +1265,7 @@ jobs:
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
               data/historical_research/extended_horizon_performance.json \
+              data/historical_research/forecast_trajectory.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
@@ -1292,6 +1300,7 @@ jobs:
               data/historical_research/robustness_oos_report.json \
               data/historical_research/promotion_gate.json \
               data/historical_research/extended_horizon_performance.json \
+              data/historical_research/forecast_trajectory.json \
               data/historical_research/performance_snapshot.json \
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
