@@ -167,7 +167,7 @@ def test_candlestick_pattern_features_are_causal_and_well_bounded():
 
 
 def test_candlestick_features_extend_rich_features_without_moving_legacy_indices():
-    assert len(RICH_FEATURES) == len(LEGACY_FEATURES) + 38
+    assert len(RICH_FEATURES) == len(LEGACY_FEATURES) + 46
     assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == list(LEGACY_FEATURES)
     assert list(RICH_FEATURES[-8:]) == [
         "doji_score","hammer_score","shooting_star_score",
