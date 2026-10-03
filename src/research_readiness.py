@@ -6,6 +6,7 @@ evidence of PIT/OOS/production readiness.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -77,9 +78,34 @@ def _calibration_state(root: Path) -> dict[str, dict[str, Any]]:
             fit_ok = obj.get("fit_logloss") is not None
             holdout_ok = obj.get("holdout_logloss") is not None
             version = str(obj.get("model_version", "")).strip()
+
+            model_meta_path = root / "models" / f"{horizon}.json"
+            model_artifact_path = root / "models" / f"{horizon}.joblib"
+            expected_version = ""
+            expected_hash = None
+            if model_meta_path.is_file() and model_artifact_path.is_file():
+                model_meta = json.loads(model_meta_path.read_text(encoding="utf-8"))
+                expected_version = str(model_meta.get("model_version", "")).strip()
+                digest = hashlib.sha256()
+                with model_artifact_path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                expected_hash = digest.hexdigest()
+
+            binding_ok = (
+                bool(version)
+                and bool(expected_version)
+                and version == expected_version
+                and obj.get("model_sha256") == expected_hash
+            )
             status = (
                 "READY"
-                if n >= MIN_EFFECTIVE_CALIBRATION_ROWS and fit_ok and holdout_ok and version
+                if (
+                    n >= MIN_EFFECTIVE_CALIBRATION_ROWS
+                    and fit_ok
+                    and holdout_ok
+                    and binding_ok
+                )
                 else "WAITING"
             )
             result[horizon] = {
@@ -90,6 +116,9 @@ def _calibration_state(root: Path) -> dict[str, dict[str, Any]]:
                 "fit_logloss_available": fit_ok,
                 "holdout_logloss_available": holdout_ok,
                 "model_version": version,
+                "expected_model_version": expected_version,
+                "model_sha256_match": bool(expected_hash) and obj.get("model_sha256") == expected_hash,
+                "binding_ok": binding_ok,
                 "artifact": path.name,
             }
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
