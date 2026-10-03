@@ -45,7 +45,10 @@ class TestSettle(unittest.TestCase):
                 "target_5m TEXT", "target_10m TEXT", "base_price REAL",
                 "p_up_5m REAL", "p_down_5m REAL", "p_flat_5m REAL",
                 "p_up_10m REAL", "p_down_10m REAL", "p_flat_10m REAL",
-                "actual_price_5m REAL", "actual_price_10m REAL",
+                "actual_price_5m REAL", "actual_direction_5m TEXT", "correct_5m INTEGER",
+                "settled_5m_at_utc TEXT",
+                "actual_price_10m REAL", "actual_direction_10m TEXT", "correct_10m INTEGER",
+                "settled_10m_at_utc TEXT",
                 "model_version TEXT", "scenario_json TEXT",
                 "settlement_source_5m TEXT", "settlement_source_10m TEXT",
             ]
@@ -62,7 +65,8 @@ class TestSettle(unittest.TestCase):
                 values = [
                     1, "2000-01-01T00:00:00+00:00",
                     "2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", 100.0,
-                    .2, .4, .4, .2, .4, .4, None, None,
+                    .2, .4, .4, .2, .4, .4,
+                    None, None, None, None, None, None, None, None,
                     "test_model", '{"production_mode":"binance_primary"}', None, None,
                 ]
                 for h in horizons:
