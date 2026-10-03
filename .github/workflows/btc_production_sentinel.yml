@@ -12,11 +12,12 @@ permissions:
   actions: write
   contents: read
 
-# Only one sentinel generation should normally be active. A generation is
-# intentionally short-lived and creates its successor before exiting.
+# Sentinel is stateless: GitHub's schedule creates each generation.
+# Never chain self-dispatches; cancelling an overlapping old generation keeps
+# recovery work bounded and leaves Live Cycle as the sole production writer.
 concurrency:
   group: btc-production-sentinel
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sentinel:
