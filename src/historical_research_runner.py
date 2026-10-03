@@ -1,6 +1,6 @@
 """Fail-safe launcher for BTC historical research."""
 from __future__ import annotations
-import csv, hashlib, io, json, urllib.parse, zipfile
+import csv, hashlib, io, json, math, urllib.parse, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
