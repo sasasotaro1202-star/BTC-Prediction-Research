@@ -61,5 +61,21 @@ class TestResearchReadiness(unittest.TestCase):
         self.assertEqual(result["source_frontier"]["production_eligible_from_catalog"], 0)
 
 
+    def test_calibration_collection_is_explicit_when_pit_is_ready_but_calibration_is_not(self):
+        result = build_readiness(
+            {"status": "PASS"},
+            {"ok": True, "checks": {"5m": {}, "10m": {}}},
+            {"pit_verified": True, "verified_primary_predictions": 392, "min_strict_pit_rows": 300, "violation_count": 0},
+            {"promotion_status": "HOLD"},
+            {
+                "5m": {"status": "WAITING", "n_settled": 249, "remaining_rows": 151},
+                "10m": {"status": "WAITING", "n_settled": 392, "remaining_rows": 8},
+            },
+        )
+        self.assertEqual(result["readiness_state"], "CALIBRATION_COLLECTION")
+        self.assertFalse(result["calibration"]["all_horizons_ready"])
+        self.assertEqual(result["calibration"]["horizons"]["10m"]["remaining_rows"], 8)
+
+
 if __name__ == "__main__":
     unittest.main()
