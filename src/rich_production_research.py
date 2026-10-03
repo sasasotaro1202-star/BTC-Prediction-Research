@@ -101,6 +101,11 @@ RICH_FEATURES = (
     "rv60","volume_intensity_5m_60m","trade_intensity_5m_60m",
     "flow_30m","flow_60m","flow_toxicity_30m","flow_toxicity_60m",
     "amihud_15m","amihud_30m","range_intensity_10m",
+    # Explicit causal candle-pattern scores. These use only the closed
+    # candle at t and its immediately prior candle.
+    "doji_score","hammer_score","shooting_star_score",
+    "bullish_engulfing","bearish_engulfing",
+    "inside_bar","outside_bar","marubozu_score",
 )
 
 # Exact current production feature order.
@@ -332,6 +337,45 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
             np.mean((bh[-10:] - bl[-10:]) / np.maximum(b[-10:], 1e-12))
         )
 
+        # Explicit candlestick-pattern features. All are measurable from the
+        # current closed candle and the immediately prior closed candle only.
+        curr_open = float(bo[-1])
+        curr_high = float(bh[-1])
+        curr_low = float(bl[-1])
+        prev_open = float(bo[-2])
+        prev_high = float(bh[-2])
+        prev_low = float(bl[-2])
+        prev_close = float(b[-2])
+        curr_close = p
+
+        curr_range = max(curr_high - curr_low, 1e-12)
+        curr_body_abs = abs(curr_close - curr_open)
+        curr_upper = max(0.0, curr_high - max(curr_open, curr_close))
+        curr_lower = max(0.0, min(curr_open, curr_close) - curr_low)
+        close_pos = (curr_close - curr_low) / curr_range
+        body_frac = curr_body_abs / curr_range
+        upper_frac = curr_upper / curr_range
+        lower_frac = curr_lower / curr_range
+
+        doji_score = 1.0 - min(1.0, body_frac / 0.20)
+        hammer_score = lower_frac * (1.0 - min(1.0, upper_frac / 0.25)) * close_pos
+        shooting_star_score = upper_frac * (1.0 - min(1.0, lower_frac / 0.25)) * (1.0 - close_pos)
+        bullish_engulfing = float(
+            prev_close < prev_open
+            and curr_close > curr_open
+            and curr_open <= prev_close
+            and curr_close >= prev_open
+        )
+        bearish_engulfing = float(
+            prev_close > prev_open
+            and curr_close < curr_open
+            and curr_open >= prev_close
+            and curr_close <= prev_open
+        )
+        inside_bar = float(curr_high <= prev_high and curr_low >= prev_low)
+        outside_bar = float(curr_high >= prev_high and curr_low <= prev_low)
+        marubozu_score = max(0.0, 1.0 - upper_frac - lower_frac)
+
         dt = datetime.fromtimestamp(t / 1000.0, timezone.utc)
         hour = dt.hour + dt.minute / 60.0
         hs, hc = math.sin(2*math.pi*hour/24.0), math.cos(2*math.pi*hour/24.0)
@@ -347,6 +391,8 @@ def build_panel() -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.n
             funding_v,funding_delta,oi_change,oi_z,ema5,ema10,
             rv60,volume_intensity,trade_intensity,
             flow30,flow60,tox30,tox60,amihud15,amihud30,range_intensity,
+            doji_score,hammer_score,shooting_star_score,
+            bullish_engulfing,bearish_engulfing,inside_bar,outside_bar,marubozu_score,
         ]
         if all(math.isfinite(float(v)) for v in x):
             rows.append((int(t), [float(v) for v in x], p))
