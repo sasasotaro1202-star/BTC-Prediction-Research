@@ -58,8 +58,11 @@ def test_extended_microstructure_features_are_append_only():
         "rv60","volume_intensity_5m_60m","trade_intensity_5m_60m",
         "flow_30m","flow_60m","flow_toxicity_30m","flow_toxicity_60m",
         "amihud_15m","amihud_30m","range_intensity_10m",
+        "doji_score","hammer_score","shooting_star_score",
+        "bullish_engulfing","bearish_engulfing","inside_bar","outside_bar",
+        "marubozu_score",
     ]
-    assert list(RICH_FEATURES[-10:]) == expected_tail
+    assert list(RICH_FEATURES[-18:]) == expected_tail
     assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == [
         "ret1","ret3","ret5","ret10","accel","rv5","rv10",
         "rangepos10","body","upper","lower","volratio","voltrend",
@@ -143,3 +146,32 @@ def test_xgboost_factory_preserves_canonical_string_labels_when_available():
     assert probs.shape == (len(y), 3)
     assert np.isfinite(probs).all()
     assert set(pred.tolist()) <= {"DOWN", "FLAT", "UP"}
+
+def test_candlestick_pattern_features_are_causal_and_well_bounded():
+    from src import rich_production_research as r
+
+    vals = r._candlestick_pattern_features(
+        curr_open=100.0, curr_high=105.0, curr_low=99.0, curr_close=104.0,
+        prev_open=104.0, prev_high=105.0, prev_low=98.0, prev_close=100.0,
+    )
+    assert len(vals) == 8
+    assert all(np.isfinite(vals))
+    assert 0.0 <= vals[0] <= 1.0
+    assert 0.0 <= vals[1] <= 1.0
+    assert 0.0 <= vals[2] <= 1.0
+    assert vals[3] == 1.0
+    assert vals[4] == 0.0
+    assert vals[5] == 0.0
+    assert vals[6] == 0.0
+    assert 0.0 <= vals[7] <= 1.0
+
+
+def test_candlestick_features_extend_rich_features_without_moving_legacy_indices():
+    assert len(RICH_FEATURES) == len(LEGACY_FEATURES) + 38
+    assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == list(LEGACY_FEATURES)
+    assert list(RICH_FEATURES[-8:]) == [
+        "doji_score","hammer_score","shooting_star_score",
+        "bullish_engulfing","bearish_engulfing","inside_bar","outside_bar",
+        "marubozu_score",
+    ]
+
