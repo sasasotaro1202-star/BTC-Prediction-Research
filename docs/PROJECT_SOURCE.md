@@ -1,8 +1,19 @@
 # BTC-Prediction-Research — Project Source
 
 ## Verified state 2026-10-03
-main latest observed HEAD after re-check: ff251b15fdb0300f1ff70918e472d3f51c772301. Latest observed repository work also includes a fix repairing dashboard workflow YAML quoting.
-README documents 5m as Production Champion; 10m/15m/30m/1h/3h/6h/12h/24h are available, while 15m–24h remain research-only until independent PIT/OOS/robustness/holdout evidence supports promotion.
+
+The current main checkpoint immediately before this source-refresh commit is `fe61e6c4210582ff9ccbd36fb5a7acacba31c753`. The repository now contains the repaired GitHub Pages workflow and the mobile dashboard refresh/gap-safety changes.
+
+Published production state at the latest completed Live Cycle checkpoint remains:
+- 5m: `bootstrap.soft_ensemble.v5.4`
+- 10m: `bootstrap.bootstrap_rf`
+- latest published prediction: `96970`
+- latest completed Live Cycle: `#1345` (`37095010446`), completed 2026-10-03T04:01:12Z
+- promotion state remains HOLD; no research-only horizon is promoted by dashboard/artifact existence.
+
+Strict PIT checkpoint remains HOLD because Binance-primary verified rows are `273/300`. The recent 20-prediction window is strict-PIT clean for both 5m and 10m, while legacy pre-contract rows remain quarantined rather than reclassified as PASS.
+
+The dashboard exposes `5m, 10m, 15m, 30m, 1h, 3h, 6h, 12h, 24h`; 5m remains primary, 10m remains primary, and 15m–24h remain research-only. Dashboard presentation changes are non-production and do not change target, model, calibration or promotion state.
 
 ## Canonical rules
 - BTC is a continuous market; do not apply weekday/market-close assumptions from equities.
