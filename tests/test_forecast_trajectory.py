@@ -45,7 +45,7 @@ class ForecastTrajectoryTests(unittest.TestCase):
                         f"target_{h} TEXT", f"p_down_{h} REAL", f"p_flat_{h} REAL",
                         f"p_up_{h} REAL", f"actual_price_{h} REAL",
                         f"actual_direction_{h} TEXT", f"correct_{h} INTEGER",
-                        f"settled_at_{h} TEXT"
+                        f"settled_{h}_at_utc TEXT"
                     ]
                 con.execute("CREATE TABLE predictions ("+",".join(cols)+")")
                 vals=[1,"2026-10-03T04:10:00+00:00",100000.0]
