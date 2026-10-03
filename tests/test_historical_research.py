@@ -29,6 +29,12 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertEqual(ids.tolist(), [60_000])
         self.assertEqual(y.tolist(), ["UP"])
 
+    def test_archive_epoch_normalization_produces_canonical_ms_key(self):
+        raw_us=1_700_000_000_000_000
+        normalized=hr._normalize_epoch_ms(raw_us)
+        self.assertEqual(normalized, 1_700_000_000_000)
+        self.assertEqual(normalized // 60_000, 28_333_333)
+
     def test_archive_epoch_timestamp_normalization_handles_seconds_ms_us_ns(self):
         expected=1_700_000_000_000
         self.assertEqual(hr._normalize_epoch_ms(1_700_000_000), expected)
