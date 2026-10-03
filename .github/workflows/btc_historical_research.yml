@@ -90,6 +90,10 @@ jobs:
           assert r.get('base_feature_count') == 41
           assert r.get('frontier_feature_count') == 51
           assert r.get('ablation_artifact') == 'feature_frontier_oos.json'
+          assert r.get('research_only') is True
+          assert r.get('production_changed') is False
+          assert r.get('promotion_evidence_eligible') is False
+          assert r.get('pit_evidence_status') == 'NON_STRICT_ARCHIVE_TIMING'
           a=Path('data/historical_research/feature_frontier_oos.json')
           assert a.exists(), 'feature frontier ablation artifact missing'
           aj=json.loads(a.read_text())
