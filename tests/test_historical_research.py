@@ -3,6 +3,9 @@ import numpy as np
 from src import historical_research as hr
 
 
+from pathlib import Path
+
+
 class HistoricalTargetTests(unittest.TestCase):
     def test_label_uses_exact_elapsed_minutes(self):
         rows = [
@@ -45,6 +48,14 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertTrue(np.isfinite(hr._moment_feature(returns[-20:],"skew")))
         self.assertTrue(np.isfinite(hr._moment_feature(returns[-20:],"kurt")))
         self.assertTrue(np.isfinite(hr._autocorr(returns,5)))
+
+
+    def test_missing_historical_sources_fail_closed_instead_of_zero_imputation(self):
+        source = Path("src/historical_research.py").read_text(encoding="utf-8")
+        self.assertNotIn('np.zeros_like(b)', source)
+        self.assertNotIn('funding.get(ft,0.0)', source)
+        self.assertIn('if not exists(maps["btc_mark"],w) or not exists(maps["btc_premium"],w):', source)
+        self.assertIn('if ft is None or prev_f is None or ot is None or prev_oi is None:', source)
 
     def test_invalid_base_price_is_skipped(self):
         rows = [
