@@ -277,8 +277,13 @@ jobs:
           wait "$collector_pid" || collector_status=$?
 
           if kill -0 "$publisher_pid" 2>/dev/null; then
-            kill "$publisher_pid" || true
-            wait "$publisher_pid" || true
+            if ! kill "$publisher_pid" 2>/dev/null; then
+              if kill -0 "$publisher_pid" 2>/dev/null; then
+                echo "ERROR: publisher process could not be terminated." >&2
+                exit 1
+              fi
+            fi
+            wait "$publisher_pid"
           fi
 
           cat /tmp/btc_flow_collector.log
