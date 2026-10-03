@@ -1,3 +1,4 @@
+import io
 import unittest
 import numpy as np
 from pathlib import Path
@@ -43,6 +44,15 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(fp.NEUTRAL_BPS, 2.0)
         self.assertEqual(fp.HORIZONS, {"5m": 5, "10m": 10})
         self.assertEqual(fp.FAMILY_NAMES, ("base", "momentum", "volatility", "price_action", "flow", "derivatives", "dependence"))
+
+
+
+    def test_panel_reader_returns_dictreader_fieldnames(self):
+        rows, fields = fp._read_panel_stream(
+            io.StringIO("timestamp,price,ret1\n1,100.0,0.01\n")
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(fields, {"timestamp", "price", "ret1"})
 
     def test_feature_schema_matches_historical_research_source(self):
         from src import historical_research as hr
