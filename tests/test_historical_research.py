@@ -126,8 +126,11 @@ class HistoricalTargetTests(unittest.TestCase):
             self.assertFalse(corrupt.exists())
 
             valid=Path(tmp)/"valid.json"
-            valid.write_text('[["x"]]',encoding="utf-8")
-            self.assertEqual(hr._load_nonempty_cached_rows(valid), [["x"]])
+            valid.write_text('[["1700000000000000","1","2"]]',encoding="utf-8")
+            self.assertEqual(
+                hr._load_nonempty_cached_rows(valid),
+                [["1700000000000","1","2"]],
+            )
             self.assertTrue(valid.exists())
 
     def test_invalid_base_price_is_skipped(self):
