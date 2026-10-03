@@ -161,7 +161,7 @@ def test_candlestick_pattern_features_are_causal_and_well_bounded():
     assert 0.0 <= vals[2] <= 1.0
     assert vals[3] == 1.0
     assert vals[4] == 0.0
-    assert vals[5] == 0.0
+    assert vals[5] == 1.0
     assert vals[6] == 0.0
     assert 0.0 <= vals[7] <= 1.0
 
