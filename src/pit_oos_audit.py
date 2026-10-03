@@ -12,9 +12,9 @@ from pathlib import Path
 from db import DB, init_db
 from pit_history import record_pit_history
 try:
-    from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+    from horizon_registry import ALL_HORIZONS, EXTENDED_RESEARCH_HORIZONS
 except ModuleNotFoundError:
-    from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
+    from src.horizon_registry import ALL_HORIZONS, EXTENDED_RESEARCH_HORIZONS
 
 OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
@@ -23,6 +23,7 @@ MIN_STRICT_PIT_ROWS = 300
 SITUATION_META_MIN_ROWS = 3000
 ONLINE_EXPERT_MIN_ROWS = 140
 AVAILABLE_STATUSES = {"ok", "ok_current_only"}
+ALL_AUDIT_HORIZONS = tuple(ALL_HORIZONS)
 # a4d43aa added per-source prediction_cutoff to live Coinbase provenance.
 # Rows created before that contract existed are quarantined, not upgraded retroactively.
 LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
