@@ -440,7 +440,12 @@ jobs:
           for h in expected:
               item=obj.get("horizons",{}).get(h)
               if not isinstance(item,dict): raise SystemExit(f"trajectory missing horizon: {h}")
-              if item.get("point_count",0) < 1: raise SystemExit(f"trajectory has no points: {h}")
+              if h in {"5m","10m"} and item.get("point_count",0) < 1:
+                  raise SystemExit(f"primary trajectory has no points: {h}")
+              if h in expected[2:] and item.get("point_count",0) < 1:
+                  if item.get("availability_status") != "PENDING_FIRST_LIVE_SAMPLE":
+                      raise SystemExit(f"extended trajectory empty without explicit pending state: {h}")
+                  print(f"BTC extended trajectory pending first live sample: {h}")
           print("BTC multi-horizon trajectory: VERIFIED")
           PY
       - name: Monitor BTC extended research horizons
