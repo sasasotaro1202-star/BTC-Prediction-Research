@@ -147,8 +147,6 @@ function updateStatus(){
   const age=Number.isFinite(freshest)?Math.max(0,Date.now()-freshest):Infinity;
   document.getElementById("liveStatus").textContent=payload.live_cycle?(`#${payload.live_cycle.latest_prediction_id||"—"} · ${fmtTime(payload.live_cycle.completed_at_utc)}${liveTime && Date.now()-liveTime>STALE_MS?" · STALE":""}`):"UNKNOWN";
   document.getElementById("pitStatus").textContent=payload.pit?(`${payload.pit.verified_primary_predictions||0}/${payload.pit.min_strict_pit_rows||0} primary PIT · ${payload.pit.pit_verified?"VERIFIED":"HOLD"}`):"UNKNOWN";
-  const msg=document.getElementById("message");
-  if(Number.isFinite(age) && age>STALE_MS){msg.className="error";msg.textContent=`データ鮮度: STALE · 最終生成 ${fmtTime(new Date(freshest).toISOString())}`;}
 }
 function render(){const rows=rangeRows();updateCards();drawChart(rows);updateLegend();updateSummary()}
 svg.addEventListener("mousemove",e=>{
@@ -168,7 +166,7 @@ async function load(){
     payload=await t.json();
     payload.live_cycle=l&&l.ok?await l.json():null;payload.pit=p&&p.ok?await p.json():null;
     if(!payload.horizons)throw new Error("trajectory schema invalid");
-    setOptions();updateStatus();render();document.getElementById("message").textContent=`Data generated: ${fmtTime(payload.generated_at_utc)} · ${payload.source_of_truth||"canonical ledger"}`;
+    setOptions();updateStatus();render();const msg=document.getElementById("message");msg.className="notice";msg.textContent=`Data generated: ${fmtTime(payload.generated_at_utc)} · ${payload.source_of_truth||"canonical ledger"}`;const freshest=payload.generated_at_utc?new Date(payload.generated_at_utc).getTime():NaN;if(Number.isFinite(freshest)&&Date.now()-freshest>STALE_MS){msg.className="error";msg.textContent=`データ鮮度: STALE · 最終生成 ${fmtTime(new Date(freshest).toISOString())}`;}
   }catch(e){document.getElementById("message").className="error";document.getElementById("message").textContent="データ未生成: "+e.message}
 }
 load();
