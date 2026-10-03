@@ -94,6 +94,52 @@ class TestBlendCalibration(unittest.TestCase):
         self.assertEqual(blend_calibration.MODEL_DIR, ROOT / 'models')
         self.assertNotEqual(blend_calibration.MODEL_DIR, ROOT / 'data' / 'models')
 
+    def test_rows_require_binance_primary_strict_pit(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / 'predictions.db'
+            common = {
+                'components': {
+                    'model_raw_5m': {'UP': 0.30, 'DOWN': 0.40, 'FLAT': 0.30},
+                    'structural_5m': {'UP': 0.35, 'DOWN': 0.35, 'FLAT': 0.30},
+                }
+            }
+            strict = {
+                **common,
+                'production_mode': 'binance_primary',
+                'decision_time_utc': '2026-10-03T08:00:01+00:00',
+                'provenance': {
+                    'available_at': '2026-10-03T08:00:00+00:00',
+                    'retrieved_at': '2026-10-03T08:00:00+00:00',
+                    'prediction_cutoff': '2026-10-03T08:00:00+00:00',
+                    'sources': {
+                        name: {
+                            'status': 'ok',
+                            'event_time': '2026-10-03T08:00:00+00:00',
+                            'available_at': '2026-10-03T08:00:00+00:00',
+                            'retrieved_at': '2026-10-03T08:00:00+00:00',
+                            'prediction_cutoff': '2026-10-03T08:00:00+00:00',
+                        }
+                        for name in ('binance_futures','binance_depth','binance_taker','binance_premium')
+                    },
+                },
+            }
+            fallback = {**strict, 'production_mode': 'coinbase_fallback'}
+            with sqlite3.connect(db) as con:
+                con.execute('CREATE TABLE model_registry (horizon TEXT, production_version TEXT)')
+                con.execute('CREATE TABLE predictions (created_at_utc TEXT, scenario_json TEXT, p_up_5m REAL, p_down_5m REAL, p_flat_5m REAL, actual_direction_5m TEXT, model_version TEXT)')
+                con.execute('INSERT INTO model_registry VALUES (?, ?)', ('5m','generation-A'))
+                con.executemany(
+                    'INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [
+                        ('2026-10-03T08:00:00+00:00', json.dumps(strict), 0.3, 0.4, 0.3, 'UP', '5m:generation-A|10m:generation-A'),
+                        ('2026-10-03T08:00:00+00:00', json.dumps(fallback), 0.3, 0.4, 0.3, 'UP', '5m:generation-A|10m:generation-A'),
+                    ],
+                )
+                con.commit()
+            with patch.object(blend_calibration, 'DB', db):
+                rows = blend_calibration._rows('5m')
+            self.assertEqual(len(rows), 1)
+
     def test_rejected_or_unvalidated_blend_fails_closed(self):
         self.assertEqual(blend_calibration.FALLBACK_WEIGHT, 0.0)
 
