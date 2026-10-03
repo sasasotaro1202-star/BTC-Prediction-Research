@@ -7,7 +7,9 @@ chronological WFO folds. It never mutates production state.
 """
 from __future__ import annotations
 import csv
+import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
@@ -119,7 +121,8 @@ def pattern_features(mask):
             families.append(name); selected.update(FAMILY_GROUPS[name])
     return families,tuple(f for f in FEATURES if f in selected)
 
-def screen(X,y,fold_spec):
+def screen_with_slices(X,y,fold_spec):
+    """Fit each fold once and return full/development/frozen-holdout metrics."""
     ps=[]; ys=[]; per_fold=[]
     for tr,lo,hi in fold_spec:
         model=Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=.3,max_iter=450,solver="lbfgs"))])
@@ -128,8 +131,23 @@ def screen(X,y,fold_spec):
         aligned=np.full((len(raw),3),1e-7,dtype=float)
         for j,c in enumerate(model.classes_): aligned[:,CLASSES.index(str(c))]=raw[:,j]
         aligned/=aligned.sum(axis=1,keepdims=True)
-        yy=y[lo:hi]; ps.append(aligned); ys.append(yy); per_fold.append(metrics(yy,aligned))
-    return metrics(np.concatenate(ys),np.vstack(ps)),per_fold
+        yy=y[lo:hi]
+        ps.append(aligned); ys.append(yy); per_fold.append(metrics(yy,aligned))
+    def aggregate(indices):
+        if not indices:
+            raise ValueError("empty fold slice")
+        return metrics(
+            np.concatenate([ys[i] for i in indices]),
+            np.vstack([ps[i] for i in indices]),
+        )
+    all_metrics=aggregate(list(range(len(fold_spec))))
+    dev_metrics=aggregate(list(range(max(0,len(fold_spec)-1))))
+    holdout_metrics=aggregate([len(fold_spec)-1])
+    return all_metrics,dev_metrics,holdout_metrics,per_fold
+
+def screen(X,y,fold_spec):
+    all_metrics,_,_,per_fold=screen_with_slices(X,y,fold_spec)
+    return all_metrics,per_fold
 
 def run_single_feature_ablation(ts,price,X):
     """Measure every single frontier add and every single base-feature removal."""
@@ -141,35 +159,43 @@ def run_single_feature_ablation(ts,price,X):
         XX=X[idx]
         fs=folds(len(y))
         base_cols=np.arange(len(BASE_FEATURES),dtype=np.int64)
-        base_metrics,_=screen(XX[:,base_cols],y,fs)
+        base_all,base_dev,base_holdout,_=screen_with_slices(XX[:,base_cols],y,fs)
         add_records=[]
         for feature in FRONTIER_FEATURES:
             col=FEATURES.index(feature)
             cols=np.concatenate((base_cols,np.asarray([col],dtype=np.int64)))
-            mm,ff=screen(XX[:,cols],y,fs)
+            mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
             add_records.append({
                 "feature":feature,
                 "metrics":mm,
+                "development_metrics":dm,
+                "frozen_holdout_metrics":hm,
                 "fold_metrics":ff,
-                "delta_vs_base":{k:float(mm[k]-base_metrics[k]) for k in ("logloss","accuracy","brier","ece")},
+                "delta_vs_base":{k:float(mm[k]-base_all[k]) for k in ("logloss","accuracy","brier","ece")},
+                "development_delta_vs_base":{k:float(dm[k]-base_dev[k]) for k in ("logloss","accuracy","brier","ece")},
+                "frozen_holdout_delta_vs_base":{k:float(hm[k]-base_holdout[k]) for k in ("logloss","accuracy","brier","ece")},
                 "status":"OK",
             })
         remove_records=[]
         for feature in BASE_FEATURES:
             cols=np.asarray([i for i,f in enumerate(BASE_FEATURES) if f!=feature],dtype=np.int64)
-            mm,ff=screen(XX[:,cols],y,fs)
+            mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
             remove_records.append({
                 "feature":feature,
                 "metrics":mm,
+                "development_metrics":dm,
+                "frozen_holdout_metrics":hm,
                 "fold_metrics":ff,
-                "delta_vs_base":{k:float(mm[k]-base_metrics[k]) for k in ("logloss","accuracy","brier","ece")},
+                "delta_vs_base":{k:float(mm[k]-base_all[k]) for k in ("logloss","accuracy","brier","ece")},
+                "development_delta_vs_base":{k:float(dm[k]-base_dev[k]) for k in ("logloss","accuracy","brier","ece")},
+                "frozen_holdout_delta_vs_base":{k:float(hm[k]-base_holdout[k]) for k in ("logloss","accuracy","brier","ece")},
                 "status":"OK",
             })
-        add_rank=sorted(add_records,key=lambda r:(r["delta_vs_base"]["logloss"],-r["delta_vs_base"]["accuracy"]))
-        remove_rank=sorted(remove_records,key=lambda r:(-r["delta_vs_base"]["logloss"],r["delta_vs_base"]["accuracy"]))
+        add_rank=sorted(add_records,key=lambda r:(r["development_delta_vs_base"]["logloss"],-r["development_delta_vs_base"]["accuracy"]))
+        remove_rank=sorted(remove_records,key=lambda r:(-r["development_delta_vs_base"]["logloss"],r["development_delta_vs_base"]["accuracy"]))
         result[horizon]={
             "sample_n":int(len(y)),
-            "base_metrics":base_metrics,
+            "base_metrics":base_all,
             "frontier_single_add_count":len(add_records),
             "base_single_remove_count":len(remove_records),
             "frontier_single_add":add_records,
@@ -181,24 +207,82 @@ def run_single_feature_ablation(ts,price,X):
 
 def main():
     ts,price,X=load()
-    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v2","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","fine_grained_single_feature_ablation":True,"horizons":{}}
+    result={
+        "schema_version":1,
+        "experiment_id":"btc_feature_pattern_exhaustive_v2",
+        "protocol_version":"feature-family-expanding-wfo-v1",
+        "status":"RUNNING",
+        "research_only":True,
+        "production_changed":False,
+        "promotion_effect":"none",
+        "promotion_evidence_eligible":False,
+        "pit_evidence_status":"NON_STRICT_ARCHIVE_TIMING",
+        "pit_policy_note":"Binance Vision/archive publication timing is not independently proven at feature-record level; the 3-day completed-data boundary is a conservative operational buffer, not PIT proof.",
+        "source_lineage":{
+            "primary":"Binance USD-M futures/spot/mark/premium archives",
+            "derivatives_context":"Binance funding/open-interest archives where available",
+            "cross_asset":"Binance ETH/SOL futures",
+            "independence_note":"same Binance upstream is not counted as independent evidence"
+        },
+        "target_contract":{
+            "version":"label-policy-v1",
+            "horizons_minutes":dict(HORIZONS),
+            "neutral_bps":float(NEUTRAL_BPS),
+            "classes":list(CLASSES),
+            "label_function":"label_policy.direction_from_return",
+            "future_join":"exact_timestamp_plus_horizon",
+            "missing_future_policy":"exclude"
+        },
+        "feature_schema_sha256":hashlib.sha256("|".join(FEATURES).encode("utf-8")).hexdigest(),
+        "github_sha":os.environ.get("GITHUB_SHA"),
+        "search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families",
+        "exact_individual_feature_subset_space":int(2**len(FEATURES)),
+        "exact_individual_feature_subset_space_is_computationally_intractable":True,
+        "family_count":len(FAMILY_NAMES),
+        "pattern_count_expected":PATTERN_COUNT,
+        "families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},
+        "feature_count":len(FEATURES),
+        "base_feature_count":len(BASE_FEATURES),
+        "frontier_feature_count":len(FRONTIER_FEATURES),
+        "fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False,"selection_folds":[0,1],"frozen_holdout_fold":2,"holdout_excluded_from_selection":True},
+        "model_role":"screening_only_logistic_regression",
+        "selection_leakage_guard":"rank_candidates_on_development_folds_only; evaluate_latest_fold_as_frozen_holdout",
+        "fine_grained_single_feature_ablation":True,
+        "horizons":{}
+    }
     for h,minutes in HORIZONS.items():
         idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
         for mask in range(1,PATTERN_COUNT+1):
             fam,fn=pattern_features(mask); cols=np.asarray([FEATURES.index(f) for f in fn],dtype=np.int64)
             try:
-                mm,ff=screen(XX[:,cols],y,fs)
-                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"metrics":mm,"fold_metrics":ff,"status":"OK"})
+                mm,dm,hm,ff=screen_with_slices(XX[:,cols],y,fs)
+                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"metrics":mm,"development_metrics":dm,"frozen_holdout_metrics":hm,"fold_metrics":ff,"status":"OK"})
             except (ValueError,RuntimeError,np.linalg.LinAlgError) as exc:
                 failures+=1
                 records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"status":"FAILED","error":f"{type(exc).__name__}:{exc}"})
         base=next((r for r in records if r["families"]==["base"]),None)
         valid=[r for r in records if r["status"]=="OK"]
         if base and base.get("metrics"):
-            bm=base["metrics"]
-            for r in valid: r["delta_vs_base"]={k:float(r["metrics"][k]-bm[k]) for k in ("logloss","accuracy","brier","ece")}
-        ranked=sorted(valid,key=lambda r:(r["metrics"]["logloss"],-r["metrics"]["accuracy"],r["feature_count"]))
-        result["horizons"][h]={"samples":int(len(y)),"folds":fs,"patterns_expected":PATTERN_COUNT,"patterns_completed":len(valid),"pattern_failures":failures,"status":"COMPLETE" if len(valid)==PATTERN_COUNT else "PARTIAL_FAILURE","base_pattern":base,"top_20_by_logloss":ranked[:20],"all_patterns":records}
+            bm=base["metrics"]; bd=base["development_metrics"]; bh=base["frozen_holdout_metrics"]
+            for r in valid:
+                r["delta_vs_base"]={k:float(r["metrics"][k]-bm[k]) for k in ("logloss","accuracy","brier","ece")}
+                r["development_delta_vs_base"]={k:float(r["development_metrics"][k]-bd[k]) for k in ("logloss","accuracy","brier","ece")}
+                r["frozen_holdout_delta_vs_base"]={k:float(r["frozen_holdout_metrics"][k]-bh[k]) for k in ("logloss","accuracy","brier","ece")}
+        # Rank only on development folds. The latest fold remains a frozen holdout
+        # and is intentionally excluded from candidate selection.
+        ranked=sorted(valid,key=lambda r:(r["development_metrics"]["logloss"],-r["development_metrics"]["accuracy"],r["feature_count"]))
+        result["horizons"][h]={
+            "samples":int(len(y)),
+            "folds":fs,
+            "patterns_expected":PATTERN_COUNT,
+            "patterns_completed":len(valid),
+            "pattern_failures":failures,
+            "status":"COMPLETE" if len(valid)==PATTERN_COUNT else "PARTIAL_FAILURE",
+            "base_pattern":base,
+            "top_20_by_development_logloss":ranked[:20],
+            "all_patterns":records,
+            "selection_protocol":{"selection_folds":[0,1],"frozen_holdout_fold":2,"holdout_touched_by_ranking":False}
+        }
     result["fine_grained_ablation"]=run_single_feature_ablation(ts,price,X)
     result["status"]="COMPLETE" if all(result["horizons"][h]["status"]=="COMPLETE" for h in HORIZONS) else "PARTIAL_FAILURE"
     result["completed_utc"]=datetime.now(timezone.utc).isoformat()

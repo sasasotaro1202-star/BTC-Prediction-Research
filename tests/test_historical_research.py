@@ -94,6 +94,37 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertTrue(np.isfinite(hr._autocorr(returns,5)))
 
 
+
+    def test_open_interest_history_uses_usdm_public_endpoint_and_fails_closed(self):
+        source = Path("src/historical_research.py").read_text(encoding="utf-8")
+        self.assertIn("https://fapi.binance.com/futures/data/openInterestHist?", source)
+        self.assertNotIn("https://futures.binance.com/futures/data/openInterestHist?", source)
+        self.assertIn('raise RuntimeError(f"historical_open_interest_unavailable:', source)
+
+    def test_open_interest_empty_cache_is_invalidated(self):
+        with TemporaryDirectory() as tmp:
+            old = hr.CACHE
+            try:
+                hr.CACHE = Path(tmp)
+                p = hr.CACHE / "oi_BTCUSDT_20261001_20261004.json"
+                p.write_text("[]", encoding="utf-8")
+                original = hr.req_json
+                try:
+                    hr.req_json = lambda *args, **kwargs: [
+                        {"timestamp": 1000, "sumOpenInterest": "10"},
+                        {"timestamp": 2000, "sumOpenInterest": "11"},
+                    ]
+                    rows = hr.fetch_oi(
+                        "BTCUSDT",
+                        __import__("datetime").datetime.fromtimestamp(0, __import__("datetime").timezone.utc),
+                        __import__("datetime").datetime.fromtimestamp(2000/1000, __import__("datetime").timezone.utc),
+                    )
+                finally:
+                    hr.req_json = original
+                self.assertEqual(len(rows), 2)
+            finally:
+                hr.CACHE = old
+
     def test_missing_historical_sources_fail_closed_instead_of_zero_imputation(self):
         source = Path("src/historical_research.py").read_text(encoding="utf-8")
         self.assertNotIn('np.zeros_like(b)', source)
