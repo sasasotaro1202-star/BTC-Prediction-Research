@@ -1,15 +1,25 @@
 {
   "ok": true,
-  "status": "PASS_WITH_LEGACY_UNVERIFIED",
-  "pit_verified": false,
-  "pit_verified_reason": "insufficient_binance_primary_pit_rows:299/300",
-  "checked_predictions": 606,
-  "verified_predictions": 437,
-  "verified_primary_predictions": 299,
+  "status": "PASS",
+  "pit_verified": true,
+  "pit_verified_reason": "strict_binance_primary_scope_verified",
+  "checked_predictions": 607,
+  "verified_predictions": 438,
+  "verified_primary_predictions": 300,
   "verified_fallback_predictions": 138,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 605,
+      "strict_primary_settled": 298,
+      "situation_meta_ready": 294,
+      "online_expert_ready": 294,
+      "situation_meta_rows_needed": 2706,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2706,
+      "estimated_days_lower_bound": 9.395833333333334
+    },
+    "10m": {
       "settled_predictions": 604,
       "strict_primary_settled": 297,
       "situation_meta_ready": 293,
@@ -18,16 +28,6 @@
       "online_expert_rows_needed": 0,
       "estimated_5m_cycles_lower_bound": 2707,
       "estimated_days_lower_bound": 9.399305555555555
-    },
-    "10m": {
-      "settled_predictions": 603,
-      "strict_primary_settled": 296,
-      "situation_meta_ready": 292,
-      "online_expert_ready": 292,
-      "situation_meta_rows_needed": 2708,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2708,
-      "estimated_days_lower_bound": 9.402777777777779
     },
     "15m": {
       "settled_predictions": 24,
@@ -134,7 +134,7 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-03T08:05:45.201471+00:00",
+  "generated_at_utc": "2026-10-03T08:09:19.476178+00:00",
   "history": {
     "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-03T08:00:00+00:00",
