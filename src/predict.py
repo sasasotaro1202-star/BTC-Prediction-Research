@@ -10,7 +10,7 @@ from live_data_policy import validate_live_inputs
 from feature_schema import FEATURES
 from market_data import BINANCE_WS_CACHE, resilient_1m_series, derive_binance_taker_from_closed_klines, binance_archive_daily_taker_rows, binance_depth, bybit_depth, binance_premium, binance_oi, binance_taker, bybit_funding, bybit_mark_price
 from binance_ws import capture_depth_snapshot, capture_mark_price, load_cache as load_binance_ws_cache, load_depth_cache, taker_imbalance as ws_taker_imbalance
-from microstructure_features import derive_market_flow_features, derive_orderbook_features, ORDERBOOK_V2
+from microstructure_features import derive_market_flow_features, derive_orderbook_features
 from runtime_production_model import resolve_production_model
 from situation import summarize_situation
 from extended_horizons import forecast_extended_horizons
