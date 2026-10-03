@@ -13,26 +13,29 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-SETTLEMENT_COLUMNS = (
-    "actual_price_5m",
-    "actual_direction_5m",
-    "correct_5m",
-    "settled_5m_at_utc",
-    "actual_price_10m",
-    "actual_direction_10m",
-    "correct_10m",
-    "settled_10m_at_utc",
-    "settlement_source_5m",
-    "settlement_source_10m",
+try:
+    from horizon_registry import ALL_HORIZONS
+except ModuleNotFoundError:
+    from src.horizon_registry import ALL_HORIZONS
+
+SETTLEMENT_COLUMNS = tuple(
+    field
+    for horizon in ALL_HORIZONS
+    for field in (
+        f"actual_price_{horizon}",
+        f"actual_direction_{horizon}",
+        f"correct_{horizon}",
+        f"settled_{horizon}_at_utc",
+        f"settlement_source_{horizon}",
+    )
 )
 
 # Settlement timestamps describe when a known outcome was recorded, not the
 # outcome itself. Multiple state replicas may therefore contain different
 # observation timestamps for the same immutable event. They are reconciled
 # deterministically instead of being treated as contradictory outcomes.
-SETTLEMENT_TIMESTAMP_COLUMNS = (
-    "settled_5m_at_utc",
-    "settled_10m_at_utc",
+SETTLEMENT_TIMESTAMP_COLUMNS = tuple(
+    f"settled_{horizon}_at_utc" for horizon in ALL_HORIZONS
 )
 
 SETTLEMENT_STATE_COLUMNS = tuple(
@@ -72,16 +75,14 @@ def prediction_identity(row: dict[str, Any]) -> tuple[Any, ...]:
     features = _canonical_json(row.get("feature_json") or "{}")
     return (
         str(row.get("created_at_utc")),
-        str(row.get("target_5m")),
-        str(row.get("target_10m")),
+        *[str(row.get(f"target_{horizon}")) for horizon in ALL_HORIZONS],
         str(row.get("model_version")),
         features,
-        row.get("p_up_5m"),
-        row.get("p_down_5m"),
-        row.get("p_flat_5m"),
-        row.get("p_up_10m"),
-        row.get("p_down_10m"),
-        row.get("p_flat_10m"),
+        *[
+            row.get(f"{side}_{horizon}")
+            for horizon in ALL_HORIZONS
+            for side in ("p_up", "p_down", "p_flat")
+        ],
     )
 
 
