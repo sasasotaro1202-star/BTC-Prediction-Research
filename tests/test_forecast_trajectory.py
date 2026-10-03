@@ -34,4 +34,34 @@ class ForecastTrajectoryTests(unittest.TestCase):
             self.assertTrue(out["horizons"]["24h"]["research_only"])
             self.assertFalse(out["horizons"]["5m"]["research_only"])
 
+
+    def test_extended_horizons_can_be_pending_without_inventing_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            db=Path(td)/"predictions.db"
+            with sqlite3.connect(db) as con:
+                cols=["prediction_id INTEGER PRIMARY KEY","created_at_utc TEXT","base_price REAL"]
+                for h in forecast_trajectory.ALL_HORIZONS:
+                    cols += [
+                        f"target_{h} TEXT", f"p_down_{h} REAL", f"p_flat_{h} REAL",
+                        f"p_up_{h} REAL", f"actual_price_{h} REAL",
+                        f"actual_direction_{h} TEXT", f"correct_{h} INTEGER",
+                        f"settled_{h}_at_utc TEXT"
+                    ]
+                con.execute("CREATE TABLE predictions ("+",".join(cols)+")")
+                vals=[1,"2026-10-03T04:10:00+00:00",100000.0]
+                for h in forecast_trajectory.ALL_HORIZONS[:2]:
+                    vals += ["2026-10-03T04:15:00+00:00",.2,.3,.5,None,None,None,None]
+                for h in forecast_trajectory.ALL_HORIZONS[2:]:
+                    vals += ["2026-10-03T04:20:00+00:00",None,None,None,None,None,None,None]
+                con.execute("INSERT INTO predictions VALUES ("+(",".join(["?"]*len(vals)))+")",vals)
+            with patch.object(forecast_trajectory,"DB",db):
+                out=forecast_trajectory.build()
+            self.assertEqual(out["horizon_order"],list(forecast_trajectory.ALL_HORIZONS))
+            self.assertEqual(out["horizons"]["5m"]["availability_status"],"AVAILABLE")
+            self.assertEqual(out["horizons"]["10m"]["availability_status"],"AVAILABLE")
+            for h in forecast_trajectory.EXTENDED_RESEARCH_HORIZONS:
+                self.assertEqual(out["horizons"][h]["availability_status"],"PENDING_FIRST_LIVE_SAMPLE")
+                self.assertEqual(out["horizons"][h]["point_count"],0)
+                self.assertEqual(out["horizons"][h]["points"],[])
+
 if __name__=="__main__": unittest.main()
