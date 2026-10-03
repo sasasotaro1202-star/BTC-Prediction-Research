@@ -1155,7 +1155,15 @@ jobs:
           path: |
             data/predictions.db.gz
             data/live_cycle_status.json
-            docs/horizon_curve_latest.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload latest BTC horizon chart artifact
+        if: hashFiles('docs/horizon_curve_latest.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-horizon-chart
+          path: docs/horizon_curve_latest.json
           if-no-files-found: error
           retention-days: 3
       - name: Check repository diff before commit
