@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.db import init_connection
+try:
+    from src.horizon_registry import ALL_HORIZONS
+except ModuleNotFoundError:
+    from horizon_registry import ALL_HORIZONS
 from src.prediction_identity import (
     SETTLEMENT_COLUMNS,
     SETTLEMENT_TIMESTAMP_COLUMNS,
@@ -24,20 +29,14 @@ def expected_compacted_event_count(con):
     return int(canonical_compaction_snapshot(con)["unique_event_count"])
 
 SETTLEMENT_HORIZON_COLUMNS = {
-    "5m": (
-        "actual_price_5m",
-        "actual_direction_5m",
-        "correct_5m",
-        "settled_5m_at_utc",
-        "settlement_source_5m",
-    ),
-    "10m": (
-        "actual_price_10m",
-        "actual_direction_10m",
-        "correct_10m",
-        "settled_10m_at_utc",
-        "settlement_source_10m",
-    ),
+    horizon: (
+        f"actual_price_{horizon}",
+        f"actual_direction_{horizon}",
+        f"correct_{horizon}",
+        f"settled_{horizon}_at_utc",
+        f"settlement_source_{horizon}",
+    )
+    for horizon in ALL_HORIZONS
 }
 
 
@@ -223,6 +222,7 @@ def main():
         raise SystemExit('usage: merge_prediction_state.py LOCAL_DB TARGET_DB | --compact TARGET_DB')
     local_path, target_path = sys.argv[1:]
     con = sqlite3.connect(target_path)
+    init_connection(con)
     con.execute('PRAGMA foreign_keys=ON')
     con.execute('ATTACH DATABASE ? AS local', (local_path,))
 
