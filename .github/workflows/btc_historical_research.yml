@@ -96,7 +96,11 @@ jobs:
           aj=json.loads(a.read_text())
           assert aj.get('research_only') is True and aj.get('production_changed') is False
           assert set(aj.get('horizons', {})) >= {'5m','10m'}
-          assert all(hz.get('sample_alignment', {}).get('timestamps_identical') is True and hz.get('sample_alignment', {}).get('labels_identical') is True for hz in [r.get('horizons', {}).get('5m', {}), r.get('horizons', {}).get('10m', {})])
+          for h in ('5m','10m'):
+              fh = aj.get('horizons', {}).get(h, {})
+              alignment = fh.get('sample_alignment', {})
+              assert alignment.get('timestamps_identical') is True, f'{h}: frontier timestamp alignment not verified'
+              assert alignment.get('labels_identical') is True, f'{h}: frontier label alignment not verified'
           assert set(r.get('horizons', {})) >= {'5m','10m'}
           for h in ('5m','10m'):
               hz=r['horizons'][h]
@@ -126,7 +130,7 @@ jobs:
           for h in ('5m','10m'):
               hz=o.get('horizons',{}).get(h,{})
               if hz.get('status') != 'COMPLETE' or hz.get('patterns_completed') != 127:
-                  raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/255")
+                  raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/127")
               if len(hz.get('all_patterns',[])) != 127:
                   raise SystemExit(f"{h}: all pattern records were not materialized")
           fine=o.get('fine_grained_ablation',{})
