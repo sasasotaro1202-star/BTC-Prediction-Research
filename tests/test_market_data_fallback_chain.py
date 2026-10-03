@@ -43,6 +43,41 @@ class TestMarketDataFallbackChain(unittest.TestCase):
         self.assertGreaterEqual(len(spot), 40)
         self.assertGreaterEqual(len(by), 40)
 
+    def test_bootstrap_cache_freshness_requires_recent_candle_event_time(self):
+        import json
+        import tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        now_ms = int(time.time() * 1000)
+        stale_latest = (int(time.time() // 60) - 10) * 60_000
+        rows = [
+            [stale_latest - (39 - i) * 60_000, 1.0, 1.1, 0.9, 1.05, 10.0]
+            for i in range(40)
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            cache_path = Path(td) / "btc_bootstrap_1m.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "rows": rows,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(md, "CACHE", cache_path):
+                cached, created, age_ms, fresh = md.cache_rows(120)
+
+        self.assertEqual(cached, [])
+        self.assertTrue(created)
+        self.assertIsNotNone(age_ms)
+        self.assertGreaterEqual(
+            now_ms,
+            int(datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp() * 1000),
+        )
+        self.assertFalse(fresh)
+
 
 if __name__ == "__main__":
     unittest.main()
