@@ -244,7 +244,11 @@ def build_panel():
         def c(k):return np.array([float(maps[k][x][4]) for x in w])
         b,s,ec,sc=c("btc_fut"),c("btc_spot"),c("eth_fut"),c("sol_fut")
         bo=np.array([float(maps["btc_fut"][x][1]) for x in w]); bh=np.array([float(maps["btc_fut"][x][2]) for x in w]); bl=np.array([float(maps["btc_fut"][x][3]) for x in w]); bv=np.array([float(maps["btc_fut"][x][5]) for x in w]); bt=np.array([float(maps["btc_fut"][x][8]) for x in w]); tb=np.array([float(maps["btc_fut"][x][9]) for x in w])
-        mark=c("btc_mark") if exists(maps["btc_mark"],w) else b; prem=c("btc_premium") if exists(maps["btc_premium"],w) else np.zeros_like(b); p=b[-1]
+        # Required source rows are fail-closed. Missing mark/premium data are
+        # not imputed with price/zero because that would manufacture information.
+        if not exists(maps["btc_mark"],w) or not exists(maps["btc_premium"],w):
+            continue
+        mark=c("btc_mark"); prem=c("btc_premium"); p=b[-1]
         returns=np.diff(b)/b[:-1]
         r1,r3,r5,r10,r15,r30=[ret(b,n) for n in (1,3,5,10,15,30)]; accel=r1-r3/3
         rv5=float(np.std(returns[-5:])); rv10=float(np.std(returns[-10:])); rv30=float(np.std(returns[-30:]))
@@ -253,7 +257,27 @@ def build_panel():
         vr=float(np.mean(bv[-5:]))/max(1e-12,float(np.mean(bv[-15:-5]))); vt=float(np.mean(bv[-5:]))/max(1e-12,float(np.mean(bv[-10:]))); tr=float(np.mean(bt[-5:]))/max(1e-12,float(np.mean(bt[-15:-5]))); flow=2*float(np.sum(tb[-5:]))/max(1e-12,float(np.sum(bv[-5:])))-1
         basis=p/max(1e-12,s[-1])-1; bd=basis-(b[-2]/max(1e-12,s[-2])-1); mg=mark[-1]/p-1; pr=float(prem[-1]); er5,sr5,er10,sr10=ret(ec,5),ret(sc,5),ret(ec,10),ret(sc,10); erbtc5=er5-r5; srb5=sr5-r5
         if spot_proxy: basis=bd=0.0
-        ft=max([k for k in fk if k<=t],default=None); ot=max([k for k in ok if k<=t],default=None); funding_v=funding.get(ft,0.0) if ft else 0.0; prev_f=max([k for k in fk if k<ft],default=None) if ft else None; funding_delta=funding_v-(funding.get(prev_f,funding_v) if prev_f else funding_v); oi_v=oi.get(ot,np.nan) if ot else np.nan; prev_oi=max([k for k in ok if k<ot],default=None) if ot else None; oi_change=(oi_v/oi.get(prev_oi,oi_v)-1) if prev_oi and oi.get(prev_oi,0) else 0.0; recent_oi=[oi[k] for k in ok if k<=t][-96:]; oi_z=(oi_v-np.mean(recent_oi))/max(1e-12,np.std(recent_oi)) if recent_oi and np.isfinite(oi_v) else 0.0
+        ft=max([k for k in fk if k<=t],default=None)
+        prev_f=max([k for k in fk if k<ft],default=None) if ft is not None else None
+        ot=max([k for k in ok if k<=t],default=None)
+        prev_oi=max([k for k in ok if k<ot],default=None) if ot is not None else None
+        if ft is None or prev_f is None or ot is None or prev_oi is None:
+            # Strict availability gate: an unavailable source is UNKNOWN, not zero.
+            continue
+        funding_v=funding[ft]
+        prev_funding_v=funding[prev_f]
+        oi_v=oi[ot]
+        prev_oi_v=oi[prev_oi]
+        if not all(math.isfinite(float(v)) for v in (funding_v,prev_funding_v,oi_v,prev_oi_v)):
+            continue
+        if oi_v <= 0.0 or prev_oi_v <= 0.0:
+            continue
+        funding_delta=funding_v-prev_funding_v
+        oi_change=oi_v/prev_oi_v-1.0
+        recent_oi=[oi[k] for k in ok if k<=t][-96:]
+        if len(recent_oi)<2 or not all(math.isfinite(float(v)) and float(v)>0.0 for v in recent_oi):
+            continue
+        oi_z=(oi_v-np.mean(recent_oi))/max(1e-12,np.std(recent_oi))
 
         # Feature frontier: strictly backward-looking technical, liquidity-proxy,
         # flow-distribution and cross-state interaction features.
