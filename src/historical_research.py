@@ -1,4 +1,4 @@
-"""BTC historical research v6.
+"""BTC historical research v7 feature frontier.
 
 Accuracy-first research engine:
 - Binance USD-M futures + spot + mark + premium
@@ -291,10 +291,14 @@ def build_panel():
         if all(math.isfinite(v) for v in x):rows.append((t,x,p))
     return rows
 
-def labels(rows,h):
+def labels(rows,h,feature_count=len(FEATURES)):
     # Define 5m/10m targets by exact elapsed wall-clock time, not row offset.
     # Missing candles therefore reduce sample count instead of stretching the
-    # effective target horizon.
+    # effective target horizon. feature_count only chooses a prefix of the
+    # same causal row so base/frontier ablations share identical observations.
+    feature_count=int(feature_count)
+    if feature_count < 1 or feature_count > len(FEATURES):
+        raise ValueError(f"invalid feature_count={feature_count}")
     steps=int(h)
     by_ts={int(row[0]):row for row in rows}
     selected=[]; ys=[]; bases=[]
@@ -312,13 +316,13 @@ def labels(rows,h):
         ys.append("UP" if ret>NEUTRAL_BPS else "DOWN" if ret<-NEUTRAL_BPS else "FLAT")
     if not selected:
         return (
-            np.empty((0,len(FEATURES))),
+            np.empty((0,feature_count)),
             np.asarray([],dtype=object),
             np.asarray([],dtype=np.int64),
             np.asarray([],dtype=float),
         )
     return (
-        np.asarray([row[1] for row in selected],float),
+        np.asarray([row[1][:feature_count] for row in selected],float),
         np.asarray(ys),
         np.asarray([row[0] for row in selected],dtype=np.int64),
         np.asarray(bases,float),
@@ -361,23 +365,76 @@ def main():
     with (OUT/"aligned_panel.csv").open("w",newline="") as f:
         w=csv.writer(f);w.writerow(["timestamp","price"]+FEATURES);w.writerows([[t,p]+x for t,x,p in rows])
     report={"protocol_version":"historical-v7-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
+    frontier_evidence={
+        "schema_version":1,
+        "experiment_id":"btc_feature_frontier_v7",
+        "hypothesis":"strictly causal technical, distributional and cross-state interaction features add incremental information beyond the existing 41-feature historical research set",
+        "research_question":"Do the 31 frontier features improve future-generalization metrics over the identical 41-feature baseline under identical chronological WFO/PIT-safe observations?",
+        "research_only":True,
+        "production_changed":False,
+        "base_feature_count":len(BASE_FEATURES),
+        "frontier_feature_count":len(FRONTIER_FEATURES),
+        "total_feature_count":len(FEATURES),
+        "base_features":BASE_FEATURES,
+        "frontier_features":FRONTIER_FEATURES,
+        "comparison_contract":"same observations, same labels, same WFO folds, same embargo, same model factories",
+        "horizons":{}
+    }
     for h,steps in TARGETS.items():
-        X,y,ts,base=labels(rows,steps); r=wf(X,y,ts); freq=np.array([(y==c).sum() for c in CLASSES],float); freq/=freq.sum(); hz={"samples":len(y),"class_counts":{c:int((y==c).sum()) for c in CLASSES},"baseline":{"uniform":metrics(y,np.tile([1/3]*3,(len(y),1))),"frequency":metrics(y,np.tile(freq,(len(y),1)))},"models":{},"ensemble":{}}
-        names=list(r)
-        for name,o in r.items():
+        X_base,y_base,ts_base,_=labels(rows,steps,feature_count=len(BASE_FEATURES))
+        X_frontier,y_frontier,ts_frontier,_=labels(rows,steps,feature_count=len(FEATURES))
+        if not (np.array_equal(y_base,y_frontier) and np.array_equal(ts_base,ts_frontier)):
+            raise RuntimeError(f"feature ablation alignment mismatch for {h}")
+        base_results=wf(X_base,y_base,ts_base)
+        frontier_results=wf(X_frontier,y_frontier,ts_frontier)
+        freq=np.array([(y_frontier==c).sum() for c in CLASSES],float); freq/=freq.sum()
+        hz={"samples":len(y_frontier),"class_counts":{c:int((y_frontier==c).sum()) for c in CLASSES},"baseline":{"uniform":metrics(y_frontier,np.tile([1/3]*3,(len(y_frontier),1))),"frequency":metrics(y_frontier,np.tile(freq,(len(y_frontier),1)))},"models":{},"ensemble":{}}
+        for name,o in frontier_results.items():
             hz["models"][name]=o["metrics"]
             for n in (2000,5000,10000):
-                if len(o["y"])>=n:hz["models"][name][f"oos_{n}"]=metrics(np.asarray(o["y"][:n]),np.asarray(o["p"][:n]))
+                if len(o["y"])>=n:
+                    hz["models"][name][f"oos_{n}"]=metrics(np.asarray(o["y"][:n]),np.asarray(o["p"][:n]))
             with (OUT/f"oos_{h}_{name}.csv").open("w",newline="") as f:
                 w=csv.writer(f);w.writerow(["timestamp","actual","p_down","p_flat","p_up"])
                 for yy,pp,tt in zip(o["y"],o["p"],o["ts"]):w.writerow([int(tt),yy,*map(float,pp)])
+        names=list(frontier_results)
+        ablation={"base_features":len(BASE_FEATURES),"frontier_features":len(FEATURES),"models":{}}
+        for name in sorted(set(base_results)&set(frontier_results)):
+            b=base_results[name]; f=frontier_results[name]
+            n=min(len(b["y"]),len(f["y"]))
+            same=(b["y"][:n]==f["y"][:n]) and (b["ts"][:n]==f["ts"][:n])
+            if not same:
+                raise RuntimeError(f"ablation fold alignment mismatch for {h}/{name}")
+            bm=metrics(np.asarray(b["y"][:n]),np.asarray(b["p"][:n]))
+            fm=metrics(np.asarray(f["y"][:n]),np.asarray(f["p"][:n]))
+            ablation["models"][name]={
+                "n":n,
+                "base":bm,
+                "frontier":fm,
+                "delta":{"accuracy":fm["accuracy"]-bm["accuracy"],"logloss":fm["logloss"]-bm["logloss"],"brier":fm["brier"]-bm["brier"],"ece":fm["ece"]-bm["ece"]},
+                "bootstrap_vs_base_logloss":bootstrap_loss(np.asarray(f["y"][:n]),np.asarray(f["p"][:n]),np.asarray(b["p"][:n]),"logloss"),
+                "bootstrap_vs_base_brier":bootstrap_loss(np.asarray(f["y"][:n]),np.asarray(f["p"][:n]),np.asarray(b["p"][:n]),"brier")
+            }
         if names:
-            n=min(len(r[k]["y"]) for k in names); ep=np.mean([np.asarray(r[k]["p"][:n]) for k in names],axis=0); ey=np.asarray(r[names[0]]["y"][:n]); hz["ensemble"]["equal_weight"]=metrics(ey,ep); uni=np.tile([1/3]*3,(n,1));freqb=np.tile(freq,(n,1))
-            for base_name,b in [("uniform",uni),("frequency",freqb)]:
-                hz["ensemble"][f"vs_{base_name}_logloss"]=bootstrap_loss(ey,ep,b,"logloss"); hz["ensemble"][f"vs_{base_name}_brier"]=bootstrap_loss(ey,ep,b,"brier")
+            n=min(len(frontier_results[k]["y"]) for k in names)
+            ep=np.mean([np.asarray(frontier_results[k]["p"][:n]) for k in names],axis=0)
+            bp=np.mean([np.asarray(base_results[k]["p"][:n]) for k in names if k in base_results],axis=0)
+            ey=np.asarray(frontier_results[names[0]]["y"][:n])
+            hz["ensemble"]["equal_weight"]=metrics(ey,ep)
+            hz["ensemble"]["base_equal_weight"]=metrics(ey,bp)
+            hz["ensemble"]["frontier_vs_base_logloss"]=bootstrap_loss(ey,ep,bp,"logloss")
+            hz["ensemble"]["frontier_vs_base_brier"]=bootstrap_loss(ey,ep,bp,"brier")
             with (OUT/f"oos_{h}_ensemble.csv").open("w",newline="") as f:
                 w=csv.writer(f);w.writerow(["timestamp","actual","p_down","p_flat","p_up"])
-                for yy,pp,tt in zip(ey,ep,r[names[0]]["ts"][:n]):w.writerow([int(tt),yy,*map(float,pp)])
+                for yy,pp,tt in zip(ey,ep,frontier_results[names[0]]["ts"][:n]):w.writerow([int(tt),yy,*map(float,pp)])
+        frontier_evidence["horizons"][h]=ablation
+        frontier_evidence["horizons"][h]["sample_alignment"]={"base_n":len(y_base),"frontier_n":len(y_frontier),"timestamps_identical":bool(np.array_equal(ts_base,ts_frontier)),"labels_identical":bool(np.array_equal(y_base,y_frontier))}
         report["horizons"][h]=hz
-    report["finished_utc"]=datetime.now(timezone.utc).isoformat(); report["spot_proxy"] = bool(spot_proxy); (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8"); print(json.dumps(report,indent=2))
+    report["ablation_artifact"]="feature_frontier_oos.json"
+    report["finished_utc"]=datetime.now(timezone.utc).isoformat()
+    report["spot_proxy"] = bool(spot_proxy)
+    (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
+    (OUT/"feature_frontier_oos.json").write_text(json.dumps(frontier_evidence,indent=2),encoding="utf-8")
+    print(json.dumps(frontier_evidence,indent=2))
+    print(json.dumps(report,indent=2))
 if __name__=="__main__":main()
