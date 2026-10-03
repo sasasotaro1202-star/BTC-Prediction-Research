@@ -63,6 +63,7 @@ def build(limit=2880, horizons=ALL_HORIZONS):
         "horizons":{h:{"horizon_minutes":int(HORIZON_MINUTES[h]),
                        "production_priority":"primary_5m" if h=="5m" else "primary_10m" if h=="10m" else "research_extended",
                        "research_only":h in EXTENDED_RESEARCH_HORIZONS,
+                       "availability_status":"AVAILABLE" if points[h] else "PENDING_FIRST_LIVE_SAMPLE",
                        "points":points[h],"point_count":len(points[h])} for h in horizons}
     }
 
