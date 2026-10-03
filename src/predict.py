@@ -194,20 +194,40 @@ def regver(h):
 def load_temperature(h):
     p=MODEL_DIR/f'{h}.calibration.json'
     try:
-        obj=json.loads(p.read_text(encoding='utf-8')); t=float(obj.get('temperature',1.0)); n=int(obj.get('n_settled',0)); calibrated_version=str(obj.get('model_version','')); current_version=regver(h)
-        if calibrated_version != current_version:return 1.0
-        if not (0.5<=t<=3.0) or n<300:return 1.0
+        obj=json.loads(p.read_text(encoding='utf-8'))
+        t=float(obj.get('temperature',1.0))
+        n=int(obj.get('n_settled',0))
+        calibrated_version=str(obj.get('model_version',''))
+        bundle=resolve_production_model(h)
+        if calibrated_version != bundle.model_version:
+            return 1.0
+        if obj.get('model_sha256') != bundle.sha256:
+            return 1.0
+        if not (0.5<=t<=3.0) or n<300:
+            return 1.0
         return t
-    except Exception:return 1.0
+    except Exception:
+        return 1.0
 def load_blend_weight(h):
     p=MODEL_DIR/f'{h}.blend.json'
     try:
-        obj=json.loads(p.read_text(encoding='utf-8')); w=float(obj.get('base_weight',0.20)); n=int(obj.get('n',0)); status=str(obj.get('status','')); calibrated_version=str(obj.get('model_version','')); current_version=regver(h)
-        if calibrated_version != current_version:return 0.0
-        if n<400 or status != 'accepted': return 0.0
-        if not math.isfinite(w) or not (0.0<=w<=0.45): return 0.0
+        obj=json.loads(p.read_text(encoding='utf-8'))
+        w=float(obj.get('base_weight',0.20))
+        n=int(obj.get('n',0))
+        status=str(obj.get('status',''))
+        calibrated_version=str(obj.get('model_version',''))
+        bundle=resolve_production_model(h)
+        if calibrated_version != bundle.model_version:
+            return 0.0
+        if obj.get('model_sha256') != bundle.sha256:
+            return 0.0
+        if n<400 or status != 'accepted':
+            return 0.0
+        if not math.isfinite(w) or not (0.0<=w<=0.45):
+            return 0.0
         return w
-    except Exception:return 0.0
+    except Exception:
+        return 0.0
 def load_fallback_calibration(source, h):
     """Load source-native fallback calibration only when it matches the model generation."""
     if source not in {"bybit", "coinbase"} or h not in {"5m", "10m"}:
