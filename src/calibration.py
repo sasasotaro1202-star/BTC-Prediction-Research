@@ -105,7 +105,7 @@ def save_temperature(horizon, temperature, n, fit_logloss, eval_logloss, holdout
         'temperature':float(temperature),
         'n_settled':int(n),
         'model_version':model_version,
-        'method':'bounded_temperature_scaling_current_model_generation_holdout_guard_min400',
+        'method':'bounded_temperature_scaling_current_model_generation_holdout_guard',
         'fit_logloss':None if fit_logloss is None else float(fit_logloss),
         'holdout_logloss':None if eval_logloss is None else float(eval_logloss),
         'holdout_fraction':float(holdout_fraction),
