@@ -26,7 +26,6 @@ def test_production_sentinel_uses_shared_bounded_retry_and_fails_closed():
     assert "unable to read current main SHA after 3 attempts" in text
     assert "unable to read Live workflow runs after 3 attempts" in text
     assert "ERROR: Live Cycle recovery dispatch failed." in text
-    assert "ERROR: next sentinel generation dispatch failed." in text
     assert "set -euo pipefail" in text
 
 
@@ -59,3 +58,10 @@ def test_production_sentinel_fails_closed_for_deferred_cache_recovery_read_failu
     assert "deferred-cache recovery disabled." in text
     assert "cache_fresh=0" in text
     assert "cache_event_ms=0" in text
+
+
+def test_production_sentinel_does_not_self_dispatch_successor_generation():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "btc_production_sentinel.yml/dispatches" not in text
+    assert "creates its successor" not in text
+    assert "stateless" in text.lower() or "Live Cycle is the sole production writer" in text

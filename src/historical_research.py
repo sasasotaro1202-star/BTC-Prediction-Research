@@ -39,7 +39,7 @@ FRONTIER_FEATURES=[
     "atr_ratio14","range_asymmetry10","wick_imbalance10","volume_z20","trades_z20",
     "dollar_volume_z20","flow_accel5","flow_z20","return_skew20","return_kurtosis20",
     "autocorr5","drawdown30","runup30","price_to_ema20","amihud10","volume_price_corr20",
-    "body_pressure20","oi_x_return5","funding_x_oi","basis_x_vol","vol_term_ratio","range_z20"
+    "body_pressure20","oi_x_return5","funding_x_oi","basis_x_vol","vol_term_ratio","range_z20","flow_return_corr20"
 ]
 
 FEATURES=BASE_FEATURES+FRONTIER_FEATURES
@@ -278,6 +278,7 @@ def build_panel():
         price_to_ema20=_safe_ratio(p-ema20,ema20,0.0)
         amihud10=float(np.mean(np.abs(returns[-10:])/np.maximum(dollar_volume[-10:],1e-12)))
         volume_price_corr20=float(np.corrcoef(returns[-20:],bv[-20:])[0,1]) if np.std(returns[-20:])>1e-12 and np.std(bv[-20:])>1e-12 else 0.0
+        flow_return_corr20=float(np.corrcoef(returns[-20:],minute_flow[-20:])[0,1]) if np.std(returns[-20:])>1e-12 and np.std(minute_flow[-20:])>1e-12 else 0.0
         body_series=(b-bo)/np.maximum(b,1e-12)
         body_pressure20=float(np.mean(body_series[-20:]))
         oi_x_return5=float(oi_change*r5)
@@ -287,7 +288,7 @@ def build_panel():
         range_z20=_zscore_current(bh-bl,20)
         dt=datetime.fromtimestamp(t/1000,timezone.utc); hour=dt.hour+dt.minute/60; hs,hc=math.sin(2*math.pi*hour/24),math.cos(2*math.pi*hour/24); dow=dt.weekday(); ds,dc=math.sin(2*math.pi*dow/7),math.cos(2*math.pi*dow/7)
         x=[r1,r3,r5,r10,r15,r30,accel,rv5,rv10,rv30,rp10,rp30,body,upper,lower,vr,vt,tr,flow,basis,bd,mg,pr,er5,sr5,er10,sr10,erbtc5,srb5,r5*rv10,r10*rv10,flow*rv5,rp10*flow,hs,hc,ds,dc,funding_v,funding_delta,oi_change,oi_z,
-           rsi5,rsi14,rsi30,bb_z20,bb_z60,ema_slope5,ema_slope15,ema_slope30,atr_ratio14,range_asymmetry10,wick_imbalance10,volume_z20,trades_z20,dollar_volume_z20,flow_accel5,flow_z20,return_skew20,return_kurtosis20,autocorr5,drawdown30,runup30,price_to_ema20,amihud10,volume_price_corr20,body_pressure20,oi_x_return5,funding_x_oi,basis_x_vol,vol_term_ratio,range_z20]
+           rsi5,rsi14,rsi30,bb_z20,bb_z60,ema_slope5,ema_slope15,ema_slope30,atr_ratio14,range_asymmetry10,wick_imbalance10,volume_z20,trades_z20,dollar_volume_z20,flow_accel5,flow_z20,return_skew20,return_kurtosis20,autocorr5,drawdown30,runup30,price_to_ema20,amihud10,volume_price_corr20,flow_return_corr20,body_pressure20,oi_x_return5,funding_x_oi,basis_x_vol,vol_term_ratio,range_z20]
         if all(math.isfinite(v) for v in x):rows.append((t,x,p))
     return rows
 
