@@ -1,0 +1,161 @@
+"""Exhaustive tractable BTC feature-pattern screen.
+
+Exact individual subset enumeration for 92 features is 2^92, so this research-only
+screen exhaustively evaluates every non-empty combination of eight semantic feature
+families (255 patterns) for both 5m and 10m using identical expanding chronological
+WFO folds. It never mutates production state.
+"""
+from __future__ import annotations
+import csv
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+ROOT=Path(__file__).resolve().parents[1]
+PANEL=ROOT/"data/historical_research/aligned_panel.csv"
+OUT=ROOT/"data/historical_research/feature_pattern_exhaustive.json"
+CLASSES=("DOWN","FLAT","UP")
+HORIZONS={"5m":5,"10m":10}
+MIN_TRAIN=12000
+EMBARGO=10
+
+BASE_FEATURES=[
+"ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30",
+"rangepos10","rangepos30","body","upper","lower","volratio","voltrend","tradesratio",
+"takerimb","basis","basis_delta","mark_gap","premium","eth_ret5","sol_ret5","eth_ret10",
+"sol_ret10","eth_btc_rel5","sol_btc_rel5","ret5_x_vol","ret10_x_vol","flow_x_vol",
+"range_x_flow","hour_sin","hour_cos","dow_sin","dow_cos","funding","funding_delta",
+"oi_change","oi_z"]
+FRONTIER_FEATURES=[
+"rsi5","rsi14","rsi30","bb_z20","bb_z60","ema_slope5","ema_slope15","ema_slope30",
+"atr_ratio14","range_asymmetry10","wick_imbalance10","volume_z20","trades_z20",
+"dollar_volume_z20","flow_accel5","flow_z20","return_skew20","return_kurtosis20",
+"autocorr5","drawdown30","runup30","price_to_ema20","amihud10","volume_price_corr20",
+"body_pressure20","oi_x_return5","funding_x_oi","basis_x_vol","vol_term_ratio","range_z20",
+"flow_return_corr20","ret20","ret60","ret120","rv60","rv120","vol_of_vol20",
+"trend_efficiency20","trend_efficiency60","range_compression20","range_compression60",
+"close_location10","close_location30","breakout_high20","breakout_low20","up_volume_ratio20",
+"signed_volume_pressure20","trade_size_z20","signed_flow_accel20","parkinson_vol20","garman_klass_vol20"]
+FEATURES=BASE_FEATURES+FRONTIER_FEATURES
+
+FAMILY_GROUPS={
+"base":tuple(BASE_FEATURES),
+"momentum":("rsi5","rsi14","rsi30","bb_z20","bb_z60","ema_slope5","ema_slope15","ema_slope30","ret20","ret60","ret120","trend_efficiency20","trend_efficiency60","price_to_ema20"),
+"volatility":("rv60","rv120","vol_of_vol20","atr_ratio14","return_skew20","return_kurtosis20","vol_term_ratio","range_z20","range_compression20","range_compression60","parkinson_vol20","garman_klass_vol20"),
+"price_action":("rangepos10","rangepos30","body","upper","lower","range_asymmetry10","wick_imbalance10","drawdown30","runup30","close_location10","close_location30","breakout_high20","breakout_low20"),
+"flow":("volratio","voltrend","tradesratio","takerimb","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","volume_z20","trades_z20","dollar_volume_z20","flow_accel5","flow_z20","amihud10","volume_price_corr20","flow_return_corr20","body_pressure20","up_volume_ratio20","signed_volume_pressure20","trade_size_z20","signed_flow_accel20"),
+"derivatives":("basis","basis_delta","mark_gap","premium","funding","funding_delta","oi_change","oi_z","oi_x_return5","funding_x_oi","basis_x_vol"),
+"cross_asset":("eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5"),
+"calendar":("hour_sin","hour_cos","dow_sin","dow_cos"),
+"dependence":("autocorr5",),
+}
+assert set(FEATURES)=={f for g in FAMILY_GROUPS.values() for f in g}
+assert sum(len(g) for g in FAMILY_GROUPS.values())==len(FEATURES)
+FAMILY_NAMES=tuple(FAMILY_GROUPS)
+PATTERN_COUNT=2**len(FAMILY_NAMES)-1
+
+def metrics(y,p):
+    yi=np.asarray([CLASSES.index(v) for v in y],dtype=int)
+    p=np.clip(np.asarray(p,dtype=float),1e-7,1.0)
+    p/=p.sum(axis=1,keepdims=True)
+    hit=(p.argmax(axis=1)==yi).astype(float)
+    conf=p.max(axis=1)
+    ece=0.0
+    for k in range(10):
+        lo,hi=k/10,(k+1)/10
+        m=(conf>=lo)&((conf<=hi) if hi==1 else (conf<hi))
+        if np.any(m):
+            ece+=float(m.mean())*abs(float(hit[m].mean())-float(conf[m].mean()))
+    one=np.eye(3)[yi]
+    return {"n":int(len(y)),"accuracy":float(hit.mean()),
+            "logloss":float(log_loss(yi,p,labels=[0,1,2])),
+            "brier":float(np.mean(np.sum((p-one)**2,axis=1))),
+            "ece":float(ece)}
+
+def load():
+    if not PANEL.is_file(): raise RuntimeError("aligned_panel.csv missing; run historical research first")
+    with PANEL.open(encoding="utf-8",newline="") as fh:
+        rows=list(csv.DictReader(fh))
+        fields=set(fh.fieldnames or ())
+    missing=sorted(set(FEATURES)-fields)
+    if missing: raise RuntimeError("aligned_panel feature schema incomplete: "+",".join(missing))
+    ts=np.asarray([int(r["timestamp"]) for r in rows],dtype=np.int64)
+    price=np.asarray([float(r["price"]) for r in rows],dtype=float)
+    X=np.asarray([[float(r[f]) for f in FEATURES] for r in rows],dtype=float)
+    if len(rows)==0 or not np.isfinite(price).all() or not np.isfinite(X).all():
+        raise RuntimeError("aligned_panel contains invalid numeric data")
+    return ts,price,X
+
+def labels(ts,price,h):
+    lookup={int(t):i for i,t in enumerate(ts)}
+    keep=[]; y=[]
+    for i,t in enumerate(ts):
+        j=lookup.get(int(t)+h*60_000)
+        if j is None: continue
+        if not (price[i]>0 and np.isfinite(price[i]) and np.isfinite(price[j])): continue
+        rbps=(price[j]/price[i]-1.0)*10000.0
+        y.append("UP" if rbps>2.0 else "DOWN" if rbps<-2.0 else "FLAT")
+        keep.append(i)
+    return np.asarray(keep,dtype=np.int64),np.asarray(y,dtype=object)
+
+def folds(n):
+    if n<MIN_TRAIN+EMBARGO+6000: raise RuntimeError(f"insufficient labeled rows: {n}")
+    ends=(int(n*.60),int(n*.70),int(n*.80)); out=[]
+    for i,tr in enumerate(ends):
+        hi=ends[i+1] if i+1<len(ends) else n
+        lo=tr+EMBARGO
+        if tr>=MIN_TRAIN and lo<hi: out.append((tr,lo,hi))
+    if len(out)!=3: raise RuntimeError(f"expected 3 folds, got {len(out)}")
+    return out
+
+def pattern_features(mask):
+    families=[]; selected=set()
+    for i,name in enumerate(FAMILY_NAMES):
+        if mask&(1<<i):
+            families.append(name); selected.update(FAMILY_GROUPS[name])
+    return families,tuple(f for f in FEATURES if f in selected)
+
+def screen(X,y,fold_spec):
+    ps=[]; ys=[]; per_fold=[]
+    for tr,lo,hi in fold_spec:
+        model=Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=.3,max_iter=450,solver="lbfgs"))])
+        model.fit(X[:tr],y[:tr])
+        raw=model.predict_proba(X[lo:hi])
+        aligned=np.full((len(raw),3),1e-7,dtype=float)
+        for j,c in enumerate(model.classes_): aligned[:,CLASSES.index(str(c))]=raw[:,j]
+        aligned/=aligned.sum(axis=1,keepdims=True)
+        yy=y[lo:hi]; ps.append(aligned); ys.append(yy); per_fold.append(metrics(yy,aligned))
+    return metrics(np.concatenate(ys),np.vstack(ps)),per_fold
+
+def main():
+    ts,price,X=load()
+    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_8_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
+    for h,minutes in HORIZONS.items():
+        idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
+        for mask in range(1,PATTERN_COUNT+1):
+            fam,fn=pattern_features(mask); cols=np.asarray([FEATURES.index(f) for f in fn],dtype=np.int64)
+            try:
+                mm,ff=screen(XX[:,cols],y,fs)
+                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"metrics":mm,"fold_metrics":ff,"status":"OK"})
+            except (ValueError,RuntimeError,np.linalg.LinAlgError) as exc:
+                failures+=1
+                records.append({"pattern_id":f"mask_{mask:03d}","mask":mask,"families":fam,"feature_count":len(fn),"status":"FAILED","error":f"{type(exc).__name__}:{exc}"})
+        base=next((r for r in records if r["families"]==["base"]),None)
+        valid=[r for r in records if r["status"]=="OK"]
+        if base and base.get("metrics"):
+            bm=base["metrics"]
+            for r in valid: r["delta_vs_base"]={k:float(r["metrics"][k]-bm[k]) for k in ("logloss","accuracy","brier","ece")}
+        ranked=sorted(valid,key=lambda r:(r["metrics"]["logloss"],-r["metrics"]["accuracy"],r["feature_count"]))
+        result["horizons"][h]={"samples":int(len(y)),"folds":fs,"patterns_expected":PATTERN_COUNT,"patterns_completed":len(valid),"pattern_failures":failures,"status":"COMPLETE" if len(valid)==PATTERN_COUNT else "PARTIAL_FAILURE","base_pattern":base,"top_20_by_logloss":ranked[:20],"all_patterns":records}
+    result["status"]="COMPLETE" if all(result["horizons"][h]["status"]=="COMPLETE" for h in HORIZONS) else "PARTIAL_FAILURE"
+    result["completed_utc"]=datetime.now(timezone.utc).isoformat()
+    OUT.write_text(json.dumps(result,indent=2,sort_keys=True),encoding="utf-8")
+    print(json.dumps({"status":result["status"],"pattern_count_expected":PATTERN_COUNT,"5m_completed":result["horizons"]["5m"]["patterns_completed"],"10m_completed":result["horizons"]["10m"]["patterns_completed"]},indent=2))
+    if result["status"]!="COMPLETE": raise SystemExit("exhaustive feature-family screen incomplete; fail closed")
+
+if __name__=="__main__": main()
