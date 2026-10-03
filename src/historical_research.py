@@ -254,7 +254,7 @@ def build_panel():
         # Feature frontier: strictly backward-looking technical, liquidity-proxy,
         # flow-distribution and cross-state interaction features.
         prev_close=np.concatenate(([b[0]],b[:-1]))
-        true_range=np.maximum.reduce([bh-bo,np.abs(bh-prev_close),np.abs(bl-prev_close)])
+        true_range=np.maximum.reduce([bh-bl,np.abs(bh-prev_close),np.abs(bl-prev_close)])
         minute_flow=2.0*tb/np.maximum(bv,1e-12)-1.0
         dollar_volume=b*bv
         rsi5=_rsi_from_returns(returns,5); rsi14=_rsi_from_returns(returns,14); rsi30=_rsi_from_returns(returns,30)
