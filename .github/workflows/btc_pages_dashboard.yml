@@ -11,29 +11,19 @@ on:
       - '.github/workflows/btc_pages_dashboard.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: btc-pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  package:
+    name: Package dashboard site
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Prepare dashboard site
         shell: bash
@@ -68,6 +58,24 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+
+  deploy:
+    name: Deploy dashboard to GitHub Pages
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        id: configure-pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Deploy to GitHub Pages
         id: deployment
