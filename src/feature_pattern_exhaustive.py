@@ -78,11 +78,15 @@ def metrics(y,p):
             "brier":float(np.mean(np.sum((p-one)**2,axis=1))),
             "ece":float(ece)}
 
+def _read_panel_stream(fh):
+    reader=csv.DictReader(fh)
+    rows=list(reader)
+    return rows,set(reader.fieldnames or ())
+
 def load():
     if not PANEL.is_file(): raise RuntimeError("aligned_panel.csv missing; run historical research first")
     with PANEL.open(encoding="utf-8",newline="") as fh:
-        rows=list(csv.DictReader(fh))
-        fields=set(fh.fieldnames or ())
+        rows,fields=_read_panel_stream(fh)
     missing=sorted(set(FEATURES)-fields)
     if missing: raise RuntimeError("aligned_panel feature schema incomplete: "+",".join(missing))
     ts=np.asarray([int(r["timestamp"]) for r in rows],dtype=np.int64)
