@@ -11,6 +11,7 @@ incompatible production-model generations.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sqlite3
@@ -61,6 +62,18 @@ def _actual_column(horizon: str) -> str:
     return f"actual_direction_{horizon}"
 
 
+def _current_model_sha256(horizon: str):
+    path = MODEL_DIR / f"{horizon}.joblib"
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
 def _current_registry_version(con, horizon: str):
     row = con.execute(
         "SELECT production_version FROM model_registry WHERE horizon=?",
@@ -99,11 +112,23 @@ def _rows(horizon: str):
             (token,),
         ).fetchall()
 
+    try:
+        from model_compare import strict_pit_provenance_reason
+    except ModuleNotFoundError:
+        from src.model_compare import strict_pit_provenance_reason
+
     for created, scenario_text, up, down, flat, y in raw:
         if y not in CLASSES:
             continue
         try:
-            comp = json.loads(scenario_text or "{}").get("components", {})
+            scenario = json.loads(scenario_text or "{}")
+            if not isinstance(scenario, dict):
+                continue
+            if scenario.get("production_mode") != "binance_primary":
+                continue
+            if strict_pit_provenance_reason(scenario, created) is not None:
+                continue
+            comp = scenario.get("components", {})
             model = comp.get(f"model_raw_{horizon}") or comp.get("model_raw")
             structural = comp.get(f"structural_{horizon}") or comp.get("structural")
             if not isinstance(model, dict) or not isinstance(structural, dict):
@@ -232,6 +257,8 @@ def calibrate(horizon: str):
         "candidate_weight": float(best_w),
         "stability": stability,
         "status": "accepted" if accepted else "rejected",
+        "model_sha256": _current_model_sha256(horizon),
+        "pit_policy": "strict_binance_primary_only",
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
