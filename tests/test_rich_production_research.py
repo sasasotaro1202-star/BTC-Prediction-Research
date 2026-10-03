@@ -14,7 +14,7 @@ from src.rich_production_research import (
 
 def test_rich_schema_contains_legacy_features_exactly():
     assert len(LEGACY_FEATURES) == 15
-    assert len(RICH_FEATURES) == 53
+    assert len(RICH_FEATURES) == 61
     assert len(LEGACY_INDICES) == 15
     assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == [
         "ret1","ret3","ret5","ret10","accel","rv5","rv10",
@@ -168,7 +168,11 @@ def test_candlestick_pattern_features_are_causal_and_well_bounded():
 
 def test_candlestick_features_extend_rich_features_without_moving_legacy_indices():
     assert len(RICH_FEATURES) == len(LEGACY_FEATURES) + 46
-    assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == list(LEGACY_FEATURES)
+    assert [RICH_FEATURES[i] for i in LEGACY_INDICES] == [
+        "ret1","ret3","ret5","ret10","accel","rv5","rv10",
+        "rangepos10","body","upper","lower","volratio","voltrend",
+        "ema_gap_5m","ema_gap_10m",
+    ]
     assert list(RICH_FEATURES[-8:]) == [
         "doji_score","hammer_score","shooting_star_score",
         "bullish_engulfing","bearish_engulfing","inside_bar","outside_bar",
