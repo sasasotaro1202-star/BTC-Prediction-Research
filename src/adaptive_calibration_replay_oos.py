@@ -218,16 +218,54 @@ def evaluate(horizon, rows):
 
 
 def main():
-    rows = _dataset()
-    payload = {
-        "schema_version": 1,
-        "research_only": True,
-        "production_changed": False,
-        "promotion_evidence_eligible": False,
-        "policy": "adaptive_prequential_calibration_research_only",
-        "post_champion_cutoff_ms": _post_champion_cutoff_ms(),
-        "horizons": {h: evaluate(h, rows) for h in ("5m", "10m")},
-    }
+    cutoff = _post_champion_cutoff_ms()
+    try:
+        rows = _dataset()
+    except RuntimeError as exc:
+        message = str(exc)
+        prefix = "insufficient post-Champion archive rows:"
+        if not message.startswith(prefix):
+            raise
+        try:
+            available_rows = int(message[len(prefix):].strip())
+        except ValueError:
+            available_rows = None
+        horizons = {
+            h: {
+                "status": "DEFERRED",
+                "reason": "insufficient_post_champion_archive_rows",
+                "n": available_rows,
+                "required_minimum": MIN_ROWS,
+                "post_champion_cutoff_ms": cutoff,
+                "replay_holdout_protected": True,
+                "replay_holdout_used_for_selection": False,
+            }
+            for h in ("5m", "10m")
+        }
+        payload = {
+            "schema_version": 1,
+            "research_only": True,
+            "production_changed": False,
+            "promotion_evidence_eligible": False,
+            "policy": "adaptive_prequential_calibration_research_only",
+            "post_champion_cutoff_ms": cutoff,
+            "dataset_status": "DEFERRED",
+            "dataset_reason": "insufficient_post_champion_archive_rows",
+            "dataset_rows": available_rows,
+            "horizons": horizons,
+        }
+    else:
+        payload = {
+            "schema_version": 1,
+            "research_only": True,
+            "production_changed": False,
+            "promotion_evidence_eligible": False,
+            "policy": "adaptive_prequential_calibration_research_only",
+            "post_champion_cutoff_ms": cutoff,
+            "dataset_status": "READY",
+            "dataset_rows": len(rows),
+            "horizons": {h: evaluate(h, rows) for h in ("5m", "10m")},
+        }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(payload, indent=2, sort_keys=True))
