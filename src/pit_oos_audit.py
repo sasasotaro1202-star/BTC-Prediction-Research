@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from db import DB, init_db
 from pit_history import record_pit_history
+try:
+    from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+except ModuleNotFoundError:
+    from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
 
 OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
@@ -292,6 +296,53 @@ def audit() -> dict:
                     coverage["10m"]["situation_meta_ready"] += 1
                     coverage["10m"]["online_expert_ready"] += 1
 
+    # Audit target semantics for the extended horizons separately. Their
+    # forecasts inherit the same prediction cutoff/provenance envelope, but they
+    # remain research-only and never affect the 5m/10m promotion gate.
+    with sqlite3.connect(DB) as con:
+        for horizon in EXTENDED_RESEARCH_HORIZONS:
+            rows_ext = con.execute(
+                f"""SELECT prediction_id, created_at_utc, target_{horizon},
+                           actual_direction_{horizon}, scenario_json
+                    FROM predictions
+                    WHERE target_{horizon} IS NOT NULL
+                    ORDER BY created_at_utc, prediction_id"""
+            ).fetchall()
+            for prediction_id, created_raw, target_raw, actual_value, scenario_raw in rows_ext:
+                row_prefix = f"{prediction_id}:"
+                try:
+                    created_ext = parse_utc(created_raw)
+                    target_ext = parse_utc(target_raw)
+                except Exception:
+                    violations.append(f"{row_prefix}invalid_target_{horizon}")
+                    continue
+                if target_ext <= created_ext:
+                    violations.append(f"{row_prefix}{horizon}_target_not_after_prediction")
+                coverage[horizon]["settled_predictions"] += int(actual_value not in (None, ""))
+                try:
+                    scenario_ext = json.loads(scenario_raw or "{}")
+                except Exception:
+                    scenario_ext = {}
+                decision_ext_raw = scenario_ext.get("decision_time_utc", created_raw)
+                try:
+                    decision_ext = parse_utc(decision_ext_raw)
+                except Exception:
+                    decision_ext = created_ext
+                    violations.append(f"{row_prefix}invalid_decision_time_{horizon}")
+                if target_ext <= decision_ext:
+                    violations.append(f"{row_prefix}{horizon}_target_not_after_decision")
+                provenance_ext = scenario_ext.get("provenance")
+                sources_ext = provenance_ext.get("sources") if isinstance(provenance_ext, dict) else None
+                source_ext = sources_ext.get("binance_futures") if isinstance(sources_ext, dict) else None
+                if (
+                    actual_value not in (None, "")
+                    and isinstance(provenance_ext, dict)
+                    and isinstance(source_ext, dict)
+                    and source_ext.get("status") in AVAILABLE_STATUSES
+                    and not validate_provenance_envelope(source_ext, f"{row_prefix}extended:{horizon}")
+                ):
+                    coverage[horizon]["strict_primary_settled"] += 1
+
     # Promotion evidence is tied to the production benchmark venue. Fallback
     # observations remain useful research data but cannot satisfy the primary
     # PIT requirement.
@@ -325,6 +376,11 @@ def audit() -> dict:
         "verified_fallback_predictions": verified_fallback_count,
         "min_strict_pit_rows": MIN_STRICT_PIT_ROWS,
         "coverage": coverage,
+        "extended_horizon_audit": {
+            "horizons": list(EXTENDED_RESEARCH_HORIZONS),
+            "research_only": True,
+            "promotion_effect": "none",
+        },
         "coverage_policy": (
             "strict_primary_settled requires actual outcome + valid primary PIT; "
             "situation_meta_ready additionally requires persisted situation, microstructure, and components; "
