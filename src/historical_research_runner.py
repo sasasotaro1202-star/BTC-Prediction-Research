@@ -272,6 +272,7 @@ def resilient_req_json(url,timeout=30,retries=5):
             print("[WARN] Binance OI statistics unavailable from Actions runner; using verified Binance Vision metrics archive. PIT status is NON_STRICT_ARCHIVE_TIMING.")
             archived=_archive_oi_metrics_fallback(url)
             if archived:
+                hr.oi_source_variant="binance_vision_metrics_archive"
                 return archived
             raise RuntimeError("historical_open_interest_archive_unavailable")
         if "/fapi/v1/" not in url:
