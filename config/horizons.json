@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "primary_horizons": [
+    "5m",
+    "10m"
+  ],
+  "extended_research_horizons": [
+    "15m",
+    "30m",
+    "1h",
+    "3h",
+    "6h",
+    "12h",
+    "24h"
+  ],
+  "target_definition_version": "direction_v1_neutral_bps",
+  "extended_forecast_method": "research_structural_time_scaled_v1",
+  "production_policy": "5m_10m_only_until_extended_horizons_pass_local_PIT_OOS_robustness_holdout_shadow_promotion",
+  "target_grid_policy": "next_UTC_horizon_boundary",
+  "calibration_policy": "extended_horizons_unvalidated_uncalibrated_until_independent_OOS_evidence"
+}
