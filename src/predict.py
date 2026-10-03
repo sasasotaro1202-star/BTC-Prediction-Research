@@ -14,6 +14,7 @@ from microstructure_features import derive_market_flow_features
 from runtime_production_model import resolve_production_model
 from situation import summarize_situation
 from extended_horizons import forecast_extended_horizons
+from horizon_curve import build_horizon_curve
 
 ROOT=Path(__file__).resolve().parents[1]
 MODEL_DIR=ROOT/'models'
@@ -718,6 +719,15 @@ def main():
     extended_forecasts = forecast_extended_horizons(
         prediction_cutoff, f, m, p5, p10, structural
     )
+    horizon_curve = build_horizon_curve(
+        prediction_cutoff,
+        price,
+        p5,
+        p10,
+        extended_forecasts,
+        target5,
+        target10,
+    )
     situation = summarize_situation(f, m, p5, p10, data_quality=status)
     if m.get('cross_exchange_gap') is not None and abs(m['cross_exchange_gap'])>.0005:warnings.append('cross-exchange divergence')
     if abs(m.get('book_imbalance',0.0))>.45 or abs(m.get('bybit_book_imbalance',0.0))>.45:warnings.append('order-book imbalance')
@@ -839,7 +849,7 @@ def main():
             'prediction_cutoff':retrieved,
             'status':'ok',
         }
-    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10,'extended_horizons':{h:{'target_at':item['target_at'].isoformat(),'target_definition_version':item['target_definition_version'],'forecast_method':item['forecast_method'],'research_only':True,'calibration_status':item['calibration_status'],'probabilities':item['probabilities']} for h,item in extended_forecasts.items()}},'situation':situation,'policy':('bybit_fallback_model+fallback_oos_calibration' if use_bybit_fallback else ('coinbase_fallback_model+fallback_oos_calibration' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
+    scenario={'decision_time_utc':prediction_cutoff.isoformat(),'features':f,'microstructure':m,'regime':regime,'warnings':warnings,'data_quality':status,'provenance':{'event_time':latest_event.isoformat(),'available_at':retrieved,'publication_time':None,'retrieved_at':retrieved,'prediction_cutoff':retrieved,'revision_time':None,'policy':'live_acquisition_end_is_conservative_available_at; source_native_publication_and_revision_are_unknown_unless_adapter_provides_them','sources':source_provenance},'calibration':{'5m_temperature':load_temperature('5m'),'10m_temperature':load_temperature('10m'),'5m_blend_weight':w5,'10m_blend_weight':w10},'components':{'model_raw_5m':base5,'structural_5m':s5,'fused_raw_5m':raw5,'calibrated_5m':p5,'model_raw_10m':base10,'structural_10m':s10,'fused_raw_10m':raw10,'calibrated_10m':p10,'extended_horizons':{h:{'target_at':item['target_at'].isoformat(),'target_definition_version':item['target_definition_version'],'forecast_method':item['forecast_method'],'research_only':True,'calibration_status':item['calibration_status'],'probabilities':item['probabilities']} for h,item in extended_forecasts.items()}},'horizon_curve':horizon_curve,'situation':situation,'policy':('bybit_fallback_model+fallback_oos_calibration' if use_bybit_fallback else ('coinbase_fallback_model+fallback_oos_calibration' if use_coinbase_fallback else 'production+structural+multi-timeframe+cross_exchange_microstructure+holdout_calibrated_blend')),'production_mode':('bybit_fallback' if use_bybit_fallback else ('coinbase_fallback' if use_coinbase_fallback else 'binance_primary'))}
     if use_bybit_fallback or use_coinbase_fallback:
         prefix='bybit' if use_bybit_fallback else 'coinbase'
         by5=json.loads((MODEL_DIR/f'{prefix}_5m.json').read_text(encoding='utf-8'))['model_version']
@@ -847,6 +857,12 @@ def main():
         model_version=f'5m:{by5}|10m:{by10}'
     else:
         model_version=f'5m:{regver("5m")}|10m:{regver("10m")}'
+    horizon_curve_path = ROOT / 'docs' / 'horizon_curve_latest.json'
+    horizon_curve_path.parent.mkdir(parents=True, exist_ok=True)
+    horizon_curve_path.write_text(
+        json.dumps(horizon_curve, indent=2, sort_keys=True) + '\n',
+        encoding='utf-8',
+    )
     insert_prediction(now,target5,target10,price,p5,p10,model_version,f,scenario,extended_forecasts)
-    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'extended_horizons':{h:{'probabilities':item['probabilities'],'target_jst':jst(item['target_at']),'forecast_method':item['forecast_method'],'research_only':True} for h,item in extended_forecasts.items()},'situation':situation,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((MODEL_DIR/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((MODEL_DIR/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
+    print(json.dumps({'timestamp_jst':jst(now),'btc_price':price,'direction_5m':direction,'probabilities_5m':p5,'probabilities_10m':p10,'extended_horizons':{h:{'probabilities':item['probabilities'],'target_jst':jst(item['target_at']),'forecast_method':item['forecast_method'],'research_only':True} for h,item in extended_forecasts.items()},'horizon_curve':horizon_curve,'situation':situation,'confidence':max(p5.values()),'regime':regime,'warnings':warnings,'target_5m_jst':jst(target5),'model_5m':(json.loads((MODEL_DIR/(('bybit_5m.json' if use_bybit_fallback else 'coinbase_5m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('5m')),'model_10m':(json.loads((MODEL_DIR/(('bybit_10m.json' if use_bybit_fallback else 'coinbase_10m.json'))).read_text(encoding='utf-8'))['model_version'] if use_fallback else regver('10m')),'calibration':scenario['calibration'],'data_quality':status},ensure_ascii=False))
 if __name__=='__main__':main()
