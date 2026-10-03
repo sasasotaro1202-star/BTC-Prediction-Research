@@ -215,6 +215,7 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertEqual(set(values), set(ORDERBOOK_V2))
         scenario["data_quality"]["orderbook_v2_feature_levels"] = 19
         self.assertIsNone(_orderbook_from_scenario(scenario))
+        self.assertIsNone(_orderbook_from_scenario({}))
 
     def test_primary_source_contract_requires_all_required_sources(self):
         self.assertTrue(_strict_primary_sources_ok(self._scenario()))
