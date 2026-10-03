@@ -97,7 +97,10 @@ def _metrics_oi_zip_rows(urls,start_ms,end_ms,symbol,shift_ms=5*60_000):
                     oi_value=float(raw[oi_idx])
                 except (ValueError,TypeError,OverflowError,IndexError):
                     continue
-                if start_ms<=available_ts<end_ms and math.isfinite(oi_value) and oi_value>0.0:
+                # Treat the query end as inclusive for the shifted 5m
+                # archive point. fetch_oi advances the next cursor by +1ms,
+                # so a boundary record is consumed exactly once.
+                if start_ms<=available_ts<=end_ms and math.isfinite(oi_value) and oi_value>0.0:
                     out.append({
                         "symbol":symbol,
                         "sumOpenInterest":str(oi_value),
@@ -289,7 +292,11 @@ def resilient_req_json(url,timeout=30,retries=5):
     parsed=urllib.parse.urlsplit(url)
     if parsed.path.endswith("/futures/data/openInterestHist"):
         print("[INFO] Using verified Binance Vision daily metrics archive for historical open-interest research.")
-        return _archive_oi_fallback(url)
+        archived=_archive_oi_fallback(url)
+        if archived:
+            hr.oi_source_variant="binance_vision_metrics_archive"
+            return archived
+        raise RuntimeError("historical_open_interest_archive_empty")
     try:return _ORIGINAL_REQ_JSON(url,timeout=timeout,retries=retries)
     except RuntimeError as exc:
         message=str(exc)

@@ -177,3 +177,9 @@ class HistoricalTargetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_stale_open_interest_is_not_carried_forward_indefinitely():
+    source = Path("src/historical_research.py").read_text(encoding="utf-8")
+    assert "MAX_OI_STALENESS_MS=16*60_000" in source
+    assert "int(t)-int(ot) > MAX_OI_STALENESS_MS" in source

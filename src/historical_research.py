@@ -27,10 +27,12 @@ from sklearn.metrics import log_loss
 OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
 spot_proxy=False
+oi_source_variant="direct_binance_api"
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
 from http_resilience import request_json
 DAYS=45; MIN_TRAIN=12000; TEST_BLOCK=5000; EMBARGO=10
+MAX_OI_STALENESS_MS=16*60_000
 TARGETS={"5m":5,"10m":10}; SYMS={"btc":"BTCUSDT","eth":"ETHUSDT","sol":"SOLUSDT"}
 
 BASE_FEATURES=["ret1","ret3","ret5","ret10","ret15","ret30","accel","rv5","rv10","rv30","rangepos10","rangepos30","body","upper","lower","volratio","voltrend","tradesratio","takerimb","basis","basis_delta","mark_gap","premium","eth_ret5","sol_ret5","eth_ret10","sol_ret10","eth_btc_rel5","sol_btc_rel5","ret5_x_vol","ret10_x_vol","flow_x_vol","range_x_flow","hour_sin","hour_cos","dow_sin","dow_cos","funding","funding_delta","oi_change","oi_z"]
@@ -332,6 +334,9 @@ def build_panel():
         prev_f=max([k for k in fk if k<ft],default=None) if ft is not None else None
         ot=max([k for k in ok if k<=t],default=None)
         prev_oi=max([k for k in ok if k<ot],default=None) if ot is not None else None
+        if ot is not None and int(t)-int(ot) > MAX_OI_STALENESS_MS:
+            ot=None
+            prev_oi=None
         if ft is None or prev_f is None or ot is None or prev_oi is None:
             # Strict availability gate: an unavailable source is UNKNOWN, not zero.
             continue
@@ -512,7 +517,7 @@ def main():
     rows=build_panel()
     with (OUT/"aligned_panel.csv").open("w",newline="") as f:
         w=csv.writer(f);w.writerow(["timestamp","price"]+FEATURES);w.writerows([[t,p]+x for t,x,p in rows])
-    report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
+    report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"research_only":True,"production_changed":False,"promotion_evidence_eligible":False,"pit_evidence_status":"NON_STRICT_ARCHIVE_TIMING","oi_source_variant":oi_source_variant,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
     frontier_evidence={
         "schema_version":1,
         "experiment_id":"btc_feature_frontier_v8",
