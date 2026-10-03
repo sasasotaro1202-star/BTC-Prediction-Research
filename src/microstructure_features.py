@@ -134,3 +134,114 @@ def derive_market_flow_features(
         t5 - t15 if t5 is not None and t15 is not None else None
     )
     return result
+
+
+ORDERBOOK_V2 = (
+    "depth_imbalance_5",
+    "depth_imbalance_10",
+    "depth_imbalance_20",
+    "weighted_depth_imbalance_20",
+    "spread_bps",
+    "microprice_gap",
+    "depth_concentration_imbalance",
+    "depth_notional_imbalance_20",
+)
+
+
+def _book_levels(snapshot: dict[str, Any]) -> tuple[list[tuple[float, float]], list[tuple[float, float]]] | None:
+    if not isinstance(snapshot, dict):
+        return None
+    bids = snapshot.get("bids")
+    asks = snapshot.get("asks")
+    if not isinstance(bids, list) or not isinstance(asks, list) or len(bids) < 20 or len(asks) < 20:
+        return None
+    out_bids: list[tuple[float, float]] = []
+    out_asks: list[tuple[float, float]] = []
+    try:
+        for raw in bids[:20]:
+            price = _finite(raw[0])
+            qty = _finite(raw[1])
+            if price is None or qty is None or price <= 0 or qty < 0:
+                return None
+            out_bids.append((price, qty))
+        for raw in asks[:20]:
+            price = _finite(raw[0])
+            qty = _finite(raw[1])
+            if price is None or qty is None or price <= 0 or qty < 0:
+                return None
+            out_asks.append((price, qty))
+    except (TypeError, ValueError, IndexError):
+        return None
+    if out_bids[0][0] > out_asks[0][0]:
+        return None
+    return out_bids, out_asks
+
+
+def _imbalance(bids: list[tuple[float, float]], asks: list[tuple[float, float]], levels: int) -> float | None:
+    b = sum(q for _, q in bids[:levels])
+    a = sum(q for _, q in asks[:levels])
+    denom = b + a
+    if denom <= 0 or not math.isfinite(denom):
+        return None
+    value = (b - a) / denom
+    return value if math.isfinite(value) else None
+
+
+def derive_orderbook_features(snapshot: dict[str, Any] | None) -> dict[str, float] | None:
+    """Derive causal order-book features from one validated Binance depth snapshot.
+
+    The snapshot is required to contain 20 valid bid/ask levels. No interpolation,
+    imputation, future lookup, or network access is performed here.
+    """
+    parsed = _book_levels(snapshot or {})
+    if parsed is None:
+        return None
+    bids, asks = parsed
+    bid_px, bid_qty = bids[0]
+    ask_px, ask_qty = asks[0]
+    if ask_px < bid_px or bid_qty + ask_qty <= 0:
+        return None
+    mid = (bid_px + ask_px) / 2.0
+    if mid <= 0 or not math.isfinite(mid):
+        return None
+
+    spread_bps = (ask_px - bid_px) / mid * 10_000.0
+    microprice = (ask_px * bid_qty + bid_px * ask_qty) / (bid_qty + ask_qty)
+    microprice_gap = microprice / mid - 1.0
+
+    weighted_bid = sum(q / (idx + 1.0) for idx, (_, q) in enumerate(bids))
+    weighted_ask = sum(q / (idx + 1.0) for idx, (_, q) in enumerate(asks))
+    weighted_denom = weighted_bid + weighted_ask
+    weighted_imbalance = (
+        (weighted_bid - weighted_ask) / weighted_denom
+        if weighted_denom > 0 else None
+    )
+
+    bid20 = sum(q for _, q in bids)
+    ask20 = sum(q for _, q in asks)
+    if bid20 <= 0 or ask20 <= 0:
+        concentration = 0.0
+    else:
+        concentration = (sum(q for _, q in bids[:5]) / bid20) - (sum(q for _, q in asks[:5]) / ask20)
+
+    bid_notional = sum(p * q for p, q in bids)
+    ask_notional = sum(p * q for p, q in asks)
+    notional_denom = bid_notional + ask_notional
+    notional_imbalance = (
+        (bid_notional - ask_notional) / notional_denom
+        if notional_denom > 0 else None
+    )
+
+    values = {
+        "depth_imbalance_5": _imbalance(bids, asks, 5),
+        "depth_imbalance_10": _imbalance(bids, asks, 10),
+        "depth_imbalance_20": _imbalance(bids, asks, 20),
+        "weighted_depth_imbalance_20": weighted_imbalance,
+        "spread_bps": spread_bps,
+        "microprice_gap": microprice_gap,
+        "depth_concentration_imbalance": concentration,
+        "depth_notional_imbalance_20": notional_imbalance,
+    }
+    if any(value is None or not math.isfinite(float(value)) for value in values.values()):
+        return None
+    return {key: float(value) for key, value in values.items()}
