@@ -90,6 +90,15 @@ ORDERBOOK_V2 = (
     "depth_concentration_imbalance",
     "depth_notional_imbalance_20",
 )
+
+ORDERBOOK_V3 = (
+    "depth_imbalance_gradient_5_20",
+    "near_far_imbalance_5_20",
+    "bid_depth_slope_bps_20",
+    "ask_depth_slope_bps_20",
+    "depth_slope_asymmetry_20",
+    "depth_liquidity_concentration_20",
+)
 MARKET_FLOW_V2 = (
     "vwap_distance_5m",
     "vwap_distance_15m",
@@ -236,6 +245,32 @@ def _orderbook_from_scenario(scenario):
         values[key] = value
     return values
 
+def _orderbook_v3_from_scenario(scenario):
+    """Return complete-case causal Binance order-book shape features."""
+    if not isinstance(scenario, dict):
+        return None
+    m = scenario.get("microstructure")
+    dq = scenario.get("data_quality")
+    if not isinstance(m, dict) or not isinstance(dq, dict):
+        return None
+    if dq.get("orderbook_v3") != "ok" or dq.get("orderbook_v3_source") != "binance_depth":
+        return None
+    try:
+        levels = int(dq.get("orderbook_v3_feature_levels", 0))
+    except (TypeError, ValueError):
+        return None
+    if levels < 20:
+        return None
+    values = {}
+    for key in ORDERBOOK_V3:
+        value = _finite(m.get(key))
+        if value is None:
+            return None
+        values[key] = value
+    return values
+
+
+
 
 def _extended_from_feature_json(feature_json):
     try:
@@ -318,6 +353,8 @@ def load_variants(horizon: str):
             "cross_venue_no_oi": [],
             "cross_venue": [],
             "orderbook_v2": [],
+            "orderbook_v3": [],
+            "orderbook_v2_v3": [],
         }
 
     scenario_by_id = {}
@@ -379,9 +416,23 @@ def load_variants(horizon: str):
             )
 
         orderbook = _orderbook_from_scenario(scenario)
+        orderbook_v3 = _orderbook_v3_from_scenario(scenario)
         if orderbook is not None:
             variants["orderbook_v2"].append(
                 {**common, "x": list(row["x"]) + [orderbook[k] for k in ORDERBOOK_V2]}
+            )
+        if orderbook_v3 is not None:
+            variants["orderbook_v3"].append(
+                {**common, "x": list(row["x"]) + [orderbook_v3[k] for k in ORDERBOOK_V3]}
+            )
+        if orderbook is not None and orderbook_v3 is not None:
+            variants["orderbook_v2_v3"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [orderbook[k] for k in ORDERBOOK_V2]
+                    + [orderbook_v3[k] for k in ORDERBOOK_V3],
+                }
             )
 
         flow = _market_flow_from_scenario(scenario, created_at=row["created"])
@@ -504,6 +555,8 @@ def coverage_diagnostics(horizon: str) -> dict:
         "cross_venue_no_oi": 0,
         "cross_venue": 0,
         "orderbook_v2": 0,
+        "orderbook_v3": 0,
+        "orderbook_v2_v3": 0,
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]), {})
@@ -518,6 +571,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         flow_ok = _market_flow_from_scenario(scenario, created_at=row["created"]) is not None
         extra_ok = _extended_from_feature_json(feature_json) is not None
         orderbook_ok = _orderbook_from_scenario(scenario) is not None
+        orderbook_v3_ok = _orderbook_v3_from_scenario(scenario) is not None
         cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
         cross_core_ok = bool(core_ok and cross_ok)
         counts["binance_core"] += int(core_ok)
@@ -527,6 +581,8 @@ def coverage_diagnostics(horizon: str) -> dict:
         counts["full_stack_no_oi"] += int(core_ok and flow_ok and extra_ok)
         counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
         counts["orderbook_v2"] = counts.get("orderbook_v2", 0) + int(orderbook_ok)
+        counts["orderbook_v3"] = counts.get("orderbook_v3", 0) + int(orderbook_v3_ok)
+        counts["orderbook_v2_v3"] = counts.get("orderbook_v2_v3", 0) + int(orderbook_ok and orderbook_v3_ok)
         counts["cross_venue_no_oi"] += int(cross_core_ok)
         counts["cross_venue"] += int(cross_ok)
 
@@ -768,6 +824,8 @@ def main():
             "cross_venue_no_oi": list(BINANCE_MICRO_CORE + CROSS_VENUE),
             "cross_venue": list(BINANCE_MICRO + CROSS_VENUE),
             "orderbook_v2": list(BASE_FEATURES + ORDERBOOK_V2),
+            "orderbook_v3": list(BASE_FEATURES + ORDERBOOK_V3),
+            "orderbook_v2_v3": list(BASE_FEATURES + ORDERBOOK_V2 + ORDERBOOK_V3),
         },
         "horizons": {},
     }
