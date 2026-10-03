@@ -27,6 +27,7 @@ from sklearn.metrics import log_loss
 OUT=Path("data/historical_research"); CACHE=OUT/"cache"
 OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
 spot_proxy=False
+oi_source_variant="direct_binance_api"
 CLASSES=["DOWN","FLAT","UP"]
 from label_policy import NEUTRAL_BPS, direction_from_return
 from http_resilience import request_json
@@ -512,7 +513,7 @@ def main():
     rows=build_panel()
     with (OUT/"aligned_panel.csv").open("w",newline="") as f:
         w=csv.writer(f);w.writerow(["timestamp","price"]+FEATURES);w.writerows([[t,p]+x for t,x,p in rows])
-    report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
+    report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"research_only":True,"production_changed":False,"promotion_evidence_eligible":False,"pit_evidence_status":"NON_STRICT_ARCHIVE_TIMING","oi_source_variant":oi_source_variant,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
     frontier_evidence={
         "schema_version":1,
         "experiment_id":"btc_feature_frontier_v8",
