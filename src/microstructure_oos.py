@@ -79,6 +79,17 @@ BINANCE_MICRO_CORE = (
     "taker_imbalance",
     "funding_binance",
 )
+
+ORDERBOOK_V2 = (
+    "depth_imbalance_5",
+    "depth_imbalance_10",
+    "depth_imbalance_20",
+    "weighted_depth_imbalance_20",
+    "spread_bps",
+    "microprice_gap",
+    "depth_concentration_imbalance",
+    "depth_notional_imbalance_20",
+)
 MARKET_FLOW_V2 = (
     "vwap_distance_5m",
     "vwap_distance_15m",
@@ -201,6 +212,31 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
+def _orderbook_from_scenario(scenario):
+    """Return complete-case causal Binance order-book frontier fields."""
+    if not isinstance(scenario, dict):
+        return None
+    m = scenario.get("microstructure")
+    dq = scenario.get("data_quality")
+    if not isinstance(m, dict) or not isinstance(dq, dict):
+        return None
+    if dq.get("orderbook_v2") != "ok" or dq.get("orderbook_v2_source") != "binance_depth":
+        return None
+    try:
+        levels = int(dq.get("orderbook_v2_feature_levels", 0))
+    except (TypeError, ValueError):
+        return None
+    if levels < 20:
+        return None
+    values = {}
+    for key in ORDERBOOK_V2:
+        value = _finite(m.get(key))
+        if value is None:
+            return None
+        values[key] = value
+    return values
+
+
 def _extended_from_feature_json(feature_json):
     try:
         parsed = json.loads(feature_json or "{}")
@@ -281,6 +317,7 @@ def load_variants(horizon: str):
             "full_stack": [],
             "cross_venue_no_oi": [],
             "cross_venue": [],
+            "orderbook_v2": [],
         }
 
     scenario_by_id = {}
@@ -307,6 +344,7 @@ def load_variants(horizon: str):
         "full_stack": [],
         "cross_venue_no_oi": [],
         "cross_venue": [],
+        "orderbook_v2": [],
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]))
@@ -338,6 +376,12 @@ def load_variants(horizon: str):
         if micro is not None:
             variants["binance_micro"].append(
                 {**common, "x": list(row["x"]) + [micro[k] for k in BINANCE_MICRO]}
+            )
+
+        orderbook = _orderbook_from_scenario(scenario)
+        if orderbook is not None:
+            variants["orderbook_v2"].append(
+                {**common, "x": list(row["x"]) + [orderbook[k] for k in ORDERBOOK_V2]}
             )
 
         flow = _market_flow_from_scenario(scenario, created_at=row["created"])
@@ -405,7 +449,13 @@ def coverage_diagnostics(horizon: str) -> dict:
         "strict_primary_first_created": min((str(r["created"]) for r in base), default=None),
         "strict_primary_last_created": max((str(r["created"]) for r in base), default=None),
         "field_presence": {
-            name: 0 for name in (*BINANCE_MICRO, *MARKET_FLOW_V2, *EXTENDED_FEATURES, *CROSS_VENUE)
+            name: 0 for name in (
+                *BINANCE_MICRO,
+                *MARKET_FLOW_V2,
+                *EXTENDED_FEATURES,
+                *CROSS_VENUE,
+                *ORDERBOOK_V2,
+            )
         },
         "variant_coverage": {},
     }
@@ -435,6 +485,9 @@ def coverage_diagnostics(horizon: str) -> dict:
                 raw_key = "oi" if key == "oi_log1p" else key
                 if _finite(micro.get(raw_key)) is not None:
                     diagnostics["field_presence"][key] += 1
+        for key in ORDERBOOK_V2:
+            if isinstance(micro, dict) and _finite(micro.get(key)) is not None:
+                diagnostics["field_presence"][key] += 1
         extra = _extended_from_feature_json(feature_json)
         if extra is not None:
             for key in EXTENDED_FEATURES:
@@ -450,6 +503,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         "full_stack": 0,
         "cross_venue_no_oi": 0,
         "cross_venue": 0,
+        "orderbook_v2": 0,
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]), {})
@@ -463,6 +517,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         micro_ok = _micro_from_scenario(scenario) is not None
         flow_ok = _market_flow_from_scenario(scenario, created_at=row["created"]) is not None
         extra_ok = _extended_from_feature_json(feature_json) is not None
+        orderbook_ok = _orderbook_from_scenario(scenario) is not None
         cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
         cross_core_ok = bool(core_ok and cross_ok)
         counts["binance_core"] += int(core_ok)
@@ -471,6 +526,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         counts["market_flow_v2"] += int(micro_ok and flow_ok)
         counts["full_stack_no_oi"] += int(core_ok and flow_ok and extra_ok)
         counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
+        counts["orderbook_v2"] = counts.get("orderbook_v2", 0) + int(orderbook_ok)
         counts["cross_venue_no_oi"] += int(cross_core_ok)
         counts["cross_venue"] += int(cross_ok)
 
@@ -711,6 +767,7 @@ def main():
             ),
             "cross_venue_no_oi": list(BINANCE_MICRO_CORE + CROSS_VENUE),
             "cross_venue": list(BINANCE_MICRO + CROSS_VENUE),
+            "orderbook_v2": list(BASE_FEATURES + ORDERBOOK_V2),
         },
         "horizons": {},
     }
@@ -730,6 +787,7 @@ def main():
             "full_stack_rows": len(variants["full_stack"]),
             "cross_venue_no_oi_rows": len(variants["cross_venue_no_oi"]),
             "cross_venue_rows": len(variants["cross_venue"]),
+            "orderbook_v2_rows": len(variants["orderbook_v2"]),
             "binance_core": evaluate_variant(
                 h, variants["binance_core"], corrected_alpha=corrected_alpha
             ),
@@ -753,6 +811,9 @@ def main():
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha
+            ),
+            "orderbook_v2": evaluate_variant(
+                h, variants["orderbook_v2"], corrected_alpha=corrected_alpha
             ),
             "corrected_alpha": corrected_alpha,
         }
