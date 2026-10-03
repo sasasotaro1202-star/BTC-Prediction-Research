@@ -118,6 +118,16 @@ jobs:
           done
           exit 1
 
+      - name: Reject fail-open shell suppression in workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE '\\|\\|[[:space:]]*true' .github/workflows; then
+            echo "ERROR: forbidden fail-open '|| true' found in GitHub workflows." >&2
+            exit 1
+          fi
+          echo "No forbidden '|| true' workflow suppression found."
+
       - name: Compile BTC source and test modules
         run: python -m compileall -q src tests scripts
 
