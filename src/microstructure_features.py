@@ -147,6 +147,18 @@ ORDERBOOK_V2 = (
     "depth_notional_imbalance_20",
 )
 
+# V3 adds order-book *shape* features that are not simple duplicates of the
+# existing aggregate imbalance measures. They use only the same validated
+# 20-level Binance depth snapshot and remain research-only.
+ORDERBOOK_V3 = (
+    "depth_imbalance_gradient_5_20",
+    "near_far_imbalance_5_20",
+    "bid_depth_slope_bps_20",
+    "ask_depth_slope_bps_20",
+    "depth_slope_asymmetry_20",
+    "depth_liquidity_concentration_20",
+)
+
 
 def _book_levels(snapshot: dict[str, Any]) -> tuple[list[tuple[float, float]], list[tuple[float, float]]] | None:
     if not isinstance(snapshot, dict):
@@ -224,6 +236,35 @@ def derive_orderbook_features(snapshot: dict[str, Any] | None) -> dict[str, floa
     else:
         concentration = (sum(q for _, q in bids[:5]) / bid20) - (sum(q for _, q in asks[:5]) / ask20)
 
+    imbalance5 = _imbalance(bids, asks, 5)
+    imbalance20 = _imbalance(bids, asks, 20)
+    far_bid = sum(q for _, q in bids[5:20])
+    far_ask = sum(q for _, q in asks[5:20])
+    far_denom = far_bid + far_ask
+    far_imbalance = ((far_bid - far_ask) / far_denom) if far_denom > 0 else None
+
+    # Quantity-weighted price distance from the mid, expressed in bps.
+    # This measures depth shape/liquidity geometry rather than direction alone.
+    bid_slope = (
+        sum(q * ((mid - p) / mid) * 10_000.0 for p, q in bids) / bid20
+        if bid20 > 0 else None
+    )
+    ask_slope = (
+        sum(q * ((p - mid) / mid) * 10_000.0 for p, q in asks) / ask20
+        if ask20 > 0 else None
+    )
+    slope_denom = (
+        (bid_slope + ask_slope)
+        if bid_slope is not None and ask_slope is not None else None
+    )
+    slope_asymmetry = (
+        (ask_slope - bid_slope) / slope_denom
+        if slope_denom is not None and slope_denom > 0 else None
+    )
+    total_depth = bid20 + ask20
+    near_depth = sum(q for _, q in bids[:5]) + sum(q for _, q in asks[:5])
+    liquidity_concentration = near_depth / total_depth if total_depth > 0 else None
+
     bid_notional = sum(p * q for p, q in bids)
     ask_notional = sum(p * q for p, q in asks)
     notional_denom = bid_notional + ask_notional
@@ -241,6 +282,18 @@ def derive_orderbook_features(snapshot: dict[str, Any] | None) -> dict[str, floa
         "microprice_gap": microprice_gap,
         "depth_concentration_imbalance": concentration,
         "depth_notional_imbalance_20": notional_imbalance,
+        "depth_imbalance_gradient_5_20": (
+            (imbalance5 - imbalance20) / 15.0
+            if imbalance5 is not None and imbalance20 is not None else None
+        ),
+        "near_far_imbalance_5_20": (
+            imbalance5 - far_imbalance
+            if imbalance5 is not None and far_imbalance is not None else None
+        ),
+        "bid_depth_slope_bps_20": bid_slope,
+        "ask_depth_slope_bps_20": ask_slope,
+        "depth_slope_asymmetry_20": slope_asymmetry,
+        "depth_liquidity_concentration_20": liquidity_concentration,
     }
     if any(value is None or not math.isfinite(float(value)) for value in values.values()):
         return None
