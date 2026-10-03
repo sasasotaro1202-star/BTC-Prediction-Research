@@ -13,3 +13,18 @@ README documents 5m as Production Champion; 10m/15m/30m/1h/3h/6h/12h/24h are ava
 - Evaluate by horizon, recent regime, volatility, liquidity, missingness, source removal, feature deletion, OOD and shock periods.
 - Source mirrors/wrappers of one upstream are not independent evidence.
 - Production status is derived from release evidence, not dashboard/artifact existence.
+
+## Cross-project governance alignment — 2026-10-03
+
+The five-repository research set is:
+- Baseball-Prediction-System
+- BTC-Prediction-Research
+- 7-Sport-Prediction-Research
+- Soccer-Prediction-Research
+- Stock-Daily-Prediction-3000
+
+Cross-project transfer is mechanism-level only: DISCOVER → ABSTRACT_MECHANISM → COMPATIBILITY → ADAPT → LOCAL_PIT → LOCAL_OOS/WFO → ROBUSTNESS → LOCAL_FROZEN_HOLDOUT → SHADOW → PROMOTE.
+
+Current observed main HEAD for this repository at the audit checkpoint: 9696e120ad9ddc4821d99fa4a6cdfa562b4f0f1d.
+
+A green workflow, artifact existence, model-file existence or external performance claim is not performance verification. Failures/cancellations/skips remain failures/cancellations/skips unless independently rerun and verified. Historical results and holdouts are not rewritten. Cost-unknown, billing-risk or paid-only sources remain HOLD/UNCONFIRMED.
