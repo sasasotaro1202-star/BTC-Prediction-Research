@@ -181,7 +181,9 @@ jobs:
             cp data/historical_research/feature_frontier_oos.json /tmp/btc_local_historical_feature_frontier_oos.json
             cp data/historical_research/feature_pattern_exhaustive.json /tmp/btc_local_historical_feature_pattern_exhaustive.json
             find data/historical_research -maxdepth 1 -type f -name 'oos_*.csv' -print0 | tar --null -T - -cf /tmp/btc_local_historical_oos.tar
-            git rebase --abort 2>/dev/null || true
+            if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+              git rebase --abort
+            fi
             . scripts/ci_network_retry.sh
             ci_git_fetch --prune origin main
             git reset --hard origin/main
