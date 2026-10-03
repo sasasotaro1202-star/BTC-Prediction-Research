@@ -46,6 +46,51 @@ class TestProductionIntegrityDeferred(unittest.TestCase):
             )
             con.commit()
 
+
+    def test_calibration_hash_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model_dir = root / "models"
+            model_dir.mkdir()
+            model = model_dir / "5m.joblib"
+            model.write_bytes(b"model")
+            (model_dir / "5m.calibration.json").write_text(
+                json.dumps({
+                    "horizon": "5m",
+                    "model_version": "generation-A",
+                    "model_sha256": "a" * 64,
+                    "n_settled": 300,
+                    "temperature": 1.0,
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(production_integrity, "MODEL_DIR", model_dir):
+                with self.assertRaisesRegex(RuntimeError, "calibration artifact hash mismatch"):
+                    production_integrity.check_calibration_bindings(
+                        "5m", "generation-A", "b" * 64
+                    )
+
+    def test_unvalidated_blend_does_not_require_hash_but_generation_is_bound(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model_dir = root / "models"
+            model_dir.mkdir()
+            (model_dir / "5m.blend.json").write_text(
+                json.dumps({
+                    "horizon": "5m",
+                    "model_version": "generation-A",
+                    "status": "rejected",
+                    "base_weight": 0.0,
+                    "n": 488,
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(production_integrity, "MODEL_DIR", model_dir):
+                result = production_integrity.check_blend_binding(
+                    "5m", "generation-A", "b" * 64
+                )
+            self.assertEqual(result["status"], "rejected")
+
     def test_stale_prediction_without_fresh_deferred_status_fails(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
