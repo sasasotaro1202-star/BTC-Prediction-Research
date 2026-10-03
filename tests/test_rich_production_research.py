@@ -171,3 +171,18 @@ def test_candlestick_features_are_append_only():
 
 def test_panel_lookback_supports_all_60m_features():
     assert PANEL_LOOKBACK_MINUTES >= 60
+
+
+def test_model_selection_prioritizes_logloss_then_brier_then_ece():
+    from src import rich_production_research as r
+
+    results = [
+        {"model": "accuracy_winner", "accuracy": 0.80, "logloss": 1.02, "brier": 0.60, "ece": 0.05},
+        {"model": "logloss_winner", "accuracy": 0.70, "logloss": 0.99, "brier": 0.61, "ece": 0.06},
+        {"model": "brier_winner", "accuracy": 0.75, "logloss": 0.99, "brier": 0.59, "ece": 0.08},
+        {"model": "ece_winner", "accuracy": 0.76, "logloss": 0.99, "brier": 0.59, "ece": 0.04},
+    ]
+    ranked = sorted(results, key=r._model_selection_key)
+    assert [item["model"] for item in ranked] == [
+        "ece_winner", "brier_winner", "logloss_winner", "accuracy_winner"
+    ]
