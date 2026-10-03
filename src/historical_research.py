@@ -1,4 +1,4 @@
-"""BTC historical research v7 feature frontier.
+"""BTC historical research v8 feature frontier.
 
 Accuracy-first research engine:
 - Binance USD-M futures + spot + mark + premium
@@ -39,7 +39,11 @@ FRONTIER_FEATURES=[
     "atr_ratio14","range_asymmetry10","wick_imbalance10","volume_z20","trades_z20",
     "dollar_volume_z20","flow_accel5","flow_z20","return_skew20","return_kurtosis20",
     "autocorr5","drawdown30","runup30","price_to_ema20","amihud10","volume_price_corr20",
-    "body_pressure20","oi_x_return5","funding_x_oi","basis_x_vol","vol_term_ratio","range_z20","flow_return_corr20"
+    "body_pressure20","oi_x_return5","funding_x_oi","basis_x_vol","vol_term_ratio","range_z20","flow_return_corr20",
+    "ret20","ret60","ret120","rv60","rv120","vol_of_vol20","trend_efficiency20","trend_efficiency60",
+    "range_compression20","range_compression60","close_location10","close_location30","breakout_high20",
+    "breakout_low20","up_volume_ratio20","signed_volume_pressure20","trade_size_z20","signed_flow_accel20",
+    "parkinson_vol20","garman_klass_vol20"
 ]
 
 FEATURES=BASE_FEATURES+FRONTIER_FEATURES
@@ -286,9 +290,34 @@ def build_panel():
         basis_x_vol=float(basis*rv10)
         vol_term_ratio=_safe_ratio(rv5,rv30,0.0)
         range_z20=_zscore_current(bh-bl,20)
+        ret20,ret60,ret120=[ret(b,n) for n in (20,60,120)]
+        rv60=float(np.std(returns[-60:])) if len(returns)>=60 else rv30
+        rv120=float(np.std(returns[-120:])) if len(returns)>=120 else rv60
+        rolling_rv=[float(np.std(returns[i-20:i])) for i in range(20,len(returns)+1)]
+        vol_of_vol20=float(np.std(rolling_rv[-20:])) if rolling_rv else 0.0
+        def trend_efficiency(window):
+            values=b[-window:]; movement=abs(float(values[-1]-values[0])); path=float(np.sum(np.abs(np.diff(values))))
+            return _safe_ratio(movement,path,0.0)
+        trend_efficiency20=trend_efficiency(20); trend_efficiency60=trend_efficiency(60)
+        range_series=np.maximum(bh-bl,1e-12)
+        range_compression20=_safe_ratio(float(np.mean(range_series[-5:])),float(np.mean(range_series[-20:])),0.0)
+        range_compression60=_safe_ratio(float(np.mean(range_series[-10:])),float(np.mean(range_series[-60:])),0.0)
+        close_location10=_safe_ratio(p-float(np.min(bl[-10:])),float(np.max(bh[-10:])-np.min(bl[-10:])),0.5)-0.5
+        close_location30=_safe_ratio(p-float(np.min(bl[-30:])),float(np.max(bh[-30:])-np.min(bl[-30:])),0.5)-0.5
+        prior_high20=float(np.max(bh[-21:-1])); prior_low20=float(np.min(bl[-21:-1]))
+        breakout_high20=_safe_ratio(p-prior_high20,p,0.0); breakout_low20=_safe_ratio(p-prior_low20,p,0.0)
+        positive_volume=float(np.sum(bv[-20:][returns[-20:]>0])) if len(returns)>=20 else 0.0
+        up_volume_ratio=_safe_ratio(positive_volume,float(np.sum(bv[-20:])),0.5)
+        signed_volume_pressure20=_safe_ratio(float(np.sum(bv[-20:]*minute_flow[-20:])),float(np.sum(bv[-20:])),0.0)
+        trade_size=np.divide(bv,np.maximum(bt,1.0)); trade_size_z20=_zscore_current(trade_size,20)
+        signed_flow_accel20=float(np.mean(minute_flow[-5:])-np.mean(minute_flow[-20:-5]))
+        log_hl=np.log(np.maximum(bh[-20:],1e-12)/np.maximum(bl[-20:],1e-12)); log_co=np.log(np.maximum(b[-20:],1e-12)/np.maximum(bo[-20:],1e-12))
+        parkinson_var=float(np.mean(log_hl**2)/(4.0*math.log(2.0))); gk_var=float(np.mean(0.5*log_hl**2-(2.0*math.log(2.0)-1.0)*log_co**2))
+        parkinson_vol20=float(math.sqrt(max(parkinson_var,0.0))); garman_klass_vol20=float(math.sqrt(max(gk_var,0.0)))
         dt=datetime.fromtimestamp(t/1000,timezone.utc); hour=dt.hour+dt.minute/60; hs,hc=math.sin(2*math.pi*hour/24),math.cos(2*math.pi*hour/24); dow=dt.weekday(); ds,dc=math.sin(2*math.pi*dow/7),math.cos(2*math.pi*dow/7)
         x=[r1,r3,r5,r10,r15,r30,accel,rv5,rv10,rv30,rp10,rp30,body,upper,lower,vr,vt,tr,flow,basis,bd,mg,pr,er5,sr5,er10,sr10,erbtc5,srb5,r5*rv10,r10*rv10,flow*rv5,rp10*flow,hs,hc,ds,dc,funding_v,funding_delta,oi_change,oi_z,
-           rsi5,rsi14,rsi30,bb_z20,bb_z60,ema_slope5,ema_slope15,ema_slope30,atr_ratio14,range_asymmetry10,wick_imbalance10,volume_z20,trades_z20,dollar_volume_z20,flow_accel5,flow_z20,return_skew20,return_kurtosis20,autocorr5,drawdown30,runup30,price_to_ema20,amihud10,volume_price_corr20,flow_return_corr20,body_pressure20,oi_x_return5,funding_x_oi,basis_x_vol,vol_term_ratio,range_z20]
+           rsi5,rsi14,rsi30,bb_z20,bb_z60,ema_slope5,ema_slope15,ema_slope30,atr_ratio14,range_asymmetry10,wick_imbalance10,volume_z20,trades_z20,dollar_volume_z20,flow_accel5,flow_z20,return_skew20,return_kurtosis20,autocorr5,drawdown30,runup30,price_to_ema20,amihud10,volume_price_corr20,flow_return_corr20,body_pressure20,oi_x_return5,funding_x_oi,basis_x_vol,vol_term_ratio,range_z20,
+           ret20,ret60,ret120,rv60,rv120,vol_of_vol20,trend_efficiency20,trend_efficiency60,range_compression20,range_compression60,close_location10,close_location30,breakout_high20,breakout_low20,up_volume_ratio,signed_volume_pressure20,trade_size_z20,signed_flow_accel20,parkinson_vol20,garman_klass_vol20]
         if all(math.isfinite(v) for v in x):rows.append((t,x,p))
     return rows
 
@@ -365,12 +394,12 @@ def main():
     rows=build_panel()
     with (OUT/"aligned_panel.csv").open("w",newline="") as f:
         w=csv.writer(f);w.writerow(["timestamp","price"]+FEATURES);w.writerows([[t,p]+x for t,x,p in rows])
-    report={"protocol_version":"historical-v7-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
+    report={"protocol_version":"historical-v8-feature-frontier","source":"Binance USD-M futures + spot + mark + premium + funding + OI; ETH/SOL cross-asset","days":DAYS,"rows":len(rows),"neutral_bps":NEUTRAL_BPS,"min_train":MIN_TRAIN,"test_block":TEST_BLOCK,"embargo":EMBARGO,"features":FEATURES,"base_features":BASE_FEATURES,"frontier_features":FRONTIER_FEATURES,"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"horizons":{}}
     frontier_evidence={
         "schema_version":1,
         "experiment_id":"btc_feature_frontier_v7",
         "hypothesis":"strictly causal technical, distributional and cross-state interaction features add incremental information beyond the existing 41-feature historical research set",
-        "research_question":"Do the 31 frontier features improve future-generalization metrics over the identical 41-feature baseline under identical chronological WFO/PIT-safe observations?",
+        "research_question":"Do the 51 frontier features improve future-generalization metrics over the identical 41-feature baseline under identical chronological WFO/PIT-safe observations, before any production consideration?",
         "research_only":True,
         "production_changed":False,
         "base_feature_count":len(BASE_FEATURES),
