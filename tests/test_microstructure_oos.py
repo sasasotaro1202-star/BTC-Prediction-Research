@@ -13,7 +13,9 @@ from src.microstructure_oos import (
     _strict_primary_sources_ok,
     coverage_diagnostics,
     ORDERBOOK_V2,
+    ORDERBOOK_V3,
     _orderbook_from_scenario,
+    _orderbook_v3_from_scenario,
 )
 
 
@@ -58,6 +60,8 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertEqual(set(expected), {"binance_micro", "market_flow_v2", "full_stack", "cross_venue"})
         self.assertEqual(len(expected["full_stack"]), 33)
         self.assertEqual(len(BASE_FEATURES + ORDERBOOK_V2), 23)
+        self.assertEqual(len(BASE_FEATURES + ORDERBOOK_V3), 21)
+        self.assertEqual(len(BASE_FEATURES + ORDERBOOK_V2 + ORDERBOOK_V3), 29)
 
     def _scenario(self):
         return {
@@ -196,6 +200,23 @@ class MicrostructureOOSTests(unittest.TestCase):
         self.assertGreater(values["spread_bps"], 0.0)
         self.assertGreater(values["microprice_gap"], 0.0)
 
+    def test_orderbook_v3_derivation_is_complete_case_and_shape_sensitive(self):
+        from src.microstructure_features import derive_orderbook_features
+        snapshot = {
+            "bids": [[100.0 - i * 0.1, 10.0 if i < 5 else 2.0] for i in range(20)],
+            "asks": [[100.2 + i * 0.1, 2.0 if i < 5 else 10.0] for i in range(20)],
+            "event_time_ms": 1790035259000,
+            "retrieved_at_ms": 1790035259500,
+        }
+        values = derive_orderbook_features(snapshot)
+        self.assertEqual(set(ORDERBOOK_V3), set(values).intersection(ORDERBOOK_V3))
+        self.assertGreater(values["depth_imbalance_gradient_5_20"], 0.0)
+        self.assertGreater(values["near_far_imbalance_5_20"], 0.0)
+        self.assertGreater(values["bid_depth_slope_bps_20"], 0.0)
+        self.assertGreater(values["ask_depth_slope_bps_20"], 0.0)
+        self.assertGreaterEqual(values["depth_liquidity_concentration_20"], 0.0)
+        self.assertLessEqual(values["depth_liquidity_concentration_20"], 1.0)
+
     def test_orderbook_v2_rejects_incomplete_depth(self):
         from src.microstructure_features import derive_orderbook_features
         snapshot = {"bids": [[100.0, 1.0]] * 19, "asks": [[100.2, 1.0]] * 20}
@@ -213,6 +234,18 @@ class MicrostructureOOSTests(unittest.TestCase):
         })
         values = _orderbook_from_scenario(scenario)
         self.assertEqual(set(values), set(ORDERBOOK_V2))
+        scenario["data_quality"].update({
+            "orderbook_v3": "ok",
+            "orderbook_v3_source": "binance_depth",
+            "orderbook_v3_feature_levels": 20,
+        })
+        scenario["microstructure"].update({
+            key: float(index + 1) / 100.0 for index, key in enumerate(ORDERBOOK_V3)
+        })
+        values_v3 = _orderbook_v3_from_scenario(scenario)
+        self.assertEqual(set(values_v3), set(ORDERBOOK_V3))
+        scenario["data_quality"]["orderbook_v3_feature_levels"] = 19
+        self.assertIsNone(_orderbook_v3_from_scenario(scenario))
         scenario["data_quality"]["orderbook_v2_feature_levels"] = 19
         self.assertIsNone(_orderbook_from_scenario(scenario))
         self.assertIsNone(_orderbook_from_scenario({}))
