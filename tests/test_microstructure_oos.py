@@ -57,6 +57,7 @@ class MicrostructureOOSTests(unittest.TestCase):
         }
         self.assertEqual(set(expected), {"binance_micro", "market_flow_v2", "full_stack", "cross_venue"})
         self.assertEqual(len(expected["full_stack"]), 33)
+        self.assertEqual(len(BASE_FEATURES + ORDERBOOK_V2), 23)
 
     def _scenario(self):
         return {
