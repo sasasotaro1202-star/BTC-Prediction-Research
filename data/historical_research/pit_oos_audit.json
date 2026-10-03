@@ -2,14 +2,24 @@
   "ok": true,
   "status": "PASS_WITH_LEGACY_UNVERIFIED",
   "pit_verified": false,
-  "pit_verified_reason": "insufficient_binance_primary_pit_rows:258/300",
-  "checked_predictions": 564,
-  "verified_predictions": 395,
-  "verified_primary_predictions": 258,
+  "pit_verified_reason": "insufficient_binance_primary_pit_rows:259/300",
+  "checked_predictions": 565,
+  "verified_predictions": 396,
+  "verified_primary_predictions": 259,
   "verified_fallback_predictions": 137,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 564,
+      "strict_primary_settled": 258,
+      "situation_meta_ready": 254,
+      "online_expert_ready": 254,
+      "situation_meta_rows_needed": 2746,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2746,
+      "estimated_days_lower_bound": 9.534722222222221
+    },
+    "10m": {
       "settled_predictions": 563,
       "strict_primary_settled": 257,
       "situation_meta_ready": 253,
@@ -18,16 +28,6 @@
       "online_expert_rows_needed": 0,
       "estimated_5m_cycles_lower_bound": 2747,
       "estimated_days_lower_bound": 9.538194444444445
-    },
-    "10m": {
-      "settled_predictions": 561,
-      "strict_primary_settled": 255,
-      "situation_meta_ready": 251,
-      "online_expert_ready": 251,
-      "situation_meta_rows_needed": 2749,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2749,
-      "estimated_days_lower_bound": 9.54513888888889
     }
   },
   "coverage_policy": "strict_primary_settled requires actual outcome + valid primary PIT; situation_meta_ready additionally requires persisted situation, microstructure, and components; estimated_days is a lower bound assuming one qualifying prediction every 5 minutes",
@@ -79,9 +79,9 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-03T02:03:41.291357+00:00",
+  "generated_at_utc": "2026-10-03T02:07:53.460514+00:00",
   "history": {
-    "status": "RECORDED",
+    "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-03T02:00:00+00:00",
     "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261003T0200Z.json",
     "retention": 672,
