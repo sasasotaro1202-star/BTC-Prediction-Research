@@ -1,6 +1,6 @@
 """Fail-safe launcher for BTC historical research."""
 from __future__ import annotations
-import csv, hashlib, io, json, urllib.parse, zipfile
+import csv, hashlib, io, json, math, urllib.parse, zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import historical_research as hr
@@ -34,6 +34,106 @@ def _candidate_urls(symbol,interval,endpoint,day,monthly):
 def _funding_candidate_urls(symbol,day):
     stamp=day.strftime("%Y-%m"); p=f"data/futures/um/monthly/fundingRate/{symbol}/{symbol}-fundingRate-{stamp}.zip"
     return [f"{b}/{p}" for b in ARCHIVE_BASES]
+
+def _metrics_candidate_urls(symbol,day):
+    stamp=day.isoformat()
+    p=f"data/futures/um/daily/metrics/{symbol}/{symbol}-metrics-{stamp}.zip"
+    return [f"{b}/{p}" for b in ARCHIVE_BASES]
+
+def _parse_archive_timestamp(value):
+    try:
+        return hr._normalize_epoch_ms(value)
+    except (ValueError,TypeError,OverflowError):
+        text_value=str(value).strip()
+        if not text_value:
+            raise ValueError("empty archive timestamp")
+        normalized=text_value.replace("Z","+00:00")
+        parsed=datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed=parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp()*1000)
+
+def _metrics_oi_zip_rows(urls,start_ms,end_ms,symbol,shift_ms=5*60_000):
+    # The official USD-M metrics archive is native 5-minute data. Since the
+    # 2026-06-25 convention change is observed to store the snapshot at T+5m
+    # under create_time=T, conservatively move the timestamp forward by 5m.
+    # This avoids treating future OI content as observable at the archive label.
+    payload,_=_get_zip(urls)
+    out=[]
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        names=[n for n in zf.namelist() if not n.endswith("/")]
+        if not names:
+            return []
+        with zf.open(names[0]) as fh:
+            text_stream=io.TextIOWrapper(fh,encoding="utf-8",newline="")
+            reader=csv.reader(text_stream)
+            header=None
+            ts_idx=oi_idx=sym_idx=None
+            for raw in reader:
+                if not raw:
+                    continue
+                lowered=[str(x).strip().lower() for x in raw]
+                if header is None:
+                    if "create_time" in lowered or "timestamp" in lowered:
+                        header=lowered
+                        for name in ("create_time","timestamp"):
+                            if name in header:
+                                ts_idx=header.index(name)
+                                break
+                        if "sum_open_interest" in header:
+                            oi_idx=header.index("sum_open_interest")
+                        if "symbol" in header:
+                            sym_idx=header.index("symbol")
+                        if ts_idx is None or oi_idx is None:
+                            raise RuntimeError("metrics archive missing create_time/sum_open_interest columns")
+                        continue
+                if header is None:
+                    continue
+                if sym_idx is not None and str(raw[sym_idx]).strip() not in ("",symbol):
+                    continue
+                try:
+                    source_ts=_parse_archive_timestamp(raw[ts_idx])
+                    available_ts=source_ts + int(shift_ms)
+                    oi_value=float(raw[oi_idx])
+                except (ValueError,TypeError,OverflowError,IndexError):
+                    continue
+                if start_ms<=available_ts<end_ms and math.isfinite(oi_value) and oi_value>0.0:
+                    out.append({
+                        "symbol":symbol,
+                        "sumOpenInterest":str(oi_value),
+                        "timestamp":available_ts,
+                    })
+    return out
+
+def _archive_oi_fallback(url):
+    parsed=urllib.parse.urlsplit(url)
+    qs=urllib.parse.parse_qs(parsed.query)
+    symbol=qs.get("symbol",["BTCUSDT"])[0]
+    start_ms=int(qs.get("startTime",[0])[0])
+    requested_end_ms=int(qs.get("endTime",[0])[0])
+    if not start_ms or not requested_end_ms:
+        raise RuntimeError("open-interest archive fallback requires startTime/endTime")
+    end_ms=min(requested_end_ms,_safe_end())
+    if start_ms>=end_ms:
+        return []
+    start_day=datetime.fromtimestamp(start_ms/1000,timezone.utc).date()
+    end_day=datetime.fromtimestamp((end_ms-1)/1000,timezone.utc).date()
+    out=[]; day=start_day
+    while day<=end_day:
+        day_start=int(datetime.combine(day,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
+        day_end=int(datetime.combine(day+timedelta(days=1),datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
+        a=max(start_ms,day_start); b=min(end_ms,day_end)
+        try:
+            rows=_metrics_oi_zip_rows(_metrics_candidate_urls(symbol,day),a,b,symbol)
+        except Exception as exc:
+            raise RuntimeError(f"no verified Binance metrics archive for {symbol} {day}: {exc}") from exc
+        out.extend(rows)
+        day+=timedelta(days=1)
+    dedup={int(r["timestamp"]):r for r in out}
+    ordered=[dedup[k] for k in sorted(dedup)]
+    if not ordered:
+        raise RuntimeError(f"historical_open_interest_archive_empty:{symbol}:{start_ms}:{end_ms}")
+    return ordered
 
 def _cache_path(url):return ARCHIVE_CACHE/(hashlib.sha256(url.encode()).hexdigest()+".zip")
 
@@ -183,6 +283,10 @@ def _bybit_funding_fallback(url):
     dedup={int(r["fundingTime"]):r for r in out}; return [dedup[k] for k in sorted(dedup)]
 
 def resilient_req_json(url,timeout=30,retries=5):
+    parsed=urllib.parse.urlsplit(url)
+    if parsed.path.endswith("/futures/data/openInterestHist"):
+        print("[INFO] Using verified Binance Vision daily metrics archive for historical open-interest research.")
+        return _archive_oi_fallback(url)
     try:return _ORIGINAL_REQ_JSON(url,timeout=timeout,retries=retries)
     except RuntimeError as exc:
         message=str(exc)
