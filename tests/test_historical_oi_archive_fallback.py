@@ -19,8 +19,8 @@ def _zip(rows):
 
 def test_oi_metrics_archive_parser_normalizes_and_filters_rows():
     payload = _zip([
-        ["1759536000000", "BTCUSDT", "100.0", "1000000.0"],
-        ["1759536300000", "BTCUSDT", "101.0", "1010000.0"],
+        ["2025-10-04 00:00:00", "BTCUSDT", "100.0", "1000000.0"],
+        ["2025-10-04 00:05:00", "BTCUSDT", "101.0", "1010000.0"],
         ["1759540000000", "BTCUSDT", "not-a-number", "0"],
     ])
     with patch.object(runner, "_get_zip", return_value=(payload, "test")):
@@ -48,3 +48,9 @@ def test_resilient_oi_451_uses_archive_fallback_without_zero_imputation():
     fallback.assert_called_once()
     assert out == archived
     assert out[0]["sumOpenInterest"] != "0"
+
+
+def test_metrics_timestamp_parser_accepts_epoch_and_iso_utc():
+    assert runner._normalize_metrics_timestamp(1759536000000) == 1759536000000
+    assert runner._normalize_metrics_timestamp("2025-10-04 00:00:00") == 1759536000000
+    assert runner._normalize_metrics_timestamp("2025-10-04T00:05:00+00:00") == 1759536300000
