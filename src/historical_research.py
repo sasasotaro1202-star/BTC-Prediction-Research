@@ -86,6 +86,23 @@ def _normalize_epoch_ms(value):
         ts*=1e3
     return int(ts)
 
+def _normalize_kline_rows(rows):
+    """Normalize every kline row's timestamp field to canonical epoch milliseconds."""
+    normalized=[]
+    if not isinstance(rows,list):
+        return normalized
+    for row in rows:
+        if not isinstance(row,(list,tuple)) or not row:
+            continue
+        try:
+            ts=_normalize_epoch_ms(row[0])
+        except (ValueError,TypeError,OverflowError):
+            continue
+        item=list(row)
+        item[0]=str(ts)
+        normalized.append(item)
+    return normalized
+
 def _cache_path(kind,symbol,day): return CACHE/f"{kind}_{symbol}_{day:%Y%m%d}.json"
 
 def _load_nonempty_cached_rows(path):
@@ -94,8 +111,9 @@ def _load_nonempty_cached_rows(path):
         return None
     try:
         cached=json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(cached,list) and cached:
-            return cached
+        normalized=_normalize_kline_rows(cached)
+        if normalized:
+            return normalized
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         pass
     try:
@@ -114,7 +132,7 @@ def fetch_klines_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
     while cur<end_ms:
         e=min(end_ms,cur+limit*60_000)
         q=urllib.parse.urlencode({"symbol":symbol,"interval":"1m","startTime":cur,"endTime":e,"limit":limit})
-        rows=req_json(f"{base}{endpoint}?{q}")
+        rows=_normalize_kline_rows(req_json(f"{base}{endpoint}?{q}"))
         if not rows:break
         out.extend(rows); last=int(rows[-1][0])
         if last<cur:break
@@ -374,6 +392,27 @@ def build_panel():
         if all(math.isfinite(v) for v in x):rows.append((t,x,p))
     return rows
 
+def label_alignment_diagnostics(rows,h):
+    """Return deterministic diagnostics for exact elapsed-time label joins."""
+    timestamps=sorted({int(row[0]) for row in rows})
+    horizon_ms=int(h)*60_000
+    timestamp_set=set(timestamps)
+    future_hits=sum(1 for t in timestamps if t+horizon_ms in timestamp_set)
+    deltas=[b-a for a,b in zip(timestamps,timestamps[1:])]
+    aligned=sum(1 for t in timestamps if t % 60_000 == 0)
+    return {
+        "rows":len(rows),
+        "unique_timestamps":len(timestamps),
+        "minute_aligned_ratio":float(aligned/len(timestamps)) if timestamps else 0.0,
+        "future_timestamp_hits":int(future_hits),
+        "future_timestamp_hit_ratio":float(future_hits/len(timestamps)) if timestamps else 0.0,
+        "first_timestamp":int(timestamps[0]) if timestamps else None,
+        "last_timestamp":int(timestamps[-1]) if timestamps else None,
+        "median_delta_ms":float(np.median(deltas)) if deltas else None,
+        "min_delta_ms":int(min(deltas)) if deltas else None,
+        "max_delta_ms":int(max(deltas)) if deltas else None,
+    }
+
 def labels(rows,h,feature_count=len(FEATURES)):
     # Define 5m/10m targets by exact elapsed wall-clock time, not row offset.
     # Missing candles therefore reduce sample count instead of stretching the
@@ -413,6 +452,8 @@ def labels(rows,h,feature_count=len(FEATURES)):
 
 def norm(p):p=np.clip(np.asarray(p,float),1e-7,1);return p/p.sum(axis=1,keepdims=True)
 def metrics(y,p):
+    if len(y)==0:
+        raise ValueError("metrics requires non-empty labels")
     idx={c:i for i,c in enumerate(CLASSES)}; yi=np.array([idx[v] for v in y]); p=norm(p); pred=p.argmax(1); one=np.eye(3)[yi]; hit=(pred==yi).astype(float); conf=p.max(1); ece=0.0
     for k in range(10):
         lo,hi=k/10,(k+1)/10; m=(conf>=lo)&((conf<hi) if hi<1 else (conf<=hi))
@@ -466,6 +507,9 @@ def main():
     for h,steps in TARGETS.items():
         X_base,y_base,ts_base,_=labels(rows,steps,feature_count=len(BASE_FEATURES))
         X_frontier,y_frontier,ts_frontier,_=labels(rows,steps,feature_count=len(FEATURES))
+        if len(y_frontier)==0:
+            diagnostics=label_alignment_diagnostics(rows,steps)
+            raise RuntimeError(f"no_labeled_samples:{h}:{json.dumps(diagnostics,sort_keys=True)}")
         if not (np.array_equal(y_base,y_frontier) and np.array_equal(ts_base,ts_frontier)):
             raise RuntimeError(f"feature ablation alignment mismatch for {h}")
         base_results=wf(X_base,y_base,ts_base)
