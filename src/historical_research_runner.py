@@ -131,8 +131,11 @@ def _archive_oi_fallback(url):
         day+=timedelta(days=1)
     dedup={int(r["timestamp"]):r for r in out}
     ordered=[dedup[k] for k in sorted(dedup)]
-    if not ordered:
-        raise RuntimeError(f"historical_open_interest_archive_empty:{symbol}:{start_ms}:{end_ms}")
+    # A pagination window can legitimately contain no archive row (for example
+    # the trailing sub-minute window after the last 15m observation). Return an
+    # empty result so the caller can terminate pagination naturally. This is not
+    # zero-imputation: the caller still fails closed when the entire requested
+    # history contains no verified OI rows.
     return ordered
 
 def _cache_path(url):return ARCHIVE_CACHE/(hashlib.sha256(url.encode()).hexdigest()+".zip")
