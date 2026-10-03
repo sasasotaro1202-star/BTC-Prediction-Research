@@ -11,6 +11,8 @@ ARCHIVE_BASES=("https://data.binance.vision","https://s3-ap-northeast-1.amazonaw
 ARCHIVE_SAFETY_DAYS=3
 ARCHIVE_CACHE=Path("/tmp/btc_prediction_archive_cache"); ARCHIVE_CACHE.mkdir(parents=True,exist_ok=True)
 CORE_ENDPOINT="klines"; OPTIONAL_ENDPOINTS={"markPriceKlines","premiumIndexKlines"}; FALLBACK_ENDPOINTS={CORE_ENDPOINT,*OPTIONAL_ENDPOINTS}
+OI_METRICS_ENDPOINT="openInterestHist"
+OI_METRICS_ARCHIVE_ENDPOINT="metrics"
 RETRYABLE_HTTP={403,418,429,451,500,502,503,504}
 _ORIGINAL_REQ_JSON=hr.req_json
 
@@ -33,6 +35,11 @@ def _candidate_urls(symbol,interval,endpoint,day,monthly):
 
 def _funding_candidate_urls(symbol,day):
     stamp=day.strftime("%Y-%m"); p=f"data/futures/um/monthly/fundingRate/{symbol}/{symbol}-fundingRate-{stamp}.zip"
+    return [f"{b}/{p}" for b in ARCHIVE_BASES]
+
+def _oi_metrics_candidate_urls(symbol,day):
+    d=day.isoformat()
+    p=f"data/futures/um/daily/metrics/{symbol}/{symbol}-metrics-{d}.zip"
     return [f"{b}/{p}" for b in ARCHIVE_BASES]
 
 def _cache_path(url):return ARCHIVE_CACHE/(hashlib.sha256(url.encode()).hexdigest()+".zip")
@@ -77,6 +84,79 @@ def _zip_rows(urls,start_ms,end_ms):
                 if start_ms<=ts<end_ms:
                     normalized=list(row); normalized[0]=str(ts); rows.append(normalized)
     return rows
+
+def _oi_metrics_zip_rows(urls,start_ms,end_ms):
+    """Read Binance Vision USD-M metrics archives into OI-stat rows.
+    
+    The official metrics archive is a delayed published snapshot source. Its
+    publication timing is not minute-level PIT-proven, so callers must label
+    the resulting research evidence as non-strict and promotion-ineligible.
+    """
+    payload,_=_get_zip(urls)
+    rows=[]
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        names=[n for n in zf.namelist() if not n.endswith("/")]
+        if not names:
+            return []
+        with zf.open(names[0]) as fh:
+            text=io.TextIOWrapper(fh,encoding="utf-8",newline="")
+            reader=csv.reader(text)
+            header=None
+            for raw in reader:
+                if not raw:
+                    continue
+                lowered=[str(x).strip().lower() for x in raw]
+                if header is None:
+                    if "create_time" in lowered and "sum_open_interest" in lowered:
+                        header=lowered
+                        continue
+                    # Be fail-closed when an archive has an unexpected schema.
+                    continue
+                try:
+                    ts_raw=raw[header.index("create_time")]
+                    oi_raw=raw[header.index("sum_open_interest")]
+                    ts=hr._normalize_epoch_ms(ts_raw)
+                    oi=float(oi_raw)
+                    if not math.isfinite(oi) or oi<=0.0:
+                        continue
+                    if start_ms<=ts<end_ms:
+                        rows.append({
+                            "symbol":"BTCUSDT",
+                            "timestamp":ts,
+                            "sumOpenInterest":str(oi),
+                            "source":"binance_vision_metrics",
+                            "pit_status":"NON_STRICT_ARCHIVE_TIMING",
+                        })
+                except (ValueError,TypeError,IndexError):
+                    continue
+    dedup={int(r["timestamp"]):r for r in rows}
+    return [dedup[k] for k in sorted(dedup)]
+
+def _archive_oi_metrics_fallback(url):
+    parsed=urllib.parse.urlsplit(url)
+    qs=urllib.parse.parse_qs(parsed.query)
+    symbol=qs.get("symbol",["BTCUSDT"])[0]
+    start_ms=int(qs.get("startTime",[0])[0])
+    requested_end_ms=int(qs.get("endTime",[0])[0])
+    if not start_ms or not requested_end_ms:
+        raise RuntimeError("OI metrics archive fallback requires startTime/endTime")
+    end_ms=min(requested_end_ms,_safe_end())
+    if start_ms>=end_ms:
+        return []
+    start_day=datetime.fromtimestamp(start_ms/1000,timezone.utc).date()
+    end_day=datetime.fromtimestamp((end_ms-1)/1000,timezone.utc).date()
+    rows=[]
+    day=start_day
+    while day<=end_day:
+        try:
+            day_a=int(datetime.combine(day,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
+            day_b=int(datetime.combine(day+timedelta(days=1),datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
+            rows.extend(_oi_metrics_zip_rows(_oi_metrics_candidate_urls(symbol,day),max(start_ms,day_a),min(end_ms,day_b)))
+        except Exception as exc:
+            raise RuntimeError(f"no_verified_binance_oi_metrics_archive:{symbol}:{day}:{exc}") from exc
+        day+=timedelta(days=1)
+    dedup={int(r["timestamp"]):r for r in rows}
+    return [dedup[k] for k in sorted(dedup)]
 
 def _funding_zip_rows(urls,start_ms,end_ms):
     payload,_=_get_zip(urls); rows=[]
@@ -186,7 +266,16 @@ def resilient_req_json(url,timeout=30,retries=5):
     try:return _ORIGINAL_REQ_JSON(url,timeout=timeout,retries=retries)
     except RuntimeError as exc:
         message=str(exc)
-        if "/fapi/v1/" not in url or not any(f"HTTP Error {c}" in message for c in RETRYABLE_HTTP):raise
+        if not any(f"HTTP Error {c}" in message for c in RETRYABLE_HTTP):
+            raise
+        if url.rstrip().split("?",1)[0].endswith("/futures/data/openInterestHist"):
+            print("[WARN] Binance OI statistics unavailable from Actions runner; using verified Binance Vision metrics archive. PIT status is NON_STRICT_ARCHIVE_TIMING.")
+            archived=_archive_oi_metrics_fallback(url)
+            if archived:
+                return archived
+            raise RuntimeError("historical_open_interest_archive_unavailable")
+        if "/fapi/v1/" not in url:
+            raise
         endpoint=url.split("/fapi/v1/",1)[1].split("?",1)[0]
         if endpoint=="fundingRate":
             print("[WARN] Binance fundingRate unavailable; using verified free Binance Vision monthly funding archive.")
