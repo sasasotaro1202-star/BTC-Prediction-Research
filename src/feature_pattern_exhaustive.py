@@ -7,7 +7,9 @@ chronological WFO folds. It never mutates production state.
 """
 from __future__ import annotations
 import csv
+import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
@@ -181,7 +183,48 @@ def run_single_feature_ablation(ts,price,X):
 
 def main():
     ts,price,X=load()
-    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v2","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","fine_grained_single_feature_ablation":True,"horizons":{}}
+    result={
+        "schema_version":1,
+        "experiment_id":"btc_feature_pattern_exhaustive_v2",
+        "protocol_version":"feature-family-expanding-wfo-v1",
+        "status":"RUNNING",
+        "research_only":True,
+        "production_changed":False,
+        "promotion_effect":"none",
+        "promotion_evidence_eligible":False,
+        "pit_evidence_status":"NON_STRICT_ARCHIVE_TIMING",
+        "pit_policy_note":"Binance Vision/archive publication timing is not independently proven at feature-record level; the 3-day completed-data boundary is a conservative operational buffer, not a PIT proof.",
+        "source_lineage":{
+            "primary":"Binance USD-M futures/spot/mark/premium archives",
+            "derivatives_context":"Binance funding/open-interest archives where available",
+            "cross_asset":"Binance ETH/SOL futures",
+            "independence_note":"same Binance upstream is not counted as independent evidence"
+        },
+        "target_contract":{
+            "version":"label-policy-v1",
+            "horizons_minutes":dict(HORIZONS),
+            "neutral_bps":float(NEUTRAL_BPS),
+            "classes":list(CLASSES),
+            "label_function":"label_policy.direction_from_return",
+            "future_join":"exact_timestamp_plus_horizon",
+            "missing_future_policy":"exclude"
+        },
+        "feature_schema_sha256":hashlib.sha256("|".join(FEATURES).encode("utf-8")).hexdigest(),
+        "github_sha":os.environ.get("GITHUB_SHA"),
+        "search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families",
+        "exact_individual_feature_subset_space":int(2**len(FEATURES)),
+        "exact_individual_feature_subset_space_is_computationally_intractable":True,
+        "family_count":len(FAMILY_NAMES),
+        "pattern_count_expected":PATTERN_COUNT,
+        "families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},
+        "feature_count":len(FEATURES),
+        "base_feature_count":len(BASE_FEATURES),
+        "frontier_feature_count":len(FRONTIER_FEATURES),
+        "fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},
+        "model_role":"screening_only_logistic_regression",
+        "fine_grained_single_feature_ablation":True,
+        "horizons":{}
+    }
     for h,minutes in HORIZONS.items():
         idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
         for mask in range(1,PATTERN_COUNT+1):
