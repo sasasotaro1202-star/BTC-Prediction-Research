@@ -88,6 +88,10 @@ MIN_COMMON_ROWS = 20_000
 MIN_HOLDOUT_ROWS = 2_000
 TEST_BLOCK = 1_000
 PANEL_LOOKBACK_MINUTES = 60
+# Historical OI is currently sourced from the Binance Vision metrics archive.
+# Archive publication timing is not independently proven at feature-record
+# level, so this Challenger cannot produce promotion-eligible candidates.
+PIT_EVIDENCE_STATUS = "NON_STRICT_ARCHIVE_TIMING"
 
 # Original historical-v6 features (41) + the exact two EMA gaps used by the
 # current Champion, so the legacy 15-feature slice is bit-compatible in meaning.
@@ -592,7 +596,7 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
     ll_rel_vs_champion = _relative_gain(champion_m["logloss"], rich_m["logloss"], False)
     br_rel_vs_champion = _relative_gain(champion_m["brier"], rich_m["brier"], False)
 
-    eligible = bool(
+    metric_eligible = bool(
         rich_m["n"] >= MIN_HOLDOUT_ROWS
         and acc_rel_vs_champion >= 0.03
         and rich_m["accuracy"] >= champion_m["accuracy"] + 0.005
@@ -600,6 +604,16 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
         and br_rel_vs_champion >= 0.01
         and stability_vs_champion["accuracy_non_worse_ratio"] >= 0.70
         and (ci_vs_champion["ci95_low"] is None or ci_vs_champion["ci95_low"] > 0.0)
+    )
+    eligible = bool(metric_eligible and PIT_EVIDENCE_STATUS == "STRICT_PIT_VERIFIED")
+    eligibility_block_reason = (
+        None
+        if eligible
+        else (
+            "pit_evidence_non_strict"
+            if PIT_EVIDENCE_STATUS != "STRICT_PIT_VERIFIED"
+            else "metric_gate_failed"
+        )
     )
 
     candidate_artifact = None
@@ -624,7 +638,8 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
             "comparison_legacy_retrained": legacy_m,
             "stability_vs_champion": stability_vs_champion,
             "bootstrap_ci_vs_champion": ci_vs_champion,
-            "pit_policy": "historical_v6_closed_candles_and_exact_elapsed_target",
+            "pit_policy": PIT_EVIDENCE_STATUS,
+            "promotion_evidence_eligible": False,
         }, indent=2, sort_keys=True), encoding="utf-8")
 
     return {
@@ -656,7 +671,11 @@ def evaluate_horizon(horizon: str, X: np.ndarray, y: np.ndarray, t: np.ndarray) 
             "bootstrap_ci_vs_champion": ci_vs_champion,
             "bootstrap_ci_vs_legacy": ci_vs_legacy,
         },
+        "metric_eligibility": metric_eligible,
         "eligibility": eligible,
+        "eligibility_block_reason": eligibility_block_reason,
+        "pit_evidence_status": PIT_EVIDENCE_STATUS,
+        "promotion_evidence_eligible": False,
         "candidate_artifact": str(candidate_artifact.name) if candidate_artifact else None,
     }
 
