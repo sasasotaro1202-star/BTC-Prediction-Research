@@ -69,6 +69,25 @@ class TestPredictGenerationBinding(unittest.TestCase):
                 predict.DB = old_db
                 predict.MODEL_DIR = old_model_dir
 
+    def test_temperature_rejects_artifact_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            model_dir = Path(td) / 'models'
+            model_dir.mkdir()
+            (model_dir / '5m.calibration.json').write_text(
+                json.dumps({
+                    'temperature': 1.6,
+                    'n_settled': 600,
+                    'model_version': 'generation-A',
+                    'model_sha256': 'a' * 64,
+                }),
+                encoding='utf-8',
+            )
+            with patch.object(predict, 'MODEL_DIR', model_dir), patch.object(
+                predict, 'resolve_production_model',
+                return_value=type('Bundle', (), {'model_version': 'generation-A', 'sha256': 'b' * 64})()
+            ):
+                self.assertEqual(predict.load_temperature('5m'), 1.0)
+
     def test_temperature_rejects_stale_generation(self):
         with tempfile.TemporaryDirectory() as td:
             old_db = predict.DB
