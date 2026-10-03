@@ -105,6 +105,22 @@ CROSS_VENUE = (
     "bybit_book_imbalance",
 )
 
+BYBIT_OI = ("bybit_oi_log1p",)
+
+FEATURE_VARIANT_NAMES = (
+    "binance_core",
+    "binance_micro",
+    "market_flow_v2_no_oi",
+    "market_flow_v2",
+    "full_stack_no_oi",
+    "full_stack",
+    "cross_venue_no_oi",
+    "cross_venue",
+    "binance_core_bybit_oi",
+    "market_flow_v2_no_oi_bybit_oi",
+    "full_stack_no_oi_bybit_oi",
+)
+
 PIT_PRIMARY_SOURCES = (
     "binance_futures",
     "binance_depth",
@@ -201,6 +217,37 @@ def _micro_from_scenario(scenario, *, cross_venue=False):
     return values
 
 
+def _bybit_oi_from_scenario(scenario, *, created_at=None):
+    """Return a strict-PIT Bybit OI snapshot only when its own provenance passes."""
+    if not isinstance(scenario, dict):
+        return None
+    micro = scenario.get("microstructure")
+    dq = scenario.get("data_quality")
+    provenance = scenario.get("provenance")
+    sources = provenance.get("sources") if isinstance(provenance, dict) else None
+    source = sources.get("bybit_ticker") if isinstance(sources, dict) else None
+    if not isinstance(micro, dict) or not isinstance(dq, dict) or not isinstance(source, dict):
+        return None
+    if dq.get("bybit_oi") != "ok" or source.get("status") != "ok":
+        return None
+    fields = source.get("fields")
+    if not isinstance(fields, list) or "openInterest" not in fields:
+        return None
+    oi = _finite(micro.get("bybit_oi"))
+    if oi is None or oi <= 0:
+        return None
+
+    created = _finite_datetime(created_at) if created_at is not None else None
+    source_available = _finite_datetime(source.get("available_at"))
+    source_retrieved = _finite_datetime(source.get("retrieved_at"))
+    source_cutoff = _finite_datetime(source.get("prediction_cutoff"))
+    if None in (created, source_available, source_retrieved, source_cutoff):
+        return None
+    if not (source_available <= source_retrieved <= source_cutoff <= created):
+        return None
+    return {"bybit_oi_log1p": math.log1p(oi)}
+
+
 def _extended_from_feature_json(feature_json):
     try:
         parsed = json.loads(feature_json or "{}")
@@ -281,6 +328,9 @@ def load_variants(horizon: str):
             "full_stack": [],
             "cross_venue_no_oi": [],
             "cross_venue": [],
+            "binance_core_bybit_oi": [],
+            "market_flow_v2_no_oi_bybit_oi": [],
+            "full_stack_no_oi_bybit_oi": [],
         }
 
     scenario_by_id = {}
@@ -307,6 +357,9 @@ def load_variants(horizon: str):
         "full_stack": [],
         "cross_venue_no_oi": [],
         "cross_venue": [],
+        "binance_core_bybit_oi": [],
+        "market_flow_v2_no_oi_bybit_oi": [],
+        "full_stack_no_oi_bybit_oi": [],
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]))
@@ -341,6 +394,7 @@ def load_variants(horizon: str):
             )
 
         flow = _market_flow_from_scenario(scenario, created_at=row["created"])
+        bybit_oi = _bybit_oi_from_scenario(scenario, created_at=row["created"])
         if core is not None and flow is not None:
             variants["market_flow_v2_no_oi"].append(
                 {
@@ -384,6 +438,31 @@ def load_variants(horizon: str):
             )
 
         cross = _micro_from_scenario(scenario, cross_venue=True)
+        if core is not None and bybit_oi is not None:
+            variants["binance_core_bybit_oi"].append(
+                {**common, "x": list(row["x"]) + [core[k] for k in BINANCE_MICRO_CORE] + [bybit_oi[k] for k in BYBIT_OI]}
+            )
+        if core is not None and flow is not None and bybit_oi is not None:
+            variants["market_flow_v2_no_oi_bybit_oi"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [core[k] for k in BINANCE_MICRO_CORE]
+                    + [flow[k] for k in MARKET_FLOW_V2]
+                    + [bybit_oi[k] for k in BYBIT_OI],
+                }
+            )
+        if core is not None and flow is not None and extra is not None and bybit_oi is not None:
+            variants["full_stack_no_oi_bybit_oi"].append(
+                {
+                    **common,
+                    "x": list(row["x"])
+                    + [extra[k] for k in EXTENDED_FEATURES]
+                    + [core[k] for k in BINANCE_MICRO_CORE]
+                    + [flow[k] for k in MARKET_FLOW_V2]
+                    + [bybit_oi[k] for k in BYBIT_OI],
+                }
+            )
         if core is not None and cross is not None:
             variants["cross_venue_no_oi"].append(
                 {**common, "x": list(row["x"]) + [core[k] for k in BINANCE_MICRO_CORE] + [cross[k] for k in CROSS_VENUE]}
@@ -405,7 +484,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         "strict_primary_first_created": min((str(r["created"]) for r in base), default=None),
         "strict_primary_last_created": max((str(r["created"]) for r in base), default=None),
         "field_presence": {
-            name: 0 for name in (*BINANCE_MICRO, *MARKET_FLOW_V2, *EXTENDED_FEATURES, *CROSS_VENUE)
+            name: 0 for name in (*BINANCE_MICRO, *BYBIT_OI, *MARKET_FLOW_V2, *EXTENDED_FEATURES, *CROSS_VENUE)
         },
         "variant_coverage": {},
     }
@@ -431,8 +510,8 @@ def coverage_diagnostics(horizon: str) -> dict:
         feature_json = record.get("feature_json") if isinstance(record, dict) else "{}"
         micro = scenario.get("microstructure") if isinstance(scenario, dict) else {}
         if isinstance(micro, dict):
-            for key in (*BINANCE_MICRO, *MARKET_FLOW_V2, *CROSS_VENUE):
-                raw_key = "oi" if key == "oi_log1p" else key
+            for key in (*BINANCE_MICRO, *BYBIT_OI, *MARKET_FLOW_V2, *CROSS_VENUE):
+                raw_key = "oi" if key == "oi_log1p" else ("bybit_oi" if key == "bybit_oi_log1p" else key)
                 if _finite(micro.get(raw_key)) is not None:
                     diagnostics["field_presence"][key] += 1
         extra = _extended_from_feature_json(feature_json)
@@ -450,6 +529,9 @@ def coverage_diagnostics(horizon: str) -> dict:
         "full_stack": 0,
         "cross_venue_no_oi": 0,
         "cross_venue": 0,
+        "binance_core_bybit_oi": 0,
+        "market_flow_v2_no_oi_bybit_oi": 0,
+        "full_stack_no_oi_bybit_oi": 0,
     }
     for row in base:
         record = scenario_by_id.get(int(row["id"]), {})
@@ -465,6 +547,7 @@ def coverage_diagnostics(horizon: str) -> dict:
         extra_ok = _extended_from_feature_json(feature_json) is not None
         cross_ok = _micro_from_scenario(scenario, cross_venue=True) is not None
         cross_core_ok = bool(core_ok and cross_ok)
+        bybit_oi_ok = _bybit_oi_from_scenario(scenario, created_at=row["created"]) is not None
         counts["binance_core"] += int(core_ok)
         counts["binance_micro"] += int(micro_ok)
         counts["market_flow_v2_no_oi"] += int(core_ok and flow_ok)
@@ -473,6 +556,9 @@ def coverage_diagnostics(horizon: str) -> dict:
         counts["full_stack"] += int(micro_ok and flow_ok and extra_ok)
         counts["cross_venue_no_oi"] += int(cross_core_ok)
         counts["cross_venue"] += int(cross_ok)
+        counts["binance_core_bybit_oi"] += int(core_ok and bybit_oi_ok)
+        counts["market_flow_v2_no_oi_bybit_oi"] += int(core_ok and flow_ok and bybit_oi_ok)
+        counts["full_stack_no_oi_bybit_oi"] += int(core_ok and flow_ok and extra_ok and bybit_oi_ok)
 
     for name, count in counts.items():
         diagnostics["variant_coverage"][name] = {
@@ -711,13 +797,16 @@ def main():
             ),
             "cross_venue_no_oi": list(BINANCE_MICRO_CORE + CROSS_VENUE),
             "cross_venue": list(BINANCE_MICRO + CROSS_VENUE),
+            "binance_core_bybit_oi": list(BASE_FEATURES + BINANCE_MICRO_CORE + BYBIT_OI),
+            "market_flow_v2_no_oi_bybit_oi": list(BASE_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
+            "full_stack_no_oi_bybit_oi": list(BASE_FEATURES + EXTENDED_FEATURES + BINANCE_MICRO_CORE + MARKET_FLOW_V2 + BYBIT_OI),
         },
         "horizons": {},
     }
     for h in HORIZONS:
         variants = load_variants(h)
         coverage = coverage_diagnostics(h)
-        family_count = max(1, len(factories()) * 8)
+        family_count = max(1, len(factories()) * len(FEATURE_VARIANT_NAMES))
         corrected_alpha = _adjusted_alpha(0.05, family_count)
         result["horizons"][h] = {
             "base_strict_primary_rows": len(variants["base"]),
@@ -730,6 +819,9 @@ def main():
             "full_stack_rows": len(variants["full_stack"]),
             "cross_venue_no_oi_rows": len(variants["cross_venue_no_oi"]),
             "cross_venue_rows": len(variants["cross_venue"]),
+            "binance_core_bybit_oi_rows": len(variants["binance_core_bybit_oi"]),
+            "market_flow_v2_no_oi_bybit_oi_rows": len(variants["market_flow_v2_no_oi_bybit_oi"]),
+            "full_stack_no_oi_bybit_oi_rows": len(variants["full_stack_no_oi_bybit_oi"]),
             "binance_core": evaluate_variant(
                 h, variants["binance_core"], corrected_alpha=corrected_alpha
             ),
@@ -753,6 +845,15 @@ def main():
             ),
             "cross_venue": evaluate_variant(
                 h, variants["cross_venue"], corrected_alpha=corrected_alpha
+            ),
+            "binance_core_bybit_oi": evaluate_variant(
+                h, variants["binance_core_bybit_oi"], corrected_alpha=corrected_alpha
+            ),
+            "market_flow_v2_no_oi_bybit_oi": evaluate_variant(
+                h, variants["market_flow_v2_no_oi_bybit_oi"], corrected_alpha=corrected_alpha
+            ),
+            "full_stack_no_oi_bybit_oi": evaluate_variant(
+                h, variants["full_stack_no_oi_bybit_oi"], corrected_alpha=corrected_alpha
             ),
             "corrected_alpha": corrected_alpha,
         }

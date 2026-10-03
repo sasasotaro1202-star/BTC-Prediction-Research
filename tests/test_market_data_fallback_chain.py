@@ -16,6 +16,27 @@ def _rows(count: int, *, latest_age_minutes: int) -> list[list[float]]:
 
 
 class TestMarketDataFallbackChain(unittest.TestCase):
+    def test_bybit_mark_price_fails_over_to_official_secondary_host(self):
+        calls = []
+        def fake_get(url):
+            calls.append(url)
+            if "api.bybit.com" in url:
+                raise RuntimeError("primary_host_unavailable")
+            return {"retCode": 0, "result": {"list": [{"symbol": "BTCUSDT", "lastPrice": "100000"}]}}
+
+        with patch.object(md, "_get", side_effect=fake_get):
+            out = md.bybit_mark_price()
+
+        self.assertEqual(out["retCode"], 0)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("api.bybit.com", calls[0])
+        self.assertIn("api.bytick.com", calls[1])
+
+    def test_bybit_mark_price_preserves_failure_when_all_official_hosts_fail(self):
+        with patch.object(md, "_get", side_effect=RuntimeError("all_hosts_failed")):
+            with self.assertRaisesRegex(RuntimeError, "all_hosts_failed"):
+                md.bybit_mark_price()
+
     def test_stale_bybit_history_does_not_block_coinbase_recovery(self):
         stale_bybit = _rows(40, latest_age_minutes=120)
         fresh_coinbase = _rows(120, latest_age_minutes=1)
