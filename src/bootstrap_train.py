@@ -182,6 +182,38 @@ def development_gate_passes(gate_score, baseline_gate):
     )
 
 
+class EncodedXGBClassifier:
+    """XGBoost adapter preserving the canonical DOWN/FLAT/UP label contract."""
+
+    def __init__(self, **kwargs):
+        if XGBClassifier is None:
+            raise RuntimeError("xgboost_unavailable")
+        self._model = XGBClassifier(**kwargs)
+        self.classes_ = np.asarray(CLASSES)
+
+    def fit(self, X, y):
+        class_to_int = {label: i for i, label in enumerate(CLASSES)}
+        encoded = np.asarray([class_to_int[str(label)] for label in y], dtype=int)
+        self._model.fit(np.asarray(X, dtype=float), encoded)
+        self.classes_ = np.asarray(CLASSES)
+        return self
+
+    def predict_proba(self, X):
+        return np.asarray(
+            self._model.predict_proba(np.asarray(X, dtype=float)),
+            dtype=float,
+        )
+
+    def predict(self, X):
+        encoded = np.asarray(self._model.predict(np.asarray(X, dtype=float))).astype(int)
+        return self.classes_[encoded]
+
+    def __getattr__(self, name):
+        if name == "_model":
+            raise AttributeError(name)
+        return getattr(self._model, name)
+
+
 def _fit_model(model, X, y):
     model.fit(np.asarray(X, dtype=float), np.asarray(y))
     return model
@@ -276,7 +308,7 @@ def candidate_factories():
         *(
             [(
                 "xgboost",
-                XGBClassifier(
+                EncodedXGBClassifier(
                     objective="multi:softprob", num_class=3, n_estimators=320,
                     max_depth=5, learning_rate=0.03, min_child_weight=12,
                     subsample=0.9, colsample_bytree=0.9, reg_lambda=2.0,
