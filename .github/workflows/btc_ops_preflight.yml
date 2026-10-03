@@ -122,11 +122,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE '\|\|[[:space:]]*true' .github/workflows; then
-            echo "ERROR: forbidden fail-open '|| true' found in GitHub workflows." >&2
-            exit 1
-          fi
-          echo "No forbidden '|| true' workflow suppression found."
+          python - <<'PY'
+          from pathlib import Path
+
+          forbidden = "|" + "| true"
+          offenders = []
+          for path in sorted(Path(".github/workflows").glob("*.yml")):
+              text = path.read_text(encoding="utf-8")
+              if forbidden in text:
+                  offenders.append(str(path))
+          if offenders:
+              raise SystemExit(
+                  "forbidden fail-open shell suppression found in: " + ", ".join(offenders)
+              )
+          print("No forbidden fail-open shell suppression found.")
+          PY
 
       - name: Compile BTC source and test modules
         run: python -m compileall -q src tests scripts
