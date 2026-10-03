@@ -139,7 +139,9 @@ def _settled_rows(con, horizon, actual_col, model_version):
     prob_suffix=horizon  # 5m -> p_up_5m; never append another 'm'.
     segment=f'{horizon}:{model_version}'
     raw = con.execute(
-        f'''SELECT p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},{actual_col},scenario_json
+        f'''SELECT created_at_utc,target_{prob_suffix},
+                   p_up_{prob_suffix},p_down_{prob_suffix},p_flat_{prob_suffix},
+                   {actual_col},scenario_json
             FROM predictions
             WHERE {actual_col} IS NOT NULL
               AND ('|' || model_version || '|') LIKE ?
@@ -150,15 +152,26 @@ def _settled_rows(con, horizon, actual_col, model_version):
     # Production calibration is a Binance-primary benchmark. Fallback venue
     # predictions remain useful observation data, but mixing them into the
     # production calibration estimate would change the evaluated input domain.
+    # Strict PIT is applied independently of the downstream promotion audit so
+    # calibration itself cannot learn from an unverifiable historical snapshot.
+    try:
+        from model_compare import strict_pit_provenance_reason, prediction_precedes_target
+    except ModuleNotFoundError:
+        from src.model_compare import strict_pit_provenance_reason, prediction_precedes_target
     out = []
     for row in raw:
+        created, target, up, down, flat, actual, scenario_text = row
         try:
-            scenario = json.loads(row[4] or '{}')
+            scenario = json.loads(scenario_text or '{}')
         except (TypeError, ValueError, json.JSONDecodeError):
             scenario = {}
         if scenario.get('production_mode') != 'binance_primary':
             continue
-        out.append(tuple(row[:4]))
+        if not prediction_precedes_target(created, target):
+            continue
+        if strict_pit_provenance_reason(scenario, created) is not None:
+            continue
+        out.append((up, down, flat, actual))
     return out
 
 
