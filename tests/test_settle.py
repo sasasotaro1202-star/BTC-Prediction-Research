@@ -86,11 +86,6 @@ class TestSettle(unittest.TestCase):
                 ).fetchone()
             self.assertEqual(row, (110.0, "UP", 1, "binance_futures"))
 
-
-if __name__ == '__main__':
-    unittest.main()
-
-
     def test_scenario_source_uses_source_native_fallback(self):
         coinbase = {"production_mode":"coinbase_fallback","data_quality":{"price_feature_fallback":"coinbase"}}
         bybit = {"production_mode":"bybit_fallback","data_quality":{"price_feature_fallback":"bybit"}}
@@ -100,3 +95,7 @@ if __name__ == '__main__':
     def test_known_fallback_never_silently_becomes_binance(self):
         row = {"production_mode":"coinbase_fallback","data_quality":{"price_feature_fallback":"coinbase"}}
         self.assertNotEqual(settle.scenario_source(__import__("json").dumps(row)), "binance_futures")
+
+
+if __name__ == '__main__':
+    unittest.main()
