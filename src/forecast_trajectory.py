@@ -18,12 +18,33 @@ def _num(v):
     except (TypeError, ValueError): return None
     return x if x == x and abs(x) != float("inf") else None
 
+def _ensure_horizon_columns(con, horizons):
+    """Make the chart exporter tolerant of restored pre-extension DB archives."""
+    existing = {str(row[1]) for row in con.execute("PRAGMA table_info(predictions)").fetchall()}
+    for horizon in horizons:
+        for prefix, sql_type in (
+            ("target_", "TEXT"),
+            ("p_up_", "REAL"),
+            ("p_down_", "REAL"),
+            ("p_flat_", "REAL"),
+            ("actual_price_", "REAL"),
+            ("actual_direction_", "TEXT"),
+            ("correct_", "INTEGER"),
+            ("settled_", "TEXT"),
+        ):
+            name = prefix + horizon
+            if name not in existing:
+                con.execute(f"ALTER TABLE predictions ADD COLUMN {name} {sql_type}")
+                existing.add(name)
+
+
 def build(limit=2880, horizons=ALL_HORIZONS):
     init_db()
     horizons=tuple(horizons)
     bad=[h for h in horizons if h not in ALL_HORIZONS]
     if bad: raise ValueError("unsupported_horizon:" + ",".join(bad))
     with sqlite3.connect(DB) as con:
+        _ensure_horizon_columns(con, horizons)
         sql=("SELECT prediction_id,created_at_utc,base_price," +
              ",".join(f"target_{h},p_down_{h},p_flat_{h},p_up_{h},actual_price_{h},actual_direction_{h},correct_{h},settled_{h}_at_utc" for h in horizons) +
              " FROM predictions ORDER BY prediction_id DESC" +
