@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BTC Multi-Horizon Forecast Curve</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:16px;background:#0b0d10;color:#eef1f4}
+main{max-width:1100px;margin:auto}
+h1{font-size:22px;margin:0 0 6px}
+p{color:#aeb6bf;margin:4px 0 16px}
+.card{background:#15191e;border:1px solid #28303a;border-radius:14px;padding:14px;margin-bottom:14px}
+canvas{width:100%;height:360px;display:block;background:#101318;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 6px;border-bottom:1px solid #28303a;text-align:right}
+th:first-child,td:first-child{text-align:left}
+.primary{font-weight:700}
+.badge{display:inline-block;padding:2px 7px;border:1px solid #48525d;border-radius:999px;font-size:11px}
+.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.meta div{background:#101318;padding:10px;border-radius:10px}
+.label{font-size:11px;color:#8d98a3}
+.value{font-size:15px;margin-top:3px}
+@media(max-width:640px){.meta{grid-template-columns:1fr}.card{padding:10px}canvas{height:300px}}
+</style>
+</head>
+<body>
+<main>
+<h1>BTC Multi-Horizon Forecast Curve</h1>
+<p>5分を最優先に、10分・15分・30分・1時間・3時間・6時間・12時間・24時間を同一系列で表示。</p>
+<div class="card"><div class="meta" id="meta"></div></div>
+<div class="card"><canvas id="chart" width="1000" height="360"></canvas></div>
+<div class="card"><table><thead><tr><th>Horizon</th><th>Target</th><th>UP</th><th>FLAT</th><th>DOWN</th><th>Top</th><th>State</th></tr></thead><tbody id="rows"></tbody></table></div>
+</main>
+<script>
+const HORIZON_FILE="horizon_curve_latest.json";
+const pct=x=>(100*x).toFixed(1)+"%";
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function draw(data){
+ const pts=data.points||[], cvs=document.getElementById("chart"), ctx=cvs.getContext("2d");
+ const dpr=window.devicePixelRatio||1, cssW=cvs.clientWidth||1000, cssH=360;
+ cvs.width=cssW*dpr; cvs.height=cssH*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+ const w=cssW,h=cssH,L=46,R=18,T=22,B=54,pw=w-L-R,ph=h-T-B;
+ ctx.clearRect(0,0,w,h); ctx.font="12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
+ for(let i=0;i<=4;i++){
+   const y=T+ph*i/4,v=1-i/4;
+   ctx.strokeStyle="#28303a";ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(L+pw,y);ctx.stroke();
+   ctx.fillStyle="#8d98a3";ctx.textAlign="right";ctx.fillText(pct(v),L-7,y+4);
+ }
+ const xs=i=>L+(pts.length===1?pw/2:pw*i/(pts.length-1));
+ const names=["UP","FLAT","DOWN"];
+ names.forEach((name,si)=>{
+   ctx.strokeStyle="#eef1f4";ctx.lineWidth=si===0?2.8:1.6;ctx.beginPath();
+   pts.forEach((p,i)=>{const x=xs(i),y=T+ph*(1-p.probabilities[name]);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+   ctx.stroke();
+   pts.forEach((p,i)=>{const x=xs(i),y=T+ph*(1-p.probabilities[name]);ctx.beginPath();ctx.arc(x,y,si===0?3:2,0,Math.PI*2);ctx.fillStyle="#eef1f4";ctx.fill()});
+ }
+ ctx.fillStyle="#8d98a3";ctx.textAlign="center";
+ pts.forEach((p,i)=>ctx.fillText(p.horizon,xs(i),h-25));
+ ctx.textAlign="left";ctx.fillText("Probability",L,T-8);
+}
+function render(data){
+ document.getElementById("meta").innerHTML=[
+   ["BTC Price",Number(data.base_price).toLocaleString()],
+   ["Prediction cutoff",data.prediction_cutoff],
+   ["Priority horizon","5m"]
+ ].map(x=>"<div><div class='label'>"+esc(x[0])+"</div><div class='value'>"+esc(x[1])+"</div></div>").join("");
+ document.getElementById("rows").innerHTML=(data.points||[]).map((p,i)=>{
+   const cls=i<2?"primary":"";
+   return "<tr class='"+cls+"'><td>"+esc(p.horizon)+" "+(i===0?"<span class='badge'>PRIORITY</span>":"")+"</td><td>"+esc(new Date(p.target_at).toLocaleString())+"</td><td>"+pct(p.probabilities.UP)+"</td><td>"+pct(p.probabilities.FLAT)+"</td><td>"+pct(p.probabilities.DOWN)+"</td><td>"+esc(p.top_prediction)+"</td><td>"+esc(p.state)+"</td></tr>";
+ }).join("");
+ draw(data);
+}
+let cached=null;
+fetch(HORIZON_FILE,{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error("chart data unavailable");return r.json()}).then(d=>{cached=d;render(d)}).catch(e=>{document.getElementById("rows").innerHTML="<tr><td colspan='7'>"+esc(e.message)+"</td></tr>"});
+window.addEventListener("resize",()=>{if(cached)draw(cached)});
+</script>
+</body>
+</html>
