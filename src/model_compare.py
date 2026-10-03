@@ -24,14 +24,14 @@ except ImportError:
     LGBMClassifier = None
 
 try:
-    from xgboost import XGBClassifier
+    from xgboost import XGBClassifier as _RawXGBClassifier
+    try:
+        from bootstrap_train import EncodedXGBClassifier as XGBClassifier
+    except ModuleNotFoundError:
+        from src.bootstrap_train import EncodedXGBClassifier as XGBClassifier
 except ImportError:
+    _RawXGBClassifier = None
     XGBClassifier = None
-
-try:
-    from bootstrap_train import EncodedXGBClassifier
-except ModuleNotFoundError:
-    from src.bootstrap_train import EncodedXGBClassifier
 
 HORIZONS={'5m':('actual_direction_5m','p_up_5m','p_down_5m','p_flat_5m'),'10m':('actual_direction_10m','p_up_10m','p_down_10m','p_flat_10m')}
 CLASSES=['DOWN','FLAT','UP']; MILESTONES=(2000,5000,10000,12000,14000,16000,18000,20000,24000,30000,40000,50000); MIN_TRAIN=1000; MIN_OOS=500; TEST_BLOCK=25; MODEL_DIR=DB.parent/'models'; ALPHA=0.05
