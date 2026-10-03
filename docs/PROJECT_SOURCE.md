@@ -2,7 +2,7 @@
 
 ## Verified state 2026-10-03
 
-This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot. At this refresh, main HEAD is `f6c5b6319d2ff3913e4fbaeb0af5e115aa0096b6`.
+This section is a dated audit snapshot, not a live HEAD pin. Current GitHub main is re-checked every run and remains authoritative over this historical snapshot. The latest code-bearing fix recorded here is `f6c5b6319d2ff3913e4fbaeb0af5e115aa0096b6`; subsequent source-state documentation commits are intentionally treated as docs-only state updates.
 
 Recent implementation work includes:
 - repaired GitHub Pages workflow YAML quoting;
