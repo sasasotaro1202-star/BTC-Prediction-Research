@@ -4,8 +4,9 @@ from src import feature_pattern_exhaustive as fp
 class FeaturePatternExhaustiveTests(unittest.TestCase):
     def test_family_partition_covers_every_feature_once(self):
         flat=[f for g in fp.FAMILY_GROUPS.values() for f in g]
-        self.assertEqual(set(flat),set(fp.FEATURES))
-        self.assertEqual(set(flat),set(fp.FEATURES))
+        self.assertEqual(len(flat), len(set(flat)))
+        self.assertEqual(len(flat), len(fp.FEATURES))
+        self.assertEqual(set(flat), set(fp.FEATURES))
         self.assertEqual(len(fp.FEATURES),92)
     def test_all_nonempty_family_patterns(self):
         self.assertEqual(len(fp.FAMILY_NAMES),7)
