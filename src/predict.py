@@ -492,11 +492,16 @@ def main():
     try:
         orderbook_features = derive_orderbook_features(depth_result)
         if orderbook_features is None:
-            raise RuntimeError('orderbook_v2_incomplete')
+            raise RuntimeError('orderbook_v3_incomplete')
         m.update(orderbook_features)
+        # V2 remains a stable research contract; V3 shape fields are added to
+        # the same persisted microstructure snapshot without entering FEATURES.
         status['orderbook_v2'] = 'ok'
         status['orderbook_v2_feature_levels'] = 20
         status['orderbook_v2_source'] = 'binance_depth'
+        status['orderbook_v3'] = 'ok'
+        status['orderbook_v3_feature_levels'] = 20
+        status['orderbook_v3_source'] = 'binance_depth'
     except Exception as exc:
         status['orderbook_v2'] = f'error:{type(exc).__name__}'
 
