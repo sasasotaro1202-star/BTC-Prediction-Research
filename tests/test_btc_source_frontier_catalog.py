@@ -46,3 +46,24 @@ def test_binance_vision_metrics_archive_is_explicitly_non_pit_and_not_independen
     assert source.historical is True
     assert source.realtime is False
     assert "not independent evidence" in source.rationale
+
+
+def test_source_registry_tracks_required_provenance_dimensions():
+    for source in SOURCES:
+        assert source.upstream_id.strip()
+        assert source.independence_group.strip()
+        assert source.license_status in {"UNVERIFIED", "VERIFIED"}
+        assert source.cost_status in {"UNCONFIRMED", "FREE_VERIFIED", "PAID_VERIFIED"}
+        assert source.coverage.strip()
+        assert source.freshness.strip()
+        assert source.revision_policy.strip()
+        assert source.schema_status in {"UNVERIFIED", "VERIFIED"}
+        assert source.latency.strip()
+        assert source.information_value.strip()
+
+
+def test_same_upstream_sources_share_independence_group():
+    binance_ids = {"binance_options_public", "binance_vision_metrics_archive"}
+    rows = [get_source(source_id) for source_id in binance_ids]
+    assert {row.upstream_id for row in rows} == {"binance"}
+    assert {row.independence_group for row in rows} == {"binance"}
