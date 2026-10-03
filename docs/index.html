@@ -16,7 +16,7 @@ select,button{width:100%;border:1px solid #334051;background:#0f151d;color:var(-
 .range{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:9px}.range button{min-height:34px;font-size:12px}.range button.active{border-color:#8d9aac;background:#1b2430}
 .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.card{background:#0f151d;border:1px solid var(--line);border-radius:11px;padding:9px}.k{color:var(--muted);font-size:10px}.v{font-size:17px;font-weight:600;margin-top:2px}.small{font-size:11px;color:var(--muted)}
 .chartWrap{position:relative;height:420px;margin-top:4px}.chart{width:100%;height:100%;display:block;touch-action:none}.tip{position:absolute;pointer-events:none;display:none;background:#0a0f15;border:1px solid #536174;border-radius:9px;padding:8px;font-size:11px;min-width:170px;box-shadow:0 8px 28px #0008}
-.legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;color:var(--muted);font-size:11px}.legend span{display:flex;gap:5px;align-items:center}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0;color:var(--muted);font-size:11px}.legend span{display:flex;gap:5px;align-items:center}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.overviewGrid{display:grid;gap:6px;margin-top:9px}.overviewRow{background:#0f151d;border:1px solid var(--line);border-radius:10px;padding:7px}.overviewRow.primary{border-color:#59687a}.overviewHead{display:flex;align-items:center;justify-content:space-between;gap:8px}.overviewTitle{font-weight:600;font-size:12px;white-space:nowrap}.overviewMeta{color:var(--muted);font-size:10px;white-space:nowrap}.overviewValues{color:var(--muted);font-size:10px;margin-top:2px}.overviewSvg{display:block;width:100%;height:54px;margin-top:3px;overflow:visible}
 .status{display:grid;grid-template-columns:1fr 1fr;gap:8px}.status .item{border:1px solid var(--line);border-radius:10px;padding:9px}.status .label{font-size:10px;color:var(--muted)}.status .value{margin-top:3px}
 .table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}.table th{color:var(--muted);font-weight:500}.primary{font-weight:700}.research{color:#9aa6b5}
 .notice{color:var(--muted);font-size:12px}.error{color:#ffb8b8}
@@ -41,6 +41,12 @@ select,button{width:100%;border:1px solid #334051;background:#0f151d;color:var(-
       </select></div>
     </div>
     <div class="range" id="range"></div>
+  </section>
+
+  <section class="panel">
+    <div style="font-weight:600;margin-bottom:2px">全時間軸の推移</div>
+    <div class="notice">同じ表示範囲・表示種別で9時間軸を同時表示。5mを最優先として上段に固定し、未取得・未決済は線を補完しません。</div>
+    <div id="overviewGrid" class="overviewGrid"></div>
   </section>
 
   <section class="panel">
@@ -147,6 +153,63 @@ function updateCards(){
   document.getElementById("up").textContent=pct(last.p_up);document.getElementById("flat").textContent=pct(last.p_flat);document.getElementById("down").textContent=pct(last.p_down);
   document.getElementById("meta").textContent=`target ${fmtTime(last.target_time_utc)} · BTC ${money(last.base_price)} · ${last.settled?"settled":"not settled"} · ${last.research_only?"research-only":"production"}`;
 }
+
+function overviewRangeRows(h){
+  const rows=payload?.horizons?.[h]?.points||[];
+  if(!rows.length||currentRange==="All")return rows;
+  const range=RANGES.find(x=>x[0]===currentRange);
+  if(!range)return rows;
+  const lastTime=new Date(rows[rows.length-1].prediction_time_utc).getTime();
+  return rows.filter(r=>lastTime-new Date(r.prediction_time_utc).getTime()<=range[1]);
+}
+function overviewMetricSpec(points){
+  if(currentMetric==="prob")return {
+    series:[["p_down","DOWN","#8b98a8"],["p_flat","FLAT","#d7dee8"],["p_up","UP","#ffffff"]],
+    ymin:0,ymax:1
+  };
+  if(currentMetric==="price"){
+    const values=points.flatMap(p=>[p.base_price,p.actual_price]).filter(Number.isFinite);
+    if(!values.length)return {series:[["base_price","BASE","#8b98a8"],["actual_price","ACTUAL","#ffffff"]],ymin:0,ymax:1};
+    const low=Math.min(...values),high=Math.max(...values),pad=Math.max((high-low)*0.03,1);
+    return {series:[["base_price","BASE","#8b98a8"],["actual_price","ACTUAL","#ffffff"]],ymin:low-pad,ymax:high+pad};
+  }
+  return {series:[["correct","CORRECT","#ffffff"]],ymin:0,ymax:1};
+}
+function overviewPath(points,key,ymin,ymax){
+  let path="",valid=0;
+  const span=Math.max(1,points.length-1);
+  const denom=Math.max(ymax-ymin,1e-12);
+  points.forEach((p,i)=>{
+    const y=Number(p[key]);
+    if(!Number.isFinite(y)){valid=0;return;}
+    const x=16+(i/span)*968,yy=43-(y-ymin)/denom*34;
+    path+=(valid++?" L":"M")+x.toFixed(2)+" "+yy.toFixed(2);
+  });
+  return path;
+}
+function drawOverview(){
+  const grid=document.getElementById("overviewGrid");
+  if(!payload||!payload.horizons){grid.innerHTML="";return;}
+  grid.innerHTML=HORIZONS.map(h=>{
+    const item=payload.horizons[h]||{};
+    const rows=overviewRangeRows(h);
+    const spec=overviewMetricSpec(rows);
+    const last=rows[rows.length-1];
+    const cls=h==="5m"?"overviewRow primary":"overviewRow";
+    const tag=(h==="5m"||h==="10m")?"PRIMARY":"RESEARCH";
+    if(!last){
+      const state=item.availability_status==="PENDING_FIRST_LIVE_SAMPLE"?"最初の実運用サンプル待ち":"データなし";
+      return `<div class="${cls}"><div class="overviewHead"><div class="overviewTitle">${h}${h==="5m"?" ★":""}</div><div class="overviewMeta">${tag} · ${state}</div></div><div class="overviewValues">UP — · FLAT — · DOWN —</div></div>`;
+    }
+    const paths=spec.series.map(([key,label,stroke])=>{
+      const dd=overviewPath(rows,key,spec.ymin,spec.ymax);
+      if(!dd)return "";
+      const width=h==="5m"?2.5:1.5;
+      return `<path d="${dd}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }).join("");
+    return `<div class="${cls}"><div class="overviewHead"><div class="overviewTitle">${h}${h==="5m"?" ★":""}</div><div class="overviewMeta">${tag} · ${fmtTime(last.prediction_time_utc)}</div></div><div class="overviewValues">UP ${pct(last.p_up)} · FLAT ${pct(last.p_flat)} · DOWN ${pct(last.p_down)}</div><svg class="overviewSvg" viewBox="0 0 1000 54" preserveAspectRatio="none" aria-label="${h} trajectory overview"><line x1="16" x2="984" y1="43" y2="43" stroke="#273241" stroke-width="1"/><line x1="16" x2="984" y1="9" y2="9" stroke="#273241" stroke-width="1"/>${paths}</svg></div>`;
+  }).join("");
+}
 function updateLegend(){
   const l=document.getElementById("legend");let items=currentMetric==="prob"?[["DOWN","#8b98a8"],["FLAT","#d7dee8"],["UP","#ffffff"]]:currentMetric==="price"?[["BASE","#8b98a8"],["ACTUAL","#ffffff"]]:[["CORRECT","#ffffff"]];
   l.innerHTML=items.map(x=>`<span><i class="dot" style="background:${x[1]}"></i>${x[0]}</span>`).join("");
@@ -167,7 +230,7 @@ function updateStatus(){
   document.getElementById("liveStatus").textContent=payload.live_cycle?(`#${payload.live_cycle.latest_prediction_id||"—"} · ${fmtTime(payload.live_cycle.completed_at_utc)}${liveTime && Date.now()-liveTime>STALE_MS?" · STALE":""}`):"UNKNOWN";
   document.getElementById("pitStatus").textContent=payload.pit?(`${payload.pit.verified_primary_predictions||0}/${payload.pit.min_strict_pit_rows||0} primary PIT · ${payload.pit.pit_verified?"VERIFIED":"HOLD"}`):"UNKNOWN";
 }
-function render(){const rows=rangeRows();updateCards();drawChart(rows);updateLegend();updateSummary()}
+function render(){const rows=rangeRows();updateCards();drawChart(rows);drawOverview();updateLegend();updateSummary()}
 svg.addEventListener("mousemove",e=>{
   if(!lastPoints.length)return;const rect=svg.getBoundingClientRect();const rel=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));const i=Math.min(lastPoints.length-1,Math.max(0,Math.round(rel*(lastPoints.length-1)))),p=lastPoints[i];
   tip.style.display="block";tip.style.left=Math.min(e.clientX-rect.left+10,rect.width-190)+"px";tip.style.top=Math.max(4,e.clientY-rect.top-20)+"px";
