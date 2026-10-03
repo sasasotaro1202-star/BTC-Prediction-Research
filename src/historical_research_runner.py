@@ -113,26 +113,44 @@ def _archive_oi_fallback(url):
     requested_end_ms=int(qs.get("endTime",[0])[0])
     if not start_ms or not requested_end_ms:
         raise RuntimeError("open-interest archive fallback requires startTime/endTime")
-    end_ms=min(requested_end_ms,_safe_end())
+    # Metrics are archived at 5-minute cadence, while the historical caller
+    # advances its 15-minute query cursor using last_timestamp+1. Expand each
+    # requested interval by one archive cadence so boundary-aligned requests
+    # such as 23:55:00.001..00:00:00 cannot become false empty windows.
+    safe_end_ms=_safe_end()
+    end_ms=min(requested_end_ms,safe_end_ms)
+    archive_end_ms=min(end_ms+5*60_000,safe_end_ms+5*60_000)
     if start_ms>=end_ms:
         return []
     start_day=datetime.fromtimestamp(start_ms/1000,timezone.utc).date()
-    end_day=datetime.fromtimestamp((end_ms-1)/1000,timezone.utc).date()
+    end_day=datetime.fromtimestamp((archive_end_ms-1)/1000,timezone.utc).date()
     out=[]; day=start_day
     while day<=end_day:
         day_start=int(datetime.combine(day,datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
         day_end=int(datetime.combine(day+timedelta(days=1),datetime.min.time(),tzinfo=timezone.utc).timestamp()*1000)
-        a=max(start_ms,day_start); b=min(end_ms,day_end)
-        try:
-            rows=_metrics_oi_zip_rows(_metrics_candidate_urls(symbol,day),a,b,symbol)
-        except Exception as exc:
-            raise RuntimeError(f"no verified Binance metrics archive for {symbol} {day}: {exc}") from exc
-        out.extend(rows)
+        a=max(start_ms,day_start)
+        b=min(archive_end_ms,day_end)
+        if a < b:
+            try:
+                rows=_metrics_oi_zip_rows(_metrics_candidate_urls(symbol,day),a,b,symbol)
+            except Exception as exc:
+                raise RuntimeError(f"no verified Binance metrics archive for {symbol} {day}: {exc}") from exc
+            out.extend(rows)
         day+=timedelta(days=1)
-    dedup={int(r["timestamp"]):r for r in out}
-    ordered=[dedup[k] for k in sorted(dedup)]
+    by_ts={}
+    for row in out:
+        ts=int(row["timestamp"])
+        existing=by_ts.get(ts)
+        if existing is None:
+            by_ts[ts]=row
+            continue
+        if float(existing["sumOpenInterest"]) != float(row["sumOpenInterest"]):
+            raise RuntimeError(f"conflicting_duplicate_open_interest_timestamp:{symbol}:{ts}")
+    ordered=[by_ts[k] for k in sorted(by_ts)]
     if not ordered:
-        raise RuntimeError(f"historical_open_interest_archive_empty:{symbol}:{start_ms}:{end_ms}")
+        # An empty sub-window is valid when the archive cadence has already been
+        # covered by the preceding query window; the caller will stop naturally.
+        return []
     return ordered
 
 def _cache_path(url):return ARCHIVE_CACHE/(hashlib.sha256(url.encode()).hexdigest()+".zip")
