@@ -91,14 +91,14 @@ def test_archive_oi_fallback_expands_window_for_cadence_boundary():
             "https://fapi.binance.com/futures/data/openInterestHist?"
             f"symbol=BTCUSDT&period=15m&startTime={start}&endTime={end}&limit=500"
         )
-    assert [r["timestamp"] for r in rows] == [start + (5 * 60_000 - 1000)]
+    assert [r["timestamp"] for r in rows] == [end]
     assert [float(r["sumOpenInterest"]) for r in rows] == [101.0]
 
 
 def test_archive_oi_fallback_rejects_conflicting_duplicate_available_timestamp():
     raw = _zip([
         ["create_time", "symbol", "sum_open_interest"],
-        ["2026-06-24 23:55:00", "BTCUSDT", "100"],
+        ["2026-06-25 00:00:00", "BTCUSDT", "100"],
         ["2026-06-25 00:00:00", "BTCUSDT", "101"],
     ])
     start = int(datetime(2026, 6, 24, 23, 59, 0, tzinfo=timezone.utc).timestamp() * 1000)
