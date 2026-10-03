@@ -93,12 +93,15 @@ function rangeRows(){
 }
 function setOptions(){
   const h=document.getElementById("horizon");
+  h.innerHTML="";
   HORIZONS.forEach(x=>{const o=document.createElement("option");o.value=x;o.textContent=x+(x==="5m"?"  (PRIMARY)":"");h.appendChild(o)});
   h.value=currentH;
   const rg=document.getElementById("range");
+  rg.innerHTML="";
   RANGES.forEach(x=>{const b=document.createElement("button");b.textContent=x[0];b.dataset.r=x[0];b.onclick=()=>{currentRange=x[0];document.querySelectorAll("#range button").forEach(z=>z.classList.toggle("active",z.dataset.r===currentRange));render()};rg.appendChild(b)});
-  rg.querySelector('[data-r="24h"]').classList.add("active");
+  rg.querySelectorAll("#range button").forEach(z=>z.classList.toggle("active",z.dataset.r===currentRange));
   h.onchange=e=>{currentH=e.target.value;render()};
+  document.getElementById("metric").value=currentMetric;
   document.getElementById("metric").onchange=e=>{currentMetric=e.target.value;render()};
 }
 function linePath(points,fn,x0,y0,w,h,yMin,yMax){
