@@ -50,8 +50,6 @@ FAMILY_GROUPS={
 "price_action":("range_asymmetry10","wick_imbalance10","drawdown30","runup30","close_location10","close_location30","breakout_high20","breakout_low20"),
 "flow":("volume_z20","trades_z20","dollar_volume_z20","flow_accel5","flow_z20","amihud10","volume_price_corr20","flow_return_corr20","body_pressure20","up_volume_ratio20","signed_volume_pressure20","trade_size_z20","signed_flow_accel20"),
 "derivatives":("basis_x_vol","oi_x_return5","funding_x_oi"),
-"cross_asset":(),
-"calendar":(),
 "dependence":("autocorr5",),
 }
 assert set(FEATURES)=={f for g in FAMILY_GROUPS.values() for f in g}
@@ -134,7 +132,7 @@ def screen(X,y,fold_spec):
 
 def main():
     ts,price,X=load()
-    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_9_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
+    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
     for h,minutes in HORIZONS.items():
         idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
         for mask in range(1,PATTERN_COUNT+1):
