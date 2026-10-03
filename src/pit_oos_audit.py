@@ -334,6 +334,7 @@ def audit() -> dict:
                 provenance_ext = scenario_ext.get("provenance")
                 sources_ext = provenance_ext.get("sources") if isinstance(provenance_ext, dict) else None
                 source_ext = sources_ext.get("binance_futures") if isinstance(sources_ext, dict) else None
+                primary_ext_valid = False
                 if (
                     actual_value not in (None, "")
                     and isinstance(provenance_ext, dict)
@@ -341,6 +342,8 @@ def audit() -> dict:
                     and source_ext.get("status") in AVAILABLE_STATUSES
                     and not validate_provenance_envelope(source_ext, f"{row_prefix}extended:{horizon}")
                 ):
+                    primary_ext_valid = True
+                if actual_value not in (None, "") and primary_ext_valid:
                     coverage[horizon]["strict_primary_settled"] += 1
 
     # Promotion evidence is tied to the production benchmark venue. Fallback
