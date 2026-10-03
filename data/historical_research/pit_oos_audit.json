@@ -2,14 +2,24 @@
   "ok": true,
   "status": "PASS_WITH_LEGACY_UNVERIFIED",
   "pit_verified": false,
-  "pit_verified_reason": "insufficient_binance_primary_pit_rows:289/300",
-  "checked_predictions": 596,
-  "verified_predictions": 427,
-  "verified_primary_predictions": 289,
+  "pit_verified_reason": "insufficient_binance_primary_pit_rows:290/300",
+  "checked_predictions": 597,
+  "verified_predictions": 428,
+  "verified_primary_predictions": 290,
   "verified_fallback_predictions": 138,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 596,
+      "strict_primary_settled": 289,
+      "situation_meta_ready": 285,
+      "online_expert_ready": 285,
+      "situation_meta_rows_needed": 2715,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2715,
+      "estimated_days_lower_bound": 9.427083333333334
+    },
+    "10m": {
       "settled_predictions": 595,
       "strict_primary_settled": 288,
       "situation_meta_ready": 284,
@@ -18,16 +28,6 @@
       "online_expert_rows_needed": 0,
       "estimated_5m_cycles_lower_bound": 2716,
       "estimated_days_lower_bound": 9.430555555555555
-    },
-    "10m": {
-      "settled_predictions": 594,
-      "strict_primary_settled": 287,
-      "situation_meta_ready": 283,
-      "online_expert_ready": 283,
-      "situation_meta_rows_needed": 2717,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2717,
-      "estimated_days_lower_bound": 9.434027777777779
     },
     "15m": {
       "settled_predictions": 15,
@@ -134,9 +134,9 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-03T07:19:33.529416+00:00",
+  "generated_at_utc": "2026-10-03T07:23:45.308288+00:00",
   "history": {
-    "status": "RECORDED",
+    "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-03T07:15:00+00:00",
     "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261003T0715Z.json",
     "retention": 672,
