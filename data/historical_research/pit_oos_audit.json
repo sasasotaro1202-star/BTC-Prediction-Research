@@ -3,13 +3,23 @@
   "status": "PASS",
   "pit_verified": true,
   "pit_verified_reason": "strict_binance_primary_scope_verified",
-  "checked_predictions": 661,
-  "verified_predictions": 492,
-  "verified_primary_predictions": 348,
+  "checked_predictions": 662,
+  "verified_predictions": 493,
+  "verified_primary_predictions": 349,
   "verified_fallback_predictions": 144,
   "min_strict_pit_rows": 300,
   "coverage": {
     "5m": {
+      "settled_predictions": 660,
+      "strict_primary_settled": 347,
+      "situation_meta_ready": 343,
+      "online_expert_ready": 343,
+      "situation_meta_rows_needed": 2657,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2657,
+      "estimated_days_lower_bound": 9.225694444444445
+    },
+    "10m": {
       "settled_predictions": 659,
       "strict_primary_settled": 346,
       "situation_meta_ready": 342,
@@ -19,19 +29,9 @@
       "estimated_5m_cycles_lower_bound": 2658,
       "estimated_days_lower_bound": 9.229166666666666
     },
-    "10m": {
-      "settled_predictions": 658,
-      "strict_primary_settled": 345,
-      "situation_meta_ready": 341,
-      "online_expert_ready": 341,
-      "situation_meta_rows_needed": 2659,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2659,
-      "estimated_days_lower_bound": 9.23263888888889
-    },
     "15m": {
-      "settled_predictions": 77,
-      "strict_primary_settled": 70,
+      "settled_predictions": 80,
+      "strict_primary_settled": 73,
       "situation_meta_ready": 0,
       "online_expert_ready": 0
     },
@@ -134,9 +134,9 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-03T13:16:26.462546+00:00",
+  "generated_at_utc": "2026-10-03T13:20:44.189784+00:00",
   "history": {
-    "status": "RECORDED",
+    "status": "SKIPPED_EXISTING_BUCKET",
     "bucket_start_utc": "2026-10-03T13:15:00+00:00",
     "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261003T1315Z.json",
     "retention": 672,
