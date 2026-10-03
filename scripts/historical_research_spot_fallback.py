@@ -85,9 +85,9 @@ def _spot_archive_chunk(symbol,start_ms,end_ms,day,limit):
 def patched_chunk(symbol,start_ms,end_ms,endpoint,kind,day,limit):
     if endpoint=="/api/v3/klines":
         path=hr._cache_path(kind,symbol,day)
-        if path.exists():
-            try:return __import__("json").loads(path.read_text())
-            except Exception:pass
+        cached=hr._load_nonempty_cached_rows(path)
+        if cached is not None:
+            return cached
         try:
             return _spot_archive_chunk(symbol,start_ms,end_ms,day,limit)
         except Exception as archive_exc:
