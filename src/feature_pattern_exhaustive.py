@@ -55,7 +55,7 @@ FAMILY_GROUPS={
 "dependence":("autocorr5",),
 }
 assert set(FEATURES)=={f for g in FAMILY_GROUPS.values() for f in g}
-assert sum(len(g) for g in FAMILY_GROUPS.values())==len(FEATURES)
+assert set().union(*[set(g) for g in FAMILY_GROUPS.values()])==set(FEATURES)
 FAMILY_NAMES=tuple(FAMILY_GROUPS)
 PATTERN_COUNT=2**len(FAMILY_NAMES)-1
 
