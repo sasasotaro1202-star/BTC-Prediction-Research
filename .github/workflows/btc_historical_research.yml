@@ -118,6 +118,7 @@ jobs:
           OMP_NUM_THREADS: '1'
           MKL_NUM_THREADS: '1'
           OPENBLAS_NUM_THREADS: '1'
+          BTC_FEATURE_SCREEN_WORKERS: '4'
         run: |
           set -euo pipefail
           python src/feature_pattern_exhaustive.py
