@@ -130,9 +130,57 @@ def screen(X,y,fold_spec):
         yy=y[lo:hi]; ps.append(aligned); ys.append(yy); per_fold.append(metrics(yy,aligned))
     return metrics(np.concatenate(ys),np.vstack(ps)),per_fold
 
+def run_single_feature_ablation(ts,price,X):
+    """Measure every single frontier add and every single base-feature removal."""
+    # Use exact same label construction/folds as family screening. The purpose is
+    # attribution, not model selection; all outputs remain research-only.
+    result={}
+    for horizon,minutes in HORIZONS.items():
+        idx,y=labels(ts,price,minutes)
+        XX=X[idx]
+        fs=folds(len(y))
+        base_cols=np.arange(len(BASE_FEATURES),dtype=np.int64)
+        base_metrics,_=screen(XX[:,base_cols],y,fs)
+        add_records=[]
+        for feature in FRONTIER_FEATURES:
+            col=FEATURES.index(feature)
+            cols=np.concatenate((base_cols,np.asarray([col],dtype=np.int64)))
+            mm,ff=screen(XX[:,cols],y,fs)
+            add_records.append({
+                "feature":feature,
+                "metrics":mm,
+                "fold_metrics":ff,
+                "delta_vs_base":{k:float(mm[k]-base_metrics[k]) for k in ("logloss","accuracy","brier","ece")},
+                "status":"OK",
+            })
+        remove_records=[]
+        for feature in BASE_FEATURES:
+            cols=np.asarray([i for i,f in enumerate(BASE_FEATURES) if f!=feature],dtype=np.int64)
+            mm,ff=screen(XX[:,cols],y,fs)
+            remove_records.append({
+                "feature":feature,
+                "metrics":mm,
+                "fold_metrics":ff,
+                "delta_vs_base":{k:float(mm[k]-base_metrics[k]) for k in ("logloss","accuracy","brier","ece")},
+                "status":"OK",
+            })
+        add_rank=sorted(add_records,key=lambda r:(r["delta_vs_base"]["logloss"],-r["delta_vs_base"]["accuracy"]))
+        remove_rank=sorted(remove_records,key=lambda r:(-r["delta_vs_base"]["logloss"],r["delta_vs_base"]["accuracy"]))
+        result[horizon]={
+            "sample_n":int(len(y)),
+            "base_metrics":base_metrics,
+            "frontier_single_add_count":len(add_records),
+            "base_single_remove_count":len(remove_records),
+            "frontier_single_add":add_records,
+            "base_single_remove":remove_records,
+            "best_single_add_by_logloss":add_rank[:20],
+            "least_harmful_single_remove_by_logloss":remove_rank[:20],
+        }
+    return result
+
 def main():
     ts,price,X=load()
-    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v1","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","horizons":{}}
+    result={"schema_version":1,"experiment_id":"btc_feature_pattern_exhaustive_v2","protocol_version":"feature-family-expanding-wfo-v1","status":"RUNNING","research_only":True,"production_changed":False,"promotion_effect":"none","search_scope":"exhaustive_nonempty_combinations_of_7_disjoint_feature_families","exact_individual_feature_subset_space":int(2**len(FEATURES)),"exact_individual_feature_subset_space_is_computationally_intractable":True,"family_count":len(FAMILY_NAMES),"pattern_count_expected":PATTERN_COUNT,"families":{n:{"feature_count":len(g),"features":list(g)} for n,g in FAMILY_GROUPS.items()},"feature_count":len(FEATURES),"base_feature_count":len(BASE_FEATURES),"frontier_feature_count":len(FRONTIER_FEATURES),"fold_contract":{"fold_count":3,"embargo_rows":EMBARGO,"chronological":True,"random_split":False},"model_role":"screening_only_logistic_regression","fine_grained_single_feature_ablation":True,"horizons":{}}
     for h,minutes in HORIZONS.items():
         idx,y=labels(ts,price,minutes); XX=X[idx]; fs=folds(len(y)); records=[]; failures=0
         for mask in range(1,PATTERN_COUNT+1):
@@ -150,6 +198,7 @@ def main():
             for r in valid: r["delta_vs_base"]={k:float(r["metrics"][k]-bm[k]) for k in ("logloss","accuracy","brier","ece")}
         ranked=sorted(valid,key=lambda r:(r["metrics"]["logloss"],-r["metrics"]["accuracy"],r["feature_count"]))
         result["horizons"][h]={"samples":int(len(y)),"folds":fs,"patterns_expected":PATTERN_COUNT,"patterns_completed":len(valid),"pattern_failures":failures,"status":"COMPLETE" if len(valid)==PATTERN_COUNT else "PARTIAL_FAILURE","base_pattern":base,"top_20_by_logloss":ranked[:20],"all_patterns":records}
+    result["fine_grained_ablation"]=run_single_feature_ablation(ts,price,X)
     result["status"]="COMPLETE" if all(result["horizons"][h]["status"]=="COMPLETE" for h in HORIZONS) else "PARTIAL_FAILURE"
     result["completed_utc"]=datetime.now(timezone.utc).isoformat()
     OUT.write_text(json.dumps(result,indent=2,sort_keys=True),encoding="utf-8")
