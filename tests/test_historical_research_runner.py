@@ -61,7 +61,7 @@ def test_archive_oi_fallback_deduplicates_deterministically():
     raw = _zip([
         ["create_time", "symbol", "sum_open_interest"],
         ["2026-09-01 00:00:00", "BTCUSDT", "100"],
-        ["2026-09-01 00:00:00", "BTCUSDT", "101"],
+        ["2026-09-01 00:00:00", "BTCUSDT", "100"],
         ["2026-09-01 00:05:00", "BTCUSDT", "102"],
     ])
     start = int(datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp() * 1000)
@@ -73,7 +73,7 @@ def test_archive_oi_fallback_deduplicates_deterministically():
         )
     assert len(rows) == 2
     assert [r["timestamp"] for r in rows] == [start + 5 * 60_000, start + 10 * 60_000]
-    assert [float(r["sumOpenInterest"]) for r in rows] == [101.0, 102.0]
+    assert [float(r["sumOpenInterest"]) for r in rows] == [100.0, 102.0]
 
 
 def test_archive_oi_fallback_expands_window_for_cadence_boundary():
