@@ -12,9 +12,9 @@ from pathlib import Path
 from db import DB, init_db
 from pit_history import record_pit_history
 try:
-    from horizon_registry import EXTENDED_RESEARCH_HORIZONS
+    from horizon_registry import ALL_HORIZONS, EXTENDED_RESEARCH_HORIZONS
 except ModuleNotFoundError:
-    from src.horizon_registry import EXTENDED_RESEARCH_HORIZONS
+    from src.horizon_registry import ALL_HORIZONS, EXTENDED_RESEARCH_HORIZONS
 
 OUT = Path(DB).parent / "historical_research" / "pit_oos_audit.json"
 MAX_FUTURE_SKEW_SECONDS = 60
@@ -23,6 +23,7 @@ MIN_STRICT_PIT_ROWS = 300
 SITUATION_META_MIN_ROWS = 3000
 ONLINE_EXPERT_MIN_ROWS = 140
 AVAILABLE_STATUSES = {"ok", "ok_current_only"}
+ALL_AUDIT_HORIZONS = tuple(ALL_HORIZONS)
 # a4d43aa added per-source prediction_cutoff to live Coinbase provenance.
 # Rows created before that contract existed are quarantined, not upgraded retroactively.
 LEGACY_COINBASE_CUTOFF_UTC = datetime.fromisoformat("2026-09-22T05:04:26+00:00")
@@ -132,18 +133,13 @@ def audit() -> dict:
 
     now = datetime.now(timezone.utc)
     coverage = {
-        "5m": {
+        horizon: {
             "settled_predictions": 0,
             "strict_primary_settled": 0,
             "situation_meta_ready": 0,
             "online_expert_ready": 0,
-        },
-        "10m": {
-            "settled_predictions": 0,
-            "strict_primary_settled": 0,
-            "situation_meta_ready": 0,
-            "online_expert_ready": 0,
-        },
+        }
+        for horizon in ALL_AUDIT_HORIZONS
     }
 
     for (
@@ -300,7 +296,11 @@ def audit() -> dict:
     # forecasts inherit the same prediction cutoff/provenance envelope, but they
     # remain research-only and never affect the 5m/10m promotion gate.
     with sqlite3.connect(DB) as con:
+        extended_columns = table_columns(con, "predictions")
         for horizon in EXTENDED_RESEARCH_HORIZONS:
+            required_extended = {f"target_{horizon}", f"actual_direction_{horizon}"}
+            if not required_extended.issubset(extended_columns):
+                continue
             rows_ext = con.execute(
                 f"""SELECT prediction_id, created_at_utc, target_{horizon},
                            actual_direction_{horizon}, scenario_json
