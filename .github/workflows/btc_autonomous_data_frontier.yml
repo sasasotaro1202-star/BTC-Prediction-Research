@@ -133,7 +133,7 @@ jobs:
             # Verify for up to 120s, while remaining fail-closed on missing evidence.
             for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
               sleep 10
-              fresh="$(ci_gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" | jq -r --arg sha "$main_sha" --argjson started "$started" '[.workflow_runs[]? | select(.head_sha==$sha and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status] | @tsv')"
+              fresh="$(ci_gh api "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" | jq -r --argjson started "$started" '[.workflow_runs[]? | select(.head_branch=="main" and .event=="workflow_dispatch" and (.created_at | fromdateiso8601) >= $started)] | sort_by(.created_at) | last // empty | [.id,.status,.head_sha] | @tsv')"
               if [ -n "$fresh" ]; then echo "${workflow}: dispatch verified ${fresh}"; return 0; fi
             done
             echo "${workflow}: dispatch verification failed" >&2
