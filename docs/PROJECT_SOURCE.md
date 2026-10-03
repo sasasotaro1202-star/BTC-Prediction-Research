@@ -1,7 +1,7 @@
 # BTC-Prediction-Research — Project Source
 
 ## Verified state 2026-10-03
-main latest observed HEAD: aed18eeacea5c04aff07ea6a77a2ac5c93c26aff.
+main latest observed HEAD after re-check: ff251b15fdb0300f1ff70918e472d3f51c772301. Latest observed repository work also includes a fix repairing dashboard workflow YAML quoting.
 README documents 5m as Production Champion; 10m/15m/30m/1h/3h/6h/12h/24h are available, while 15m–24h remain research-only until independent PIT/OOS/robustness/holdout evidence supports promotion.
 
 ## Canonical rules
