@@ -10,6 +10,11 @@ class FeaturePatternExhaustiveTests(unittest.TestCase):
         self.assertEqual(set(flat), set(fp.FEATURES))
         self.assertEqual(len(fp.FEATURES), 92)
 
+    def test_evidence_contract_is_explicit_and_promotion_blocked(self):
+        self.assertEqual(fp.NEUTRAL_BPS, 2.0)
+        self.assertEqual(tuple(fp.HORIZONS.values()), (5, 10))
+        self.assertFalse(fp.PANEL.is_absolute())
+
     def test_all_nonempty_family_patterns(self):
         self.assertEqual(len(fp.FAMILY_NAMES), 7)
         self.assertEqual(fp.PATTERN_COUNT, 127)
