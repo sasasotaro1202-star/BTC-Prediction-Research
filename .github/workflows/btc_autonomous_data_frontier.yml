@@ -177,7 +177,15 @@ jobs:
             echo "ERROR: selector-state worktree creation failed; refusing to discard selection memory." >&2
             exit 1
           fi
-          trap 'git worktree remove --force "$state_worktree" >/dev/null 2>&1 || true' EXIT
+          cleanup_state_worktree() {
+            if [ -d "$state_worktree" ]; then
+              if ! git worktree remove --force "$state_worktree" >/dev/null 2>&1; then
+                echo "ERROR: selector-state worktree cleanup failed." >&2
+                return 1
+              fi
+            fi
+          }
+          trap 'cleanup_rc=$?; if ! cleanup_state_worktree; then trap_rc=$?; exit "$trap_rc"; fi; exit "$cleanup_rc"' EXIT
           mkdir -p "$state_worktree/data/historical_research"
           cp data/historical_research/data_frontier_state.json "$state_worktree/data/historical_research/data_frontier_state.json"
           git -C "$state_worktree" config user.name "github-actions[bot]"
