@@ -20,6 +20,11 @@ class TestModelComparePromotionBoundary(unittest.TestCase):
         self.assertNotIn("adopt_candidate", calls)
         self.assertNotIn("set_prod", calls)
 
+    def test_xgboost_comparison_path_is_bound_to_canonical_adapter(self):
+        text = (ROOT / "src" / "model_compare.py").read_text(encoding="utf-8")
+        self.assertIn("EncodedXGBClassifier as XGBClassifier", text)
+        self.assertIn("from xgboost import XGBClassifier as _RawXGBClassifier", text)
+
     def test_research_result_declares_no_production_change(self):
         text = (ROOT / "src" / "model_compare.py").read_text(encoding="utf-8")
         self.assertIn("'production_changed':False", text)
