@@ -32,15 +32,26 @@ def _normalize(values) -> np.ndarray:
     return p / p.sum()
 
 
-def _time_scaled_probability(short: Mapping[str, float], structural: Mapping[str, float], horizon: str) -> dict[str, float]:
+def _class_probability_vector(values: Mapping[str, float] | object) -> np.ndarray:
+    """Return DOWN/FLAT/UP probabilities from mappings or class-ordered arrays."""
+    if isinstance(values, Mapping):
+        raw = [values["DOWN"], values["FLAT"], values["UP"]]
+    else:
+        raw = np.asarray(values, dtype=float).reshape(-1).tolist()
+    if len(raw) != 3:
+        raise ValueError("class_probability_vector_invalid_shape")
+    return np.asarray(raw, dtype=float)
+
+
+def _time_scaled_probability(short: Mapping[str, float] | object, structural: Mapping[str, float], horizon: str) -> dict[str, float]:
     minutes = {
         "15m": 15, "30m": 30, "1h": 60, "3h": 180,
         "6h": 360, "12h": 720, "24h": 1440,
     }[horizon]
     scale = min(1.0, math.sqrt(10.0 / minutes))
     anchor_weight = 0.50 + 0.50 * scale
-    anchor = np.asarray([short["DOWN"], short["FLAT"], short["UP"]], dtype=float)
-    struct = np.asarray([structural["DOWN"], structural["FLAT"], structural["UP"]], dtype=float)
+    anchor = _class_probability_vector(short)
+    struct = _class_probability_vector(structural)
     raw = _normalize(anchor_weight * anchor + (1.0 - anchor_weight) * struct)
     out = _normalize((1.0 / 3.0) + scale * (raw - 1.0 / 3.0))
     return {c: float(out[i]) for i, c in enumerate(CLASSES)}
