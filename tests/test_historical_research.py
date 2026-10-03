@@ -29,6 +29,36 @@ class HistoricalTargetTests(unittest.TestCase):
         self.assertEqual(ids.tolist(), [60_000])
         self.assertEqual(y.tolist(), ["UP"])
 
+    def test_kline_rows_normalize_timestamp_units_before_intersection(self):
+        raw=[
+            ["1700000000000000","1","2"],
+            ["1700000060000","1","2"],
+            ["1700000120000000000","1","2"],
+        ]
+        normalized=hr._normalize_kline_rows(raw)
+        self.assertEqual([int(row[0]) for row in normalized],[
+            1_700_000_000_000,
+            1_700_000_060_000,
+            1_700_000_120_000,
+        ])
+
+    def test_label_alignment_diagnostics_reports_exact_future_join(self):
+        rows=[
+            (0,[1,2],100.0),
+            (60_000,[1,2],101.0),
+            (120_000,[1,2],102.0),
+            (180_000,[1,2],103.0),
+        ]
+        d=hr.label_alignment_diagnostics(rows,2)
+        self.assertEqual(d["rows"],4)
+        self.assertEqual(d["unique_timestamps"],4)
+        self.assertEqual(d["future_timestamp_hits"],2)
+        self.assertEqual(d["minute_aligned_ratio"],1.0)
+
+    def test_metrics_rejects_empty_label_array(self):
+        with self.assertRaises(ValueError):
+            hr.metrics(np.asarray([],dtype=object),np.empty((0,3)))
+
     def test_archive_epoch_normalization_produces_canonical_ms_key(self):
         raw_us=1_700_000_000_000_000
         normalized=hr._normalize_epoch_ms(raw_us)
@@ -96,8 +126,11 @@ class HistoricalTargetTests(unittest.TestCase):
             self.assertFalse(corrupt.exists())
 
             valid=Path(tmp)/"valid.json"
-            valid.write_text('[["x"]]',encoding="utf-8")
-            self.assertEqual(hr._load_nonempty_cached_rows(valid), [["x"]])
+            valid.write_text('[["1700000000000000","1","2"]]',encoding="utf-8")
+            self.assertEqual(
+                hr._load_nonempty_cached_rows(valid),
+                [["1700000000000","1","2"]],
+            )
             self.assertTrue(valid.exists())
 
     def test_invalid_base_price_is_skipped(self):
