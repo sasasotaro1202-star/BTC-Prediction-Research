@@ -84,13 +84,20 @@ def init_connection(con):
             ('actual_price_', 'REAL'),
             ('actual_direction_', 'TEXT'),
             ('correct_', 'INTEGER'),
-            ('settled_', 'TEXT'),
-            ('settlement_source_', 'TEXT'),
         ):
             name = prefix + horizon
             if name not in columns:
                 con.execute(f'ALTER TABLE predictions ADD COLUMN {name} {sql_type}')
                 columns.add(name)
+
+        settlement_name = f'settled_{horizon}_at_utc'
+        if settlement_name not in columns:
+            con.execute(f'ALTER TABLE predictions ADD COLUMN {settlement_name} TEXT')
+            columns.add(settlement_name)
+        settlement_source_name = f'settlement_source_{horizon}'
+        if settlement_source_name not in columns:
+            con.execute(f'ALTER TABLE predictions ADD COLUMN {settlement_source_name} TEXT')
+            columns.add(settlement_source_name)
 
 
 def connect():
