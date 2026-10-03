@@ -43,10 +43,27 @@ class TestBlendCalibration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / 'predictions.db'
             scenario_json = json.dumps({
+                'production_mode': 'binance_primary',
+                'decision_time_utc': '2026-10-03T08:00:00+00:00',
+                'provenance': {
+                    'available_at': '2026-10-03T08:00:00+00:00',
+                    'retrieved_at': '2026-10-03T08:00:00+00:00',
+                    'prediction_cutoff': '2026-10-03T08:00:00+00:00',
+                    'sources': {
+                        name: {
+                            'status': 'ok',
+                            'event_time': '2026-10-03T08:00:00+00:00',
+                            'available_at': '2026-10-03T08:00:00+00:00',
+                            'retrieved_at': '2026-10-03T08:00:00+00:00',
+                            'prediction_cutoff': '2026-10-03T08:00:00+00:00',
+                        }
+                        for name in ('binance_futures', 'binance_depth', 'binance_taker', 'binance_premium')
+                    },
+                },
                 'components': {
                     'model_raw_10m': {'UP': 0.30, 'DOWN': 0.40, 'FLAT': 0.30},
                     'structural_10m': {'UP': 0.35, 'DOWN': 0.35, 'FLAT': 0.30},
-                }
+                },
             })
             with sqlite3.connect(db) as con:
                 con.execute('CREATE TABLE model_registry (horizon TEXT, production_version TEXT)')
