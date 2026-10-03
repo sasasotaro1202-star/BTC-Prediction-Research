@@ -129,7 +129,14 @@ jobs:
                   raise SystemExit(f"{h}: exhaustive feature pattern screen incomplete: {hz.get('patterns_completed')}/255")
               if len(hz.get('all_patterns',[])) != 127:
                   raise SystemExit(f"{h}: all pattern records were not materialized")
-          print('exhaustive feature-family pattern screen: COMPLETE')
+          fine=o.get('fine_grained_ablation',{})
+          for h in ('5m','10m'):
+              fh=fine.get(h,{})
+              if fh.get('frontier_single_add_count') != 51 or len(fh.get('frontier_single_add',[])) != 51:
+                  raise SystemExit(f'{h}: frontier singleton attribution incomplete')
+              if fh.get('base_single_remove_count') != 41 or len(fh.get('base_single_remove',[])) != 41:
+                  raise SystemExit(f'{h}: base singleton attribution incomplete')
+          print('exhaustive feature-family + singleton attribution screen: COMPLETE')
           PY
 
       - name: Reject raw archive files in Git workspace
