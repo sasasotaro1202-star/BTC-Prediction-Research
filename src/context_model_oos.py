@@ -322,76 +322,112 @@ def dynamic_route_predictions(train_rows, test_rows, factories):
     """Research-only soft routing: blend global and contextual specialists.
 
     Context thresholds, specialist selection and model weights are frozen from
-    train_rows. If a specialist is unavailable, the global model remains the
-    fallback. No test labels participate in any routing decision.
+    train_rows. The soft router builds its own global ensemble directly instead
+    of first running the unused hard-router path. This preserves the same
+    label-free routing policy while avoiding a large amount of duplicate model
+    fitting. No test labels participate in any routing decision.
     """
-    base=route_predictions(train_rows,test_rows,factories)
-    if base is None:
+    if len(train_rows) < MIN_SPECIALIST_TRAIN:
         return None
-    thresholds=base["thresholds"]
-    global_weights=dynamic_ensemble_weights(train_rows,factories)
+
+    thresholds = fit_context_thresholds(train_rows)
+    global_weights = dynamic_ensemble_weights(train_rows, factories)
     if not global_weights:
-        return base
+        # Preserve the conservative legacy fallback only when the soft-weight
+        # estimator itself cannot produce a valid pre-test ensemble.
+        return route_predictions(train_rows, test_rows, factories)
+
+    X = np.asarray([r["x"] for r in train_rows], dtype=float)
+    y = np.asarray([r["y"] for r in train_rows])
+    if len(set(y.tolist())) < 3:
+        return None
+
     # Train one model per factory once on the complete pre-test window.
-    models={}
-    X=np.asarray([r["x"] for r in train_rows],dtype=float)
-    y=np.asarray([r["y"] for r in train_rows])
-    for name,factory in factories.items():
+    models = {}
+    for name, factory in factories.items():
         try:
-            m=factory(); m.fit(X,y); models[name]=m
+            model = factory()
+            model.fit(X, y)
+            models[name] = model
         except Exception:
             pass
     if not models:
-        return base
-    global_mix=np.zeros((len(test_rows),3),dtype=float)
-    for name,w in global_weights.items():
+        return route_predictions(train_rows, test_rows, factories)
+
+    global_mix = np.zeros((len(test_rows), 3), dtype=float)
+    for name, weight in global_weights.items():
         if name in models:
-            global_mix += w*aligned_for_router(models[name],test_rows)
-    routed=global_mix.copy()
-    context_weights={}
+            global_mix += weight * aligned_for_router(models[name], test_rows)
+    if not np.any(global_mix):
+        return route_predictions(train_rows, test_rows, factories)
+
+    routed = global_mix.copy()
+    context_weights = {}
     for context in CONTEXTS:
-        idx=[i for i,r in enumerate(test_rows) if context_of(r,thresholds)==context]
-        if not idx: continue
-        subset=[r for r in train_rows if context_of(r,thresholds)==context]
-        if len(subset)<MIN_SPECIALIST_TRAIN or len({r["y"] for r in subset})<3:
-            context_weights[context]={"specialist":False,"n":len(idx)}
+        idx = [i for i, row in enumerate(test_rows) if context_of(row, thresholds) == context]
+        if not idx:
             continue
-        weights=dynamic_ensemble_weights(subset,factories)
+
+        subset = [row for row in train_rows if context_of(row, thresholds) == context]
+        if len(subset) < MIN_SPECIALIST_TRAIN or len({row["y"] for row in subset}) < 3:
+            context_weights[context] = {"specialist": False, "n": len(idx)}
+            continue
+
+        weights = dynamic_ensemble_weights(subset, factories)
         if not weights:
-            context_weights[context]={"specialist":False,"n":len(idx)}
+            context_weights[context] = {"specialist": False, "n": len(idx)}
             continue
-        # Specialists are blended with a conservative 70/30 global/context mix.
-        Xs=np.asarray([r["x"] for r in subset],dtype=float); ys=np.asarray([r["y"] for r in subset])
-        component_parts=[]
-        mix=np.zeros((len(idx),3),dtype=float)
-        for name,w in weights.items():
+
+        # Specialists are blended with the same conservative 70/30 global/context
+        # policy as before, but the redundant hard-router specialist selection
+        # has already been removed.
+        Xs = np.asarray([row["x"] for row in subset], dtype=float)
+        ys = np.asarray([row["y"] for row in subset])
+        component_parts = []
+        mix = np.zeros((len(idx), 3), dtype=float)
+        for name, weight in weights.items():
             try:
-                m=factories[name](); m.fit(Xs,ys)
-                p=aligned_for_router(m,[test_rows[i] for i in idx])
-                component_parts.append(p)
-                mix += w*p
+                model = factories[name]()
+                model.fit(Xs, ys)
+                probs = aligned_for_router(model, [test_rows[i] for i in idx])
+                component_parts.append(probs)
+                mix += weight * probs
             except Exception:
                 pass
+
         if component_parts:
-            mix/=mix.sum(axis=1,keepdims=True)
+            mix /= mix.sum(axis=1, keepdims=True)
             base_blend = _context_blend_weight(len(subset), weights)
             confidence = _context_confidence_factor(component_parts)
             blend = float(base_blend * confidence)
-            routed[idx]=(1.0-blend)*global_mix[idx]+blend*mix
-            context_weights[context]={
-                "specialist":True,"n":len(idx),"weights":weights,
-                "blend":blend,"base_blend":base_blend,
-                "confidence_factor":confidence,
+            routed[idx] = (1.0 - blend) * global_mix[idx] + blend * mix
+            context_weights[context] = {
+                "specialist": True,
+                "n": len(idx),
+                "weights": weights,
+                "blend": blend,
+                "base_blend": base_blend,
+                "confidence_factor": confidence,
             }
-    routed/=routed.sum(axis=1,keepdims=True)
+
+    routed /= routed.sum(axis=1, keepdims=True)
     return {
-        **base,
-        "routed_probs":routed,
-        "routing_mode":"soft_dynamic_ensemble",
-        "global_weights":global_weights,
-        "context_weights":context_weights,
-        "production_changed":False,
-        "research_only":True,
+        "global_probs": global_mix,
+        "routed_probs": routed,
+        "contexts": [context_of(row, thresholds) for row in test_rows],
+        "specialist_usage": context_weights,
+        "global_model": "soft_dynamic_ensemble",
+        "specialist_models": {
+            context: list(info.get("weights", {}).keys())
+            for context, info in context_weights.items()
+            if info.get("specialist")
+        },
+        "thresholds": thresholds,
+        "routing_mode": "soft_dynamic_ensemble",
+        "global_weights": global_weights,
+        "context_weights": context_weights,
+        "production_changed": False,
+        "research_only": True,
     }
 
 def evaluate_routing(y_true, routed_probs, global_probs):
