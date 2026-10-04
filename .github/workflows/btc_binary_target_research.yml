@@ -1,0 +1,94 @@
+name: BTC Binary Target Research
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/label_policy.py'
+      - 'src/binary_target_research.py'
+      - 'tests/test_binary_target_research.py'
+      - '.github/workflows/btc_binary_target_research.yml'
+
+concurrency:
+  group: btc-binary-target-research
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install free research dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile and test binary target
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+          python -m unittest -q tests/test_binary_target_research.py
+
+      - name: Run binary UP DOWN chronological OOS
+        run: |
+          set -euo pipefail
+          python src/binary_target_research.py
+          test -s data/historical_research/binary_target_oos.json
+
+      - name: Validate research-only and target contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/historical_research/binary_target_oos.json')
+          obj=json.loads(p.read_text(encoding='utf-8'))
+          if obj.get('research_only') is not True:
+              raise SystemExit('binary target must remain research-only')
+          if obj.get('production_changed') is not False:
+              raise SystemExit('binary target changed production state')
+          if obj.get('target_version') != 'binary_sign_v1':
+              raise SystemExit('unexpected binary target version')
+          if set(obj.get('horizons', {})) != {'5m', '10m'}:
+              raise SystemExit('binary target horizon set incomplete')
+          for h, result in obj['horizons'].items():
+              if result.get('status') == 'OK':
+                  if result.get('classes') != ['DOWN', 'UP']:
+                      raise SystemExit(f'{h}: class contract mismatch')
+                  if result.get('holdout_protected') is not True:
+                      raise SystemExit(f'{h}: holdout not protected')
+                  if result.get('promotion', {}).get('eligible') is not False:
+                      raise SystemExit(f'{h}: binary target cannot auto-promote')
+          print('binary UP/DOWN target contract: VERIFIED')
+          PY
+
+      - name: Commit research evidence only
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/binary_target_oos.json
+          if git diff --cached --quiet; then
+            echo 'No binary target evidence changes.'
+            exit 0
+          fi
+          git commit -m 'Record BTC binary UP DOWN target research evidence'
+          git fetch --prune origin main
+          if ! git merge --no-edit --strategy-option=ours origin/main; then
+            git merge --abort
+            git reset --hard origin/main
+            git add data/historical_research/binary_target_oos.json
+            git commit -m 'Record BTC binary UP DOWN target research evidence'
+          fi
+          git push origin HEAD:main
