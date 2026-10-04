@@ -24,6 +24,9 @@ DERIBIT_HISTORY_RETRY_BACKOFF_SEC=1.0
 DISCOVERY_RESULTS=8
 STRICT_PRIMARY_ACCUMULATION_TARGET=600
 HISTORICAL_ACQUISITION_MIN_INTERVAL_SEC=900
+HISTORICAL_FAILURE_CIRCUIT_THRESHOLD=4
+HISTORICAL_FAILURE_CIRCUIT_BASE_SEC=900
+HISTORICAL_FAILURE_CIRCUIT_MAX_SEC=21600
 MAX_ACQUISITION_FILES=48
 ACQUISITION_DIR=ROOT/"data/historical_research/frontier_acquisitions"
 ACQUISITION_SOURCE_IDS=("bitget_public_ws","hyperliquid_ws","deribit_public")
@@ -405,6 +408,35 @@ def _acquisition_due(state, now=None):
  except (TypeError,ValueError):
   return True
 
+
+def _historical_circuit_open(state, now=None):
+ until=state.get("historical_acquisition_backoff_until")
+ if not until:
+  return False
+ try:
+  parsed=datetime.fromisoformat(str(until).replace("Z","+00:00"))
+  current=datetime.now(timezone.utc) if now is None else now
+  if parsed.tzinfo is None:
+   return False
+  if current < parsed:
+   return True
+ except (TypeError,ValueError):
+  return False
+ state.pop("historical_acquisition_backoff_until",None)
+ return False
+
+
+def _set_historical_failure_backoff(state, now=None):
+ consecutive=int(state.get("historical_acquisition_failures",0) or 0)
+ if consecutive < HISTORICAL_FAILURE_CIRCUIT_THRESHOLD:
+  return None
+ current=datetime.now(timezone.utc) if now is None else now
+ delay=HISTORICAL_FAILURE_CIRCUIT_BASE_SEC * (2 ** max(0,consecutive-HISTORICAL_FAILURE_CIRCUIT_THRESHOLD))
+ delay=min(HISTORICAL_FAILURE_CIRCUIT_MAX_SEC,delay)
+ state["historical_acquisition_backoff_until"]=(
+  datetime.fromtimestamp(current.timestamp()+delay,timezone.utc).isoformat()
+ )
+ return state["historical_acquisition_backoff_until"]
 
 def acquire_bitget_history(end_ms=None):
  retrieved=now_utc()
@@ -832,6 +864,17 @@ def acquire_selected_research_data(frontier,gap,selected):
  out=[]
  for sid in candidate_ids[:3]:
   state=frontier["source_state"].setdefault(sid,{})
+  if _historical_circuit_open(state):
+   out.append({
+    "source_id":sid,
+    "status":"SKIPPED_CIRCUIT_BREAKER",
+    "production_eligible":False,
+    "consecutive_failures":int(state.get("historical_acquisition_failures",0) or 0),
+    "historical_acquisition_backoff_until":state.get("historical_acquisition_backoff_until"),
+    "last_historical_acquisition_error":state.get("last_historical_acquisition_error"),
+    "last_historical_acquisition_error_at":state.get("last_historical_acquisition_error_at"),
+   })
+   continue
   if sid=="deribit_public":
    if not force_historical_repair and not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
@@ -852,6 +895,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    else:
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
     state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
+    _set_historical_failure_backoff(state)
     state["last_historical_acquisition_error"]=str(
      result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
     )
@@ -878,6 +922,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    else:
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
     state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
+    _set_historical_failure_backoff(state)
     state["last_historical_acquisition_error"]=str(
      result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
     )
@@ -903,9 +948,11 @@ def acquire_selected_research_data(frontier,gap,selected):
    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
    state["historical_acquisition_failures"]=0
+   state.pop("historical_acquisition_backoff_until",None)
   else:
    state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
    state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
+   _set_historical_failure_backoff(state)
    state["last_historical_acquisition_error"]=str(
     result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
    )
