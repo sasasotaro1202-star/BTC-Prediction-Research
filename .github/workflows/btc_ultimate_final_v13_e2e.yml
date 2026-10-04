@@ -203,6 +203,20 @@ jobs:
               raise SystemExit("production artifact class contract failed")
           if any(item.get("runtime_feature_count") != 15 for item in artifacts):
               raise SystemExit("production artifact feature contract failed")
+          policy_files = provenance.get("policy_files") or {}
+          required_policy_files = {
+              "PROJECT_INSTRUCTIONS.md",
+              "docs/PROJECT_SOURCE.md",
+              "requirements.txt",
+          }
+          if set(policy_files) != required_policy_files:
+              raise SystemExit("production artifact policy provenance is incomplete")
+          if any(
+              not isinstance(value, str) or len(value) != 64
+              or any(ch not in "0123456789abcdef" for ch in value.lower())
+              for value in policy_files.values()
+          ):
+              raise SystemExit("production artifact policy hash contract failed")
           print("production artifact provenance/runtime contract: VERIFIED")
           PY
 
@@ -284,6 +298,20 @@ jobs:
                   failures.append('production_artifact_class_contract_failed')
               if any(item.get('runtime_feature_count') != 15 for item in artifacts):
                   failures.append('production_artifact_feature_contract_failed')
+              policy_files = provenance.get('policy_files') or {}
+              required_policy_files = {
+                  'PROJECT_INSTRUCTIONS.md',
+                  'docs/PROJECT_SOURCE.md',
+                  'requirements.txt',
+              }
+              if set(policy_files) != required_policy_files:
+                  failures.append('production_artifact_policy_provenance_incomplete')
+              if any(
+                  not isinstance(value, str) or len(value) != 64
+                  or any(ch not in '0123456789abcdef' for ch in value.lower())
+                  for value in policy_files.values()
+              ):
+                  failures.append('production_artifact_policy_hash_contract_failed')
           if not policy_path.is_file():
               failures.append('missing_v13_policy_output')
           else:
