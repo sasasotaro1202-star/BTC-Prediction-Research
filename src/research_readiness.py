@@ -40,12 +40,36 @@ def classify_state(
     verified_primary_predictions: int,
     min_strict_pit_rows: int,
     promotion_status: str,
+    primary_horizon_gate: dict[str, Any] | None = None,
 ) -> tuple[str, list[str]]:
     if production_integrity != "PASS":
         return "BLOCKED_INTEGRITY", ["production_integrity_not_pass"]
     if not research_health_ok:
         return "BLOCKED_DATA_HEALTH", ["research_health_not_pass"]
-    if not pit_verified or verified_primary_predictions < min_strict_pit_rows:
+    if not pit_verified:
+        return (
+            "PIT_COLLECTION",
+            [f"strict_primary_pit<{min_strict_pit_rows} ({verified_primary_predictions}/{min_strict_pit_rows})"],
+        )
+    if not isinstance(primary_horizon_gate, dict) or set(primary_horizon_gate) != set(HORIZONS):
+        return "PIT_COLLECTION", ["per_horizon_strict_pit_gate_missing_or_invalid"]
+    horizon_failures = []
+    for horizon in HORIZONS:
+        item = primary_horizon_gate.get(horizon)
+        if not isinstance(item, dict):
+            horizon_failures.append(f"{horizon}:missing")
+            continue
+        try:
+            settled = int(item.get("strict_primary_settled", -1))
+            item_minimum = int(item.get("minimum", min_strict_pit_rows))
+        except (TypeError, ValueError):
+            horizon_failures.append(f"{horizon}:invalid_counts")
+            continue
+        if settled < min_strict_pit_rows or item_minimum < min_strict_pit_rows or item.get("ready") is not True:
+            horizon_failures.append(f"{horizon}:{settled}/{min_strict_pit_rows}")
+    if horizon_failures:
+        return "PIT_COLLECTION", ["per_horizon_strict_pit_gate_failed:" + ",".join(horizon_failures)]
+    if verified_primary_predictions < min_strict_pit_rows:
         return (
             "PIT_COLLECTION",
             [f"strict_primary_pit<{min_strict_pit_rows} ({verified_primary_predictions}/{min_strict_pit_rows})"],
@@ -185,6 +209,7 @@ def build_readiness(
         verified_primary_predictions=primary,
         min_strict_pit_rows=minimum,
         promotion_status=str(promotion.get("promotion_status", "HOLD")),
+        primary_horizon_gate=pit.get("primary_horizon_gate"),
     )
     if state == "RESEARCH_VALIDATION" and not calibration_ready:
         state = "CALIBRATION_COLLECTION"
@@ -212,6 +237,7 @@ def build_readiness(
             "minimum": minimum,
             "remaining": max(0, minimum - primary),
             "violation_count": int(pit.get("violation_count", -1)),
+            "per_horizon_gate": pit.get("primary_horizon_gate"),
         },
         "calibration": {
             "all_horizons_ready": calibration_ready,
