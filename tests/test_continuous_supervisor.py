@@ -112,3 +112,27 @@ def test_frontier_push_trigger_excludes_test_only_changes():
     assert 'src/btc_data_frontier_autoselect.py' in trigger
     assert 'tests/test_btc_data_frontier_autoselect.py' not in trigger
     assert '.github/workflows/btc_autonomous_data_frontier.yml' not in trigger
+
+
+def test_supervisor_has_event_driven_recovery_triggers():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    for workflow in (
+        'BTC Live Cycle',
+        'BTC Binance WS Collector',
+        'BTC PIT OOS Audit',
+        'BTC Archive Refresh Research',
+        'BTC Research Readiness Audit',
+        'BTC Adaptive Calibration Replay Research',
+        'BTC Experience Policy OOS Learning',
+        'BTC Selective Prediction OOS',
+        'BTC Rich Production Challenger',
+        'BTC Ultimate Final V13 — Maximum Future-Generalization E2E',
+        'BTC Autonomous Data Frontier',
+    ):
+        assert f'- "{workflow}"' in text
+    assert 'types: [completed]' in text
+
+
+def test_supervisor_records_trigger_event():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert '"trigger_event": "${GITHUB_EVENT_NAME}"' in text
