@@ -48,6 +48,24 @@ jobs:
           python -m compileall -q src tests
           python -m unittest -q tests/test_binary_target_research.py
 
+      - name: Require repository prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+
+      - name: Restore repository prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          print('Restored prediction state for binary target research.')
+          PY
+          test -s data/predictions.db
+
       - name: Run binary UP DOWN chronological OOS
         run: |
           set -euo pipefail
