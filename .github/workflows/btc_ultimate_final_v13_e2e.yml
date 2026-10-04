@@ -216,6 +216,7 @@ jobs:
           python -m json.tool data/historical_research/prediction_policy_oos.json >/dev/null
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           root=Path('data/historical_research')
           obj=json.loads((root/'maximum_future_generalization_v6_registry.json').read_text())
@@ -266,7 +267,7 @@ jobs:
           else:
               artifact=json.loads(artifact_path.read_text())
               provenance=artifact.get('provenance') or {}
-              expected_sha=__import__('os').environ.get('GITHUB_SHA')
+              expected_sha=os.environ.get('GITHUB_SHA')
               if not expected_sha:
                   failures.append('missing_github_sha')
               else:
