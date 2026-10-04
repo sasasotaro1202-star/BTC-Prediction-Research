@@ -54,5 +54,11 @@ class LiveResearchEvidenceContractTests(unittest.TestCase):
         self.assertIn("os.environ.get('GITHUB_SHA')", gate)
         self.assertIn("V13 FINAL SAFETY GATE: FAIL", gate)
 
+    def test_v13_run_start_is_before_fail_fast_preflight(self):
+        text = (ROOT / ".github" / "workflows" / "btc_ultimate_final_v13_e2e.yml").read_text(encoding="utf-8")
+        start = text.index("      - name: Record V13 run start")
+        preflight = text.index("      - name: Preflight compile and full tests")
+        self.assertLess(start, preflight)
+
 if __name__ == "__main__":
     unittest.main()
