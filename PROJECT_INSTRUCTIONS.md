@@ -80,3 +80,11 @@ The latest fixed CI run for binary_sign_v1 completed successfully. It remains re
 - 10m live Binance-primary strict-PIT: n=395, accuracy 0.56962, logloss 0.68836, Brier 0.24761, ECE 0.05565.
 - Frozen holdout is descriptive only and remains protected from candidate selection.
 - Production replacement remains prohibited; independent longer robustness, calibration and shadow evidence are still required.
+
+## Binary research integrity additions
+
+For binary_sign_v1, live-primary research training data must pass a knowledge-time firewall: a label is eligible only when its target/outcome timestamp is strictly before the first live prediction cutoff. Creation time alone is insufficient.
+
+Binary chronological WFO evidence must retain a same-block frequency baseline, fold timestamps, sample size, Accuracy 95% CI, approximate effective sample size, worst/newest fold, and non-degraded fold fractions. Missing evidence is FAIL-CLOSED. The frequency baseline cannot be selected as a trainable challenger.
+
+These controls are research-only and must not modify Production without the full local PIT → OOS/WFO → calibration → robustness → holdout → shadow → promotion sequence.
