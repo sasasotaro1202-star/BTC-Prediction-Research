@@ -110,6 +110,27 @@ jobs:
             route_priority=100
             route_evidence_state='ROUTER_FAILURE'
             route_signals='["router_failed_fail_closed"]'
+            cat > autonomous_route.json <<EOF
+          {
+            "workflow": "btc_research_readiness.yml",
+            "threshold_seconds": 3600,
+            "reason": "router_failed_fail_closed",
+            "production_impact": false,
+            "priority": 100,
+            "evidence_state": "ROUTER_FAILURE",
+            "signals": ["router_failed_fail_closed"],
+            "candidates": [
+              {
+                "workflow": "btc_research_readiness.yml",
+                "threshold_seconds": 3600,
+                "reason": "router_failed_fail_closed",
+                "production_impact": false,
+                "priority": 100,
+                "evidence_state": "ROUTER_FAILURE"
+              }
+            ]
+          }
+          EOF
           fi
 
           dispatch_if_stale() {
