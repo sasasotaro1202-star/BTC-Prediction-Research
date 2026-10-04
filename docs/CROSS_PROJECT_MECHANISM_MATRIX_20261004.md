@@ -1,10 +1,10 @@
 # Cross-project mechanism matrix — 2026-10-04
 
-HEADs verified against each repository's `main` ref at the time of this synchronization.
+The listed SHAs are capture-time references verified against each repository's `main` ref during this synchronization; they are not live pointers.
 
 This document records mechanism-level references only. No performance, OOS, holdout, production, prediction, or data result from another repository is transfer evidence for BTC.
 
-| Repository | Current main HEAD | Mechanism reference | BTC treatment |
+| Repository | main HEAD at synchronization | Mechanism reference | BTC treatment |
 |---|---|---|---|
 | BTC-Prediction-Research | a20179a9612a083fd3eda50e284f4bcd0cd690b4 | strict PIT, production bundle, resumable flow cache, per-horizon readiness | Canonical local implementation |
 | 7-Sport-Prediction-Research | b6a6934b3de15b58d66c7b871e8e7aed51129e22 | fail-closed pre-event enrichment, success-only checkpoints, single-writer critical state, cluster-aware evaluation | Reference mechanism; local adaptation required |
@@ -22,10 +22,3 @@ DISCOVER → ABSTRACT_MECHANISM → COMPATIBILITY → LOCAL_IMPLEMENTATION → T
 - Production Artifact Audit provenance manifest binding policy/config hashes to the audited SHA.
 - Cross-project governance and current mechanism matrix in the canonical source layer.
 - Resumable Binance Flow collector serialization and no-stale-overwrite controls remain in the current main branch.
-
-## Still research-frontier / not claimed as locally validated
-
-- Full event-cluster bootstrap across all BTC prediction revisions.
-- Full outcome-maturity metadata propagation through every experience/failure-risk surface.
-- End-to-end nested training-window/router selection with an independent BTC holdout.
-- Production promotion: no change in this update.
