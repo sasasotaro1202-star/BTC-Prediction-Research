@@ -52,6 +52,18 @@ class ContextRouterTests(unittest.TestCase):
         np.testing.assert_allclose(a["routed_probs"], b["routed_probs"])
         self.assertEqual(a["routing_mode"], "soft_dynamic_ensemble")
 
+    def test_dynamic_router_skips_redundant_hard_router_path(self):
+        train = make_rows(320)
+        test = make_rows(20, offset=350)
+        factories = {"logreg": factory}
+        with unittest.mock.patch(
+            "src.context_model_oos.route_predictions",
+            side_effect=AssertionError("redundant hard router path invoked"),
+        ):
+            result = dynamic_route_predictions(train, test, factories)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["routing_mode"], "soft_dynamic_ensemble")
+
     def test_dynamic_router_weights_are_normalized(self):
         train = make_rows(320)
         result = dynamic_route_predictions(train, make_rows(20, offset=400), {"logreg": factory})
