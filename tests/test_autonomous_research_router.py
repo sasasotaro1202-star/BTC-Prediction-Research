@@ -124,6 +124,40 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["candidates"][1]["workflow"], "btc_selective_prediction_oos.yml")
             self.assertIn("5m:high_confidence_gap=0.420;n=52", route["signals"])
 
+    def test_material_drift_routes_uncertainty_research(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "innovative_control_5m_drift_detector.json",
+                {
+                    "horizon": "5m",
+                    "research_only": True,
+                    "latest_drift": {"drift_score": 0.045, "model_disagreement_drift": 0.131},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_uncertainty_layer_oos.yml")
+            self.assertEqual(route["priority"], 84)
+            self.assertIn("5m:drift_score=0.045;model_disagreement_drift=0.131", route["signals"])
+
+    def test_immature_or_non_research_drift_does_not_route(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "innovative_control_5m_drift_detector.json",
+                {
+                    "horizon": "5m",
+                    "research_only": False,
+                    "latest_drift": {"drift_score": 1.0, "model_disagreement_drift": 1.0},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
     def test_frontier_is_used_when_no_higher_priority_issue_exists(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

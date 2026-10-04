@@ -1342,6 +1342,8 @@ risk
 
 からprioritizeする。
 
+GitHub-side deterministic routing may use durable drift and model-disagreement evidence as an uncertainty-research trigger. This is research prioritization only; it cannot alter Production and must remain behind PIT/health hard gates.
+
 ⸻
 
 58. RESEARCH STOPPING

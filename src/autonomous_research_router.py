@@ -21,6 +21,7 @@ ALLOWED = {
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_experience_policy_oos.yml": 21600,
     "btc_selective_prediction_oos.yml": 43200,
+    "btc_uncertainty_layer_oos.yml": 21600,
     "btc_rich_production_challenger.yml": 86400,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
@@ -29,6 +30,8 @@ MIN_STRICT_PIT_ROWS = 300
 MIN_CALIBRATION_ROWS = 400
 HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
+DRIFT_SCORE_TRIGGER = 0.10
+MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -135,6 +138,28 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
     if not hold or not blockers:
         return False, []
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
+
+
+def _uncertainty_drift_signals(root: Path) -> list[str]:
+    """Return research-only uncertainty triggers from durable drift evidence."""
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        obj = _load(root / "data" / "historical_research" / f"innovative_control_{horizon}_drift_detector.json")
+        if obj is None or obj.get("research_only") is not True:
+            continue
+        latest = obj.get("latest_drift")
+        if not isinstance(latest, dict):
+            continue
+        try:
+            drift_score = float(latest["drift_score"])
+            disagreement = float(latest["model_disagreement_drift"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if drift_score >= DRIFT_SCORE_TRIGGER or disagreement >= MODEL_DISAGREEMENT_DRIFT_TRIGGER:
+            signals.append(
+                f"{horizon}:drift_score={drift_score:.3f};model_disagreement_drift={disagreement:.3f}"
+            )
+    return signals
 
 
 def _high_confidence_overreach(root: Path) -> list[str]:
@@ -257,6 +282,7 @@ def choose(root: Path) -> dict[str, Any]:
     promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
+    uncertainty_signals = _uncertainty_drift_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -277,6 +303,15 @@ def choose(root: Path) -> dict[str, Any]:
             90,
             "PROMOTION_HOLD_RESEARCH",
             promotion_signals,
+        ))
+
+    if uncertainty_signals:
+        routes.append(_decision(
+            "btc_uncertainty_layer_oos.yml",
+            "material_drift_or_model_disagreement_requires_uncertainty_research",
+            84,
+            "DRIFT_UNCERTAINTY_RISK",
+            uncertainty_signals,
         ))
 
     if overreach_signals:
