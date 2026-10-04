@@ -20,6 +20,7 @@ def test_supervisor_monitors_case_adaptation_research_lanes():
         'btc_multiscale_frozen_replay.yml',
         'btc_time_regime_research.yml',
         'btc_selective_prediction_oos.yml',
+        'btc_uncertainty_layer_oos.yml',
     ):
         assert f'dispatch_if_stale {workflow}' in text
 
