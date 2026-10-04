@@ -325,7 +325,17 @@ def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
         }
 
     first_live = min(r["created"] for r in live_rows)
-    train = [r for r in archive_rows if r["created"] < first_live]
+    first_live_dt = datetime.fromisoformat(str(first_live).replace("Z", "+00:00"))
+    # Knowledge-time firewall: the training label must have matured strictly
+    # before the first live prediction cutoff. Creation time alone is not enough.
+    train = []
+    for r in archive_rows:
+        try:
+            target_dt = datetime.fromisoformat(str(r.get("target")).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if target_dt < first_live_dt:
+            train.append(r)
     if len(train) < MIN_TRAIN:
         return {
             "status": "DEFERRED",
