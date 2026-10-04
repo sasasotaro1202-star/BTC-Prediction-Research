@@ -11,7 +11,10 @@ from typing import Iterable
 
 import numpy as np
 
-from feature_schema import FEATURES
+try:
+    from src.feature_schema import FEATURES
+except ModuleNotFoundError:
+    from feature_schema import FEATURES
 
 STATE_COUNT = 18
 STATE_NAME = "direction_x_momentum_x_disagreement"
@@ -178,14 +181,15 @@ def trajectory_forecast_matrix(
 ) -> dict[str, object]:
     """Return row-wise multi-step future-state direction probabilities."""
     state_ids = states_from_panel(panel, features)
-    transition = build_transition_matrix(prior_state_sequences)
+    prior_sequences = [list(seq) for seq in prior_state_sequences]
+    transition = build_transition_matrix(prior_sequences)
     rows: dict[str, list[list[float]]] = {str(step): [] for step in range(1, int(max_steps) + 1)}
     for identifier in state_ids:
         forecast = forecast_probabilities(identifier, transition, int(max_steps))
         for step, probs in forecast.items():
             rows[step].append(probs)
 
-    transition_count = sum(max(0, len(list(seq)) - 1) for seq in prior_state_sequences)
+    transition_count = sum(max(0, len(seq) - 1) for seq in prior_sequences)
     return {
         "status": "OK" if transition_count >= 50 else "PARTIAL",
         "state_space": STATE_COUNT,
@@ -196,7 +200,7 @@ def trajectory_forecast_matrix(
         "transition_evidence": {
             "observed_transitions": int(transition_count),
             "minimum_for_full_status": 50,
-            "prior_sequences": sum(1 for _ in prior_state_sequences),
+            "prior_sequences": len(prior_sequences),
         },
     }
 
