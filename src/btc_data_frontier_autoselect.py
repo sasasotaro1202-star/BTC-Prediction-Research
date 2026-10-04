@@ -547,6 +547,15 @@ def summarize_acquisition_evidence(frontier=None):
    "record_count":int(state.get("historical_total_records_acquired",0) or 0),
    "batch_count":int(state.get("historical_batches_acquired",0) or 0),
    "acquisition_failures":int(state.get("historical_acquisition_failures",0) or 0),
+   "acquisition_failures_total":int(state.get("historical_acquisition_failures_total",0) or 0),
+   "acquisition_failure_rate":(
+    int(state.get("historical_acquisition_failures_total",0) or 0)
+    / max(
+     1,
+     int(state.get("historical_batches_acquired",0) or 0)
+     + int(state.get("historical_acquisition_failures_total",0) or 0),
+    )
+   ),
    "last_acquisition_error":state.get("last_historical_acquisition_error"),
    "last_acquisition_error_at":state.get("last_historical_acquisition_error_at"),
    "payload_hash_present":bool(state.get("last_historical_payload_sha256")),
@@ -837,6 +846,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["historical_acquisition_failures"]=0
    else:
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+    state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
     state["last_historical_acquisition_error"]=str(
      result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
     )
@@ -862,6 +872,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["historical_acquisition_failures"]=0
    else:
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+    state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
     state["last_historical_acquisition_error"]=str(
      result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
     )
@@ -889,6 +900,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    state["historical_acquisition_failures"]=0
   else:
    state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
+   state["historical_acquisition_failures_total"]=int(state.get("historical_acquisition_failures_total",0))+1
    state["last_historical_acquisition_error"]=str(
     result.get("error") or f"{result.get('source_id',sid)}_historical_acquisition_failed"
    )
