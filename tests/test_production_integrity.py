@@ -70,6 +70,26 @@ class TestProductionIntegrityDeferred(unittest.TestCase):
                         "5m", "generation-A", "b" * 64
                     )
 
+    def test_calibration_hash_missing_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model_dir = root / "models"
+            model_dir.mkdir()
+            (model_dir / "5m.calibration.json").write_text(
+                json.dumps({
+                    "horizon": "5m",
+                    "model_version": "generation-A",
+                    "n_settled": 400,
+                    "temperature": 1.0,
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(production_integrity, "MODEL_DIR", model_dir):
+                with self.assertRaisesRegex(RuntimeError, "calibration artifact hash missing"):
+                    production_integrity.check_calibration_bindings(
+                        "5m", "generation-A", "b" * 64
+                    )
+
     def test_unvalidated_blend_does_not_require_hash_but_generation_is_bound(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
