@@ -182,3 +182,5 @@ Autonomous engineering PRs may be merged by the repository workflow only when th
 
 The auto-merge workflow never checks out or executes PR code, keeps Production mutation paths fail-closed, uploads an audit artifact, and treats merge rejection as HOLD rather than success. It does not bypass PIT/OOS/calibration/robustness/holdout/shadow/promotion policy. Research PRs without the explicit marker remain manual by design.
 
+
+The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.

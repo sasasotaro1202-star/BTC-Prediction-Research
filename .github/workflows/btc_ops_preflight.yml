@@ -152,6 +152,7 @@ jobs:
               "<!-- btc-automerge:research-only -->",
               "head_repo != \"$REPO\"",
               "data/*|models/*|registry/*",
+              ".github/workflows/*",
               "-f sha=\"$head_sha\"",
               "-f merge_method=squash",
               "actions/upload-artifact@v6",

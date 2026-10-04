@@ -2678,3 +2678,12 @@ Sensitive-path blocking is fail-closed. A research PR that changes Production ar
 
 Manual GitHub repository Auto-Merge configuration is therefore not a prerequisite for safe research-PR automation. This automation is an engineering convenience only and is never evidence of research success or Production readiness.
 
+
+
+⸻
+
+115. AUTO-MERGE GATE SELF-PROTECTION
+
+The research PR auto-merge gate is protected from self-modification.
+
+Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
