@@ -150,7 +150,7 @@ jobs:
               "pull-requests: write",
               "checks: read",
               "<!-- btc-automerge:research-only -->",
-              "head_repo != \"$REPO\"",
+              'if [ "$head_repo" != "$REPO" ]; then',
               "data/*|models/*|registry/*",
               ".github/workflows/*",
               "-f sha=\"$head_sha\"",
