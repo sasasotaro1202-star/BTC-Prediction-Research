@@ -14,7 +14,7 @@ Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to 
 Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
 
 ## Current evidence snapshot
-The current recorded strict PIT audit is PASS for the admitted primary scope: 5m strict primary settled = 402 and 10m strict primary settled = 400, each independently above the 300-row per-horizon gate; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41). Robustness evidence is still sample-limited: current Production model evidence is 259 rows for 5m and 400 rows for 10m versus the 1,000-row robustness minimum, so both remain research-only. The situation-metadata cohort still needs 2,602 additional qualifying 5m-cycle rows for 5m and 2,604 for 10m to reach the 3,000-row maturity target. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
+The current recorded strict PIT audit is PASS for the admitted primary scope: 5m strict primary settled = 402 and 10m strict primary settled = 400, each independently above the 300-row per-horizon gate; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41). Robustness evidence is still sample-limited: current Production model evidence is 261 rows for 5m and 404 rows for 10m versus the 1,000-row robustness minimum, so both remain research-only. The situation-metadata cohort still needs 2,602 additional qualifying 5m-cycle rows for 5m and 2,604 for 10m to reach the 3,000-row maturity target. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
 Current production artifact bindings recorded in the repository are:
 - 5m: `bootstrap.soft_ensemble.v5.4`
 - 10m: `bootstrap.bootstrap_rf`
@@ -150,11 +150,12 @@ The evidence snapshot in this file is descriptive and may age immediately. On ev
 
 When asked to try many patterns, use a dedicated research-only matrix rather than changing Production. The matrix separates target/horizon, feature family, model family/parameters, training window, calibration, ensemble, routing, uncertainty/selective actions, timing/information acquisition, and source scope.
 
-The current matrix is 7 feature sets × 6 deterministic model variants × 2 training-window policies = 84 configurations per primary horizon (5m and 10m). It screens on chronological development WFO, retains a same-block frequency baseline, applies purge/embargo, and re-evaluates a bounded finalist set with prequential temperature calibration, incumbent same-observation comparison, dependence-aware block bootstrap, effective sample size, worst/newest block and protected frozen-holdout description.
+The current matrix is 10 feature sets × 8 deterministic model variants × 3 training-window policies = 240 configurations per primary horizon (5m and 10m). It screens on chronological development WFO, retains a same-block frequency baseline, applies purge/embargo, and re-evaluates a bounded finalist set with prequential temperature calibration, incumbent same-observation comparison, dependence-aware block bootstrap, effective sample size, worst/newest block and protected frozen-holdout description.
 
-Feature patterns: all_15, returns_momentum, volatility_regime, candle_shape, volume_flow, trend, compact_cross.
-Model patterns: logreg_c0.1, logreg_c1.0, extra_trees, rf, hgb, soft_ensemble.
-Window patterns: expanding, recent_3000.
+Feature patterns: all_15, returns_momentum, volatility_regime, candle_shape, volume_flow, trend, compact_cross, mean_reversion, price_structure, flow_trend.
+Model patterns: logreg_c0.03, logreg_c0.1, logreg_c1.0, logreg_c3.0, extra_trees, rf, hgb, soft_ensemble.
+Window patterns: expanding, recent_1500, recent_3000.
+Finalist selection is multi-objective rank-based across LogLoss, Brier, accuracy stability, improved-fold ratios and worst-case block behavior, with deterministic diversity bonuses across feature pattern, model family and training window. Frozen holdout remains excluded from selection and gate.
 
 Exploratory winners are not Production evidence. The frozen holdout never chooses a pattern, feature, model, window, calibration, router, threshold or promotion decision.
 
