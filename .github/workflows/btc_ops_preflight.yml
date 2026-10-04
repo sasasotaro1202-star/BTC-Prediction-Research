@@ -145,6 +145,36 @@ jobs:
       - name: Compile BTC source and test modules
         run: python -m compileall -q src tests scripts
 
+      - name: Validate autonomous research router output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/autonomous_research_router.py > /tmp/autonomous_route.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          obj = json.loads(Path("/tmp/autonomous_route.json").read_text(encoding="utf-8"))
+          allowed = {
+              "btc_research_readiness.yml",
+              "btc_autonomous_data_frontier.yml",
+              "btc_adaptive_calibration_replay.yml",
+              "btc_experience_policy_oos.yml",
+              "btc_rich_production_challenger.yml",
+              "btc_ultimate_final_v13_e2e.yml",
+          }
+          if obj.get("workflow") not in allowed:
+              raise SystemExit("router produced workflow outside allowlist")
+          if obj.get("production_impact") is not False:
+              raise SystemExit("router production_impact must be false")
+          threshold = obj.get("threshold_seconds")
+          if not isinstance(threshold, (int, float)) or not (0 < threshold <= 604800):
+              raise SystemExit("router threshold is outside safe bounds")
+          if not isinstance(obj.get("reason"), str) or not obj["reason"]:
+              raise SystemExit("router reason missing")
+          print("autonomous research router contract: VERIFIED")
+          PY
+
       - name: Smoke-test rolling challenger factory registry
         shell: bash
         run: |
