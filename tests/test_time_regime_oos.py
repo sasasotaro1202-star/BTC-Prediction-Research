@@ -61,5 +61,37 @@ class StateTrajectoryOOSTests(unittest.TestCase):
         self.assertTrue(out["research_only"])
         self.assertFalse(out["production_changed"])
 
+
+    def test_missing_intervals_do_not_create_false_trajectory_pairs(self):
+        from src.state_trajectory_oos import _build_pairs
+
+        rows = []
+        from datetime import datetime, timedelta, timezone
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        for i in range(12):
+            rows.append({"id": i, "created": (start + timedelta(minutes=5 * i)).isoformat(), "x": [float(i)] * 15})
+        rows.pop(5)
+        pairs = _build_pairs(rows, 2)
+        self.assertFalse(any(p["from_index"] == 4 for p in pairs))
+        self.assertTrue(all(p["elapsed_minutes"] == 10 for p in pairs))
+
+    def test_trajectory_state_vocabulary_is_frozen_for_cross_fold_comparability(self):
+        from src.state_trajectory_oos import build_trajectory_oos
+
+        rows = []
+        from datetime import datetime, timedelta, timezone
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        for i in range(220):
+            rows.append({
+                "id": i,
+                "created": (start + timedelta(minutes=5 * i)).isoformat(),
+                "x": [float((i // 20) % 4)] * 15,
+            })
+        out = build_trajectory_oos(
+            rows, steps=(1, 2), n_clusters=4, min_train=80, test_block=20, min_oos=60
+        )
+        self.assertEqual(out["state_definition"], "frozen_initial_training_window")
+        self.assertEqual(out["state_vocabulary_fit_rows"], 80)
+
 if __name__ == "__main__":
     unittest.main()
