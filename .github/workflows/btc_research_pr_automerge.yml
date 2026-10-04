@@ -3,6 +3,7 @@ name: BTC Research PR Auto Merge
 # GitHub-side merge automation for explicitly marked, research-only PRs.
 # It never runs repository code from the PR, never checks out the PR branch,
 # and hard-denies Production/data/holdout state changes.
+# Any GitHub API failure terminates the job before a merge request can be attempted.
 on:
   pull_request_target:
     branches: [main]
