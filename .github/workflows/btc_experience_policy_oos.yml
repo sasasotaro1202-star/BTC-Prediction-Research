@@ -276,6 +276,15 @@ jobs:
               if item.get("status") == "OK":
                   if item.get("model",{}).get("trained_only_on_prior_settled_experiences") is not True:
                       raise SystemExit(f"{h}: prequential boundary missing")
+                  confidence = item.get("prediction_confidence_reliability", {})
+                  if int(confidence.get("n", 0)) != int(item.get("prequential_test_rows", 0)):
+                      raise SystemExit(f"{h}: confidence reliability sample mismatch")
+                  high = confidence.get("high_confidence_overconfidence")
+                  if not isinstance(high, dict) or high.get("bucket") != "0.70+":
+                      raise SystemExit(f"{h}: high-confidence reliability bucket missing")
+                  risk = item.get("error_risk_reliability", {})
+                  if int(risk.get("n", 0)) != int(item.get("prequential_test_rows", 0)):
+                      raise SystemExit(f"{h}: error-risk reliability sample mismatch")
           print("BTC experience policy OOS: VERIFIED")
           PY
 

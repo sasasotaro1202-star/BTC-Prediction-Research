@@ -1933,3 +1933,44 @@ A baseline cannot be selected as a trainable challenger.
 
 Missing diagnostic evidence is a verification failure, not a zero or PASS.
 
+
+
+⸻
+
+85. BINARY EVIDENCE CODE-LINEAGE BINDING
+
+Binary Target Research evidence must record the exact analysis Git SHA used to generate the evidence.
+
+The workflow must require:
+
+analysis_git_sha = workflow GITHUB_SHA
+
+A research-evidence commit created after the analysis is intentionally distinct from the analysis commit. The recorded analysis SHA identifies the code/data logic under evaluation and prevents stale or regenerated evidence from being mistaken for evidence produced by the current implementation.
+
+LOCAL_UNPINNED runs are not Production evidence.
+
+
+
+⸻
+
+86. PREDICTION-CONFIDENCE RELIABILITY DIAGNOSTIC
+
+The existing Experience Policy OOS surface now reports post-outcome prediction-confidence reliability without using realized outcomes as model inputs.
+
+For each primary horizon it records:
+
+confidence bucket sample count
+average prediction confidence
+observed accuracy
+confidence gap
+Accuracy 95% CI
+confidence ECE
+confidence Brier score
+explicit 0.70+ high-confidence bucket status
+
+This diagnostic is descriptive/research-only. It does not alter production confidence, routing, abstention, calibration, or model artifacts.
+
+A material negative confidence gap in the 0.70+ bucket is an overconfidence signal requiring further calibration/selective-prediction research rather than automatic production action.
+
+The same surface also reports reliability of the learned prediction-error probability.
+

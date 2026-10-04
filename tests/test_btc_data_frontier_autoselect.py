@@ -387,6 +387,66 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertIn("git worktree add --detach",section)
 
 
+    def test_historical_time_bounds_do_not_reverse_during_backfill(self):
+        state={
+            "historical_earliest_event_time":"2026-09-30T12:00:00+00:00",
+            "last_historical_event_time":"2026-10-04T01:40:00+00:00",
+        }
+        older={
+            "first_event_time":"2026-09-30T11:50:00+00:00",
+            "last_event_time":"2026-09-30T12:20:00+00:00",
+        }
+        mod._extend_historical_time_bounds(state,older)
+        self.assertEqual(state["historical_earliest_event_time"],"2026-09-30T11:50:00+00:00")
+        self.assertEqual(state["last_historical_event_time"],"2026-10-04T01:40:00+00:00")
+
+    def test_historical_time_bounds_extend_latest_on_forward_batch(self):
+        state={
+            "historical_earliest_event_time":"2026-09-30T11:50:00+00:00",
+            "last_historical_event_time":"2026-10-04T01:40:00+00:00",
+        }
+        newer={
+            "first_event_time":"2026-10-04T01:45:00+00:00",
+            "last_event_time":"2026-10-04T02:00:00+00:00",
+        }
+        mod._extend_historical_time_bounds(state,newer)
+        self.assertEqual(state["historical_earliest_event_time"],"2026-09-30T11:50:00+00:00")
+        self.assertEqual(state["last_historical_event_time"],"2026-10-04T02:00:00+00:00")
+
+
+    def test_invalid_historical_bounds_force_repair_action(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            state_path=root/"data/historical_research/data_frontier_state.json"
+            state_path.parent.mkdir(parents=True,exist_ok=True)
+            state_path.write_text(__import__("json").dumps({
+                "schema_version":1,
+                "source_state":{
+                    "deribit_public":{
+                        "historical_earliest_event_time":"2026-09-30T12:10:00+00:00",
+                        "last_historical_event_time":"2026-08-17T12:50:00+00:00",
+                    }
+                }
+            }),encoding="utf-8")
+            with patch.object(mod,"STATE_OUT",state_path):
+                issues=mod._historical_bounds_issues_from_state()
+                self.assertEqual(issues[0]["source_id"],"deribit_public")
+                self.assertEqual(issues[0]["reason"],"earliest_after_latest")
+                secondary,repeat,action=mod.plan_for_gap({
+                    "strict_primary":300,
+                    "target":300,
+                    "gap":0,
+                    "historical_bounds_invalid":issues,
+                    "situation_meta_ready_min":3000,
+                    "situation_meta_target":3000,
+                    "online_expert_ready_min":140,
+                    "online_expert_target":140,
+                })
+                self.assertTrue(repeat)
+                self.assertIn("historical_bounds_invalid",secondary["blocking_reasons"])
+                self.assertEqual(action,"repair_historical_frontier_bounds")
+
+
     def test_atomic_json_write_round_trips_valid_json(self):
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)/"state.json"

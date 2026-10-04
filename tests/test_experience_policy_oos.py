@@ -33,6 +33,42 @@ def _row(i: int, correct: int, warning: bool = False) -> dict:
     }
 
 
+def test_prediction_confidence_reliability_flags_high_confidence_overconfidence():
+    cases = []
+    for i in range(20):
+        cases.append({
+            "prediction_confidence": 0.80,
+            "correct": 0 if i < 12 else 1,
+        })
+    for i in range(10):
+        cases.append({
+            "prediction_confidence": 0.55,
+            "correct": 1 if i < 6 else 0,
+        })
+    out = mod._prediction_confidence_reliability(cases)
+    assert out["n"] == 30
+    assert out["brier"] is not None
+    high = out["high_confidence_overconfidence"]
+    assert high["n"] == 20
+    assert high["average_confidence"] > high["accuracy"]
+    assert high["confidence_gap"] < 0
+    assert len(high["accuracy_ci95"]) == 2
+
+
+def test_error_risk_reliability_is_outcome_only_diagnostic():
+    cases = [
+        {"learned_error_probability": 0.80, "correct": 0},
+        {"learned_error_probability": 0.70, "correct": 1},
+        {"learned_error_probability": 0.20, "correct": 1},
+        {"learned_error_probability": 0.10, "correct": 1},
+    ]
+    out = mod._error_risk_reliability(cases)
+    assert out["n"] == 4
+    assert out["ece"] is not None
+    assert out["brier"] is not None
+    assert out["buckets"]
+
+
 def test_features_exclude_realized_outcome_fields():
     row = _row(1, 0, warning=True)
     features = mod._features(row)

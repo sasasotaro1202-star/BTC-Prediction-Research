@@ -181,6 +181,133 @@ def _metrics(y_true: list[int], probabilities: list[float]) -> dict[str, float]:
     }
 
 
+def _wilson_ci(successes: float, n: int) -> list[float | None]:
+    if int(n) <= 0:
+        return [None, None]
+    n = int(n)
+    p = float(successes) / n
+    z = 1.959963984540054
+    denom = 1.0 + (z * z) / n
+    center = (p + (z * z) / (2.0 * n)) / denom
+    half = z * math.sqrt((p * (1.0 - p) / n) + (z * z) / (4.0 * n * n)) / denom
+    return [max(0.0, center - half), min(1.0, center + half)]
+
+
+def _prediction_confidence_reliability(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Post-outcome diagnostic for prediction confidence, never used for training."""
+    bins = (
+        ("0.33-0.40", 0.33, 0.40),
+        ("0.40-0.50", 0.40, 0.50),
+        ("0.50-0.60", 0.50, 0.60),
+        ("0.60-0.70", 0.60, 0.70),
+        ("0.70+", 0.70, 1.00),
+    )
+    rows = []
+    total = len(cases)
+    weighted_gap = 0.0
+    for name, lo, hi in bins:
+        selected = [
+            row for row in cases
+            if float(row.get("prediction_confidence", 0.0)) >= lo
+            and (float(row.get("prediction_confidence", 0.0)) < hi or (hi == 1.0 and float(row.get("prediction_confidence", 0.0)) <= hi))
+        ]
+        n = len(selected)
+        if not n:
+            rows.append({
+                "bucket": name,
+                "n": 0,
+                "average_confidence": None,
+                "accuracy": None,
+                "confidence_gap": None,
+                "accuracy_ci95": [None, None],
+            })
+            continue
+        confidence = float(np.mean([float(row["prediction_confidence"]) for row in selected]))
+        accuracy = float(np.mean([int(row["correct"]) for row in selected]))
+        gap = accuracy - confidence
+        weighted_gap += (n / total) * abs(gap) if total else 0.0
+        rows.append({
+            "bucket": name,
+            "n": n,
+            "average_confidence": confidence,
+            "accuracy": accuracy,
+            "confidence_gap": gap,
+            "accuracy_ci95": _wilson_ci(sum(int(row["correct"]) for row in selected), n),
+        })
+    return {
+        "n": total,
+        "ece": float(weighted_gap) if total else None,
+        "brier": (
+            float(np.mean([
+                (float(row["prediction_confidence"]) - int(row["correct"])) ** 2
+                for row in cases
+            ]))
+            if cases else None
+        ),
+        "buckets": rows,
+        "high_confidence_overconfidence": (
+            next(
+                (
+                    {
+                        "bucket": row["bucket"],
+                        "n": row["n"],
+                        "average_confidence": row["average_confidence"],
+                        "accuracy": row["accuracy"],
+                        "confidence_gap": row["confidence_gap"],
+                        "accuracy_ci95": row["accuracy_ci95"],
+                    }
+                    for row in rows if row["bucket"] == "0.70+"
+                ),
+                None,
+            )
+        ),
+    }
+
+
+def _error_risk_reliability(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reliability diagnostic for learned error probability after outcomes settle."""
+    if not cases:
+        return {"n": 0, "ece": None, "brier": None, "buckets": []}
+    bins = (
+        ("0.00-0.20", 0.00, 0.20),
+        ("0.20-0.40", 0.20, 0.40),
+        ("0.40-0.60", 0.40, 0.60),
+        ("0.60-0.80", 0.60, 0.80),
+        ("0.80-1.00", 0.80, 1.00),
+    )
+    rows = []
+    ece = 0.0
+    for name, lo, hi in bins:
+        selected = [
+            row for row in cases
+            if float(row["learned_error_probability"]) >= lo
+            and (float(row["learned_error_probability"]) < hi or (hi == 1.0 and float(row["learned_error_probability"]) <= hi))
+        ]
+        n = len(selected)
+        if not n:
+            rows.append({"bucket": name, "n": 0, "average_risk": None, "observed_error_rate": None})
+            continue
+        risk = float(np.mean([float(row["learned_error_probability"]) for row in selected]))
+        error_rate = float(np.mean([1 - int(row["correct"]) for row in selected]))
+        ece += (n / len(cases)) * abs(error_rate - risk)
+        rows.append({
+            "bucket": name,
+            "n": n,
+            "average_risk": risk,
+            "observed_error_rate": error_rate,
+            "risk_gap": error_rate - risk,
+        })
+    return {
+        "n": len(cases),
+        "ece": float(ece),
+        "brier": float(np.mean([
+            (float(row["learned_error_probability"]) - (1 - int(row["correct"]))) ** 2
+            for row in cases
+        ])),
+        "buckets": rows,
+    }
+
+
 def _fit_predict(
     train_rows: list[Any],
     test_rows: list[Any],
@@ -304,6 +431,8 @@ def prequential_evaluate(
                 "correct": int(row["correct"]),
                 "learned_error_probability": float(p),
                 "baseline_error_probability": float(baseline),
+                "prediction_confidence": float(row["confidence"]),
+                "production_mode": str(row["production_mode"] or "UNKNOWN"),
             })
 
         start = stop
@@ -338,6 +467,9 @@ def prequential_evaluate(
         cases,
         key=lambda row: (-float(row["learned_error_probability"]), row["settled_at_utc"], row["experience_id"]),
     )[:max(1, int(max_report_cases))]
+    prediction_confidence_reliability = _prediction_confidence_reliability(cases)
+    error_risk_reliability = _error_risk_reliability(cases)
+
     return {
         "status": "OK",
         "rows": len(ordered),
@@ -361,6 +493,8 @@ def prequential_evaluate(
         "delta_brier_memory_minus_baseline": float(memory_metrics["brier"] - baseline_metrics["brier"]),
         "delta_brier_meta_minus_baseline": float(meta["brier"] - baseline_metrics["brier"]),
         "threshold_policy_candidates": threshold_metrics,
+        "prediction_confidence_reliability": prediction_confidence_reliability,
+        "error_risk_reliability": error_risk_reliability,
         "high_risk_cases_latest": high_risk,
     }
 

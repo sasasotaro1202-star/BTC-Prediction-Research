@@ -164,20 +164,60 @@ def _pit_audit_freshness():
  except (OSError,ValueError,TypeError,json.JSONDecodeError):
   return {"status":"INVALID","fresh":False,"age_sec":None,"generated_at_utc":None}
 
+def _historical_bounds_issues_from_state():
+ pth=STATE_OUT
+ if not pth.is_file():
+  return []
+ try:
+  obj=json.loads(pth.read_text(encoding="utf-8"))
+  source_state=obj.get("source_state") if isinstance(obj,dict) else {}
+  issues=[]
+  for sid in ACQUISITION_SOURCE_IDS:
+   state=source_state.get(sid,{}) if isinstance(source_state,dict) else {}
+   if not isinstance(state,dict):
+    continue
+   first=state.get("historical_earliest_event_time")
+   last=state.get("last_historical_event_time")
+   if not first or not last:
+    continue
+   try:
+    first_dt=datetime.fromisoformat(str(first).replace("Z","+00:00"))
+    last_dt=datetime.fromisoformat(str(last).replace("Z","+00:00"))
+    if first_dt.tzinfo is None or last_dt.tzinfo is None:
+     issues.append({"source_id":sid,"reason":"timezone_missing"})
+    elif first_dt > last_dt:
+     issues.append({
+      "source_id":sid,
+      "reason":"earliest_after_latest",
+      "earliest_event_time":first_dt.astimezone(timezone.utc).isoformat(),
+      "latest_event_time":last_dt.astimezone(timezone.utc).isoformat(),
+     })
+   except (TypeError,ValueError):
+    issues.append({"source_id":sid,"reason":"invalid_timestamp"})
+  return issues
+ except (OSError,ValueError,TypeError,json.JSONDecodeError):
+  return [{"source_id":"__state__","reason":"invalid_state_json"}]
+
+
 def plan_for_gap(gap):
  gate_gap=max(0,int(gap.get("target",300))-int(gap.get("strict_primary",0)))
  accumulation_gap=max(0,STRICT_PRIMARY_ACCUMULATION_TARGET-int(gap.get("strict_primary",0)))
+ historical_bounds_invalid=list(gap.get("historical_bounds_invalid") or [])
  secondary={
   "strict_primary_gate":gate_gap,
   "strict_primary_accumulation":accumulation_gap,
   "situation_meta_ready":max(0,int(gap.get("situation_meta_target",3000))-int(gap.get("situation_meta_ready_min",0))),
   "online_expert_ready":max(0,int(gap.get("online_expert_target",140))-int(gap.get("online_expert_ready_min",0))),
   "discovery_pending":max(0,int(gap.get("discovery_pending",0))),
+  "historical_bounds_invalid":historical_bounds_invalid,
  }
  blocking_reasons=[]
  acquisition_reasons=[]
  if gate_gap>0:
   blocking_reasons.append("strict_primary_gate")
+ if historical_bounds_invalid:
+  blocking_reasons.append("historical_bounds_invalid")
+  acquisition_reasons.append("historical_bounds_invalid")
  if accumulation_gap>0:
   acquisition_reasons.append("strict_primary_accumulation")
  if secondary["situation_meta_ready"]>0:
@@ -187,7 +227,9 @@ def plan_for_gap(gap):
  if secondary["discovery_pending"]>0:
   acquisition_reasons.append("discovery_candidate_review")
  needs_more=bool(blocking_reasons or acquisition_reasons)
- if gate_gap>0:
+ if historical_bounds_invalid:
+  next_action="repair_historical_frontier_bounds"
+ elif gate_gap>0:
   next_action="collect_live_and_refresh_pit"
  elif accumulation_gap>0:
   next_action="collect_live_and_refresh_pit_for_evidence_margin"
@@ -285,6 +327,7 @@ def current_gap():
   "situation_meta_ready_min":0,"situation_meta_target":3000,
   "online_expert_ready_min":0,"online_expert_target":140,
   "discovery_pending":_discovery_debt(),
+  "historical_bounds_invalid":_historical_bounds_issues_from_state(),
   "pit_audit_status":freshness["status"],
   "pit_audit_fresh":freshness["fresh"],
   "pit_audit_age_sec":freshness["age_sec"],
@@ -320,6 +363,7 @@ def current_gap():
    "online_expert_ready_min":min(online) if online else 0,
    "online_expert_target":140,
    "discovery_pending":_discovery_debt(),
+   "historical_bounds_invalid":_historical_bounds_issues_from_state(),
    "pit_audit_status":freshness["status"],
    "pit_audit_fresh":freshness["fresh"],
    "pit_audit_age_sec":freshness["age_sec"],
@@ -450,6 +494,32 @@ def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retr
   "next_cursor_ms":min(int(datetime.fromisoformat(row["event_time"].replace("Z","+00:00")).timestamp()*1000) for row in normalized),
   "path":str(path.relative_to(ROOT)),
  }
+
+
+def _extend_historical_time_bounds(state, result):
+ """Extend durable event-time bounds without moving the latest bound backward during backfill."""
+ if not isinstance(state, dict) or not isinstance(result, dict):
+  return
+ def parse(value):
+  try:
+   parsed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+   if parsed.tzinfo is None:
+    return None
+   return parsed.astimezone(timezone.utc)
+  except (TypeError,ValueError):
+   return None
+ first=parse(result.get("first_event_time"))
+ last=parse(result.get("last_event_time"))
+ earliest=parse(state.get("historical_earliest_event_time"))
+ latest=parse(state.get("last_historical_event_time"))
+ if first is not None:
+  state["historical_earliest_event_time"]=min(
+   [value for value in (earliest, first) if value is not None]
+  ).isoformat()
+ if last is not None:
+  state["last_historical_event_time"]=max(
+   [value for value in (latest, last) if value is not None]
+  ).isoformat()
 
 
 def summarize_acquisition_evidence(frontier=None):
@@ -709,7 +779,11 @@ def acquire_deribit_history(end_ms=None,resolution="5"):
 
 
 def select_auto_acquisition_sources(frontier,selected,gap):
- primary_gap=bool(gap.get("gap",0)>0 or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET)
+ primary_gap=bool(
+  gap.get("gap",0)>0
+  or gap.get("strict_primary",0)<STRICT_PRIMARY_ACCUMULATION_TARGET
+  or gap.get("historical_bounds_invalid")
+)
  out=[]
  if primary_gap:
   for sid in ("bitget_public_ws","hyperliquid_ws","deribit_public"):
@@ -730,11 +804,12 @@ def select_auto_acquisition_sources(frontier,selected,gap):
 
 def acquire_selected_research_data(frontier,gap,selected):
  candidate_ids=select_auto_acquisition_sources(frontier,selected,gap)
+ force_historical_repair=bool(gap.get("historical_bounds_invalid"))
  out=[]
  for sid in candidate_ids[:3]:
   state=frontier["source_state"].setdefault(sid,{})
   if sid=="deribit_public":
-   if not _acquisition_due(state):
+   if not force_historical_repair and not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                 "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
     continue
@@ -745,8 +820,8 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-    state["last_historical_event_time"]=result.get("last_event_time")
+    _extend_historical_time_bounds(state, result)
+    
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
     state["historical_acquisition_failures"]=0
@@ -755,7 +830,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    out.append(result)
    continue
   if sid=="hyperliquid_ws":
-   if not _acquisition_due(state):
+   if not force_historical_repair and not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                 "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
     continue
@@ -766,8 +841,8 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-    state["last_historical_event_time"]=result.get("last_event_time")
+    _extend_historical_time_bounds(state, result)
+    
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
     state["historical_acquisition_failures"]=0
@@ -775,7 +850,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
    out.append(result)
    continue
-  if not _acquisition_due(state):
+  if not force_historical_repair and not _acquisition_due(state):
    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
    continue
@@ -789,8 +864,8 @@ def acquire_selected_research_data(frontier,gap,selected):
    state["last_historical_record_count"]=int(result.get("record_count",0))
    state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
    state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-   state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-   state["last_historical_event_time"]=result.get("last_event_time")
+   _extend_historical_time_bounds(state, result)
+   
    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
    state["historical_acquisition_failures"]=0
@@ -1087,7 +1162,11 @@ def run():
   "collect_live":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0 or secondary_gaps["online_expert_ready"]>0,
   "warm_binance_ws":secondary_gaps["strict_primary_accumulation"]>0 or secondary_gaps["situation_meta_ready"]>0,
   "refresh_pit_audit":(not gap.get("pit_audit_fresh",False)) or secondary_gaps["strict_primary_accumulation"]>0,
-  "acquire_historical_archive":secondary_gaps["strict_primary_gate"]>0 or secondary_gaps["strict_primary_accumulation"]>0,
+  "acquire_historical_archive":(
+   secondary_gaps["strict_primary_gate"]>0
+   or secondary_gaps["strict_primary_accumulation"]>0
+   or bool(secondary_gaps.get("historical_bounds_invalid"))
+  ),
   "acquire_frontier_research_data":bool(acquisitions),
   "continue_discovery":True,
   "continue_selection":True,
