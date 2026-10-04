@@ -24,6 +24,10 @@ class PromotionGateTests(unittest.TestCase):
             "verified_fallback_predictions": 0,
             "min_strict_pit_rows": 300,
             "violation_count": 0,
+            "primary_horizon_gate": {
+                "5m": {"strict_primary_settled": 300, "minimum": 300, "ready": True},
+                "10m": {"strict_primary_settled": 300, "minimum": 300, "ready": True},
+            },
         }
 
     def _cal(self):
@@ -44,6 +48,22 @@ class PromotionGateTests(unittest.TestCase):
         self.assertEqual(result["production_safety_gate"], "PASS")
         self.assertEqual(result["promotion_status"], "HOLD")
         self.assertIn("candidate_or_frozen_holdout_non_regression_not_verified", result["reason"])
+
+    def test_missing_per_horizon_pit_gate_blocks_promotion(self):
+        pit = self._pit().copy()
+        pit.pop("primary_horizon_gate", None)
+        result = evaluate_promotion({"status": "PASS"}, self._robust(), self._accepted_blends(), pit, self._cal(), {"ok": True})
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("pit_oos_audit_not_fully_verified", result["reason"])
+
+    def test_single_horizon_pit_gate_failure_blocks_promotion(self):
+        pit = self._pit().copy()
+        pit["primary_horizon_gate"]["10m"]["ready"] = False
+        result = evaluate_promotion({"status": "PASS"}, self._robust(), self._accepted_blends(), pit, self._cal(), {"ok": True})
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("pit_oos_audit_not_fully_verified", result["reason"])
 
     def test_pit_verified_below_strict_minimum_blocks_promotion(self):
         pit = self._pit().copy()
