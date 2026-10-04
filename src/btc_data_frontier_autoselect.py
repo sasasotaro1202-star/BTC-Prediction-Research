@@ -313,6 +313,11 @@ def load_frontier():
    state=json.loads(raw_state)
    if not isinstance(state,dict) or state.get("schema_version")!=1: raise RuntimeError("invalid data frontier state schema")
    p["source_state"]=dict(state.get("source_state") or {})
+   for source_state in p["source_state"].values():
+    if isinstance(source_state,dict) and "historical_acquisition_failures_total" not in source_state:
+     source_state["historical_acquisition_failures_total"]=int(
+      source_state.get("historical_acquisition_failures",0) or 0
+     )
    p["history"]=list(state.get("history") or [])
   else:
    recovery.append("empty_selector_state_ignored")
