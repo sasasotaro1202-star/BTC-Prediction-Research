@@ -377,15 +377,18 @@ def run_horizon(h,rows):
     for c in cs:
         if c["fingerprint"] in completed_screen:
             continue
+        screen_ok=False
         try:
             r=screen(h,dev,c)
             if r is not None:
                 screened.append(r)
+                screen_ok=True
             else:
                 screen_failures.append({"config":c,"error_type":"NO_VALID_SCREEN_FOLDS","error":"candidate produced fewer than the minimum valid chronological screen blocks"})
         except Exception as e:
             screen_failures.append({"config":c,"error_type":type(e).__name__,"error":str(e)[:300]})
-        completed_screen.add(c["fingerprint"])
+        if screen_ok:
+            completed_screen.add(c["fingerprint"])
         save_checkpoint(h,"SCREENING",rows_fp,candidate_hash,
             screened=screened,screen_failures=screen_failures,
             completed_screen_fingerprints=sorted(completed_screen))
@@ -405,12 +408,16 @@ def run_horizon(h,rows):
         if c["fingerprint"] in completed_final:
             continue
         clean={k:c[k] for k in ("feature_set","model","window","fingerprint")}
+        final_ok=False
         try:
             r=final(h,dev,clean)
-            if r is not None:fs.append(r)
+            if r is not None:
+                fs.append(r)
+                final_ok=True
         except Exception as e:
             failures.append({"config":clean,"error_type":type(e).__name__,"error":str(e)[:300]})
-        completed_final.add(c["fingerprint"])
+        if final_ok:
+            completed_final.add(c["fingerprint"])
         save_checkpoint(h,"FINALIZING",rows_fp,candidate_hash,
             screened=screened,screen_failures=screen_failures,
             completed_screen_fingerprints=sorted(completed_screen),
