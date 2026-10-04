@@ -83,6 +83,20 @@ def build_rows(raw_rows, horizon):
     return out[-MAX_ROWS:]
 
 
+def _training_rows_before_cutoff(archive_rows, cutoff):
+    """Keep only labels that matured before a live prediction cutoff."""
+    cutoff_dt = datetime.fromisoformat(str(cutoff).replace("Z", "+00:00"))
+    out = []
+    for row in archive_rows:
+        try:
+            target_dt = datetime.fromisoformat(str(row.get("target")).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if target_dt < cutoff_dt:
+            out.append(row)
+    return out
+
+
 def _factories():
     return {
         "logreg": lambda: Pipeline([
@@ -325,17 +339,9 @@ def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
         }
 
     first_live = min(r["created"] for r in live_rows)
-    first_live_dt = datetime.fromisoformat(str(first_live).replace("Z", "+00:00"))
     # Knowledge-time firewall: the training label must have matured strictly
     # before the first live prediction cutoff. Creation time alone is not enough.
-    train = []
-    for r in archive_rows:
-        try:
-            target_dt = datetime.fromisoformat(str(r.get("target")).replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            continue
-        if target_dt < first_live_dt:
-            train.append(r)
+    train = _training_rows_before_cutoff(archive_rows, first_live)
     if len(train) < MIN_TRAIN:
         return {
             "status": "DEFERRED",
