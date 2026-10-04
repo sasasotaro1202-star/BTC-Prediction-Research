@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import numpy as np
-from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -35,11 +36,12 @@ FEATURE_GROUPS = {
     "momentum_trend": FEATURES[:5] + FEATURES[13:15],
     "full_15": FEATURES,
 }
-MODEL_NAMES = ("logreg_c01","logreg_c1","extra_trees","hist_gradient_boosting")
+MODEL_NAMES = ("logreg_c01","logreg_c1","rf","rf_balanced","extra_trees","extra_balanced","hist_gradient_boosting","gaussian_nb")
 WINDOWS = ("expanding","trailing_750","trailing_1500")
 CALIBRATIONS = ("none","temperature")
 SELECTIVE_THRESHOLDS = (0.34,0.45,0.55,0.65)
 MAX_ROWS = int(os.getenv("PATTERN_LAB_MAX_ROWS","3000"))
+MAX_CANDIDATES = int(os.getenv("PATTERN_LAB_MAX_CANDIDATES","144"))
 TEST_BLOCK = int(os.getenv("PATTERN_LAB_TEST_BLOCK","100"))
 MIN_TRAIN = int(os.getenv("PATTERN_LAB_MIN_TRAIN","800"))
 FINAL_HOLDOUT_FRAC = 0.20
@@ -54,14 +56,27 @@ def _factory(name: str):
         return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=0.1,max_iter=2500))])
     if name == "logreg_c1":
         return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=1.0,max_iter=2500))])
+    if name == "rf":
+        return RandomForestClassifier(n_estimators=80,max_depth=8,min_samples_leaf=10,max_features="sqrt",random_state=42,n_jobs=-1)
+    if name == "rf_balanced":
+        return RandomForestClassifier(n_estimators=80,max_depth=8,min_samples_leaf=10,max_features="sqrt",class_weight="balanced_subsample",random_state=42,n_jobs=-1)
     if name == "extra_trees":
         return ExtraTreesClassifier(n_estimators=80,max_depth=7,min_samples_leaf=8,max_features="sqrt",random_state=42,n_jobs=-1)
+    if name == "extra_balanced":
+        return ExtraTreesClassifier(n_estimators=80,max_depth=7,min_samples_leaf=8,max_features="sqrt",class_weight="balanced",random_state=42,n_jobs=-1)
     if name == "hist_gradient_boosting":
         return HistGradientBoostingClassifier(max_iter=120,max_leaf_nodes=15,learning_rate=0.04,l2_regularization=1.0,random_state=42)
+    if name == "gaussian_nb":
+        return GaussianNB()
     raise ValueError(name)
 
 def _candidate_names():
-    return [f"{m}|{g}|{w}" for m in MODEL_NAMES for g in FEATURE_GROUPS for w in WINDOWS]
+    names=[f"{m}|{g}|{w}" for m in MODEL_NAMES for g in FEATURE_GROUPS for w in WINDOWS]
+    if MAX_CANDIDATES <= 0:
+        raise ValueError("PATTERN_LAB_MAX_CANDIDATES must be positive")
+    if MAX_CANDIDATES >= len(names):
+        return names
+    return names[:MAX_CANDIDATES]
 
 def _parse_candidate(name):
     return tuple(name.split("|"))
