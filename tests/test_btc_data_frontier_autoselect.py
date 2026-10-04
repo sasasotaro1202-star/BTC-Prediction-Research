@@ -297,6 +297,75 @@ class TestBTCDataFrontierAutoSelect(TestCase):
                 58,
             )
 
+    def test_historical_failure_circuit_breaker_uses_bounded_exponential_backoff(self):
+        now=datetime(2026,10,4,8,0,0,tzinfo=timezone.utc)
+        state={"historical_acquisition_failures":4}
+        until=mod._set_historical_failure_backoff(state,now=now)
+        self.assertEqual(
+            until,
+            datetime(2026,10,4,8,15,0,tzinfo=timezone.utc).isoformat(),
+        )
+        state["historical_acquisition_failures"]=12
+        until=mod._set_historical_failure_backoff(state,now=now)
+        self.assertEqual(
+            until,
+            datetime(2026,10,4,14,0,0,tzinfo=timezone.utc).isoformat(),
+        )
+
+    def test_historical_circuit_breaker_skips_source_without_hiding_last_failure(self):
+        frontier={
+            "source_state":{
+                "hyperliquid_ws":{
+                    "historical_acquisition_failures":8,
+                    "historical_acquisition_backoff_until":"2026-10-04T09:00:00+00:00",
+                    "last_historical_acquisition_error":"HTTPError:429:Too Many Requests",
+                    "last_historical_acquisition_error_at":"2026-10-04T07:20:00+00:00",
+                }
+            },
+            "candidates":{},
+            "history":[],
+        }
+        with patch.object(mod,"_acquisition_due",return_value=True), patch.object(
+            mod,"acquire_hyperliquid_history",side_effect=AssertionError("circuit breaker did not skip")
+        ):
+            out=mod.acquire_selected_research_data(
+                frontier,{"gap":1,"strict_primary":299},["hyperliquid_ws"]
+            )
+        self.assertEqual(out[0]["status"],"SKIPPED_CIRCUIT_BREAKER")
+        self.assertEqual(out[0]["consecutive_failures"],8)
+        self.assertIn("429",out[0]["last_historical_acquisition_error"])
+
+    def test_integrity_repair_bypasses_historical_circuit_breaker(self):
+        frontier={
+            "source_state":{
+                "hyperliquid_ws":{
+                    "historical_acquisition_failures":8,
+                    "historical_acquisition_backoff_until":"2026-10-04T09:00:00+00:00",
+                    "historical_batches_acquired":24,
+                    "historical_total_records_acquired":4688,
+                }
+            },
+            "candidates":{},
+            "history":[],
+        }
+        failed={
+            "source_id":"hyperliquid_ws",
+            "status":"ERROR",
+            "retrieved_at":"2026-10-04T08:10:00+00:00",
+            "production_eligible":False,
+            "error":"integrity_test_failure",
+        }
+        with patch.object(mod,"_acquisition_due",return_value=True), patch.object(
+            mod,"acquire_hyperliquid_history",return_value=failed
+        ):
+            out=mod.acquire_selected_research_data(
+                frontier,
+                {"gap":0,"strict_primary":300,"historical_bounds_invalid":[{"reason":"earliest_after_latest"}]},
+                ["hyperliquid_ws"],
+            )
+        self.assertEqual(out[0]["status"],"ERROR")
+        self.assertEqual(frontier["source_state"]["hyperliquid_ws"]["historical_acquisition_failures"],9)
+
     def test_success_resets_consecutive_failures_but_retains_cumulative_total(self):
         frontier={
             "source_state":{
