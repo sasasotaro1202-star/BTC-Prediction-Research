@@ -136,3 +136,28 @@ def test_supervisor_has_event_driven_recovery_triggers():
 def test_supervisor_records_trigger_event():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     assert '"trigger_event": "${GITHUB_EVENT_NAME}"' in text
+
+
+
+def test_supervisor_has_event_driven_recovery_triggers():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    trigger = text.split('permissions:', 1)[0]
+    assert '  workflow_run:' in trigger
+    assert 'types: [completed]' in trigger
+    for workflow in (
+        '"BTC Live Cycle"',
+        '"BTC Binance WS Collector"',
+        '"BTC PIT OOS Audit"',
+        '"BTC Research Readiness Audit"',
+        '"BTC Adaptive Calibration Replay Research"',
+        '"BTC Experience Policy OOS Learning"',
+        '"BTC Selective Prediction OOS"',
+        '"BTC Rich Production Challenger"',
+        '"BTC Autonomous Data Frontier"',
+    ):
+        assert workflow in trigger
+
+
+def test_watchdog_recovers_stale_supervisor_quickly():
+    text = Path('.github/workflows/btc_watchdog.yml').read_text(encoding='utf-8')
+    assert 'recover_if_stale btc_continuous_supervisor.yml 900 1800 900' in text
