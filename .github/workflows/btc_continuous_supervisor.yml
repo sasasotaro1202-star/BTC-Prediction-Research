@@ -63,6 +63,7 @@ jobs:
                 or .workflow == "btc_autonomous_data_frontier.yml"
                 or .workflow == "btc_adaptive_calibration_replay.yml"
                 or .workflow == "btc_experience_policy_oos.yml"
+                or .workflow == "btc_selective_prediction_oos.yml"
                 or .workflow == "btc_rich_production_challenger.yml"
                 or .workflow == "btc_ultimate_final_v13_e2e.yml"
               )
@@ -73,6 +74,25 @@ jobs:
               and (.reason | type == "string" and length > 0)
               and (.evidence_state | type == "string" and length > 0)
               and (.signals | type == "array")
+              and (.candidates | type == "array" and length >= 1 and length <= 7)
+              and all(.candidates[];
+                .production_impact == false
+                and (
+                  .workflow == "btc_research_readiness.yml"
+                  or .workflow == "btc_autonomous_data_frontier.yml"
+                  or .workflow == "btc_adaptive_calibration_replay.yml"
+                  or .workflow == "btc_experience_policy_oos.yml"
+                  or .workflow == "btc_selective_prediction_oos.yml"
+                  or .workflow == "btc_rich_production_challenger.yml"
+                  or .workflow == "btc_ultimate_final_v13_e2e.yml"
+                )
+                and (.threshold_seconds | type == "number")
+                and (.threshold_seconds > 0)
+                and (.threshold_seconds <= 604800)
+                and (.reason | type == "string" and length > 0)
+                and (.evidence_state | type == "string" and length > 0)
+                and (.signals | type == "array")
+              )
             ' autonomous_route.json >/dev/null 2>&1; then
             route_workflow="$(jq -r '.workflow // empty' autonomous_route.json)"
             route_threshold="$(jq -r '.threshold_seconds // empty' autonomous_route.json)"
@@ -95,34 +115,39 @@ jobs:
           fi
 
           dispatch_if_stale() {
-            workflow="$1"
-            threshold="$2"
+            workflow="${1}"
+            threshold="${2}"
+            route_mode="${3:-0}"
 
             response="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null)" || {
               echo "ERROR: cannot inspect ${workflow}" >&2
               degraded=1
+              if [ "${route_mode}" -eq 1 ]; then return 20; fi
               return 0
             }
 
-            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"$response" 2>/dev/null)" || {
+            active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"${response}" 2>/dev/null)" || {
               echo "ERROR: cannot parse active state for ${workflow}" >&2
               degraded=1
+              if [ "${route_mode}" -eq 1 ]; then return 20; fi
               return 0
             }
 
-            latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"$response" 2>/dev/null)" || {
+            latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha] | @tsv' <<<"${response}" 2>/dev/null)" || {
               echo "ERROR: cannot parse latest state for ${workflow}" >&2
               degraded=1
+              if [ "${route_mode}" -eq 1 ]; then return 20; fi
               return 0
             }
 
-            latest_updated="$(cut -f1 <<<"$latest")"
+            latest_updated="$(cut -f1 <<<"${latest}")"
             if [ -z "${latest_updated}" ]; then
               latest_epoch=0
             else
               latest_epoch="$(date -d "${latest_updated}" +%s 2>/dev/null)" || {
                 echo "ERROR: invalid latest timestamp for ${workflow}: ${latest_updated}" >&2
                 degraded=1
+                if [ "${route_mode}" -eq 1 ]; then return 20; fi
                 return 0
               }
             fi
@@ -133,17 +158,19 @@ jobs:
 
             if [ "${active}" -eq 0 ] && { [ "${latest_epoch}" -eq 0 ] || [ "${age}" -ge "${threshold}" ]; }; then
               echo "Dispatching stale ${workflow}"
-              # Use explicit REST workflow_dispatch first. This is the path proven
-              # by the independent Watchdog and avoids gh CLI discovery variance.
               if ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via workflow_dispatch API: ${workflow}"
+                if [ "${route_mode}" -eq 1 ]; then return 10; fi
               elif ci_gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via gh workflow run: ${workflow}"
+                if [ "${route_mode}" -eq 1 ]; then return 10; fi
               else
                 echo "ERROR: dispatch failed through both REST and gh CLI: ${workflow}" >&2
                 degraded=1
+                if [ "${route_mode}" -eq 1 ]; then return 20; fi
               fi
             fi
+            return 0
           }
 
           # Production freshness is the fastest recovery path.
@@ -163,28 +190,28 @@ jobs:
           dispatch_if_stale btc_selective_prediction_oos.yml 43200
 
 
-          # Run one evidence-driven research lane after the independent stale checks.
-          if [ -n "${route_workflow}" ] && [ -n "${route_threshold}" ]; then
-            echo "Dispatching routed research candidate: ${route_workflow} (${route_reason})"
-            dispatch_if_stale "${route_workflow}" "${route_threshold}"
-          fi
-          cat > supervisor_status.json <<EOF
+          # Run at most one evidence-driven research lane after the independent stale checks.
+          # Try ordered candidates so a fresh high-priority lane does not starve other research.
+          route_dispatched=0
+          route_candidate_count="$(jq '.candidates | length' autonomous_route.json 2>/dev/null)" || route_candidate_count          cat > supervisor_status.json <<EOF
           {
-            "schema_version": 2,
+            "schema_version": 3,
             "workflow_run_id": ${GITHUB_RUN_ID},
             "head_sha": "${GITHUB_SHA}",
             "completed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "degraded": ${degraded},
+            "route_first_workflow": "$(jq -r '.candidates[0].workflow // ""' autonomous_route.json)",
             "route_workflow": "${route_workflow}",
-            "route_threshold_seconds": ${route_threshold:-0},
-            "route_priority": ${route_priority:-0},
+            "route_threshold_seconds": ${route_threshold},
+            "route_priority": ${route_priority},
             "route_reason": "${route_reason}",
             "route_evidence_state": "${route_evidence_state}",
-            "route_signals": ${route_signals:-[]},
-            "design": "stateless_5m_scheduler_no_self_dispatch_no_multi_hour_runner"
+            "route_signals": ${route_signals},
+            "route_dispatched": ${route_dispatched},
+            "route_candidate_count": ${route_candidate_count},
+            "design": "stateless_5m_scheduler_ordered_evidence_router_no_self_dispatch_no_multi_hour_runner"
           }
           EOF
-          cat supervisor_status.json
 
           if [ "${degraded}" -ne 0 ]; then
             echo "::warning::BTC supervisor heartbeat completed with degraded inspection/dispatch state; Watchdog remains the independent recovery path."
