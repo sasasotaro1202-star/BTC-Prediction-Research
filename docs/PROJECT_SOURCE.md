@@ -1768,13 +1768,18 @@ Current Production models:
 5m = bootstrap.soft_ensemble.v5.4
 10m = bootstrap.bootstrap_rf
 
+Current strict PIT admitted primary evidence:
+5m strict primary settled = 402 / 300 minimum
+10m strict primary settled = 400 / 300 minimum
+active current-scope PIT violations = 0
+
 Current live Binance-primary robustness evidence is not yet promotion-ready:
-5m current-production-model cohort = 254 / 1000 minimum
-10m current-production-model cohort = 396 / 1000 minimum
+5m current-production-model cohort = 259 / 1000 minimum
+10m current-production-model cohort = 400 / 1000 minimum
 
 Therefore Robustness remains RESEARCH_ONLY / insufficient_data.
 
-Situation-metadata maturity still requires 2,607 additional qualifying 5m-cycle rows for the 5m primary cohort and 2,608 for the 10m primary cohort to reach the 3,000-row maturity target.
+Situation-metadata maturity still requires 2,602 additional qualifying 5m-cycle rows for the 5m primary cohort and 2,604 for the 10m primary cohort to reach the 3,000-row maturity target.
 
 ⸻
 
@@ -1992,3 +1997,21 @@ The frontier selector now:
 - validates that every acquisition source exposes a time_bounds_status
 
 Repair is evidence-generating and research-only. Existing invalid state is not manually rewritten without source-derived evidence.
+
+⸻
+
+88. PER-HORIZON STRICT PIT READINESS GATE
+
+Primary readiness must consume the PIT artifact's `primary_horizon_gate` independently for 5m and 10m.
+
+For each primary horizon:
+
+strict_primary_settled >= min_strict_pit_rows
+minimum >= min_strict_pit_rows
+ready = true
+
+are required before Readiness can advance beyond PIT_COLLECTION.
+
+A combined `verified_primary_predictions` total is diagnostic only and cannot satisfy a missing or failed horizon-specific gate. Missing, malformed, or incomplete `primary_horizon_gate` evidence fails closed.
+
+This guard prevents one horizon from borrowing evidence from another horizon and preserves the target/horizon-specific PIT contract. It is a readiness/read-only research control and does not activate or alter Production.
