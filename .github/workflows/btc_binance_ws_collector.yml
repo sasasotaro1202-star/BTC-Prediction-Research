@@ -1,29 +1,23 @@
 name: BTC Binance WS Collector
 
 # Two staggered rolling collectors keep the same-product Binance Futures
-# WebSocket cache continuously warm. Scheduled runs are intentionally allowed
-# to overlap; the dedicated cache branch merges checkpoints safely.
-# Each capture window is independently recoverable, so a delayed schedule does
-# not create a predictable 15-minute cache gap.
+# WebSocket cache continuously warm. Scheduled runs may overlap; the dedicated
+# cache branch merges checkpoints safely. Source-code pushes do not start an
+# extra collector: production data capture is schedule/dispatch driven, while
+# code changes are verified independently by CI.
 on:
-  # Keep the rolling cache continuously warm. Changes to this workflow itself
-  # are also a recovery trigger so the current hardened collector is started
-  # immediately instead of waiting for the next scheduled slot.
+  # Keep the rolling cache continuously warm. Collector execution is deliberately
+  # decoupled from source-code pushes to avoid duplicate live captures; the
+  # supervisor/janitor can dispatch recovery explicitly when required.
   schedule:
     - cron: '3,33 * * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/btc_binance_ws_collector.yml'
-      - 'src/binance_ws.py'
-      - 'requirements.txt'
   workflow_dispatch:
 
 concurrency:
   # Scheduled collectors deliberately get independent concurrency keys so two
   # staggered windows can overlap and cover transient schedule jitter. Manual /
-  # Every collector run may overlap safely because checkpoints use direct-ref
-  # publication plus remote merge. Never cancel an already-warm capture window.
+  # recovery dispatches use the same non-schedule lane and never cancel an
+  # already-warm scheduled capture.
   group: btc-binance-ws-cache-${{ github.event_name == 'schedule' && github.run_id || github.sha }}
   cancel-in-progress: false
 
@@ -37,7 +31,9 @@ env:
 jobs:
   collector:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 45m capture + bounded recovery margin; prevents a stuck post-capture job from
+    # occupying a hosted runner for 90m while the healthy schedule continues.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v7
         with:
