@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 import numpy as np
 
-from src.binary_target_research import _metrics, build_rows
+from src.binary_target_research import _metrics, _wfo_diagnostics, build_rows
 from src.label_policy import BINARY_CLASSES, BINARY_TARGET_VERSION, binary_direction_from_return
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "btc_binary_target_research.yml"
@@ -28,9 +28,35 @@ class TestBinaryTargetResearch(unittest.TestCase):
         self.assertEqual(out["n"], 4)
         self.assertEqual(out["up_rate"], 0.5)
         self.assertAlmostEqual(out["accuracy"], 1.0)
+        self.assertEqual(len(out["accuracy_ci95"]), 2)
+        self.assertGreaterEqual(out["accuracy_ci95"][0], 0.0)
+        self.assertLessEqual(out["accuracy_ci95"][1], 1.0)
+        self.assertGreaterEqual(out["effective_sample_size_accuracy"], 1.0)
+        self.assertLessEqual(out["effective_sample_size_accuracy"], 4.0)
         self.assertTrue(np.isfinite(out["logloss"]))
         self.assertTrue(np.isfinite(out["brier"]))
         self.assertTrue(np.isfinite(out["ece"]))
+
+    def test_wfo_diagnostics_capture_fold_stability_and_baseline_effect(self):
+        block = {
+            "train_end": "2026-01-01T00:00:00+00:00",
+            "test_start": "2026-01-01T00:05:00+00:00",
+            "test_end": "2026-01-01T08:20:00+00:00",
+            "test_n": 500,
+            "frequency_baseline": {
+                "logloss": 0.70, "brier": 0.26, "accuracy": 0.50, "n": 500
+            },
+            "extra_trees": {
+                "logloss": 0.69, "brier": 0.25, "accuracy": 0.52, "n": 500
+            },
+        }
+        out = _wfo_diagnostics({"block_metrics": [block], "summary": {"extra_trees": {"status": "OK"}}})
+        diag = out["models"]["extra_trees"]
+        self.assertEqual(diag["n_blocks"], 1)
+        self.assertEqual(diag["logloss_non_degraded_blocks"], 1)
+        self.assertGreater(diag["mean_logloss_relative_improvement"], 0.0)
+        self.assertEqual(diag["newest_block"]["test_start"], block["test_start"])
+        self.assertEqual(diag["worst_logloss_block"]["test_end"], block["test_end"])
 
     def test_build_rows_uses_future_close_and_emits_two_classes(self):
         raw = []
