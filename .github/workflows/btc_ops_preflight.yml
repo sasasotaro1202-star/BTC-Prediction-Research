@@ -172,6 +172,12 @@ jobs:
               raise SystemExit("router threshold is outside safe bounds")
           if not isinstance(obj.get("reason"), str) or not obj["reason"]:
               raise SystemExit("router reason missing")
+          if not isinstance(obj.get("priority"), (int, float)):
+              raise SystemExit("router priority missing or invalid")
+          if not isinstance(obj.get("evidence_state"), str) or not obj["evidence_state"]:
+              raise SystemExit("router evidence_state missing")
+          if not isinstance(obj.get("signals"), list):
+              raise SystemExit("router signals missing or invalid")
           print("autonomous research router contract: VERIFIED")
           PY
 
