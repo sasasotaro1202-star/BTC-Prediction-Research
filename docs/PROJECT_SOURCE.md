@@ -1755,8 +1755,8 @@ LOCAL PIT
 2026-10-04 current repository evidence:
 
 strict PIT admitted primary scope:
-5m strict primary settled = 395
-10m strict primary settled = 395
+5m strict primary settled = 397
+10m strict primary settled = 396
 per-horizon minimum = 300
 active PIT violations = 0
 
@@ -1769,15 +1769,12 @@ Current Production models:
 10m = bootstrap.bootstrap_rf
 
 Current live Binance-primary robustness evidence is not yet promotion-ready:
-5m current-production-model cohort = 252 / 1000 minimum
-10m current-production-model cohort = 395 / 1000 minimum
+5m current-production-model cohort = 254 / 1000 minimum
+10m current-production-model cohort = 396 / 1000 minimum
 
 Therefore Robustness remains RESEARCH_ONLY / insufficient_data.
 
-Situation-metadata maturity still requires 2,609 additional qualifying 5m-cycle rows to reach the 3,000-row maturity target.
-
-Do not interpret strict PIT PASS as Production performance verification.
-Do not interpret model existence, holdout metrics, or completed CI as proof of promotion readiness.
+Situation-metadata maturity still requires 2,607 additional qualifying 5m-cycle rows for the 5m primary cohort and 2,608 for the 10m primary cohort to reach the 3,000-row maturity target.
 
 ⸻
 
