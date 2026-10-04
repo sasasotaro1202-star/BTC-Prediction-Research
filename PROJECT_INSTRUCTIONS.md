@@ -144,3 +144,34 @@ Requested/queued/pending/waiting/in_progress are active transient workflow state
 ## Current-state discipline
 
 The evidence snapshot in this file is descriptive and may age immediately. On every run, re-read current GitHub HEAD, current artifacts, current Actions, current registries, and current production state before making a claim or decision. Never use this instruction file's historical numbers as a substitute for fresh evidence.
+
+## Ultimate Pattern Research Directive — 2026-10-04
+
+When the objective is improvement rather than immediate production change, actively explore diverse, bounded pattern classes instead of repeatedly retesting one model family.
+
+The research matrix should cover, where data and compute allow:
+- model family: logistic, tree ensembles, boosting, probabilistic/simple baselines, ensemble;
+- feature family: momentum, volatility, candle structure, volume/flow, trend, interactions, full schema and ablations;
+- training window: expanding, short rolling, medium rolling and long rolling;
+- calibration: none and chronological post-hoc calibration at minimum;
+- decision policy: predict-now, confidence threshold, selective prediction/abstention, fallback;
+- regime/context: volatility, momentum, trend/transition, source/data quality and model disagreement;
+- source/channel: primary source versus validated independent incremental information, never counting the same upstream twice.
+
+Do not run an uncontrolled Cartesian product. Use a finite, versioned candidate budget and an information-gain-first staged design:
+breadth screen → prequential selection → deep evaluation of the small surviving set → protected holdout description.
+
+Every scored outer block must be predicted by a configuration selected only from strictly earlier observations. Any pattern that cannot satisfy this condition is research diagnostic only and cannot support production adoption.
+
+Record rejected/weak patterns as negative knowledge. A pattern is valuable even when the result is "do not use", when the failure condition is reproducible and actionable.
+
+For each Pattern Lab execution report:
+candidate_count, feature_count, model_count, window_count, calibration_count, decision_count, selection_iterations, data_source, PIT_status, development_OOS, WFO stability, worst/newest block, ESS/CI where applicable, protected_holdout_status, compute/runtime, failure surface, and promotion decision.
+
+Pattern Lab output is always research-only unless the normal BTC promotion gates are independently satisfied.
+
+## Ultimate multi-pattern research operating rule — 2026-10-04
+
+The project must actively test diverse pattern classes when the highest-value frontier is uncertain. Treat model, feature family, training window, calibration, decision policy, regime/context, and independent information channel as separate research axes. Use a finite machine-readable candidate budget and staged search: broad screen → prequential selection → deep calibration/decision analysis → protected holdout.
+
+Every scored outer block must be predicted by a configuration selected only from strictly earlier outcomes. Search volume, candidate count, selection iterations, repeated observations and dependence must be recorded. Weak or failed patterns remain negative knowledge. Pattern Lab results never auto-promote Production; archive-backed results are diagnostic when historical PIT availability is not independently proven.

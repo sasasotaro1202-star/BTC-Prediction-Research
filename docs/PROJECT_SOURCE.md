@@ -2290,3 +2290,216 @@ what decision was made
 why it was made
 
 Knowledge copied from another project must be labeled mechanism-derived, not locally validated performance evidence.
+
+⸻
+
+101. CROSS-PROJECT GOVERNANCE CONSOLIDATION — 2026-10-04
+
+他4 Projectの現行mainを参照しても、BTCへ移すのは性能実績ではなくmechanismのみとする。
+
+7-Sport:
+* fail-closed enrichment
+* success-only checkpoint
+* critical-state single-writer
+* event-aware evaluation
+* production timing laneとheavy research laneの分離
+
+Soccer:
+* explicit prediction-cutoff lineage
+* feature-level PIT provenance
+* prior-mature outcome filtering
+* explicit research handoff
+* nested feature selection
+* source stateの明示
+
+Baseball:
+* universal data/source contracts
+* readiness state machine
+* identity coverageとdata availabilityの分離
+* immutable prediction/experience audit
+* maturity-aware uncertainty research
+
+Stock:
+* nested/prequential model-window-ranking selection
+* contiguous prior-fold evidence
+* dependence-aware moving-block bootstrap
+* multiple-comparison-aware selection statistics
+* transient workflow state handling
+* run provenance manifest
+
+BTC側で同等機構が存在する場合は再実装せず統合・強化する。
+
+⸻
+
+102. RESEARCH HANDOFF FIREWALL
+
+高計算量Researchは明示的な2段handoffを要求する。
+
+TESTS_PASSED=true
+AUDIT_PASSED=true
+
+どちらか一方でも欠落、false、unknown、stale、別run由来の場合はBLOCKED。
+
+handoffは可能な限り:
+test_run / audit_run / analysis_sha / target / horizon / data_snapshot / config_fingerprint / candidate_fingerprint
+を保持する。
+
+handoff PASSはperformance PASS、promotion PASS、production PASSを意味しない。
+
+⸻
+
+103. ULTIMATE MULTI-PATTERN LAB
+
+src/pattern_lab_oos.py と .github/workflows/btc_pattern_lab.yml を、複数研究軸を横断するcanonical research surfaceとする。
+
+現在のbounded screenは:
+
+Model:
+* Logistic C=0.1
+* Logistic C=1.0
+* ExtraTrees
+* HistGradientBoosting
+
+Feature families:
+* core momentum
+* momentum + volatility
+* momentum + candle structure
+* momentum + volume/flow
+* momentum + trend
+* full 15-feature schema
+
+Training windows:
+* expanding
+* trailing 750 observations
+* trailing 1500 observations
+
+このscreenは144 pattern configurationsを上限とする。
+
+Deep stageではdevelopmentで上位6 patternを選び、chronological temperature calibrationの有無を比較する。
+
+Decision stageでは:
+* no abstention
+* max-probability >=0.45
+* >=0.55
+* >=0.65
+を研究する。
+
+重要:
+1. outer test blockのoutcomeは、そのblockのcandidate selectionに使用しない。
+2. current blockはstrictly earlier block evidenceから選ばれたpatternだけでscoreする。
+3. final holdoutはselectionに使用せず、選択済みpatternのdescriptive/final verificationに限定する。
+4. random temporal splitは禁止。
+5. archive-backed evidenceはhistorical availabilityが未証明ならpromotion evidenceにしない。
+
+全patternの成功だけでなく、weak / unstable / high-regret patternもnegative knowledgeとして残す。
+
+⸻
+
+104. PATTERN LAB EVIDENCE SCHEMA
+
+各Pattern Lab artifactには最低限:
+
+experiment
+analysis_git_sha
+target/horizon
+production_version
+data_source
+pit_status
+candidate_count
+model_count
+feature_group_count
+window_count
+calibration_count
+decision_threshold_count
+selection_iterations
+evaluation_config
+nested_prequential_selection
+development direct-pattern metrics
+development block stability
+deep calibration comparison
+protected final holdout
+selected decision policy
+promotion_eligible
+
+を保存する。
+
+production_changed=false は必須。
+Pattern Lab自身がproductionを変更する経路を持ってはならない。
+
+⸻
+
+105. DEPENDENCE / MULTIPLE-SEARCH CONTROL
+
+Pattern Labは144 candidate configurations、deep calibration、decision threshold selectionを明示的なresearch degrees of freedomとして記録する。
+
+Aggregate improvementだけでwinnerを確定しない。
+
+少なくとも:
+* block stability
+* worst/newest block
+* sample size
+* effective sample size when available
+* confidence intervals when available
+* repeated/clustered observation dependence
+* multiple-testing/search burden
+* implementation complexity
+* failure surface
+
+を併記する。
+
+同一upstreamのfeature variantsは独立source evidenceとして数えない。
+
+⸻
+
+106. PATTERN LAB PROMOTION BOUNDARY
+
+Pattern Labのpromotion_eligibleは既定でfalse。
+
+たとえPattern Labで明確な改善が観測されても、Production変更には:
+
+LOCAL PIT
+→ chronological OOS/WFO
+→ calibration
+→ robustness
+→ protected frozen holdout
+→ independent confirmation
+→ shadow
+→ explicit promotion
+
+を別途要求する。
+
+Pattern Labのarchive result、live streak、single newest block、single candidate winだけでProductionへ入れてはならない。
+
+⸻
+
+107. CURRENT RESEARCH PRIORITY RULE
+
+現在のBTCのボトルネックは「モデル候補数不足」ではなく、Production-grade robustness evidenceの深さ、PIT-safe live evidence、calibration evidence、そして新しいpatternの独立検証である。
+
+したがって次作業は原則として:
+
+1. Production robustness cohortを1000以上へ拡張する
+2. Pattern Labで多軸候補をscreenする
+3. surviving patternsへchronological calibration/dependence analysisを追加する
+4. newest/frozen holdoutでconfirmationする
+5. failure frontierから次のexperimentを選ぶ
+
+の順で期待値を比較する。
+
+Pattern Labで良い候補が出ても、robustness不足ならHOLDのまま維持する。
+
+⸻
+
+108. NO-FAKE-PATTERN-SUCCESS
+
+Pattern Labでは以下をsuccessとみなさない:
+
+* candidateが構築できた
+* workflowがgreen
+* archiveで高精度だった
+* newest blockだけ改善した
+* holdoutを一度見て良かった
+* productionと違うtargetで改善した
+* PITが未証明のsourceで改善した
+
+研究statusとperformance statusを分離し、実測された証拠だけを記録する。
