@@ -1,14 +1,16 @@
 # Cross-project mechanism matrix — 2026-10-04
 
+HEADs verified against each repository's `main` ref at the time of this synchronization.
+
 This document records mechanism-level references only. No performance, OOS, holdout, production, prediction, or data result from another repository is transfer evidence for BTC.
 
 | Repository | Current main HEAD | Mechanism reference | BTC treatment |
 |---|---|---|---|
-| BTC-Prediction-Research | ba8412be784d4ef56846aaab5ccee6b303d4c1d1 | strict PIT, production bundle, resumable flow cache, per-horizon readiness | Canonical local implementation |
-| 7-Sport-Prediction-Research | 2160f5a9538502d84249e3d4885241c388f9be62 | fail-closed pre-event enrichment, success-only checkpoints, single-writer critical state, cluster-aware evaluation | Reference mechanism; local adaptation required |
-| Soccer-Prediction-Research | f2bed57d6e0ad50c888903f9df7c5a1b3339e59b | feature-level PIT lineage, mature-prior training, predictability/failure risk | Feature PIT guard added locally; other mechanisms research/extension |
-| Baseball-Prediction-System | e7c785cef3d2c2a8fe250918e642b9d387cf69fe | universal source/data contract, explicit readiness, experience integrity, temporal conformal maturity | Governance reference; target semantics remain BTC-specific |
-| Stock-Daily-Prediction-3000 | 0145f2daff68c0816e20bbff1aeb522a742e68e7 | nested prequential selection, contiguous prior folds, moving-block bootstrap, selection evidence, run provenance | Selection/provenance reference; local OOS required |
+| BTC-Prediction-Research | a20179a9612a083fd3eda50e284f4bcd0cd690b4 | strict PIT, production bundle, resumable flow cache, per-horizon readiness | Canonical local implementation |
+| 7-Sport-Prediction-Research | b6a6934b3de15b58d66c7b871e8e7aed51129e22 | fail-closed pre-event enrichment, success-only checkpoints, single-writer critical state, cluster-aware evaluation | Reference mechanism; local adaptation required |
+| Soccer-Prediction-Research | 87adb6d814918ca751b9084bf1efe86f35532347 | feature-level PIT lineage, mature-prior training, predictability/failure risk | Feature PIT guard added locally; other mechanisms research/extension |
+| Baseball-Prediction-System | fdf665a341047cbd5fe8cac4b737b2bf1f40e4fc | universal source/data contract, explicit readiness, experience integrity, temporal conformal maturity | Governance reference; target semantics remain BTC-specific |
+| Stock-Daily-Prediction-3000 | f92362fe138a8fb443da58fe91aecfbc4f4f8d70 | nested prequential selection, contiguous prior folds, moving-block bootstrap, selection evidence, run provenance | Selection/provenance reference; local OOS required |
 
 ## Transfer contract
 
