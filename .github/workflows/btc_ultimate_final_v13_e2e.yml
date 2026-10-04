@@ -10,7 +10,8 @@ on:
 
 concurrency:
   group: btc-ultimate-final-v13-e2e
-  cancel-in-progress: false
+  # V13 is a current-head verification lane; stale queued SHAs have no promotion value.
+  cancel-in-progress: true
 
 permissions:
   contents: write
