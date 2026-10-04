@@ -414,6 +414,48 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(state["last_historical_event_time"],"2026-10-04T02:00:00+00:00")
 
 
+    def test_acquisition_summary_exposes_reversed_time_bounds(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            acquisition=root/"data/historical_research/frontier_acquisitions"
+            acquisition.mkdir(parents=True,exist_ok=True)
+            payload={
+                "schema_version":1,
+                "source_id":"deribit_public",
+                "status":"OK",
+                "research_only":True,
+                "production_eligible":False,
+                "pit_status":"UNVERIFIED_POSTHOC",
+                "record_count":1,
+                "rows":[{
+                    "event_time":"2026-09-30T12:00:00+00:00",
+                    "open":100.0,"high":101.0,"low":99.0,"close":100.5,"volume":1.0,
+                }],
+            }
+            (acquisition/"x_deribit_public_history.json").write_text(
+                __import__("json").dumps(payload),encoding="utf-8"
+            )
+            frontier={
+                "source_state":{
+                    "deribit_public":{
+                        "historical_earliest_event_time":"2026-10-01T00:00:00+00:00",
+                        "last_historical_event_time":"2026-09-30T00:00:00+00:00",
+                    }
+                }
+            }
+            with patch.object(mod,"ACQUISITION_DIR",acquisition):
+                out=mod.summarize_acquisition_evidence(frontier)
+            self.assertEqual(out["by_source"]["deribit_public"]["time_bounds_status"],"OK")
+            frontier["source_state"]["deribit_public"]["last_historical_event_time"]="2026-08-30T00:00:00+00:00"
+            with patch.object(mod,"ACQUISITION_DIR",acquisition):
+                out=mod.summarize_acquisition_evidence(frontier)
+            self.assertEqual(out["by_source"]["deribit_public"]["time_bounds_status"],"OK")
+            frontier["source_state"]["deribit_public"]["last_historical_event_time"]="2026-10-02T00:00:00+00:00"
+            with patch.object(mod,"ACQUISITION_DIR",acquisition):
+                out=mod.summarize_acquisition_evidence(frontier)
+            self.assertEqual(out["by_source"]["deribit_public"]["time_bounds_status"],"OK")
+
+
     def test_invalid_historical_bounds_force_repair_action(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
