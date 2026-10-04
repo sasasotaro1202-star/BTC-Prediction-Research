@@ -254,6 +254,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           root=Path('data/historical_research')
           failures=[]
