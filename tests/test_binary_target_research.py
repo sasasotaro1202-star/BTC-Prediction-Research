@@ -2,7 +2,12 @@ import unittest
 from pathlib import Path
 import numpy as np
 
-from src.binary_target_research import _metrics, _wfo_diagnostics, build_rows
+from src.binary_target_research import (
+    _metrics,
+    _training_rows_before_cutoff,
+    _wfo_diagnostics,
+    build_rows,
+)
 from src.label_policy import BINARY_CLASSES, BINARY_TARGET_VERSION, binary_direction_from_return
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "btc_binary_target_research.yml"
@@ -36,6 +41,29 @@ class TestBinaryTargetResearch(unittest.TestCase):
         self.assertTrue(np.isfinite(out["logloss"]))
         self.assertTrue(np.isfinite(out["brier"]))
         self.assertTrue(np.isfinite(out["ece"]))
+
+    def test_knowledge_time_filter_excludes_unmatured_training_labels(self):
+        rows = [
+            {
+                "created": "2026-09-23T17:55:00+00:00",
+                "target": "2026-09-23T18:00:00+00:00",
+            },
+            {
+                "created": "2026-09-23T17:59:00+00:00",
+                "target": "2026-09-23T18:05:00+00:00",
+            },
+            {
+                "created": "2026-09-23T18:01:00+00:00",
+                "target": "2026-09-23T18:02:00+00:00",
+            },
+            {
+                "created": "2026-09-23T17:50:00+00:00",
+                "target": "not-a-timestamp",
+            },
+        ]
+        out = _training_rows_before_cutoff(rows, "2026-09-23T18:01:00+00:00")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["target"], "2026-09-23T18:00:00+00:00")
 
     def test_wfo_diagnostics_capture_fold_stability_and_baseline_effect(self):
         block = {
