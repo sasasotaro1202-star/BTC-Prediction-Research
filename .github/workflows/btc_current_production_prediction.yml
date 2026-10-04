@@ -195,7 +195,14 @@ jobs:
                       (parse_iso(payload["target_5m_jst"]) - cutoff).total_seconds()
                   ),
                   "research_status": "PRODUCTION",
-              }
+              },
+              "10m": {
+                  "target_at": payload["target_10m_jst"],
+                  "forecast_lifetime_seconds": int(
+                      (parse_iso(payload["target_10m_jst"]) - cutoff).total_seconds()
+                  ),
+                  "research_status": "PRODUCTION",
+              },
           }
           for horizon, item in (payload.get("extended_horizons") or {}).items():
               target = parse_iso(item["target_jst"])
