@@ -157,7 +157,7 @@ def forecast_probabilities(
     matrix = np.asarray(transition_matrix, dtype=float)
     if matrix.shape != (STATE_COUNT, STATE_COUNT):
         raise ValueError("transition_matrix_shape_mismatch")
-    if not (1 <= int(current_state) < STATE_COUNT):
+    if not (0 <= int(current_state) < STATE_COUNT):
         raise ValueError("current_state_out_of_bounds")
     steps = int(max_steps)
     if steps < 1:
