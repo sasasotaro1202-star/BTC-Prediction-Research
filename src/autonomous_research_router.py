@@ -41,14 +41,13 @@ def _load(path: Path) -> dict[str, Any] | None:
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
-    readiness = _load(evidence / "research_readiness.json")
     pit = _load(evidence / "pit_oos_audit.json")
     health = _load(evidence / "research_health.json")
     frontier = _load(evidence / "data_frontier.json")
-    frontier_run = _load(evidence / "data_frontier_run.json")
 
-    # Highest priority: repair/refresh the safety evidence surface itself.
-    if readiness is None or pit is None or health is None:
+    # research_readiness.json is a workflow-local/generated surface and is not
+    # required to be committed to main. Durable PIT/health evidence is authoritative.
+    if pit is None or health is None:
         return {
             **DEFAULT,
             "production_impact": False,
@@ -105,17 +104,21 @@ def choose(root: Path) -> dict[str, Any]:
     # The frontier controller already knows whether it needs discovery,
     # historical-bound repair, or live evidence accumulation. Only route it
     # here for actions that can be advanced without changing Production.
-    frontier_action = None
-    if isinstance(frontier_run, dict):
-        frontier_action = frontier_run.get("next_best_action")
-    if frontier_action in {
-        "discover_and_reselect_frontier",
-        "repair_historical_frontier_bounds",
-    }:
+    frontier_candidates = 0
+    if isinstance(frontier, dict):
+        candidates = frontier.get("candidates")
+        if isinstance(candidates, dict):
+            for item in candidates.values():
+                if not isinstance(item, dict):
+                    continue
+                lifecycle = item.get("lifecycle")
+                if isinstance(lifecycle, dict) and lifecycle.get("research_selection_eligible") is True:
+                    frontier_candidates += 1
+    if frontier_candidates > 0:
         return {
             "workflow": "btc_autonomous_data_frontier.yml",
             "threshold_seconds": 900,
-            "reason": f"frontier_next_best_action:{frontier_action}",
+            "reason": "eligible_frontier_candidates_pending_research_review",
             "production_impact": False,
             "priority": 90,
             "evidence_state": "FRONTIER_WORK_AVAILABLE",
