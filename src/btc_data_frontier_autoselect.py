@@ -771,6 +771,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+    _extend_historical_time_bounds(state, result)
     
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
@@ -791,6 +792,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+    _extend_historical_time_bounds(state, result)
     
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
@@ -813,6 +815,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    state["last_historical_record_count"]=int(result.get("record_count",0))
    state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
    state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
+   _extend_historical_time_bounds(state, result)
    
    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
