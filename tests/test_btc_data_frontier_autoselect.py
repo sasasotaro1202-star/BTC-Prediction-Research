@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import patch
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from src import btc_data_frontier_autoselect as mod
 
 
@@ -317,7 +317,7 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             "source_state":{
                 "hyperliquid_ws":{
                     "historical_acquisition_failures":8,
-                    "historical_acquisition_backoff_until":"2026-10-04T09:00:00+00:00",
+                    "historical_acquisition_backoff_until":(datetime.now(timezone.utc)+timedelta(minutes=5)).replace(microsecond=0).isoformat(),
                     "last_historical_acquisition_error":"HTTPError:429:Too Many Requests",
                     "last_historical_acquisition_error_at":"2026-10-04T07:20:00+00:00",
                 }
