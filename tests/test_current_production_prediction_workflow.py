@@ -23,6 +23,8 @@ class TestCurrentProductionPredictionWorkflow(unittest.TestCase):
         self.assertIn("VERIFIED_RUNTIME_BINDING_AND_PERSISTENCE_CONTRACT", text)
         self.assertIn("NOT_COMPUTED_AT_PRODUCTION_RUNTIME", text)
         self.assertIn("forecast_lifetime_seconds", text)
+        self.assertIn('payload["target_10m_jst"]', text)
+        self.assertIn('horizons = {', text)
         self.assertIn("source_checks", text)
         self.assertIn("btc-current-production-evidence", text)
 
