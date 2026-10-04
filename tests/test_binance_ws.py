@@ -281,16 +281,21 @@ class TestBinanceWebSocket(unittest.TestCase):
             calls.append(url)
             return 0, True
 
-        monotonic_values = iter((0.0, 1.0, 200.0, 400.0, 400.0))
+        clock = {"now": 0.0}
+
+        async def failing_stream(url, timeout_seconds, parser, on_row):
+            clock["now"] = binance_ws.MAX_NO_PROGRESS_SECONDS + 1.0
+            return await fake_stream(url, timeout_seconds, parser, on_row)
+
         with patch.object(
             binance_ws,
             "_stream_url",
-            new=AsyncMock(side_effect=fake_stream),
+            new=AsyncMock(side_effect=failing_stream),
         ):
             with patch.object(
                 binance_ws.time,
                 "monotonic",
-                side_effect=lambda: next(monotonic_values),
+                side_effect=lambda: clock["now"],
             ):
                 with self.assertRaisesRegex(
                     RuntimeError, "binance_ws_no_progress"
