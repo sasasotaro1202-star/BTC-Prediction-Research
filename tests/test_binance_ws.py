@@ -274,6 +274,38 @@ class TestBinanceWebSocket(unittest.TestCase):
         self.assertIn(incoming["open_time_ms"], opens)
         self.assertGreaterEqual(len(checkpoints), 1)
 
+    def test_continuous_capture_fails_closed_after_global_no_progress(self):
+        calls = []
+
+        async def fake_stream(url, timeout_seconds, parser, on_row):
+            calls.append(url)
+            return 0, True
+
+        monotonic_values = iter((0.0, 200.0, 400.0))
+        with patch.object(
+            binance_ws,
+            "_stream_url",
+            new=AsyncMock(side_effect=fake_stream),
+        ):
+            with patch.object(
+                binance_ws.time,
+                "monotonic",
+                side_effect=lambda: next(monotonic_values),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "binance_ws_no_progress"
+                ):
+                    asyncio.run(
+                        binance_ws.capture_closed_klines_stream(
+                            timeout_seconds=1000.0,
+                            checkpoint_seconds=9999.0,
+                            initial_rows=[],
+                            on_checkpoint=None,
+                        )
+                    )
+
+        self.assertEqual(calls, [binance_ws.KLINE_URL])
+
     def test_continuous_capture_uses_subscribe_transport_after_url_failures(self):
         incoming = {
             "open_time_ms": 1_800_000_000_000,
