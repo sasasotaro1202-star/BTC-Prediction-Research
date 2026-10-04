@@ -129,7 +129,11 @@ jobs:
             blocked=0
             for path in "${FILES[@]}"; do
               case "$path" in
-                data/*|models/*|registry/*|                .github/workflows/btc_live_cycle.yml|                .github/workflows/btc_current_production_prediction.yml|                .github/workflows/btc_production_sentinel.yml|                .github/workflows/btc_promotion*|                *holdout*|*production_registry*|*prediction_state*)
+                .github/workflows/*)
+                  add_audit "PR=$PR BLOCKED workflow-change=$path"
+                  blocked=1
+                  ;;
+                data/*|models/*|registry/*|*holdout*|*production_registry*|*prediction_state*)
                   add_audit "PR=$PR BLOCKED sensitive-path=$path"
                   blocked=1
                   ;;
