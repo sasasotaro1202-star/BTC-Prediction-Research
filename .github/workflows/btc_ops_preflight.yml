@@ -160,6 +160,7 @@ jobs:
               "btc_autonomous_data_frontier.yml",
               "btc_adaptive_calibration_replay.yml",
               "btc_experience_policy_oos.yml",
+              "btc_selective_prediction_oos.yml",
               "btc_rich_production_challenger.yml",
               "btc_ultimate_final_v13_e2e.yml",
           }
@@ -167,6 +168,45 @@ jobs:
               raise SystemExit("router produced workflow outside allowlist")
           if obj.get("production_impact") is not False:
               raise SystemExit("router production_impact must be false")
+          candidates = obj.get("candidates")
+          if not isinstance(candidates, list) or not (1 <= len(candidates) <= 7):
+              raise SystemExit("router candidates missing or out of bounds")
+          expected_thresholds = {
+              "btc_research_readiness.yml": 3600,
+              "btc_autonomous_data_frontier.yml": 900,
+              "btc_adaptive_calibration_replay.yml": 28800,
+              "btc_experience_policy_oos.yml": 21600,
+              "btc_selective_prediction_oos.yml": 43200,
+              "btc_rich_production_challenger.yml": 86400,
+              "btc_ultimate_final_v13_e2e.yml": 86400,
+          }
+          seen = set()
+          previous_priority = None
+          for candidate in candidates:
+              workflow = candidate.get("workflow")
+              if workflow not in allowed or workflow in seen:
+                  raise SystemExit("router candidate outside allowlist or duplicated")
+              seen.add(workflow)
+              if candidate.get("production_impact") is not False:
+                  raise SystemExit("router candidate production_impact must be false")
+              if candidate.get("threshold_seconds") != expected_thresholds[workflow]:
+                  raise SystemExit("router candidate threshold mismatch")
+              priority = candidate.get("priority")
+              if not isinstance(priority, (int, float)):
+                  raise SystemExit("router candidate priority missing")
+              if previous_priority is not None and priority > previous_priority:
+                  raise SystemExit("router candidate priority order invalid")
+              previous_priority = priority
+              if not isinstance(candidate.get("reason"), str) or not candidate["reason"]:
+                  raise SystemExit("router candidate reason missing")
+              if not isinstance(candidate.get("evidence_state"), str) or not candidate["evidence_state"]:
+                  raise SystemExit("router candidate evidence_state missing")
+              if not isinstance(candidate.get("signals"), list) or not all(isinstance(x, str) and x for x in candidate["signals"]):
+                  raise SystemExit("router candidate signals invalid")
+          if candidates[0].get("workflow") != obj.get("workflow"):
+              raise SystemExit("router first candidate mismatch")
+          if not isinstance(obj.get("signals"), list) or not all(isinstance(x, str) and x for x in obj["signals"]):
+              raise SystemExit("router signals invalid")
           threshold = obj.get("threshold_seconds")
           if not isinstance(threshold, (int, float)) or not (0 < threshold <= 604800):
               raise SystemExit("router threshold is outside safe bounds")
