@@ -63,3 +63,9 @@ def test_workflow_handoff_and_stale_main_guard():
     assert 'test "$TESTS_PASSED" = "true"' in s
     assert 'test "$AUDIT_PASSED" = "true"' in s
     assert 'if [ "$main_sha" != "$GITHUB_SHA" ]; then' in s
+
+def test_workflow_expressions_are_not_backslash_escaped():
+    s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
+    assert "\\${{" not in s
+    assert "ref: ${{ github.sha }}" in s
+    assert "group: btc-pattern-matrix-research" in s
