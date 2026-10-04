@@ -329,6 +329,51 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(frontier["candidates"]["github:test/btc"]["selection_count"],1)
 
 
+    def test_historical_bounds_invalid_is_exposed_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            state={
+                "schema_version":1,
+                "source_state":{
+                    "bitget_public_ws":{
+                        "historical_earliest_event_time":"2026-09-30T11:50:00+00:00",
+                        "last_historical_event_time":"2026-08-16T19:40:00+00:00",
+                    }
+                }
+            }
+            (hist/"data_frontier_state.json").write_text(__import__("json").dumps(state),encoding="utf-8")
+            with patch.object(mod,"ROOT",root), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
+                issues=mod._historical_bounds_issues_from_state()
+                self.assertEqual(issues[0]["source_id"],"bitget_public_ws")
+                self.assertEqual(issues[0]["reason"],"earliest_after_latest")
+                secondary,repeat,action=mod.plan_for_gap({
+                    "strict_primary":300,
+                    "target":300,
+                    "situation_meta_ready_min":3000,
+                    "situation_meta_target":3000,
+                    "online_expert_ready_min":140,
+                    "online_expert_target":140,
+                    "historical_bounds_invalid":issues,
+                })
+            self.assertTrue(repeat)
+            self.assertEqual(secondary["historical_bounds_invalid"],issues)
+            self.assertEqual(action,"repair_historical_frontier_bounds")
+
+    def test_historical_bounds_extension_recovers_stale_latest_bound(self):
+        state={
+            "historical_earliest_event_time":"2026-09-30T11:50:00+00:00",
+            "last_historical_event_time":"2026-08-16T19:40:00+00:00",
+        }
+        mod._extend_historical_time_bounds(state,{
+            "first_event_time":"2026-08-16T18:00:00+00:00",
+            "last_event_time":"2026-08-16T20:00:00+00:00",
+        })
+        self.assertEqual(state["historical_earliest_event_time"],"2026-08-16T18:00:00+00:00")
+        self.assertEqual(state["last_historical_event_time"],"2026-08-16T20:00:00+00:00")
+
+
     def test_accumulation_target_stays_above_promotion_floor(self):
         secondary, repeat, action = mod.plan_for_gap({
             "strict_primary":300,
