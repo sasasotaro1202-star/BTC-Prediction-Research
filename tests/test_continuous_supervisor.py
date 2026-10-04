@@ -50,3 +50,15 @@ def test_supervisor_fail_closes_router_failure_to_readiness():
     assert "route_workflow='btc_research_readiness.yml'" in text
     assert "route_reason='router_failed_fail_closed'" in text
 
+
+
+
+def test_ops_preflight_triggers_on_supervisor_and_router_changes():
+    text = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
+    for path in (
+        ".github/workflows/btc_continuous_supervisor.yml",
+        "src/autonomous_research_router.py",
+        "tests/test_continuous_supervisor.py",
+        "tests/test_autonomous_research_router.py",
+    ):
+        assert f"      - '{path}'" in text
