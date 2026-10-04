@@ -109,6 +109,8 @@ jobs:
               add_audit "PR=$PR SKIP base=$base_ref"
               continue
             fi
+            # Contract sentinel consumed by Ops Preflight; keep aligned with the runtime guard.
+            # head_repo != "$REPO"
             if [ "$head_repo" != "$REPO" ]; then
               add_audit "PR=$PR SKIP external-head-repo=$head_repo"
               continue
