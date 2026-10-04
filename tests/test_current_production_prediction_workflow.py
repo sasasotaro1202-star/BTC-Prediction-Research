@@ -17,6 +17,15 @@ class TestCurrentProductionPredictionWorkflow(unittest.TestCase):
         self.assertIn("5m", text)
         self.assertIn("10m", text)
 
+    def test_workflow_emits_auditable_evidence_envelope(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Build auditable production prediction evidence envelope", text)
+        self.assertIn("VERIFIED_RUNTIME_BINDING_AND_PERSISTENCE_CONTRACT", text)
+        self.assertIn("NOT_COMPUTED_AT_PRODUCTION_RUNTIME", text)
+        self.assertIn("forecast_lifetime_seconds", text)
+        self.assertIn("source_checks", text)
+        self.assertIn("btc-current-production-evidence", text)
+
     def test_workflow_does_not_enable_fallback_selection(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("use_bybit_fallback = True", text)
