@@ -72,6 +72,52 @@ class BootstrapGateTests(unittest.TestCase):
         if XGBClassifier is not None:
             self.assertIn("xgboost", names)
 
+    def test_publish_never_mutates_existing_production_registry_or_artifacts(self):
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from src import bootstrap_train
+
+        class FakeModel:
+            classes_ = ["DOWN", "FLAT", "UP"]
+
+        result = {
+            "model_name": "soft_ensemble",
+            "model": FakeModel(),
+            "promotion_allowed": True,
+            "gate_score": {"accuracy": 0.6, "logloss": 0.8, "brier": 0.4},
+            "baseline_gate": {"accuracy": 0.5, "logloss": 0.9, "brier": 0.5},
+            "holdout_score": {"accuracy": 0.58, "logloss": 0.82, "brier": 0.42},
+            "holdout_n": 1000,
+            "validation_results": [],
+            "validation_errors": [],
+            "selection_method": "nested_chronological_selection_gate_holdout",
+            "train_n": 1000,
+            "selection_n": 500,
+            "gate_n": 500,
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            model_dir = Path(td) / "models"
+            model_dir.mkdir()
+            existing = model_dir / "5m.joblib"
+            existing.write_bytes(b"existing-production")
+            with sqlite3.connect(db) as con:
+                con.execute("CREATE TABLE model_registry (horizon TEXT PRIMARY KEY, production_version TEXT, updated_at_utc TEXT)")
+                con.execute("INSERT INTO model_registry VALUES (?,?,?)", ("5m", "bootstrap.old.v5.4", "2026-10-04T00:00:00+00:00"))
+                con.commit()
+            with patch.object(bootstrap_train, "DB", db), patch.object(bootstrap_train, "MODEL_DIR", model_dir):
+                ok, meta = bootstrap_train.publish("5m", result)
+            self.assertFalse(ok)
+            self.assertEqual(meta["status"], "production_publish_blocked_research_only")
+            self.assertEqual(meta["existing_production_version"], "bootstrap.old.v5.4")
+            self.assertEqual((model_dir / "5m.joblib").read_bytes(), b"existing-production")
+            with sqlite3.connect(db) as con:
+                version = con.execute("SELECT production_version FROM model_registry WHERE horizon=?", ("5m",)).fetchone()[0]
+            self.assertEqual(version, "bootstrap.old.v5.4")
 
 if __name__ == "__main__":
     unittest.main()
