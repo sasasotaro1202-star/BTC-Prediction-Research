@@ -222,7 +222,7 @@ class TestPITOOSAudit(unittest.TestCase):
                 }
                 rows.append((i + 1, at, (created + timedelta(minutes=5, milliseconds=i + 1)).isoformat(),
                              (created + timedelta(minutes=10, milliseconds=i + 1)).isoformat(),
-                             "v1", json.dumps(scenario)))
+                             "v1", "UP", "DOWN", json.dumps(scenario)))
             db = self.make_db(td, rows)
             with patch.object(pit_oos_audit, "DB", db), patch.object(pit_oos_audit, "OUT", Path(td) / "audit.json"):
                 result = pit_oos_audit.audit()
@@ -231,6 +231,51 @@ class TestPITOOSAudit(unittest.TestCase):
                 self.assertEqual(result["verified_predictions"], pit_oos_audit.MIN_STRICT_PIT_ROWS)
                 self.assertEqual(result["verified_primary_predictions"], pit_oos_audit.MIN_STRICT_PIT_ROWS)
                 self.assertEqual(result["verified_fallback_predictions"], 0)
+
+    def test_pit_gate_requires_each_primary_horizon(self):
+        with tempfile.TemporaryDirectory() as td:
+            created = datetime.now(timezone.utc).replace(microsecond=0)
+            rows = []
+            for i in range(pit_oos_audit.MIN_STRICT_PIT_ROWS):
+                at = (created + timedelta(milliseconds=i)).isoformat()
+                scenario = {
+                    "decision_time_utc": at,
+                    "provenance": {
+                        "event_time": at,
+                        "available_at": at,
+                        "retrieved_at": at,
+                        "prediction_cutoff": at,
+                        "sources": {
+                            "binance_futures": {
+                                "status": "ok",
+                                "event_time": at,
+                                "available_at": at,
+                                "retrieved_at": at,
+                                "prediction_cutoff": at,
+                            }
+                        },
+                    },
+                }
+                rows.append((
+                    i + 1,
+                    at,
+                    (created + timedelta(minutes=5, milliseconds=i + 1)).isoformat(),
+                    (created + timedelta(minutes=10, milliseconds=i + 1)).isoformat(),
+                    "v1",
+                    "UP",
+                    None,
+                    json.dumps(scenario),
+                ))
+            db = self.make_db(td, rows)
+            with patch.object(pit_oos_audit, "DB", db), patch.object(
+                pit_oos_audit, "OUT", Path(td) / "audit.json"
+            ):
+                result = pit_oos_audit.audit()
+                self.assertTrue(result["ok"], result)
+                self.assertFalse(result["pit_verified"])
+                self.assertTrue(result["primary_horizon_gate"]["5m"]["ready"])
+                self.assertFalse(result["primary_horizon_gate"]["10m"]["ready"])
+                self.assertIn("10m=0/", result["pit_verified_reason"])
 
     def test_accepts_provenance_cutoff_as_decision_time(self):
         with tempfile.TemporaryDirectory() as td:
