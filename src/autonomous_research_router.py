@@ -17,7 +17,7 @@ ALLOWED = {
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_experience_policy_oos.yml": 21600,
-    "btc_rich_production_challenger.yml": 28800,
+    "btc_rich_production_challenger.yml": 86400,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
 
@@ -38,12 +38,125 @@ def _load(path: Path) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
+def _decision(
+    workflow: str,
+    reason: str,
+    priority: int,
+    evidence_state: str,
+    signals: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "workflow": workflow,
+        "threshold_seconds": ALLOWED[workflow],
+        "reason": reason,
+        "production_impact": False,
+        "priority": priority,
+        "evidence_state": evidence_state,
+        "signals": list(signals or []),
+    }
+
+
+def _calibration_waiting(root: Path) -> list[str]:
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        c = _load(root / "models" / f"{horizon}.calibration.json")
+        if c is None:
+            signals.append(f"{horizon}:calibration_artifact_missing")
+            continue
+        try:
+            n = int(c.get("n_settled", 0))
+        except (TypeError, ValueError):
+            n = 0
+        if n < 400:
+            signals.append(f"{horizon}:calibration_n={n}<400")
+        if c.get("fit_logloss") is None:
+            signals.append(f"{horizon}:fit_logloss_missing")
+        if c.get("holdout_logloss") is None:
+            signals.append(f"{horizon}:holdout_logloss_missing")
+    return signals
+
+
+def _frontier_candidates(root: Path) -> int:
+    frontier = _load(root / "data" / "historical_research" / "data_frontier.json")
+    if not isinstance(frontier, dict):
+        return 0
+    candidates = frontier.get("candidates")
+    if not isinstance(candidates, dict):
+        return 0
+    count = 0
+    for item in candidates.values():
+        if not isinstance(item, dict):
+            continue
+        lifecycle = item.get("lifecycle")
+        if isinstance(lifecycle, dict) and lifecycle.get("research_selection_eligible") is True:
+            count += 1
+    return count
+
+
+def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
+    gate = _load(root / "data" / "historical_research" / "promotion_gate.json")
+    if gate is None:
+        return False, []
+
+    reasons = str(gate.get("reason", "")).lower()
+    hold = gate.get("production_safety_gate") == "HOLD" and gate.get("promotion_allowed") is False
+    blockers = [
+        token
+        for token in ("robustness", "holdout")
+        if token in reasons
+    ]
+    if not hold or not blockers:
+        return False, []
+    return True, [f"promotion_gate:{token}_blocked" for token in blockers]
+
+
+def _high_confidence_overreach(root: Path) -> list[str]:
+    """Find a large, actionable post-outcome confidence/accuracy gap.
+
+    This is a research trigger only. It cannot change production confidence,
+    routing, abstention, or calibration by itself.
+    """
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+    if experience is None:
+        return []
+    signals: list[str] = []
+    horizons = experience.get("horizons")
+    if not isinstance(horizons, dict):
+        return signals
+
+    for horizon in HORIZONS:
+        buckets = (
+            horizons.get(horizon, {})
+            if isinstance(horizons.get(horizon, {}), dict)
+            else {}
+        ).get("cases", {})
+        if not isinstance(buckets, dict):
+            continue
+        buckets = buckets.get("confidence_bucket")
+        if not isinstance(buckets, dict):
+            continue
+        high = buckets.get("0.70+")
+        if not isinstance(high, dict):
+            continue
+        try:
+            n = int(high.get("n", 0))
+            accuracy = float(high["accuracy"])
+            confidence = float(high["avg_confidence"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        gap = confidence - accuracy
+        if n >= 50 and gap >= 0.15:
+            signals.append(
+                f"{horizon}:high_confidence_gap={gap:.3f};n={n}"
+            )
+    return signals
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
     pit = _load(evidence / "pit_oos_audit.json")
     health = _load(evidence / "research_health.json")
-    frontier = _load(evidence / "data_frontier.json")
 
     # research_readiness.json is a workflow-local/generated surface and is not
     # required to be committed to main. Durable PIT/health evidence is authoritative.
@@ -53,149 +166,149 @@ def choose(root: Path) -> dict[str, Any]:
             "production_impact": False,
             "priority": 100,
             "evidence_state": "MISSING_OR_INVALID",
+            "signals": ["durable_pit_or_health_artifact_missing"],
         }
 
     if health.get("ok") is not True:
-        return {
-            "workflow": "btc_research_readiness.yml",
-            "threshold_seconds": 3600,
-            "reason": "research_health_not_pass",
-            "production_impact": False,
-            "priority": 99,
-            "evidence_state": "DATA_HEALTH_BLOCKED",
-        }
+        return _decision(
+            "btc_research_readiness.yml",
+            "research_health_not_pass",
+            99,
+            "DATA_HEALTH_BLOCKED",
+            ["research_health_ok_not_true"],
+        )
 
     if pit.get("ok") is not True or pit.get("pit_verified") is not True:
-        return {
-            "workflow": "btc_research_readiness.yml",
-            "threshold_seconds": 3600,
-            "reason": "strict_pit_evidence_not_verified",
-            "production_impact": False,
-            "priority": 98,
-            "evidence_state": "PIT_NOT_VERIFIED",
-        }
+        return _decision(
+            "btc_research_readiness.yml",
+            "strict_pit_evidence_not_verified",
+            98,
+            "PIT_NOT_VERIFIED",
+            ["pit_ok_or_verified_not_true"],
+        )
 
     horizon_gate = pit.get("primary_horizon_gate")
     if not isinstance(horizon_gate, dict) or set(horizon_gate) != set(HORIZONS):
-        return {
-            "workflow": "btc_research_readiness.yml",
-            "threshold_seconds": 3600,
-            "reason": "per_horizon_pit_gate_missing",
-            "production_impact": False,
-            "priority": 97,
-            "evidence_state": "PIT_GATE_INCOMPLETE",
-        }
+        return _decision(
+            "btc_research_readiness.yml",
+            "per_horizon_pit_gate_missing",
+            97,
+            "PIT_GATE_INCOMPLETE",
+            ["5m_and_10m_horizon_gate_required"],
+        )
 
-    if any(
-        not isinstance(horizon_gate.get(h), dict)
-        or horizon_gate[h].get("ready") is not True
-        or int(horizon_gate[h].get("strict_primary_settled", 0)) < 300
-        for h in HORIZONS
-    ):
-        return {
-            "workflow": "btc_research_readiness.yml",
-            "threshold_seconds": 3600,
-            "reason": "per_horizon_strict_pit_rows_below_gate",
-            "production_impact": False,
-            "priority": 96,
-            "evidence_state": "PIT_COLLECTION",
-        }
-
-    # Current-generation production calibration is a live-evidence problem.
-    # Replay research is still useful while enough strict-PIT observations
-    # accumulate, but it must never activate calibration automatically.
-    calibration_waiting = False
+    bad_horizons: list[str] = []
     for horizon in HORIZONS:
-        c = _load(root / "models" / f"{horizon}.calibration.json")
-        if c is None:
-            calibration_waiting = True
-            break
+        item = horizon_gate.get(horizon)
+        if not isinstance(item, dict):
+            bad_horizons.append(f"{horizon}:gate_missing")
+            continue
         try:
-            n = int(c.get("n_settled", 0))
+            strict = int(item.get("strict_primary_settled", 0))
+            minimum = int(item.get("minimum", 0))
         except (TypeError, ValueError):
-            n = 0
-        if (
-            n < 400
-            or c.get("fit_logloss") is None
-            or c.get("holdout_logloss") is None
-        ):
-            calibration_waiting = True
-            break
-    if calibration_waiting:
-        return {
-            "workflow": "btc_adaptive_calibration_replay.yml",
-            "threshold_seconds": 28800,
-            "reason": "current_generation_calibration_evidence_below_effective_gate",
-            "production_impact": False,
-            "priority": 80,
-            "evidence_state": "CALIBRATION_COLLECTION",
-        }
+            bad_horizons.append(f"{horizon}:invalid_gate_counts")
+            continue
+        if item.get("ready") is not True or minimum < 300 or strict < 300:
+            bad_horizons.append(
+                f"{horizon}:strict={strict};minimum={minimum};ready={item.get('ready')}"
+            )
+    if bad_horizons:
+        return _decision(
+            "btc_research_readiness.yml",
+            "per_horizon_strict_pit_rows_below_gate",
+            96,
+            "PIT_COLLECTION",
+            bad_horizons,
+        )
 
-    # The frontier controller already knows whether it needs discovery,
-    # historical-bound repair, or live evidence accumulation. Only route it
-    # here for actions that can be advanced without changing Production.
-    frontier_candidates = 0
-    if isinstance(frontier, dict):
-        candidates = frontier.get("candidates")
-        if isinstance(candidates, dict):
-            for item in candidates.values():
-                if not isinstance(item, dict):
-                    continue
-                lifecycle = item.get("lifecycle")
-                if isinstance(lifecycle, dict) and lifecycle.get("research_selection_eligible") is True:
-                    frontier_candidates += 1
+    calibration_signals = _calibration_waiting(root)
+    if calibration_signals:
+        return _decision(
+            "btc_adaptive_calibration_replay.yml",
+            "current_generation_calibration_evidence_below_effective_gate",
+            95,
+            "CALIBRATION_COLLECTION",
+            calibration_signals,
+        )
+
+    # Promotion remains fail-closed. When the durable gate says robustness or
+    # holdout evidence is the blocker, schedule the dedicated research-only
+    # rich challenger. It compares against the incumbent on a frozen holdout,
+    # but its own archive timing is explicitly non-strict and cannot promote.
+    promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
+    if promotion_blocked:
+        return _decision(
+            "btc_rich_production_challenger.yml",
+            "promotion_gate_waits_on_robustness_or_holdout_evidence",
+            90,
+            "PROMOTION_HOLD_RESEARCH",
+            promotion_signals,
+        )
+
+    frontier_candidates = _frontier_candidates(root)
     if frontier_candidates > 0:
-        return {
-            "workflow": "btc_autonomous_data_frontier.yml",
-            "threshold_seconds": 900,
-            "reason": "eligible_frontier_candidates_pending_research_review",
-            "production_impact": False,
-            "priority": 90,
-            "evidence_state": "FRONTIER_WORK_AVAILABLE",
-        }
+        return _decision(
+            "btc_autonomous_data_frontier.yml",
+            "eligible_frontier_candidates_pending_research_review",
+            85,
+            "FRONTIER_WORK_AVAILABLE",
+            [f"eligible_candidates={frontier_candidates}"],
+        )
 
-    # Once safety evidence is healthy, keep experience-policy research moving.
-    # It is research-only and has its own promotion gate.
+    overreach_signals = _high_confidence_overreach(root)
+    if overreach_signals:
+        return _decision(
+            "btc_experience_policy_oos.yml",
+            "high_confidence_overreach_requires_reliability_research",
+            80,
+            "CONFIDENCE_RELIABILITY_RISK",
+            overreach_signals,
+        )
+
     experience = _load(root / "data" / "experience" / "experience_summary.json")
     if experience is None:
-        return {
-            "workflow": "btc_experience_policy_oos.yml",
-            "threshold_seconds": 21600,
-            "reason": "experience_evidence_missing",
-            "production_impact": False,
-            "priority": 70,
-            "evidence_state": "EXPERIENCE_MISSING",
-        }
+        return _decision(
+            "btc_experience_policy_oos.yml",
+            "experience_evidence_missing",
+            70,
+            "EXPERIENCE_MISSING",
+            ["experience_summary_missing"],
+        )
 
-    # Default bounded research heartbeat. V13 itself is fail-closed and has
-    # protected promotion/holdout semantics; the supervisor still requires the
-    # workflow to be stale before dispatching it.
-    return {
-        "workflow": "btc_ultimate_final_v13_e2e.yml",
-        "threshold_seconds": 86400,
-        "reason": "routine_future_generalization_evidence_refresh",
-        "production_impact": False,
-        "priority": 50,
-        "evidence_state": "HEALTHY_ROUTINE",
-    }
+    return _decision(
+        "btc_ultimate_final_v13_e2e.yml",
+        "routine_future_generalization_evidence_refresh",
+        50,
+        "HEALTHY_ROUTINE",
+        [],
+    )
 
 
 def validate(route: dict[str, Any]) -> dict[str, Any]:
     workflow = route.get("workflow")
     if workflow not in ALLOWED:
         raise ValueError("router_selected_unapproved_workflow")
-    threshold = int(route.get("threshold_seconds", 0))
+    try:
+        threshold = int(route.get("threshold_seconds", 0))
+        priority = int(route.get("priority", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("router_numeric_contract_invalid") from exc
     if threshold <= 0 or threshold > 7 * 24 * 3600:
         raise ValueError("router_threshold_out_of_bounds")
     if route.get("production_impact") is not False:
         raise ValueError("router_production_impact_must_be_false")
+    reason = str(route.get("reason", "")).strip()
+    if not reason:
+        raise ValueError("router_reason_missing")
     return {
         "workflow": workflow,
         "threshold_seconds": threshold,
-        "reason": str(route.get("reason", "")),
+        "reason": reason,
         "production_impact": False,
-        "priority": int(route.get("priority", 0)),
+        "priority": priority,
         "evidence_state": str(route.get("evidence_state", "UNKNOWN")),
+        "signals": [str(x) for x in route.get("signals", [])] if isinstance(route.get("signals", []), list) else [],
     }
 
 

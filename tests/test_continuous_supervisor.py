@@ -71,3 +71,13 @@ def test_ops_preflight_validates_autonomous_router_output():
     assert 'router produced workflow outside allowlist' in text
     assert 'router production_impact must be false' in text
     assert 'router threshold is outside safe bounds' in text
+
+
+def test_supervisor_publishes_route_priority_and_evidence_signals():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert '"route_workflow":' in text
+    assert '"route_threshold_seconds":' in text
+    assert '"route_priority":' in text
+    assert '"route_reason":' in text
+    assert '"route_evidence_state":' in text
+    assert '"route_signals":' in text
