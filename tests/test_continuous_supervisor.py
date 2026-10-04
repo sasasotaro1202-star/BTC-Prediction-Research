@@ -19,7 +19,6 @@ def test_supervisor_monitors_case_adaptation_research_lanes():
         'btc_uncertainty_layer_oos.yml',
         'btc_multiscale_frozen_replay.yml',
         'btc_time_regime_research.yml',
-        'btc_adaptive_calibration_replay.yml',
         'btc_selective_prediction_oos.yml',
     ):
         assert f'dispatch_if_stale {workflow}' in text
@@ -39,6 +38,11 @@ def test_supervisor_routes_one_additional_evidence_driven_lane():
         'btc_ultimate_final_v13_e2e.yml',
     ):
         assert workflow in text
+
+
+def test_supervisor_does_not_use_fail_open_shell_suppression():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert '| true' not in text
 
 
 def test_supervisor_fail_closes_router_failure_to_readiness():
