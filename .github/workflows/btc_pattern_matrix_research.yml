@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
+  actions: read
   contents: write
 
 env:
@@ -38,6 +39,64 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Restore same-SHA pattern checkpoints
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . scripts/ci_network_retry.sh
+          mkdir -p data/historical_research/pattern_matrix_checkpoints
+          runs_json="$(ci_gh_api_get "/repos/${GITHUB_REPOSITORY}/actions/workflows/btc_pattern_matrix_research.yml/runs?branch=main&per_page=30")" || {
+            echo "WARN: unable to query prior pattern-matrix runs; starting without checkpoint."
+            exit 0
+          }
+          previous_run="$(jq -r --arg sha "${GITHUB_SHA}" --argjson current "${GITHUB_RUN_ID}" '
+            [.workflow_runs[]?
+             | select(.id != $current)
+             | select(.head_sha == $sha)
+             | select(.conclusion == "failure" or .conclusion == "timed_out")]
+            | sort_by(.updated_at) | last // empty | .id
+          ' <<<"$runs_json")"
+          if [ -z "$previous_run" ] || [ "$previous_run" = "null" ]; then
+            echo "No resumable same-SHA checkpoint run found."
+            exit 0
+          fi
+          artifacts_json="$(ci_gh_api_get "/repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts?per_page=100")" || {
+            echo "WARN: unable to query prior-run artifacts; starting without checkpoint."
+            exit 0
+          }
+          artifact_id="$(jq -r --arg prefix "btc-pattern-matrix-checkpoints-${GITHUB_SHA}" '
+            [.artifacts[]? | select(.expired == false) | select(.name == $prefix)] | last // empty | .id
+          ' <<<"$artifacts_json")"
+          if [ -z "$artifact_id" ] || [ "$artifact_id" = "null" ]; then
+            echo "No resumable checkpoint artifact found for same-SHA run=${previous_run}."
+            exit 0
+          fi
+          zip_path="/tmp/pattern-matrix-checkpoint-${previous_run}.zip"
+          if ! ci_gh_api_get "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$zip_path"; then
+            echo "WARN: checkpoint artifact download failed; starting without checkpoint."
+            rm -f "$zip_path"
+            exit 0
+          fi
+          python - "$zip_path" <<'PY'
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+          zip_path=Path(sys.argv[1])
+          dest=Path("data/historical_research/pattern_matrix_checkpoints")
+          with ZipFile(zip_path) as z:
+              for member in z.infolist():
+                  name=Path(member.filename).name
+                  if not name.endswith(".checkpoint.json"):
+                      continue
+                  target=dest/name
+                  target.write_bytes(z.read(member))
+                  print(f"restored checkpoint: {target}")
+          PY
+          rm -f "$zip_path"
+
       - name: Compile research code
         run: python -m compileall -q src tests
       - name: Run pattern-matrix contract tests
