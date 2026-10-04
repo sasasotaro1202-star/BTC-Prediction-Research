@@ -215,7 +215,39 @@ jobs:
           # Run at most one evidence-driven research lane after the independent stale checks.
           # Try ordered candidates so a fresh high-priority lane does not starve other research.
           route_dispatched=0
-          route_candidate_count="$(jq '.candidates | length' autonomous_route.json 2>/dev/null)" || route_candidate_count          cat > supervisor_status.json <<EOF
+          route_candidate_count="$(jq '.candidates | length' autonomous_route.json 2>/dev/null)" || route_candidate_count=0
+          if [ -n "${route_workflow}" ] && [ "${route_candidate_count}" -gt 0 ] 2>/dev/null; then
+            for ((i=0; i<route_candidate_count; i++)); do
+              candidate_workflow="$(jq -r ".candidates[${i}].workflow // empty" autonomous_route.json)"
+              candidate_threshold="$(jq -r ".candidates[${i}].threshold_seconds // empty" autonomous_route.json)"
+              candidate_reason="$(jq -r ".candidates[${i}].reason // \"unspecified\"" autonomous_route.json)"
+              [ -n "${candidate_workflow}" ] || continue
+              [ -n "${candidate_threshold}" ] || continue
+              echo "Evaluating routed research candidate ${i}: ${candidate_workflow} (${candidate_reason})"
+              set +e
+              dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1
+              candidate_rc=$?
+              set -e
+              if [ "${candidate_rc}" -eq 10 ]; then
+                route_workflow="${candidate_workflow}"
+                route_threshold="${candidate_threshold}"
+                route_reason="${candidate_reason}"
+                route_priority="$(jq -r ".candidates[${i}].priority // 0" autonomous_route.json)"
+                route_evidence_state="$(jq -r ".candidates[${i}].evidence_state // \"UNKNOWN\"" autonomous_route.json)"
+                route_signals="$(jq -c ".candidates[${i}].signals // []" autonomous_route.json)"
+                route_dispatched=1
+                echo "Dispatched routed research candidate: ${route_workflow} (${route_reason})"
+                break
+              elif [ "${candidate_rc}" -eq 20 ]; then
+                echo "ERROR: routed candidate inspection/dispatch failed: ${candidate_workflow}" >&2
+              fi
+            done
+          fi
+          if [ "${route_dispatched}" -eq 0 ]; then
+            echo "No routed research candidate was dispatched this heartbeat; non-stale lanes remain eligible for a later heartbeat."
+          fi
+
+          cat > supervisor_status.json <<EOF
           {
             "schema_version": 3,
             "workflow_run_id": ${GITHUB_RUN_ID},
