@@ -2373,7 +2373,7 @@ Training windows:
 * trailing 750 observations
 * trailing 1500 observations
 
-このscreenは72 pattern configurationsを上限とする。
+このscreenは144 pattern configurationsを上限とする。
 
 Deep stageではdevelopmentで上位6 patternを選び、chronological temperature calibrationの有無を比較する。
 
@@ -2430,7 +2430,7 @@ Pattern Lab自身がproductionを変更する経路を持ってはならない�
 
 105. DEPENDENCE / MULTIPLE-SEARCH CONTROL
 
-Pattern Labは72 candidate configurations、deep calibration、decision threshold selectionを明示的なresearch degrees of freedomとして記録する。
+Pattern Labは144 candidate configurations、deep calibration、decision threshold selectionを明示的なresearch degrees of freedomとして記録する。
 
 Aggregate improvementだけでwinnerを確定しない。
 
