@@ -25,6 +25,11 @@ def test_fold_geometry_is_chronological():
     assert e==sorted(set(e))
     assert all(2500<=x<=9500 and x+500<=10000 for x in e)
 
+def test_window_minimum_training_geometry_matches_window_size():
+    assert pm.min_train_for_window("expanding") == pm.MIN_TRAIN
+    assert pm.min_train_for_window("recent_3000") == pm.MIN_TRAIN
+    assert pm.min_train_for_window("recent_1500") == 1500
+
 def test_no_random_temporal_split():
     s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
     assert "train_test_split" not in s
