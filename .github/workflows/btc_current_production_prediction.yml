@@ -164,3 +164,185 @@ jobs:
               fh.write("\n".join(summary) + "\n")
           print("\n".join(summary))
           PY
+
+      - name: Build auditable production prediction evidence envelope
+        shell: bash
+        env:
+          MODEL_SNAPSHOT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import sqlite3
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("/tmp/btc_current_production_prediction.jsonl")
+              .read_text(encoding="utf-8")
+              .strip()
+              .splitlines()[-1]
+          )
+
+          def parse_iso(value):
+              return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+          cutoff = parse_iso(payload["timestamp_jst"])
+          horizons = {
+              "5m": {
+                  "target_at": payload["target_5m_jst"],
+                  "forecast_lifetime_seconds": int(
+                      (parse_iso(payload["target_5m_jst"]) - cutoff).total_seconds()
+                  ),
+                  "research_status": "PRODUCTION",
+              }
+          }
+          for horizon, item in (payload.get("extended_horizons") or {}).items():
+              target = parse_iso(item["target_jst"])
+              horizons[horizon] = {
+                  "target_at": target.isoformat(),
+                  "forecast_lifetime_seconds": int((target - cutoff).total_seconds()),
+                  "research_status": "RESEARCH_ONLY",
+                  "forecast_method": item.get("forecast_method"),
+              }
+
+          with sqlite3.connect("data/predictions.db") as con:
+              row = con.execute(
+                  "SELECT scenario_json FROM predictions ORDER BY prediction_id DESC LIMIT 1"
+              ).fetchone()
+          if not row or not row[0]:
+              raise SystemExit("production evidence: persisted scenario missing")
+          scenario = json.loads(row[0])
+          provenance = scenario.get("provenance")
+          if not isinstance(provenance, dict):
+              raise SystemExit("production evidence: persisted provenance missing")
+
+          required = ("available_at", "retrieved_at", "prediction_cutoff")
+          if any(not provenance.get(k) for k in required):
+              raise SystemExit("production evidence: top-level PIT provenance incomplete")
+
+          sources = provenance.get("sources")
+          if not isinstance(sources, dict) or not sources:
+              raise SystemExit("production evidence: source provenance missing")
+
+          decision = parse_iso(provenance["prediction_cutoff"])
+          source_checks = {}
+          for name, source in sources.items():
+              if not isinstance(source, dict):
+                  source_checks[name] = {"status": "INVALID", "pit_order": "not_object"}
+                  continue
+              available = source.get("available_at")
+              retrieved = source.get("retrieved_at")
+              cutoff_value = source.get("prediction_cutoff")
+              reason = "missing_timestamp"
+              if available and retrieved and cutoff_value:
+                  try:
+                      a = parse_iso(available)
+                      r = parse_iso(retrieved)
+                      c = parse_iso(cutoff_value)
+                      reason = "PASS" if a <= r <= c <= decision else "temporal_order_invalid"
+                  except (TypeError, ValueError):
+                      reason = "invalid_timestamp"
+              source_checks[name] = {
+                  "status": source.get("status"),
+                  "pit_order": reason,
+                  "available_at": available,
+                  "retrieved_at": retrieved,
+                  "prediction_cutoff": cutoff_value,
+                  "temporal_basis": source.get("temporal_basis"),
+              }
+
+          situation = payload.get("situation") or {}
+          evidence = {
+              "schema_version": 1,
+              "evidence_type": "current_production_prediction",
+              "status": "VERIFIED_RUNTIME_BINDING_AND_PERSISTENCE_CONTRACT",
+              "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+              "git_sha": "${MODEL_SNAPSHOT_SHA}",
+              "target": {
+                  "primary_classes": ["DOWN", "FLAT", "UP"],
+                  "primary_horizons": ["5m", "10m"],
+              },
+              "prediction": {
+                  "timestamp_jst": payload["timestamp_jst"],
+                  "btc_price": payload["btc_price"],
+                  "probabilities_5m": payload["probabilities_5m"],
+                  "probabilities_10m": payload["probabilities_10m"],
+                  "regime": payload.get("regime"),
+                  "confidence_5m": payload.get("confidence"),
+                  "warnings": payload.get("warnings") or [],
+                  "situation": situation,
+                  "calibration": payload.get("calibration"),
+                  "data_quality": payload.get("data_quality"),
+              },
+              "reliability": {
+                  "signal_quality": situation.get("signal_quality"),
+                  "data_state": situation.get("data_state"),
+                  "horizon_alignment": situation.get("horizon_alignment"),
+                  "predictability": {
+                      "status": "NOT_COMPUTED_AT_PRODUCTION_RUNTIME",
+                      "production_influence": False,
+                  },
+                  "ood": {
+                      "status": "NOT_COMPUTED_AT_PRODUCTION_RUNTIME",
+                      "production_influence": False,
+                  },
+                  "failure_risk": {
+                      "status": "NOT_COMPUTED_AT_PRODUCTION_RUNTIME",
+                      "production_influence": False,
+                  },
+              },
+              "pit": {
+                  "status": "PASS_BY_RUNTIME_PERSISTENCE_CONTRACT",
+                  "prediction_cutoff": provenance["prediction_cutoff"],
+                  "top_level": {key: provenance[key] for key in required},
+                  "sources": source_checks,
+              },
+              "forecast_lifetime": horizons,
+              "model_snapshot": {
+                  "git_sha": "${MODEL_SNAPSHOT_SHA}",
+                  "model_5m": payload["model_5m"],
+                  "model_10m": payload["model_10m"],
+              },
+              "delta": {
+                  "status": "NOT_AVAILABLE_IN_SINGLE_CURRENT_PREDICTION_RUN",
+                  "production_influence": False,
+              },
+              "change_drivers": {
+                  "status": "NOT_AVAILABLE_IN_SINGLE_CURRENT_PREDICTION_RUN",
+                  "production_influence": False,
+              },
+              "research_boundary": {
+                  "extended_horizons_are_research_only": True,
+                  "external_oos_results_do_not_change_current_prediction": True,
+              },
+          }
+
+          # Fail closed on contradictory source state.
+          invalid = [
+              name for name, check in source_checks.items()
+              if check["pit_order"] != "PASS"
+              and str(check.get("status", "")).startswith(("ok", "ok_current_only"))
+          ]
+          if invalid:
+              raise SystemExit(
+                  "production evidence: valid source has invalid PIT order: " + ",".join(invalid)
+              )
+
+          out = Path("/tmp/btc_current_production_evidence.json")
+          out.write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload production prediction evidence envelope
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-current-production-evidence
+          path: |
+            /tmp/btc_current_production_evidence.json
+            /tmp/btc_current_production_summary.md
+          if-no-files-found: error
+          retention-days: 7
