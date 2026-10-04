@@ -112,3 +112,19 @@ def test_canonical_docs_match_matrix_contract():
         assert "recent_1500" in text
         assert "logreg_c0.03" in text
         assert "mean_reversion" in text
+
+
+def test_checkpoint_lineage_contract():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert "CHECKPOINT_DIR" in s
+    assert "rows_fingerprint(rows)" in s
+    assert "candidate_manifest_hash(cs)" in s
+    assert "load_checkpoint(h,rows_fp,candidate_hash)" in s
+    assert "save_checkpoint(h," in s
+    assert '"status":"RUNNING" if stage!="COMPLETED" else "COMPLETED"' in s
+    assert '"COMPLETED"' in s
+
+def test_checkpoint_rejects_cross_sha_resume():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert 'obj.get("analysis_git_sha")!=_analysis_sha()' in s
+    assert 'obj.get("rows_fingerprint")!=rows_fp' in s
