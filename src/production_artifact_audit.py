@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from feature_schema import FEATURES
@@ -33,22 +34,35 @@ def sha256(path: Path) -> str:
 
 
 
+def _validate_git_sha(value: str, label: str) -> str:
+    sha = str(value or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise SystemExit(f"{label} is not a valid 40-character Git SHA")
+    return sha
+
+
 def current_workspace_sha(root: Path = ROOT) -> str:
     """Resolve the exact checkout under audit; fail closed when CI pins a different SHA."""
+    expected_raw = os.environ.get("GITHUB_SHA")
+    if expected_raw:
+        expected = _validate_git_sha(expected_raw, "GITHUB_SHA")
+    else:
+        expected = None
+
     try:
-        sha = subprocess.check_output(
+        sha_raw = subprocess.check_output(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             text=True,
             stderr=subprocess.STDOUT,
         ).strip()
     except (OSError, subprocess.CalledProcessError) as exc:
-        if os.environ.get("GITHUB_SHA"):
+        if expected:
             raise SystemExit(
                 f"unable to resolve workspace Git SHA under CI: {type(exc).__name__}"
             ) from exc
         return "LOCAL_UNPINNED"
 
-    expected = os.environ.get("GITHUB_SHA")
+    sha = _validate_git_sha(sha_raw, "workspace Git SHA")
     if expected and sha != expected:
         raise SystemExit(
             f"production artifact audit workspace SHA mismatch: expected={expected} actual={sha}"
@@ -57,17 +71,22 @@ def current_workspace_sha(root: Path = ROOT) -> str:
 
 
 def build_provenance(root: Path = ROOT) -> dict:
-    """Bind the artifact audit to the exact checkout and policy/config files under evaluation."""
+    """Bind the artifact audit to the exact checkout and required policy/config files."""
     workspace_sha = current_workspace_sha(root)
+    expected = os.environ.get("GITHUB_SHA")
+    git_sha = _validate_git_sha(expected, "GITHUB_SHA") if expected else workspace_sha
     policy_files = ("PROJECT_INSTRUCTIONS.md", "docs/PROJECT_SOURCE.md", "requirements.txt")
+    policy_hashes = {}
+    for name in policy_files:
+        path = root / name
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise SystemExit(f"missing required policy file: {name}")
+        policy_hashes[name] = sha256(path)
     return {
-        "git_sha": os.environ.get("GITHUB_SHA") or workspace_sha,
+        "git_sha": git_sha,
         "workspace_sha": workspace_sha,
         "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
-        "policy_files": {
-            name: sha256(root / name) if (root / name).is_file() else None
-            for name in policy_files
-        },
+        "policy_files": policy_hashes,
     }
 
 def _estimator_contract(model):
