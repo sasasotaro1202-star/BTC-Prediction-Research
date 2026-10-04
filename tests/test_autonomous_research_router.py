@@ -142,6 +142,57 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["threshold_seconds"], 86400)
             self.assertFalse(route["production_impact"])
 
+
+
+    def test_confidence_route_keeps_frontier_as_later_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "horizons": {
+                        "5m": {"cases": {"confidence_bucket": {
+                            "0.70+": {"n": 100, "accuracy": 0.30, "avg_confidence": 0.80}
+                        }}},
+                        "10m": {"cases": {"confidence_bucket": {
+                            "0.70+": {"n": 101, "accuracy": 0.35, "avg_confidence": 0.80}
+                        }}},
+                    }
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "data_frontier.json",
+                {
+                    "candidates": {
+                        "candidate:frontier": {
+                            "lifecycle": {"research_selection_eligible": True}
+                        }
+                    }
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(
+                [x["workflow"] for x in route["candidates"]],
+                [
+                    "btc_experience_policy_oos.yml",
+                    "btc_selective_prediction_oos.yml",
+                    "btc_autonomous_data_frontier.yml",
+                    "btc_ultimate_final_v13_e2e.yml",
+                ],
+            )
+            self.assertIn("high_confidence_overprediction_trigger", route["signals"])
+
+    def test_route_signal_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            route = validate(choose(root))
+            self.assertIsInstance(route["signals"], list)
+            self.assertTrue(all(isinstance(value, str) and value for value in route["signals"]))
+
     def test_invalid_route_is_rejected(self):
         with self.assertRaises(ValueError):
             validate({
