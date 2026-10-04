@@ -64,5 +64,19 @@ class StateTrajectoryOOSTests(unittest.TestCase):
         self.assertTrue(out["research_only"])
         self.assertFalse(out["production_changed"])
 
+    def test_missing_intervals_do_not_create_false_trajectory_pairs(self):
+        from src.state_trajectory_oos import _build_pairs
+        from datetime import datetime, timedelta, timezone
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        rows = [
+            {"id": i, "created": (start + timedelta(minutes=5 * i)).isoformat(), "x": [float(i)] * 15}
+            for i in range(12)
+        ]
+        rows.pop(5)
+        pairs = _build_pairs(rows, 2)
+        self.assertFalse(any(p["from_index"] == 4 for p in pairs))
+        self.assertTrue(all(p["elapsed_minutes"] == 10 for p in pairs))
+
+
 if __name__ == "__main__":
     unittest.main()
