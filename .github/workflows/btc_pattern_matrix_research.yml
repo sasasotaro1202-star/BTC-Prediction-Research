@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: btc-pattern-matrix-research
-  cancel-in-progress: \${{ github.event_name == 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: \${{ github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -43,7 +43,7 @@ jobs:
       - name: Run pattern-matrix contract tests
         run: python -m pytest -q tests/test_pattern_matrix_research.py
         env:
-          PYTHONPATH: \${{ github.workspace }}/src
+          PYTHONPATH: ${{ github.workspace }}/src
       - name: Explicit TESTS_PASSED / AUDIT_PASSED handoff
         shell: bash
         run: |
@@ -91,7 +91,7 @@ jobs:
       - name: Upload pattern evidence
         uses: actions/upload-artifact@v6
         with:
-          name: btc-pattern-matrix-\${{ github.sha }}
+          name: btc-pattern-matrix-${{ github.sha }}
           path: data/historical_research/pattern_matrix_research.json
           if-no-files-found: error
           retention-days: 14
