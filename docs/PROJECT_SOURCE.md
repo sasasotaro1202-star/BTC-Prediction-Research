@@ -2687,3 +2687,61 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+
+⸻
+
+116. TIME-STATE TRAJECTORY RESEARCH
+
+BTC may research the future as a sequence of prediction-time observable states rather than a single point forecast.
+
+The v1 trajectory layer is research-only and uses:
+
+prediction-time state
+→ prior-state transition model
+→ multi-step future-state distribution
+→ trajectory direction probability
+→ fixed 10% blend candidate against the incumbent probability
+
+State construction is deterministic and uses direction, model-probability dynamics and disagreement-derived buckets. When persisted prediction events are used without a second feature snapshot, the state is explicitly labeled a model-state proxy rather than a latent-market-state claim.
+
+Strict prequential rule:
+
+for prediction time T,
+only state transitions from observations strictly before T may train the transition distribution.
+
+Future outcomes are used only to score the already-produced trajectory prediction. They are never used to construct the state or transition model for that same prediction.
+
+Each primary horizon is evaluated independently with:
+
+PIT-qualified Binance-primary observations
+prequential transition fitting
+target-horizon step inference from prior observed prediction cadence
+incumbent same-observation comparison
+LogLoss
+Brier
+Accuracy
+ECE
+fixed blend weight
+analysis Git SHA
+
+The trajectory artifact must explicitly record:
+
+research_only
+production_changed
+promotion_allowed
+analysis_git_sha
+scored_rows
+transition_rows
+future_labels_used_for_transition_training
+baseline metrics
+trajectory metrics
+blend metrics
+latest trajectory state
+target step information
+
+The candidate remains research-only until longer independent OOS, robustness, calibration, frozen-holdout and shadow evidence support any adoption. The trajectory layer must never directly modify the Production registry or Production model artifacts.
+
+The Continuous Supervisor routes missing, stale, deferred or failed trajectory evidence back through the existing V13 E2E lane. This reuses the existing GitHub automation instead of introducing another long-running workflow.
+
+Cross-horizon 5m/10m trajectory alignment remains a separate research step and is not assumed from per-horizon trajectory results.
