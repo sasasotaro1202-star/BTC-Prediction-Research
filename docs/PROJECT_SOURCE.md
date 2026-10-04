@@ -2313,7 +2313,7 @@ INFORMATION ACQUISITION
 SOURCE SCOPE
 
 Canonical matrix:
-7 feature sets × 6 model variants × 2 window policies = 84 configurations per horizon.
+10 feature sets × 8 model variants × 3 window policies = 240 configurations per horizon.
 
 Feature sets:
 all_15
@@ -2323,10 +2323,15 @@ candle_shape
 volume_flow
 trend
 compact_cross
+mean_reversion
+price_structure
+flow_trend
 
 Models:
+logreg_c0.03
 logreg_c0.1
 logreg_c1.0
+logreg_c3.0
 extra_trees
 rf
 hgb
@@ -2334,7 +2339,10 @@ soft_ensemble
 
 Windows:
 expanding
+recent_1500
 recent_3000
+
+Finalist selection uses a deterministic multi-objective rank ensemble over development relative LogLoss/Brier improvement, accuracy stability, improved-fold ratios and worst-case block behavior, with diversity bonuses across feature pattern, model family and training window. Frozen Holdout remains excluded from selection and gate.
 
 The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout. Candidate execution errors and insufficient-fold candidates are retained as explicit research failures rather than silently discarded.
 
