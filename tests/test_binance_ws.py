@@ -281,7 +281,7 @@ class TestBinanceWebSocket(unittest.TestCase):
             calls.append(url)
             return 0, True
 
-        monotonic_values = iter((0.0, 200.0, 400.0))
+        monotonic_values = iter((0.0, 1.0, 200.0, 400.0, 400.0))
         with patch.object(
             binance_ws,
             "_stream_url",
