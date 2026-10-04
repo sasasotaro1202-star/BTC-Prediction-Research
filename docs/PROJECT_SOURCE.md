@@ -1870,3 +1870,19 @@ promotion evidence eligible.
 Archive diagnostics are never promotion evidence and never change Production.
 
 === COPY END ===
+
+
+⸻
+
+82. BINARY TARGET RESEARCH SNAPSHOT
+
+The latest fixed CI run for binary_sign_v1 completed successfully. It remains RESEARCH_ONLY and did not change Production.
+
+* 5m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51254, logloss 0.69323, Brier 0.25004, ECE 0.00097.
+* 10m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51557, logloss 0.69285, Brier 0.24985, ECE 0.00279.
+* 5m live Binance-primary strict-PIT: n=395, accuracy 0.51392, logloss 0.69166, Brier 0.24926, ECE 0.00629.
+* 10m live Binance-primary strict-PIT: n=395, accuracy 0.56962, logloss 0.68836, Brier 0.24761, ECE 0.05565.
+* Frozen holdout is descriptive only and remains protected from candidate selection.
+* Production replacement remains prohibited; independent longer robustness, calibration and shadow evidence are still required.
+
+=== COPY END ===
