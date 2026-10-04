@@ -53,7 +53,20 @@ jobs:
           route_status=$?
           set -e
           printf '%s\n' "$route_json" > autonomous_route.json
-          if [ "$route_status" -eq 0 ] && jq -e '.production_impact == false' autonomous_route.json >/dev/null 2>&1; then
+          if [ "$route_status" -eq 0 ] && jq -e '
+              .production_impact == false
+              and (
+                .workflow == "btc_research_readiness.yml"
+                or .workflow == "btc_autonomous_data_frontier.yml"
+                or .workflow == "btc_adaptive_calibration_replay.yml"
+                or .workflow == "btc_experience_policy_oos.yml"
+                or .workflow == "btc_rich_production_challenger.yml"
+                or .workflow == "btc_ultimate_final_v13_e2e.yml"
+              )
+              and (.threshold_seconds | type == "number")
+              and (.threshold_seconds > 0)
+              and (.threshold_seconds <= 604800)
+            ' autonomous_route.json >/dev/null 2>&1; then
             route_workflow="$(jq -r '.workflow // empty' autonomous_route.json)"
             route_threshold="$(jq -r '.threshold_seconds // empty' autonomous_route.json)"
             route_reason="$(jq -r '.reason // "unspecified"' autonomous_route.json)"
