@@ -1747,3 +1747,126 @@ LOCAL PIT
 3-class Production evidenceをbinary targetのevidenceとして直接transferしない。
 
 === COPY END ===
+
+⸻
+
+78. CURRENT EVIDENCE SNAPSHOT
+
+2026-10-04 current repository evidence:
+
+strict PIT admitted primary scope:
+5m strict primary settled = 397
+10m strict primary settled = 396
+per-horizon minimum = 300
+active PIT violations = 0
+
+Legacy evidence remains quarantined:
+legacy_unverified = 169
+legacy_violation = 41
+
+Current Production models:
+5m = bootstrap.soft_ensemble.v5.4
+10m = bootstrap.bootstrap_rf
+
+Current live Binance-primary robustness evidence is not yet promotion-ready:
+5m current-production-model cohort = 254 / 1000 minimum
+10m current-production-model cohort = 396 / 1000 minimum
+
+Therefore Robustness remains RESEARCH_ONLY / insufficient_data.
+
+Situation-metadata maturity still requires 2,607 additional qualifying 5m-cycle rows for the 5m primary cohort and 2,608 for the 10m primary cohort to reach the 3,000-row maturity target.
+
+⸻
+
+79. CURRENT PRODUCTION EVIDENCE ENVELOPE
+
+The current-production prediction workflow must emit an auditable evidence envelope containing:
+
+prediction probabilities
+target timestamps
+forecast lifetime
+model versions
+Git SHA
+calibration state
+situation state
+data quality
+source provenance
+PIT temporal checks
+reliability fields
+research-only boundaries
+
+Predictability, OOD, Failure Risk, Delta and Change Drivers must be explicitly marked
+NOT_COMPUTED_AT_PRODUCTION_RUNTIME
+or
+NOT_AVAILABLE_IN_SINGLE_CURRENT_PREDICTION_RUN
+when those quantities are not produced by the runtime.
+
+Do not infer or fabricate these values.
+
+For every source with usable status, PIT ordering must be auditable as:
+
+available_at
+→ retrieved_at
+→ prediction_cutoff
+→ decision time
+
+and any contradictory valid-source ordering is a failure.
+
+5m and 10m primary target_at timestamps must be recorded independently.
+Extended horizons remain RESEARCH_ONLY.
+
+⸻
+
+80. BINARY TARGET CI INTEGRITY
+
+Binary target experiment:
+
+binary_sign_v1
+classes = DOWN / UP
+Production replacement = prohibited
+
+The Binary Target Research workflow must restore the repository prediction database from
+data/predictions.db.gz
+before reading live-primary prediction evidence.
+
+A missing or uninitialized predictions table is a CI infrastructure failure, not evidence
+that live-primary binary OOS is empty.
+
+The binary workflow must keep:
+
+LOCAL PIT
+→ CHRONOLOGICAL OOS
+→ ROBUSTNESS
+→ CALIBRATION
+→ FROZEN HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+independent and research-only.
+
+The current fixed workflow includes explicit repository-state restoration and a dedicated
+contract test.
+
+⸻
+
+81. ROBUSTNESS EVIDENCE ELIGIBILITY
+
+Robustness reports must fail closed on immature live evidence.
+
+promotion_evidence_eligible = true
+is allowed only when:
+
+data_source = live_binance_primary
+AND
+status = ok
+AND
+n >= 1000
+AND
+final_holdout_protected = true
+
+Live cohorts below the minimum remain insufficient_data and cannot be labeled
+promotion evidence eligible.
+
+Archive diagnostics are never promotion evidence and never change Production.
+
+=== COPY END ===

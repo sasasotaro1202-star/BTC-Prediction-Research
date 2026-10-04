@@ -13,6 +13,9 @@ class LiveResearchEvidenceContractTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("data/historical_research/robustness_oos_report.json"), 4)
         self.assertGreaterEqual(text.count("data/historical_research/promotion_gate.json"), 4)
         self.assertIn("tests/test_robustness_oos.py", text)
+        self.assertIn("expected_eligible", text)
+        self.assertIn("n >= minimum", text)
+        self.assertIn("immature robustness cohort must be insufficient_data", text)
         self.assertIn("extended_horizon_monitor.py", text)
         self.assertIn("extended_horizon_performance.json", text)
         for horizon in ("15m", "30m", "1h", "3h", "6h", "12h", "24h"):

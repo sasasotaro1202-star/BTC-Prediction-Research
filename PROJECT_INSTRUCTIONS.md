@@ -14,8 +14,7 @@ Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to 
 Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
 
 ## Current evidence snapshot
-The strict PIT audit is currently PASS for the admitted primary scope, while legacy observations remain quarantined rather than silently counted as valid evidence. Robustness evidence for the live Binance-primary scope is still sample-limited and therefore research-only. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
-
+The latest recorded strict PIT audit is PASS for the admitted primary scope: 5m strict primary settled = 397 and 10m strict primary settled = 396, both above the 300-row per-horizon gate; active PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41). Robustness evidence is still sample-limited: current Production model evidence is 254 rows for 5m and 396 rows for 10m versus the 1,000-row robustness minimum, so both remain research-only. The situation-metadata cohort still needs 2,607 additional qualifying 5m-cycle rows for 5m and 2,608 for 10m to reach the 3,000-row maturity target. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
 Current production artifact bindings recorded in the repository are:
 - 5m: `bootstrap.soft_ensemble.v5.4`
 - 10m: `bootstrap.bootstrap_rf`

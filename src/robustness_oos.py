@@ -207,7 +207,10 @@ def main():
         result = evaluate(h, data)
         result["data_source"] = source
         result["promotion_evidence_eligible"] = bool(
-            source == "live_binance_primary" and data
+            source == "live_binance_primary"
+            and result.get("status") == "ok"
+            and int(result.get("n", 0)) >= 1000
+            and result.get("final_holdout_protected") is True
         )
         payload["horizons"][h] = result
     OUT.parent.mkdir(parents=True,exist_ok=True)

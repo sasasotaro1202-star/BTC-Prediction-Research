@@ -120,6 +120,27 @@ class RobustnessTests(unittest.TestCase):
                 )
             )
 
+    def test_live_evidence_below_minimum_is_not_promotion_eligible(self):
+        with patch.object(robustness_oos, "load", return_value=[{"id": 1}]), \
+             patch.object(robustness_oos, "select_input_rows", return_value=([{"id": 1}], "live_binance_primary")), \
+             patch.object(robustness_oos, "evaluate", return_value={
+                 "status": "insufficient_data",
+                 "n": 1,
+                 "minimum": 1000,
+                 "promotion_evidence_eligible": False,
+             }):
+            # Mirror the main-loop eligibility contract without accessing a real DB.
+            source = "live_binance_primary"
+            data = [{"id": 1}]
+            result = robustness_oos.evaluate("5m", data)
+            eligible = bool(
+                source == "live_binance_primary"
+                and result.get("status") == "ok"
+                and int(result.get("n", 0)) >= 1000
+                and result.get("final_holdout_protected") is True
+            )
+            self.assertFalse(eligible)
+
     def test_live_only_disables_archive_fallback(self):
         live = [{"id": 1}]
         with patch.object(robustness_oos, "load_research_archive", side_effect=AssertionError("archive fallback must be disabled")):

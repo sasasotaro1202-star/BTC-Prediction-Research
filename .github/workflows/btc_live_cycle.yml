@@ -981,6 +981,25 @@ jobs:
           horizons = obj.get("horizons")
           if not isinstance(horizons, dict) or set(horizons) != {"5m", "10m"}:
               raise SystemExit("robustness OOS horizon coverage mismatch")
+          for horizon, result in horizons.items():
+              n = int(result.get("n", 0) or 0)
+              minimum = int(result.get("minimum", 1000) or 1000)
+              eligible = result.get("promotion_evidence_eligible")
+              expected_eligible = bool(
+                  result.get("data_source") == "live_binance_primary"
+                  and result.get("status") == "ok"
+                  and n >= minimum
+                  and result.get("final_holdout_protected") is True
+              )
+              if eligible is not expected_eligible:
+                  raise SystemExit(
+                      f"{horizon}: robustness promotion eligibility mismatch: "
+                      f"reported={eligible!r} expected={expected_eligible!r}"
+                  )
+              if n < minimum and result.get("status") != "insufficient_data":
+                  raise SystemExit(
+                      f"{horizon}: immature robustness cohort must be insufficient_data: n={n} minimum={minimum}"
+                  )
           print("BTC robustness OOS evidence: VERIFIED")
           PY
 
