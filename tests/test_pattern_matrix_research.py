@@ -5,10 +5,10 @@ if str(ROOT/"src") not in sys.path:sys.path.insert(0,str(ROOT/"src"))
 import pattern_matrix_research as pm
 
 def test_matrix_size_and_axes():
-    assert len(pm.FEATURE_SETS)==7
-    assert len(pm.MODELS)==6
-    assert set(pm.WINDOWS)=={"expanding","recent_3000"}
-    assert len(pm.candidates())==84
+    assert len(pm.FEATURE_SETS)==10
+    assert len(pm.MODELS)==8
+    assert set(pm.WINDOWS)=={"expanding","recent_1500","recent_3000"}
+    assert len(pm.candidates())==240
 
 def test_feature_sets_are_unique_canonical_subsets():
     c=set(pm.FEATURE_ORDER)
@@ -18,7 +18,7 @@ def test_feature_sets_are_unique_canonical_subsets():
 
 def test_fingerprints_change_with_pattern_axis():
     assert pm.cfg("all_15","rf","expanding")["fingerprint"] != pm.cfg("trend","rf","expanding")["fingerprint"]
-    assert pm.cfg("all_15","rf","expanding")["fingerprint"] != pm.cfg("all_15","rf","recent_3000")["fingerprint"]
+    assert pm.cfg("all_15","rf","expanding")["fingerprint"] != pm.cfg("all_15","rf","recent_1500")["fingerprint"]
 
 def test_fold_geometry_is_chronological():
     e=pm.fold_ends(10000,2500,500,6)
