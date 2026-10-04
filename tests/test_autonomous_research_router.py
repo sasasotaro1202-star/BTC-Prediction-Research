@@ -57,9 +57,10 @@ class AutonomousResearchRouterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             route = choose(Path(td))
             self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["candidates"][0]["workflow"], "btc_research_readiness.yml")
             self.assertFalse(route["production_impact"])
 
-    def test_calibration_collection_has_priority(self):
+    def test_calibration_collection_is_highest_priority(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -68,11 +69,12 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 "5m.calibration.json",
                 {"n_settled": 261, "fit_logloss": None, "holdout_logloss": None},
             )
-            route = choose(root)
+            route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_adaptive_calibration_replay.yml")
+            self.assertEqual(route["candidates"][0]["priority"], 95)
             self.assertIn("5m:calibration_n=261<400", route["signals"])
 
-    def test_promotion_robustness_hold_routes_rich_challenger(self):
+    def test_promotion_robustness_hold_is_a_prioritized_fallback(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -85,20 +87,16 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                     "reason": "robustness_evidence_invalid_or_incomplete;candidate_or_frozen_holdout_non_regression_not_verified",
                 },
             )
-            route = choose(root)
+            route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_rich_production_challenger.yml")
-            self.assertEqual(route["threshold_seconds"], 86400)
+            self.assertEqual(route["candidates"][0]["priority"], 90)
             self.assertIn("promotion_gate:robustness_blocked", route["signals"])
+            self.assertEqual(route["candidates"][-1]["workflow"], "btc_ultimate_final_v13_e2e.yml")
 
-    def test_confidence_overreach_routes_experience_policy(self):
+    def test_confidence_overreach_routes_experience_then_selective(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
-            self._write(
-                root / "data" / "historical_research",
-                "promotion_gate.json",
-                {"production_safety_gate": "PASS", "promotion_allowed": True, "reason": ""},
-            )
             self._write(
                 root / "data" / "experience",
                 "experience_summary.json",
@@ -110,15 +108,23 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                                     "0.70+": {"n": 52, "accuracy": 0.38, "avg_confidence": 0.80}
                                 }
                             }
-                        }
+                        },
+                        "10m": {
+                            "cases": {
+                                "confidence_bucket": {
+                                    "0.70+": {"n": 52, "accuracy": 0.60, "avg_confidence": 0.71}
+                                }
+                            }
+                        },
                     }
                 },
             )
-            route = choose(root)
+            route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["candidates"][1]["workflow"], "btc_selective_prediction_oos.yml")
             self.assertIn("5m:high_confidence_gap=0.420;n=52", route["signals"])
 
-    def test_frontier_routes_when_no_higher_priority_issue(self):
+    def test_frontier_is_used_when_no_higher_priority_issue_exists(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -133,8 +139,12 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                     }
                 },
             )
-            route = choose(root)
+            route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_autonomous_data_frontier.yml")
+            self.assertEqual(
+                [x["workflow"] for x in route["candidates"]],
+                ["btc_autonomous_data_frontier.yml", "btc_ultimate_final_v13_e2e.yml"],
+            )
 
     def test_healthy_state_routes_to_bounded_routine_v13(self):
         with tempfile.TemporaryDirectory() as td:
@@ -165,25 +175,131 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             route = choose(root)
             self.assertEqual(route["workflow"], "btc_research_readiness.yml")
 
+    def test_ordered_router_retains_lower_priority_lanes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "promotion_gate.json",
+                {
+                    "production_safety_gate": "HOLD",
+                    "promotion_allowed": False,
+                    "reason": "robustness evidence invalid or incomplete",
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "data_frontier.json",
+                {
+                    "candidates": {
+                        "candidate:demo": {
+                            "lifecycle": {"research_selection_eligible": True}
+                        }
+                    }
+                },
+            )
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "horizons": {
+                        "5m": {
+                            "cases": {
+                                "confidence_bucket": {
+                                    "0.70+": {"n": 60, "accuracy": 0.30, "avg_confidence": 0.80}
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_rich_production_challenger.yml")
+            self.assertEqual(
+                [x["workflow"] for x in route["candidates"]],
+                [
+                    "btc_rich_production_challenger.yml",
+                    "btc_experience_policy_oos.yml",
+                    "btc_selective_prediction_oos.yml",
+                    "btc_autonomous_data_frontier.yml",
+                    "btc_ultimate_final_v13_e2e.yml",
+                ],
+            )
+
     def test_invalid_route_is_rejected(self):
         with self.assertRaises(ValueError):
-            validate({
-                "workflow": "arbitrary.yml",
-                "threshold_seconds": 60,
-                "production_impact": False,
-                "priority": 1,
-                "reason": "bad",
-            })
+            validate(
+                {
+                    "workflow": "arbitrary.yml",
+                    "threshold_seconds": 60,
+                    "production_impact": False,
+                    "priority": 1,
+                    "reason": "bad",
+                    "evidence_state": "BAD",
+                    "signals": ["bad"],
+                    "candidates": [],
+                }
+            )
 
-    def test_empty_reason_is_rejected(self):
+    def test_candidate_threshold_must_match_allowlist(self):
         with self.assertRaises(ValueError):
-            validate({
-                "workflow": "btc_ultimate_final_v13_e2e.yml",
-                "threshold_seconds": 86400,
-                "production_impact": False,
-                "priority": 50,
-                "reason": "",
-            })
+            validate(
+                {
+                    "workflow": "btc_ultimate_final_v13_e2e.yml",
+                    "threshold_seconds": 86400,
+                    "production_impact": False,
+                    "priority": 50,
+                    "reason": "ok",
+                    "evidence_state": "HEALTHY_ROUTINE",
+                    "signals": [],
+                    "candidates": [
+                        {
+                            "workflow": "btc_ultimate_final_v13_e2e.yml",
+                            "threshold_seconds": 60,
+                            "reason": "ok",
+                            "production_impact": False,
+                            "priority": 50,
+                            "evidence_state": "HEALTHY_ROUTINE",
+                            "signals": [],
+                        }
+                    ],
+                }
+            )
+
+    def test_candidate_order_must_be_priority_descending(self):
+        with self.assertRaises(ValueError):
+            validate(
+                {
+                    "workflow": "btc_experience_policy_oos.yml",
+                    "threshold_seconds": 21600,
+                    "production_impact": False,
+                    "priority": 85,
+                    "reason": "a",
+                    "evidence_state": "A",
+                    "signals": [],
+                    "candidates": [
+                        {
+                            "workflow": "btc_experience_policy_oos.yml",
+                            "threshold_seconds": 21600,
+                            "reason": "a",
+                            "production_impact": False,
+                            "priority": 85,
+                            "evidence_state": "A",
+                            "signals": [],
+                        },
+                        {
+                            "workflow": "btc_autonomous_data_frontier.yml",
+                            "threshold_seconds": 900,
+                            "reason": "b",
+                            "production_impact": False,
+                            "priority": 90,
+                            "evidence_state": "B",
+                            "signals": [],
+                        },
+                    ],
+                }
+            )
 
 
 if __name__ == "__main__":

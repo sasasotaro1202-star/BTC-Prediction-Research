@@ -1,9 +1,11 @@
 """Deterministic GitHub-side research router for BTC-Prediction-Research.
 
-This module does not fetch data, mutate production state, or select a model.
-It reads already-published evidence and returns one bounded next-best research
-workflow for the Continuous Supervisor to dispatch. Missing/invalid evidence
-fails closed to the read-only readiness audit.
+The router only reads durable published evidence. It never fetches data, selects
+a Production model, mutates the Production registry, or calls an external LLM.
+
+It returns an ordered list of bounded research lanes. The Continuous Supervisor
+may dispatch at most one stale candidate per heartbeat and falls through when a
+higher-priority lane is already active or fresh.
 """
 from __future__ import annotations
 
@@ -12,20 +14,21 @@ from pathlib import Path
 from typing import Any
 
 HORIZONS = ("5m", "10m")
+
 ALLOWED = {
     "btc_research_readiness.yml": 3600,
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_experience_policy_oos.yml": 21600,
+    "btc_selective_prediction_oos.yml": 43200,
     "btc_rich_production_challenger.yml": 86400,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
 
-DEFAULT = {
-    "workflow": "btc_research_readiness.yml",
-    "threshold_seconds": 3600,
-    "reason": "readiness_evidence_missing_or_invalid",
-}
+MIN_STRICT_PIT_ROWS = 300
+MIN_CALIBRATION_ROWS = 400
+HIGH_CONFIDENCE_MIN_ROWS = 50
+HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -50,9 +53,37 @@ def _decision(
         "threshold_seconds": ALLOWED[workflow],
         "reason": reason,
         "production_impact": False,
-        "priority": priority,
+        "priority": int(priority),
         "evidence_state": evidence_state,
         "signals": list(signals or []),
+    }
+
+
+def _ordered(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    if not decisions:
+        raise ValueError("router_no_research_candidate")
+
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for item in decisions:
+        workflow = item.get("workflow")
+        if workflow in seen:
+            continue
+        seen.add(str(workflow))
+        unique.append(item)
+
+    unique.sort(key=lambda item: (-int(item["priority"]), str(item["workflow"])))
+    signals: list[str] = []
+    for item in unique:
+        for signal in item.get("signals", []):
+            if signal not in signals:
+                signals.append(signal)
+
+    first = unique[0]
+    return {
+        **first,
+        "candidates": unique,
+        "signals": signals,
     }
 
 
@@ -67,7 +98,7 @@ def _calibration_waiting(root: Path) -> list[str]:
             n = int(c.get("n_settled", 0))
         except (TypeError, ValueError):
             n = 0
-        if n < 400:
+        if n < MIN_CALIBRATION_ROWS:
             signals.append(f"{horizon}:calibration_n={n}<400")
         if c.get("fit_logloss") is None:
             signals.append(f"{horizon}:fit_logloss_missing")
@@ -100,39 +131,31 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
 
     reasons = str(gate.get("reason", "")).lower()
     hold = gate.get("production_safety_gate") == "HOLD" and gate.get("promotion_allowed") is False
-    blockers = [
-        token
-        for token in ("robustness", "holdout")
-        if token in reasons
-    ]
+    blockers = [token for token in ("robustness", "holdout") if token in reasons]
     if not hold or not blockers:
         return False, []
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
 
 
 def _high_confidence_overreach(root: Path) -> list[str]:
-    """Find a large, actionable post-outcome confidence/accuracy gap.
-
-    This is a research trigger only. It cannot change production confidence,
-    routing, abstention, or calibration by itself.
-    """
+    """Research-only trigger for mature high-confidence overprediction."""
     experience = _load(root / "data" / "experience" / "experience_summary.json")
     if experience is None:
         return []
+
     signals: list[str] = []
     horizons = experience.get("horizons")
     if not isinstance(horizons, dict):
         return signals
 
     for horizon in HORIZONS:
-        buckets = (
-            horizons.get(horizon, {})
-            if isinstance(horizons.get(horizon, {}), dict)
-            else {}
-        ).get("cases", {})
-        if not isinstance(buckets, dict):
+        h = horizons.get(horizon)
+        if not isinstance(h, dict):
             continue
-        buckets = buckets.get("confidence_bucket")
+        cases = h.get("cases")
+        if not isinstance(cases, dict):
+            continue
+        buckets = cases.get("confidence_bucket")
         if not isinstance(buckets, dict):
             continue
         high = buckets.get("0.70+")
@@ -145,10 +168,8 @@ def _high_confidence_overreach(root: Path) -> list[str]:
         except (KeyError, TypeError, ValueError):
             continue
         gap = confidence - accuracy
-        if n >= 50 and gap >= 0.15:
-            signals.append(
-                f"{horizon}:high_confidence_gap={gap:.3f};n={n}"
-            )
+        if n >= HIGH_CONFIDENCE_MIN_ROWS and gap >= HIGH_CONFIDENCE_GAP_TRIGGER:
+            signals.append(f"{horizon}:high_confidence_gap={gap:.3f};n={n}")
     return signals
 
 
@@ -158,44 +179,52 @@ def choose(root: Path) -> dict[str, Any]:
     pit = _load(evidence / "pit_oos_audit.json")
     health = _load(evidence / "research_health.json")
 
-    # research_readiness.json is a workflow-local/generated surface and is not
-    # required to be committed to main. Durable PIT/health evidence is authoritative.
+    # Durable safety evidence is a hard gate. Do not continue to lower-priority
+    # research lanes when readiness itself is uncertain.
     if pit is None or health is None:
-        return {
-            **DEFAULT,
-            "production_impact": False,
-            "priority": 100,
-            "evidence_state": "MISSING_OR_INVALID",
-            "signals": ["durable_pit_or_health_artifact_missing"],
-        }
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "readiness_evidence_missing_or_invalid",
+                100,
+                "MISSING_OR_INVALID",
+                ["durable_pit_or_health_artifact_missing"],
+            )
+        ])
 
     if health.get("ok") is not True:
-        return _decision(
-            "btc_research_readiness.yml",
-            "research_health_not_pass",
-            99,
-            "DATA_HEALTH_BLOCKED",
-            ["research_health_ok_not_true"],
-        )
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "research_health_not_pass",
+                99,
+                "DATA_HEALTH_BLOCKED",
+                ["research_health_ok_not_true"],
+            )
+        ])
 
     if pit.get("ok") is not True or pit.get("pit_verified") is not True:
-        return _decision(
-            "btc_research_readiness.yml",
-            "strict_pit_evidence_not_verified",
-            98,
-            "PIT_NOT_VERIFIED",
-            ["pit_ok_or_verified_not_true"],
-        )
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "strict_pit_evidence_not_verified",
+                98,
+                "PIT_NOT_VERIFIED",
+                ["pit_ok_or_verified_not_true"],
+            )
+        ])
 
     horizon_gate = pit.get("primary_horizon_gate")
     if not isinstance(horizon_gate, dict) or set(horizon_gate) != set(HORIZONS):
-        return _decision(
-            "btc_research_readiness.yml",
-            "per_horizon_pit_gate_missing",
-            97,
-            "PIT_GATE_INCOMPLETE",
-            ["5m_and_10m_horizon_gate_required"],
-        )
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "per_horizon_pit_gate_missing",
+                97,
+                "PIT_GATE_INCOMPLETE",
+                ["5m_and_10m_horizon_gate_required"],
+            )
+        ])
 
     bad_horizons: list[str] = []
     for horizon in HORIZONS:
@@ -209,106 +238,180 @@ def choose(root: Path) -> dict[str, Any]:
         except (TypeError, ValueError):
             bad_horizons.append(f"{horizon}:invalid_gate_counts")
             continue
-        if item.get("ready") is not True or minimum < 300 or strict < 300:
+        if item.get("ready") is not True or minimum < MIN_STRICT_PIT_ROWS or strict < MIN_STRICT_PIT_ROWS:
             bad_horizons.append(
                 f"{horizon}:strict={strict};minimum={minimum};ready={item.get('ready')}"
             )
     if bad_horizons:
-        return _decision(
-            "btc_research_readiness.yml",
-            "per_horizon_strict_pit_rows_below_gate",
-            96,
-            "PIT_COLLECTION",
-            bad_horizons,
-        )
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "per_horizon_strict_pit_rows_below_gate",
+                96,
+                "PIT_COLLECTION",
+                bad_horizons,
+            )
+        ])
 
     calibration_signals = _calibration_waiting(root)
+    promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
+    frontier_candidates = _frontier_candidates(root)
+    overreach_signals = _high_confidence_overreach(root)
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+
+    routes: list[dict[str, Any]] = []
+
     if calibration_signals:
-        return _decision(
+        routes.append(_decision(
             "btc_adaptive_calibration_replay.yml",
             "current_generation_calibration_evidence_below_effective_gate",
             95,
             "CALIBRATION_COLLECTION",
             calibration_signals,
-        )
+        ))
 
-    # Promotion remains fail-closed. When the durable gate says robustness or
-    # holdout evidence is the blocker, schedule the dedicated research-only
-    # rich challenger. It compares against the incumbent on a frozen holdout,
-    # but its own archive timing is explicitly non-strict and cannot promote.
-    promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
     if promotion_blocked:
-        return _decision(
+        routes.append(_decision(
             "btc_rich_production_challenger.yml",
             "promotion_gate_waits_on_robustness_or_holdout_evidence",
             90,
             "PROMOTION_HOLD_RESEARCH",
             promotion_signals,
-        )
+        ))
 
-    frontier_candidates = _frontier_candidates(root)
-    if frontier_candidates > 0:
-        return _decision(
-            "btc_autonomous_data_frontier.yml",
-            "eligible_frontier_candidates_pending_research_review",
-            85,
-            "FRONTIER_WORK_AVAILABLE",
-            [f"eligible_candidates={frontier_candidates}"],
-        )
-
-    overreach_signals = _high_confidence_overreach(root)
     if overreach_signals:
-        return _decision(
+        routes.append(_decision(
             "btc_experience_policy_oos.yml",
             "high_confidence_overreach_requires_reliability_research",
-            80,
+            85,
             "CONFIDENCE_RELIABILITY_RISK",
             overreach_signals,
-        )
-
-    experience = _load(root / "data" / "experience" / "experience_summary.json")
-    if experience is None:
-        return _decision(
+        ))
+        routes.append(_decision(
+            "btc_selective_prediction_oos.yml",
+            "high_confidence_overreach_warrants_selective_prediction_oos",
+            82,
+            "SELECTIVE_RESEARCH_PENDING",
+            overreach_signals,
+        ))
+    elif experience is None:
+        routes.append(_decision(
             "btc_experience_policy_oos.yml",
             "experience_evidence_missing",
             70,
             "EXPERIENCE_MISSING",
             ["experience_summary_missing"],
-        )
+        ))
 
-    return _decision(
+    if frontier_candidates > 0:
+        routes.append(_decision(
+            "btc_autonomous_data_frontier.yml",
+            "eligible_frontier_candidates_pending_research_review",
+            80,
+            "FRONTIER_WORK_AVAILABLE",
+            [f"eligible_candidates={frontier_candidates}"],
+        ))
+
+    routes.append(_decision(
         "btc_ultimate_final_v13_e2e.yml",
         "routine_future_generalization_evidence_refresh",
         50,
         "HEALTHY_ROUTINE",
         [],
-    )
+    ))
+
+    return _ordered(routes)
 
 
 def validate(route: dict[str, Any]) -> dict[str, Any]:
     workflow = route.get("workflow")
     if workflow not in ALLOWED:
         raise ValueError("router_selected_unapproved_workflow")
+
     try:
         threshold = int(route.get("threshold_seconds", 0))
         priority = int(route.get("priority", 0))
     except (TypeError, ValueError) as exc:
         raise ValueError("router_numeric_contract_invalid") from exc
-    if threshold <= 0 or threshold > 7 * 24 * 3600:
-        raise ValueError("router_threshold_out_of_bounds")
+
+    if threshold != ALLOWED[workflow]:
+        raise ValueError("router_threshold_mismatch")
     if route.get("production_impact") is not False:
         raise ValueError("router_production_impact_must_be_false")
+
     reason = str(route.get("reason", "")).strip()
+    evidence_state = str(route.get("evidence_state", "")).strip()
     if not reason:
         raise ValueError("router_reason_missing")
+    if not evidence_state:
+        raise ValueError("router_evidence_state_missing")
+
+    signals = route.get("signals", [])
+    if not isinstance(signals, list) or not all(isinstance(x, str) and x for x in signals):
+        raise ValueError("router_signals_invalid")
+
+    raw_candidates = route.get("candidates")
+    if not isinstance(raw_candidates, list) or not (1 <= len(raw_candidates) <= len(ALLOWED)):
+        raise ValueError("router_candidates_missing_or_out_of_bounds")
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    previous_priority: int | None = None
+    for candidate in raw_candidates:
+        if not isinstance(candidate, dict):
+            raise ValueError("router_candidate_not_object")
+        candidate_workflow = candidate.get("workflow")
+        if candidate_workflow not in ALLOWED:
+            raise ValueError("router_candidate_workflow_outside_allowlist")
+        if candidate_workflow in seen:
+            raise ValueError("router_candidate_duplicate")
+        seen.add(candidate_workflow)
+
+        candidate_threshold = int(candidate.get("threshold_seconds", 0))
+        if candidate_threshold != ALLOWED[candidate_workflow]:
+            raise ValueError("router_candidate_threshold_mismatch")
+        if candidate.get("production_impact") is not False:
+            raise ValueError("router_candidate_production_impact_must_be_false")
+
+        candidate_priority = int(candidate.get("priority", 0))
+        if previous_priority is not None and candidate_priority > previous_priority:
+            raise ValueError("router_candidates_not_priority_ordered")
+        previous_priority = candidate_priority
+
+        candidate_reason = str(candidate.get("reason", "")).strip()
+        candidate_state = str(candidate.get("evidence_state", "")).strip()
+        candidate_signals = candidate.get("signals", [])
+        if not candidate_reason:
+            raise ValueError("router_candidate_reason_missing")
+        if not candidate_state:
+            raise ValueError("router_candidate_evidence_state_missing")
+        if not isinstance(candidate_signals, list) or not all(
+            isinstance(x, str) and x for x in candidate_signals
+        ):
+            raise ValueError("router_candidate_signals_invalid")
+
+        candidates.append({
+            "workflow": candidate_workflow,
+            "threshold_seconds": candidate_threshold,
+            "reason": candidate_reason,
+            "production_impact": False,
+            "priority": candidate_priority,
+            "evidence_state": candidate_state,
+            "signals": list(candidate_signals),
+        })
+
+    if candidates[0]["workflow"] != workflow:
+        raise ValueError("router_first_candidate_mismatch")
+
     return {
         "workflow": workflow,
         "threshold_seconds": threshold,
         "reason": reason,
         "production_impact": False,
         "priority": priority,
-        "evidence_state": str(route.get("evidence_state", "UNKNOWN")),
-        "signals": [str(x) for x in route.get("signals", [])] if isinstance(route.get("signals", []), list) else [],
+        "evidence_state": evidence_state,
+        "signals": list(signals),
+        "candidates": candidates,
     }
 
 
