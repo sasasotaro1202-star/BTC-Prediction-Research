@@ -226,7 +226,7 @@ def choose(root: Path) -> dict[str, Any]:
         routes.append(_route(
             "btc_selective_prediction_oos.yml",
             "high_confidence_overprediction_warrants_selective_prediction_oos",
-            priority=88,
+            priority=91,
             evidence_state="SELECTIVE_RESEARCH_PENDING",
         ))
     elif experience is None:
