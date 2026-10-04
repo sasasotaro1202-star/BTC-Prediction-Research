@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -462,6 +463,8 @@ def main():
         "research_only": True,
         "production_changed": False,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "analysis_git_sha": os.environ.get("GITHUB_SHA") or "LOCAL_UNPINNED",
+        "analysis_git_sha_source": "GITHUB_SHA" if os.environ.get("GITHUB_SHA") else "LOCAL_ENVIRONMENT",
         "horizons": {h: evaluate(h) for h in ("5m", "10m")},
     }
     OUT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
