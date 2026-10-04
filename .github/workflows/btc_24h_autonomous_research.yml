@@ -354,7 +354,10 @@ jobs:
 
   stage4_robustness:
     name: "24H Stage 4 - Calibration + Uncertainty + Microstructure"
-    needs: stage3_challenger
+    # Stage 4 records the result of every prior stage in its terminal guard.
+    # Keep all referenced jobs as direct dependencies so the needs context is
+    # populated and never silently resolves to an empty value.
+    needs: [stage1_maximum, stage2_historical, stage3_challenger]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 350
