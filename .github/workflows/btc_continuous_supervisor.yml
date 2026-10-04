@@ -5,6 +5,23 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  # Event-driven recovery removes the 5-minute schedule as a single point of
+  # failure. Completed production/data/research lanes immediately wake the
+  # router; concurrency collapses duplicate wakeups into one supervisor run.
+  workflow_run:
+    workflows:
+      - "BTC Live Cycle"
+      - "BTC Binance WS Collector"
+      - "BTC PIT OOS Audit"
+      - "BTC Archive Refresh Research"
+      - "BTC Research Readiness Audit"
+      - "BTC Adaptive Calibration Replay Research"
+      - "BTC Experience Policy OOS Learning"
+      - "BTC Selective Prediction OOS"
+      - "BTC Rich Production Challenger"
+      - "BTC Ultimate Final V13 — Maximum Future-Generalization E2E"
+      - "BTC Autonomous Data Frontier"
+    types: [completed]
 
 concurrency:
   group: btc-continuous-supervisor
@@ -263,7 +280,8 @@ jobs:
             "route_signals": ${route_signals},
             "route_dispatched": ${route_dispatched},
             "route_candidate_count": ${route_candidate_count},
-            "design": "stateless_5m_scheduler_ordered_evidence_router_no_self_dispatch_no_multi_hour_runner"
+            "trigger_event": "${GITHUB_EVENT_NAME}",
+            "design": "stateless_5m_plus_event_driven_supervisor_ordered_evidence_router_no_self_dispatch_no_multi_hour_runner"
           }
           EOF
 
