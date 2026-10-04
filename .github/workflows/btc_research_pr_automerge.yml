@@ -1,0 +1,221 @@
+name: BTC Research PR Auto Merge
+
+# GitHub-side merge automation for explicitly marked, research-only PRs.
+# It never runs repository code from the PR, never checks out the PR branch,
+# and hard-denies Production/data/holdout state changes.
+# Any GitHub API failure terminates the job before a merge request can be attempted.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows:
+      - "BTC Unit Tests"
+      - "BTC Research Readiness Audit"
+      - "BTC Ops Preflight"
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Optional open PR number to evaluate"
+        required: false
+        type: string
+
+concurrency:
+  group: btc-research-pr-automerge
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Evaluate and merge safe research PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.pull_request.number || '' }}
+          EVENT_RUN_PR_JSON: ${{ toJson(github.event.workflow_run.pull_requests) }}
+          INPUT_PR: ${{ inputs.pr_number || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : > /tmp/btc-pr-automerge-audit.log
+
+          add_audit() {
+            printf '%s\n' "$*" | tee -a /tmp/btc-pr-automerge-audit.log
+          }
+
+          discover_prs() {
+            case "$EVENT_NAME" in
+              pull_request_target)
+                [ -n "$EVENT_PR" ] && printf '%s\n' "$EVENT_PR"
+                ;;
+              workflow_run)
+                printf '%s' "$EVENT_RUN_PR_JSON" | jq -r '.[].number // empty'
+                ;;
+              workflow_dispatch)
+                if [ -n "$INPUT_PR" ]; then
+                  printf '%s\n' "$INPUT_PR"
+                else
+                  gh pr list --repo "$REPO" --state open --base main --limit 30 --json number --jq '.[].number'
+                fi
+                ;;
+              schedule)
+                gh pr list --repo "$REPO" --state open --base main --limit 30 --json number --jq '.[].number'
+                ;;
+              *)
+                ;;
+            esac
+          }
+
+          mapfile -t PRS < <(discover_prs | awk 'NF' | sort -nu)
+
+          if [ "${#PRS[@]}" -eq 0 ]; then
+            add_audit "NO_CANDIDATE_PR"
+            exit 0
+          fi
+
+          for PR in "${PRS[@]}"; do
+            add_audit "PR=$PR START"
+
+            pr_json="$(gh api "repos/$REPO/pulls/$PR")"
+            state="$(jq -r '.state // ""' <<<"$pr_json")"
+            draft="$(jq -r '.draft // true' <<<"$pr_json")"
+            base_ref="$(jq -r '.base.ref // ""' <<<"$pr_json")"
+            head_ref="$(jq -r '.head.ref // ""' <<<"$pr_json")"
+            head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")"
+            head_sha="$(jq -r '.head.sha // ""' <<<"$pr_json")"
+            body="$(jq -r '.body // ""' <<<"$pr_json")"
+
+            if [ "$state" != "open" ]; then
+              add_audit "PR=$PR SKIP state=$state"
+              continue
+            fi
+            if [ "$draft" = "true" ]; then
+              add_audit "PR=$PR SKIP draft=true"
+              continue
+            fi
+            if [ "$base_ref" != "main" ]; then
+              add_audit "PR=$PR SKIP base=$base_ref"
+              continue
+            fi
+            if [ "$head_repo" != "$REPO" ]; then
+              add_audit "PR=$PR SKIP external-head-repo=$head_repo"
+              continue
+            fi
+            if ! [[ "$head_ref" =~ ^(feat|fix|research|test|chore)/ ]]; then
+              add_audit "PR=$PR SKIP branch=$head_ref"
+              continue
+            fi
+            if ! grep -Fq '<!-- btc-automerge:research-only -->' <<<"$body"; then
+              add_audit "PR=$PR SKIP missing-research-only-marker"
+              continue
+            fi
+
+            add_audit "PR=$PR HEAD=$head_sha"
+
+            mapfile -t FILES < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')
+
+            blocked=0
+            for path in "${FILES[@]}"; do
+              case "$path" in
+                data/*|models/*|registry/*|                .github/workflows/btc_live_cycle.yml|                .github/workflows/btc_current_production_prediction.yml|                .github/workflows/btc_production_sentinel.yml|                .github/workflows/btc_promotion*|                *holdout*|*production_registry*|*prediction_state*)
+                  add_audit "PR=$PR BLOCKED sensitive-path=$path"
+                  blocked=1
+                  ;;
+              esac
+            done
+            if [ "$blocked" -ne 0 ]; then
+              add_audit "PR=$PR HOLD sensitive-files"
+              continue
+            fi
+
+            checks_json="$(gh api "repos/$REPO/commits/$head_sha/check-runs?per_page=100")"
+            latest_checks="$(
+              jq -c '
+                [.check_runs[]
+                 | select(.name != "BTC Research PR Auto Merge")]
+                | group_by(.name)
+                | map(sort_by(.started_at // .completed_at // "") | last)
+              ' <<<"$checks_json"
+            )"
+
+            check_count="$(jq 'length' <<<"$latest_checks")"
+            if [ "$check_count" -eq 0 ]; then
+              add_audit "PR=$PR HOLD no-check-runs"
+              continue
+            fi
+
+            bad_checks="$(
+              jq -r '
+                .[]
+                | select(
+                    (.status != "completed")
+                    or ((.conclusion // "") | IN("success","neutral","skipped") | not)
+                  )
+                | "(.name):(.status):(.conclusion // "null")"
+              ' <<<"$latest_checks"
+            )"
+            if [ -n "$bad_checks" ]; then
+              add_audit "PR=$PR HOLD checks-not-green"
+              while IFS= read -r line; do
+                [ -n "$line" ] && add_audit "PR=$PR CHECK=$line"
+              done <<<"$bad_checks"
+              continue
+            fi
+
+            statuses_json="$(gh api "repos/$REPO/commits/$head_sha/status")"
+            bad_statuses="$(
+              jq -r '
+                .statuses[]
+                | select((.state // "") != "success")
+                | "(.context):(.state)"
+              ' <<<"$statuses_json"
+            )"
+            if [ -n "$bad_statuses" ]; then
+              add_audit "PR=$PR HOLD commit-status-not-green"
+              while IFS= read -r line; do
+                [ -n "$line" ] && add_audit "PR=$PR STATUS=$line"
+              done <<<"$bad_statuses"
+              continue
+            fi
+
+            merge_json="$(
+              gh api                 --method PUT                 "repos/$REPO/pulls/$PR/merge"                 -f sha="$head_sha"                 -f merge_method=squash                 -f commit_title="chore: auto-merge verified research PR #$PR"                 -f commit_message="GitHub-side safety gate: research-only marker, same-repository head, sensitive-path firewall, and green current-head checks."
+            )"
+
+            if jq -e '.merged == true' >/dev/null <<<"$merge_json"; then
+              merge_sha="$(jq -r '.sha // ""' <<<"$merge_json")"
+              add_audit "PR=$PR MERGED sha=$merge_sha"
+            else
+              message="$(jq -r '.message // "merge_not_performed"' <<<"$merge_json")"
+              add_audit "PR=$PR HOLD merge-rejected=$message"
+            fi
+          done
+
+          {
+            echo "## BTC Research PR Auto Merge"
+            echo
+            echo 'Only explicitly marked same-repository research PRs are eligible.'
+            echo 'Production/data/holdout state changes are hard-blocked.'
+            echo
+            sed 's/^/- /' /tmp/btc-pr-automerge-audit.log
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload merge audit
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-research-pr-automerge-audit
+          path: /tmp/btc-pr-automerge-audit.log
+          if-no-files-found: error
+          retention-days: 30

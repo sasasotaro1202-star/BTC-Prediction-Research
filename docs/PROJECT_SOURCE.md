@@ -2645,3 +2645,36 @@ EVIDENCE PERSISTENCE
 STATE CONSISTENCY
 
 are represented in the artifact or explicitly marked unavailable/deferred.
+
+
+⸻
+
+114. GITHUB-SIDE RESEARCH PR MERGE FIREWALL
+
+Repository-side engineering automation may merge a Pull Request without enabling GitHub's repository Auto-Merge feature, but only through an explicit fail-closed research gate.
+
+Eligibility requires all of the following:
+
+* PR targets main
+* PR head repository is the same repository
+* PR is not draft
+* branch uses an allowed engineering prefix
+* PR body contains the exact marker `<!-- btc-automerge:research-only -->`
+* changed files contain no data / model / registry / holdout / Production-state path
+* every current-head check run is terminal and successful/neutral/skipped
+* every current commit status is success
+* the merge request is pinned to the exact observed HEAD SHA
+
+The automation must:
+
+* use pull_request_target or another trusted workflow definition without checking out untrusted PR code
+* keep only the minimum write permissions required for the merge operation
+* use squash merge with the expected HEAD SHA
+* record an auditable Step Summary and workflow artifact
+* treat merge rejection, stale HEAD, pending checks, and safety-gate failure as HOLD/NO_ACTION
+* never relax PIT, leakage, OOS/WFO, calibration, robustness, frozen-holdout, shadow, promotion, rollback, or Production policies
+
+Sensitive-path blocking is fail-closed. A research PR that changes Production artifacts, registries, live prediction state, protected holdout state, or other protected data cannot be auto-merged.
+
+Manual GitHub repository Auto-Merge configuration is therefore not a prerequisite for safe research-PR automation. This automation is an engineering convenience only and is never evidence of research success or Production readiness.
+

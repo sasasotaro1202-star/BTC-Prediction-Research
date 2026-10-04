@@ -174,3 +174,11 @@ High-confidence overprediction is a research trigger only. The trigger uses the 
 Material drift is also a research trigger only. Durable research-only drift evidence at or above the configured drift/model-disagreement threshold may prioritize `btc_uncertainty_layer_oos.yml`; it cannot directly change Production.
 
 Router output is validated for allowlist membership, exact workflow thresholds, ordered priorities, unique candidates, production_impact=false, evidence_state and signal structure. The supervisor artifact records the first candidate, selected candidate, dispatch result and route signals. The router never selects a Production model or changes the Production registry. Existing PIT, OOS/WFO, calibration, robustness, frozen-holdout, shadow, promotion, recovery and rollback gates remain mandatory. No paid API or external LLM service is required.
+
+
+## GitHub-side research PR merge automation
+
+Autonomous engineering PRs may be merged by the repository workflow only when they are explicitly marked with `<!-- btc-automerge:research-only -->`, target `main`, originate from the same repository, use an allowed engineering branch prefix, and contain no Production/data/registry/holdout state changes. The merge gate evaluates the current PR HEAD and refuses to merge while any current-head check or commit status is pending/failed. It merges with the expected HEAD SHA using squash semantics so a race cannot merge a superseded commit.
+
+The auto-merge workflow never checks out or executes PR code, keeps Production mutation paths fail-closed, uploads an audit artifact, and treats merge rejection as HOLD rather than success. It does not bypass PIT/OOS/calibration/robustness/holdout/shadow/promotion policy. Research PRs without the explicit marker remain manual by design.
+

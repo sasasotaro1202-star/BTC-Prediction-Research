@@ -16,6 +16,7 @@ on:
       - 'tests/test_continuous_supervisor.py'
       - 'tests/test_autonomous_research_router.py'
       - '.github/workflows/btc_binance_ws_collector.yml'
+      - '.github/workflows/btc_research_pr_automerge.yml'
       - 'src/**'
       - 'models/*.json'
       - 'data/predictions.db.gz'
@@ -141,6 +142,33 @@ jobs:
           if "recover_if_stale btc_continuous_supervisor.yml 900 1800 900" not in watchdog:
               raise SystemExit("watchdog supervisor recovery threshold is not 15-minute bounded")
           print("continuous supervisor event-driven + bounded watchdog recovery coverage: VERIFIED")
+
+          automerge = (root / "btc_research_pr_automerge.yml").read_text(encoding="utf-8")
+          required_automerge_contracts = {
+              "pull_request_target:",
+              "contents: write",
+              "pull-requests: write",
+              "checks: read",
+              "<!-- btc-automerge:research-only -->",
+              "head_repo != \"$REPO\"",
+              "data/*|models/*|registry/*",
+              "-f sha=\"$head_sha\"",
+              "-f merge_method=squash",
+              "actions/upload-artifact@v6",
+          }
+          missing_automerge = sorted(
+              marker for marker in required_automerge_contracts if marker not in automerge
+          )
+          if missing_automerge:
+              raise SystemExit(
+                  "research PR auto-merge safety contract missing: "
+                  + ", ".join(missing_automerge)
+              )
+          if "actions/checkout@" in automerge:
+              raise SystemExit(
+                  "research PR auto-merge workflow must not checkout or execute untrusted PR code"
+              )
+          print("research PR auto-merge safety contract: VERIFIED")
           PY
 
       - name: Install BTC runtime dependencies
