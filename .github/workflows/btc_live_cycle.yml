@@ -470,7 +470,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH="\${GITHUB_WORKSPACE}/src:\${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py
+          PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py
           python - <<'PY'
           import json
           from pathlib import Path
