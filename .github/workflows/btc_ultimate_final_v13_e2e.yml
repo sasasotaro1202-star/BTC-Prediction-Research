@@ -437,6 +437,11 @@ jobs:
                   'docs/PROJECT_SOURCE.md',
                   'requirements.txt',
               }
+              and all(
+                  isinstance(value, str) and len(value) == 64
+                  and all(ch in '0123456789abcdef' for ch in value.lower())
+                  for value in (provenance.get('policy_files') or {}).values()
+              )
           )
           archive_dir = Path('data/historical_research/production_artifact_audit_by_sha')
           archive_path = archive_dir / f'{expected}.json' if expected else None
