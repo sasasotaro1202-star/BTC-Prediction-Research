@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import unittest
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -56,7 +57,7 @@ class ContextRouterTests(unittest.TestCase):
         train = make_rows(320)
         test = make_rows(20, offset=350)
         factories = {"logreg": factory}
-        with unittest.mock.patch(
+        with patch(
             "src.context_model_oos.route_predictions",
             side_effect=AssertionError("redundant hard router path invoked"),
         ):
