@@ -5788,7 +5788,7 @@
     "hyperliquid_ws": {
       "consecutive_failures": 0,
       "historical_acquisition_failures": 59,
-      "historical_acquisition_failures_total": 1,
+      "historical_acquisition_failures_total": 59,
       "historical_batches_acquired": 24,
       "historical_earliest_event_time": "2026-09-30T12:00:00+00:00",
       "historical_total_records_acquired": 4688,
@@ -5830,5 +5830,10 @@
       "selected_for_next_cycle": false
     }
   },
-  "updated_at": "2026-10-04T07:11:59+00:00"
+  "updated_at": "2026-10-04T07:14:39.866Z",
+  "telemetry_migration": {
+    "historical_acquisition_failures_total_repaired": true,
+    "invariant": "historical_acquisition_failures_total >= historical_acquisition_failures",
+    "reason": "repair partial concurrent migration without altering prediction or OOS evidence"
+  }
 }
