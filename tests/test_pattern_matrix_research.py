@@ -148,3 +148,15 @@ def test_checkpoint_reuses_only_successful_candidates():
     assert 'if screen_ok:\n            completed_screen.add(c["fingerprint"])' in s
     assert "final_ok=False" in s
     assert 'if final_ok:\n            completed_final.add(c["fingerprint"])' in s
+
+
+def test_pattern_matrix_aborts_before_expensive_work_when_sha_is_stale():
+    s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
+    guard=s.index("Fail closed if research SHA is stale")
+    setup=s.index("uses: actions/setup-python@v7")
+    assert guard < setup
+    segment=s[guard:setup]
+    assert ". scripts/ci_network_retry.sh" in segment
+    assert 'ci_gh_api_get "repos/${GITHUB_REPOSITORY}/git/ref/heads/main"' in segment
+    assert 'if [ "$remote_sha" != "$GITHUB_SHA" ]; then' in segment
+    assert "exit 1" in segment
