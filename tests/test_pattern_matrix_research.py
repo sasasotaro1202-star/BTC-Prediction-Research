@@ -58,6 +58,7 @@ def test_lineage_and_promotion_firewall():
 def test_screen_failures_are_persisted_not_silently_discarded():
     s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
     assert "screen_failures=list(checkpoint.get" in s
+    assert "screen_failures" in s
     assert 'screen_failures.append({"config":c,"error_type":type(e).__name__' in s
     assert '"failures":screen_failures+failures' in s
 
