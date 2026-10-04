@@ -19,6 +19,8 @@ on:
       - 'src/**'
       - 'models/*.json'
       - 'data/predictions.db.gz'
+      - 'PROJECT_INSTRUCTIONS.md'
+      - 'docs/PROJECT_SOURCE.md'
   workflow_dispatch:
 
 concurrency:
@@ -109,7 +111,33 @@ jobs:
               raise SystemExit("continuous supervisor concurrency contract missing")
           if "gh workflow run btc_continuous_supervisor.yml" in supervisor:
               raise SystemExit("stateless supervisor must not self-dispatch")
-          print("continuous supervisor stateless heartbeat coverage: VERIFIED")
+          required_event_wakeups = {
+              "BTC Live Cycle",
+              "BTC Binance WS Collector",
+              "BTC PIT OOS Audit",
+              "BTC Archive Refresh Research",
+              "BTC Research Readiness Audit",
+              "BTC Adaptive Calibration Replay Research",
+              "BTC Experience Policy OOS Learning",
+              "BTC Selective Prediction OOS",
+              "BTC Rich Production Challenger",
+              "BTC Ultimate Final V13 — Maximum Future-Generalization E2E",
+              "BTC Autonomous Data Frontier",
+          }
+          for workflow_name in required_event_wakeups:
+              if f'- "{workflow_name}"' not in supervisor:
+                  raise SystemExit(
+                      "continuous supervisor event-driven recovery missing: "
+                      + workflow_name
+                  )
+          if "types: [completed]" not in supervisor:
+              raise SystemExit("continuous supervisor workflow_run completion trigger missing")
+          if "\"trigger_event\": \"${GITHUB_EVENT_NAME}\"" not in supervisor:
+              raise SystemExit("continuous supervisor trigger observability missing")
+          watchdog = (root / "btc_watchdog.yml").read_text(encoding="utf-8")
+          if "recover_if_stale btc_continuous_supervisor.yml 900 1800 900" not in watchdog:
+              raise SystemExit("watchdog supervisor recovery threshold is not 15-minute bounded")
+          print("continuous supervisor event-driven + bounded watchdog recovery coverage: VERIFIED")
           PY
 
       - name: Install BTC runtime dependencies
