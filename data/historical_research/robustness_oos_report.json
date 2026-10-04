@@ -3,37 +3,19 @@
     "10m": {
       "data_source": "live_binance_primary",
       "minimum": 1000,
-      "n": 396,
+      "n": 398,
       "promotion_evidence_eligible": false,
-      "status": "insufficient_data",
-      "evidence_correction": {
-        "corrected_at_utc": "2026-10-04T01:58:50.610Z",
-        "previous_value": true,
-        "corrected_value": false,
-        "reason": "stale report generated before fail-closed robustness eligibility validation was deployed",
-        "source_of_truth": "src/robustness_oos.py and live-cycle validation contract"
-      }
+      "status": "insufficient_data"
     },
     "5m": {
       "data_source": "live_binance_primary",
       "minimum": 1000,
-      "n": 254,
+      "n": 255,
       "promotion_evidence_eligible": false,
-      "status": "insufficient_data",
-      "evidence_correction": {
-        "corrected_at_utc": "2026-10-04T01:58:50.614Z",
-        "previous_value": true,
-        "corrected_value": false,
-        "reason": "stale report generated before fail-closed robustness eligibility validation was deployed",
-        "source_of_truth": "src/robustness_oos.py and live-cycle validation contract"
-      }
+      "status": "insufficient_data"
     }
   },
   "policy": "diagnostic_only_no_model_input_no_promotion_effect",
   "research_only": true,
-  "schema_version": 1,
-  "evidence_reconciliation": {
-    "status": "CORRECTED",
-    "rule": "eligible iff live_binance_primary AND status=ok AND n>=minimum AND final_holdout_protected=true"
-  }
+  "schema_version": 1
 }
