@@ -17,7 +17,7 @@ def test_current_workspace_sha_matches_ci_pin(monkeypatch, tmp_path):
     assert audit.current_workspace_sha(tmp_path) == expected
 
 
-def test_current_workspace_sha_fails_closed_on_ci_mismatch(monkeypatch, tmp_path):
+def test_current_workspace_sha_allows_ci_ledger_child(monkeypatch, tmp_path):
     expected = "a" * 40
     actual = "b" * 40
     monkeypatch.setenv("GITHUB_SHA", expected)
@@ -26,8 +26,31 @@ def test_current_workspace_sha_fails_closed_on_ci_mismatch(monkeypatch, tmp_path
         "check_output",
         lambda *args, **kwargs: actual,
     )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0})(),
+    )
 
-    with pytest.raises(SystemExit, match="workspace SHA mismatch"):
+    assert audit.current_workspace_sha(tmp_path) == actual
+
+
+def test_current_workspace_sha_fails_closed_on_unrelated_ci_workspace(monkeypatch, tmp_path):
+    expected = "a" * 40
+    actual = "b" * 40
+    monkeypatch.setenv("GITHUB_SHA", expected)
+    monkeypatch.setattr(
+        audit.subprocess,
+        "check_output",
+        lambda *args, **kwargs: actual,
+    )
+    monkeypatch.setattr(
+        audit.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 1})(),
+    )
+
+    with pytest.raises(SystemExit, match="not descended from checkout SHA"):
         audit.current_workspace_sha(tmp_path)
 
 
@@ -76,7 +99,9 @@ def test_build_provenance_records_all_required_policy_hashes(monkeypatch, tmp_pa
     provenance = audit.build_provenance(tmp_path)
 
     assert provenance["git_sha"] == "d" * 40
+    assert provenance["checkout_sha"] == "d" * 40
     assert provenance["workspace_sha"] == "d" * 40
+    assert provenance["workspace_derived_from_checkout_sha"] is False
     assert set(provenance["policy_files"]) == {
         "PROJECT_INSTRUCTIONS.md",
         "docs/PROJECT_SOURCE.md",
