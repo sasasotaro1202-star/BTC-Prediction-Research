@@ -48,6 +48,10 @@ MARK_FALLBACK_URLS = (
 )
 SCHEMA_VERSION = 1
 MAX_CACHE_ROWS = 720
+# A collector that cannot accept a new closed Futures bar for this long is
+# unhealthy even if its WebSocket connection keeps reconnecting successfully.
+# Fail the bounded capture so watchdog/self-heal can replace the stuck runner.
+MAX_NO_PROGRESS_SECONDS = 180.0
 
 
 def utc_iso_from_ms(value: int) -> str:
@@ -530,10 +534,12 @@ async def capture_closed_klines_stream(
     }
     started_at = time.monotonic()
     last_checkpoint = started_at
+    last_progress_at = started_at
 
     async def on_row(row: dict[str, Any]) -> None:
-        nonlocal last_checkpoint
+        nonlocal last_checkpoint, last_progress_at
         merged[int(row["open_time_ms"])] = row
+        last_progress_at = time.monotonic()
         if on_checkpoint is not None and (
             time.monotonic() - last_checkpoint >= float(checkpoint_seconds)
         ):
@@ -571,6 +577,11 @@ async def capture_closed_klines_stream(
             )
         if time.monotonic() >= deadline:
             break
+        if time.monotonic() - last_progress_at >= MAX_NO_PROGRESS_SECONDS:
+            raise RuntimeError(
+                "binance_ws_no_progress: no newly accepted closed bar "
+                f"for {MAX_NO_PROGRESS_SECONDS:.0f}s"
+            )
         # A dropped or silent URL-based socket must not end the capture window.
         # After both documented URL forms fail to yield closed bars, use the
         # documented post-connect SUBSCRIBE transport before cycling again.
