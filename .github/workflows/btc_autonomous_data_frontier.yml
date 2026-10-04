@@ -102,6 +102,15 @@ jobs:
           for sid,item in (evidence.get("by_source") or {}).items():
               if item.get("time_bounds_status") not in {"OK","INVALID_REVERSED","UNKNOWN"}:
                   raise SystemExit(f"{sid}: historical time-bound integrity status missing")
+              consecutive=int(item.get("acquisition_failures",0) or 0)
+              total=int(item.get("acquisition_failures_total",0) or 0)
+              batches=int(item.get("batch_count",0) or 0)
+              rate=float(item.get("acquisition_failure_rate",0.0) or 0.0)
+              if min(consecutive,total,batches) < 0 or total < consecutive:
+                  raise SystemExit(f"{sid}: acquisition failure counters inconsistent")
+              expected_rate=total/max(1,batches+total)
+              if not 0.0 <= rate <= 1.0 or abs(rate-expected_rate) > 1e-9:
+                  raise SystemExit(f"{sid}: acquisition failure rate inconsistent")
           print({"cycle":last.get("cycle"),"gap":last.get("gap"),"selected":last.get("selected_source_ids"),"discovered":len(p.get("candidates",{})),"actions":actions})
           PY
       - name: Recover missing verified primary data
