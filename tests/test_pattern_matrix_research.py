@@ -141,3 +141,10 @@ def test_workflow_restores_same_sha_checkpoints():
     assert "actions/artifacts/$" in s
     assert "btc-pattern-matrix-checkpoints-" in s
     assert "if: always()" in s
+
+def test_checkpoint_reuses_only_successful_candidates():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert "screen_ok=False" in s
+    assert 'if screen_ok:\n            completed_screen.add(c["fingerprint"])' in s
+    assert "final_ok=False" in s
+    assert 'if final_ok:\n            completed_final.add(c["fingerprint"])' in s
