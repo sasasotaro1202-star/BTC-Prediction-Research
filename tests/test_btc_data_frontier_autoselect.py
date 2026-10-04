@@ -828,12 +828,6 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertIn('.created_at | fromdateiso8601) >= $started', fresh_lines[0])
         self.assertNotIn('select(.head_sha==$sha', fresh_lines[0])
 
-
-if __name__=="__main__":
-    main()
-
-
-
     def test_historical_acquisition_failure_persists_reason(self):
         frontier={"source_state":{}, "candidates":{}, "history":[]}
         failed={
@@ -876,3 +870,7 @@ if __name__=="__main__":
         self.assertEqual(summary["acquisition_failures"],58)
         self.assertEqual(summary["last_acquisition_error"],"HTTPError:429:Too Many Requests")
         self.assertEqual(summary["last_acquisition_error_at"],"2026-10-04T07:20:00+00:00")
+
+
+if __name__=="__main__":
+    main()
