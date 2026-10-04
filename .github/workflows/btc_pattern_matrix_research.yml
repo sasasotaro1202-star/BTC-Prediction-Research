@@ -32,6 +32,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
+      - name: Fail closed if research SHA is stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/ci_network_retry.sh
+          remote_sha="$(ci_gh_api_get "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$remote_sha" != "$GITHUB_SHA" ]; then
+            echo "STALE_MAIN_RUN expected=$remote_sha actual=$GITHUB_SHA" >&2
+            exit 1
+          fi
+          echo "LATEST_MAIN_SHA=$GITHUB_SHA"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
