@@ -86,6 +86,11 @@ class TestBinaryTargetResearch(unittest.TestCase):
         self.assertEqual(diag["newest_block"]["test_start"], block["test_start"])
         self.assertEqual(diag["worst_logloss_block"]["test_end"], block["test_end"])
 
+    def test_binary_source_binds_evidence_to_analysis_sha(self):
+        text = (Path(__file__).resolve().parents[1] / "src" / "binary_target_research.py").read_text(encoding="utf-8")
+        self.assertIn('"analysis_git_sha"', text)
+        self.assertIn('GITHUB_SHA', text)
+
     def test_build_rows_uses_future_close_and_emits_two_classes(self):
         raw = []
         base = 1_700_000_000_000
