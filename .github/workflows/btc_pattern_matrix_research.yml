@@ -75,7 +75,7 @@ jobs:
             exit 0
           fi
           zip_path="/tmp/pattern-matrix-checkpoint-${previous_run}.zip"
-          if ! ci_gh_api_get "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$zip_path"; then
+          if ! ci_gh_api_download "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" "$zip_path"; then
             echo "WARN: checkpoint artifact download failed; starting without checkpoint."
             rm -f "$zip_path"
             exit 0
