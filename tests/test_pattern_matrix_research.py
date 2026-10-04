@@ -74,6 +74,7 @@ def test_workflow_expressions_are_not_backslash_escaped():
     assert "\\${{" not in s
     assert "ref: ${{ github.sha }}" in s
     assert "group: btc-pattern-matrix-research" in s
+    assert "cancel-in-progress: false" in s
 
 def test_screen_selection_is_multi_objective_and_diverse():
     rows=[]
