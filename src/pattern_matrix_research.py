@@ -21,14 +21,15 @@ from model_compare import CLASSES, load_archive_research_rows
 
 OUT=ROOT/"data/historical_research/pattern_matrix_research.json"
 HORIZONS=("5m","10m")
-MAX_ROWS=14000
+MAX_ROWS=16000
 HOLDOUT=2000
 MIN_TRAIN=2500
-SCREEN_BLOCKS=6
-SCREEN_TEST=500
-FINAL_BLOCKS=12
-FINAL_TEST=400
-FINALISTS=10
+# Broad but bounded hosted-run sweep.
+SCREEN_BLOCKS=4
+SCREEN_TEST=400
+FINAL_BLOCKS=10
+FINAL_TEST=350
+FINALISTS=12
 BOOTSTRAPS=400
 BOOT_BLOCK=20
 PURGE={"5m":5,"10m":10}
@@ -42,17 +43,24 @@ FEATURE_SETS={
  "volume_flow":("volume_ratio","volume_trend"),
  "trend":("ret_5m","ret_10m","ema_gap_5m","ema_gap_10m"),
  "compact_cross":("ret_1m","ret_3m","ret_5m","ret_10m","volatility_5m","range_position_10m","volume_ratio","ema_gap_5m"),
+ "mean_reversion":("ret_1m","ret_3m","ret_5m","volatility_5m","range_position_10m","body_1m","ema_gap_5m","ema_gap_10m"),
+ "price_structure":("ret_1m","ret_5m","ret_10m","acceleration","range_position_10m","body_1m","upper_wick_1m","lower_wick_1m"),
+ "flow_trend":("ret_5m","ret_10m","volatility_5m","volatility_10m","volume_ratio","volume_trend","ema_gap_5m","ema_gap_10m"),
 }
 FEATURE_ORDER=FEATURE_SETS["all_15"]
 FEATURE_INDEX={x:i for i,x in enumerate(FEATURE_ORDER)}
-WINDOWS={"expanding":None,"recent_3000":3000}
-MODELS=("logreg_c0.1","logreg_c1.0","extra_trees","rf","hgb","soft_ensemble")
+WINDOWS={"expanding":None,"recent_1500":1500,"recent_3000":3000}
+MODELS=("logreg_c0.03","logreg_c0.1","logreg_c1.0","logreg_c3.0","extra_trees","rf","hgb","soft_ensemble")
 
 def factory(name):
+    if name=="logreg_c0.03":
+        return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=0.03,max_iter=3000))])
     if name=="logreg_c0.1":
         return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=0.1,max_iter=3000))])
     if name=="logreg_c1.0":
         return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=1.0,max_iter=3000))])
+    if name=="logreg_c3.0":
+        return Pipeline([("scale",StandardScaler()),("model",LogisticRegression(C=3.0,max_iter=3000))])
     if name=="extra_trees":
         return ExtraTreesClassifier(n_estimators=120,max_depth=9,min_samples_leaf=10,max_features="sqrt",random_state=42,n_jobs=-1)
     if name=="rf":
@@ -243,7 +251,7 @@ def run_horizon(h,rows):
 
 def main():
     sha=os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"
-    out={"schema_version":1,"generated_at_utc":datetime.now(timezone.utc).isoformat(),"analysis_git_sha":sha,"analysis_git_sha_status":"PINNED" if sha!="LOCAL_UNPINNED" else "LOCAL_UNPINNED","research_only":True,"production_changed":False,"promotion_allowed":False,"policy":"broad_pattern_matrix; chronological_WFO; prequential_temperature; protected_holdout; dependence_aware_bootstrap; incumbent_comparison","feature_sets":FEATURE_SETS,"models":list(MODELS),"windows":list(WINDOWS),"horizons":{}}
+    out={"schema_version":1,"generated_at_utc":datetime.now(timezone.utc).isoformat(),"analysis_git_sha":sha,"analysis_git_sha_status":"PINNED" if sha!="LOCAL_UNPINNED" else "LOCAL_UNPINNED","research_only":True,"production_changed":False,"promotion_allowed":False,"pit_evidence_status":"NON_STRICT_ARCHIVE_TIMING","promotion_evidence_eligible":False,"policy":"broad_pattern_matrix; chronological_WFO; prequential_temperature; protected_holdout; dependence_aware_bootstrap; incumbent_comparison","feature_sets":FEATURE_SETS,"models":list(MODELS),"windows":list(WINDOWS),"horizons":{}}
     for h in HORIZONS: out["horizons"][h]=run_horizon(h,load_archive_research_rows(h,MAX_ROWS))
     OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+"\n",encoding="utf-8"); print(json.dumps(out,indent=2))
 
