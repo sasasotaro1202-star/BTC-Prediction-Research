@@ -864,7 +864,7 @@ def acquire_selected_research_data(frontier,gap,selected):
  out=[]
  for sid in candidate_ids[:3]:
   state=frontier["source_state"].setdefault(sid,{})
-  if _historical_circuit_open(state):
+  if not force_historical_repair and _historical_circuit_open(state):
    out.append({
     "source_id":sid,
     "status":"SKIPPED_CIRCUIT_BREAKER",
