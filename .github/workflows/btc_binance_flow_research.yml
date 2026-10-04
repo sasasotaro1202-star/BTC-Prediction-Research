@@ -232,6 +232,21 @@ jobs:
               fi
               git fetch --no-tags --depth=1 origin binance-flow-cache
               base="$(git rev-parse origin/binance-flow-cache)"
+              remote_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              obj=json.loads(Path('/tmp/btc_remote_flow_cache.json').read_text(encoding='utf-8'))
+              rows=obj.get('rows',[])
+              print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          except Exception:
+              print(0)
+          PY
+              )"
+              if [ "$local_latest" -le "$remote_latest" ]; then
+                echo "Flow checkpoint became older than remote cache after conflict (local=$local_latest remote=$remote_latest)."
+                return 0
+              fi
               tmp_index="$(mktemp)"
               GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
               GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
@@ -332,7 +347,34 @@ jobs:
             echo 'binance-flow-cache branch is unavailable; refusing implicit branch creation in collector.' >&2
             exit 1
           fi
+          git show origin/binance-flow-cache:data/binance_flow_5s.json > /tmp/btc_remote_flow_cache_final.json 2>/dev/null || printf '%s\n' '{"rows":[]}' > /tmp/btc_remote_flow_cache_final.json
           base=$(git rev-parse origin/binance-flow-cache)
+          remote_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              obj=json.loads(Path('/tmp/btc_remote_flow_cache_final.json').read_text(encoding='utf-8'))
+          except Exception:
+              obj=None
+          if obj is None:
+              print(0)
+          else:
+              rows=obj.get('rows',[])
+              print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          PY
+          )"
+          local_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('data/binance_flow_5s.json').read_text(encoding='utf-8'))
+          rows=obj.get('rows',[])
+          print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          PY
+          )"
+          if [ "$local_latest" -le "$remote_latest" ]; then
+            echo "Final flow cache is not newer than dedicated branch (local=$local_latest remote=$remote_latest)."
+            exit 0
+          fi
           tmp_index=$(mktemp)
           trap 'rm -f "$tmp_index"' EXIT
           GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
@@ -342,7 +384,23 @@ jobs:
           for attempt in 1 2 3 4; do
             if git push origin "$commit:refs/heads/binance-flow-cache"; then exit 0; fi
             git fetch --no-tags --depth=1 origin binance-flow-cache
+            git show origin/binance-flow-cache:data/binance_flow_5s.json > /tmp/btc_remote_flow_cache_final.json 2>/dev/null || printf '%s\n' '{"rows":[]}' > /tmp/btc_remote_flow_cache_final.json
             base=$(git rev-parse origin/binance-flow-cache)
+            remote_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              obj=json.loads(Path('/tmp/btc_remote_flow_cache_final.json').read_text(encoding='utf-8'))
+              rows=obj.get('rows',[])
+              print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          except Exception:
+              print(0)
+          PY
+            )"
+            if [ "$local_latest" -le "$remote_latest" ]; then
+              echo "Final flow cache became older than remote after conflict (local=$local_latest remote=$remote_latest)."
+              exit 0
+            fi
             GIT_INDEX_FILE="$tmp_index" git read-tree "$base"
             GIT_INDEX_FILE="$tmp_index" git add -- data/binance_flow_5s.json
             tree=$(GIT_INDEX_FILE="$tmp_index" git write-tree)
