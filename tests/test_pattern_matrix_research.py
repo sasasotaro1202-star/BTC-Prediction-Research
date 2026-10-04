@@ -25,6 +25,11 @@ def test_fold_geometry_is_chronological():
     assert e==sorted(set(e))
     assert all(2500<=x<=9500 and x+500<=10000 for x in e)
 
+def test_window_minimum_training_geometry_matches_window_size():
+    assert pm.min_train_for_window("expanding") == pm.MIN_TRAIN
+    assert pm.min_train_for_window("recent_3000") == pm.MIN_TRAIN
+    assert pm.min_train_for_window("recent_1500") == 1500
+
 def test_no_random_temporal_split():
     s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
     assert "train_test_split" not in s
@@ -69,3 +74,41 @@ def test_workflow_expressions_are_not_backslash_escaped():
     assert "\\${{" not in s
     assert "ref: ${{ github.sha }}" in s
     assert "group: btc-pattern-matrix-research" in s
+
+def test_screen_selection_is_multi_objective_and_diverse():
+    rows=[]
+    for i in range(18):
+        rows.append({
+            "feature_set":f"f{i%6}",
+            "model":f"m{i%4}",
+            "window":["expanding","recent_1500","recent_3000"][i%3],
+            "fingerprint":str(i),
+            "aggregate":{
+                "relative_logloss_improvement":0.01+i/1000,
+                "relative_brier_improvement":0.005+(17-i)/2000
+            },
+            "stability":{
+                "accuracy_non_worse_ratio":0.5+(i%5)/10,
+                "logloss_improved_ratio":0.5+(i%4)/10,
+                "brier_improved_ratio":0.5+(i%3)/10,
+                "worst_logloss_delta":0.2-i/1000,
+                "worst_accuracy_delta":-0.1+i/1000
+            }
+        })
+    selected=pm.select_finalists(rows,limit=12)
+    assert len(selected)==12
+    assert len({x["fingerprint"] for x in selected})==12
+    assert len({x["model"] for x in selected})>=3
+    assert all("screen_selection_score" in x for x in selected)
+def test_canonical_docs_match_matrix_contract():
+    instructions=Path("PROJECT_INSTRUCTIONS.md").read_text(encoding="utf-8")
+    source=Path("docs/PROJECT_SOURCE.md").read_text(encoding="utf-8")
+    expected_matrix_markers = (
+        "10 feature sets × 8 deterministic model variants × 3 training-window policies",
+        "240 configurations",
+    )
+    for text in (instructions,source):
+        assert all(marker in text for marker in expected_matrix_markers)
+        assert "recent_1500" in text
+        assert "logreg_c0.03" in text
+        assert "mean_reversion" in text
