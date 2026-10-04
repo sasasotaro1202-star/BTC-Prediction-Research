@@ -131,22 +131,27 @@ def _metrics(y_true: np.ndarray, probs: np.ndarray, n_classes: int) -> dict[str,
     }
 
 
-def _fit_fold(train_pairs: list[dict[str, Any]], n_clusters: int):
-    if len(train_pairs) < 2:
+def _fit_state_space(rows: list[dict[str, Any]], n_clusters: int, fit_rows: int):
+    if len(rows) < fit_rows or fit_rows < 2:
         return None
-    x_train = np.asarray([p["x"] for p in train_pairs], dtype=float)
-    target_x_train = np.asarray([p["target_x"] for p in train_pairs], dtype=float)
-    scaler = StandardScaler()
-    scaler.fit(np.vstack([x_train, target_x_train]))
-    current_scaled = scaler.transform(x_train)
-    target_scaled = scaler.transform(target_x_train)
-    actual_clusters = min(int(n_clusters), len(train_pairs))
+    reference = np.asarray([row["_x"] for row in rows[:fit_rows]], dtype=float)
+    actual_clusters = min(int(n_clusters), len(reference))
     if actual_clusters < 2:
         return None
+    scaler = StandardScaler()
+    reference_scaled = scaler.fit_transform(reference)
     clusterer = KMeans(n_clusters=actual_clusters, random_state=42, n_init=10)
-    clusterer.fit(np.vstack([current_scaled, target_scaled]))
-    current_state = clusterer.predict(current_scaled)
-    target_state = clusterer.predict(target_scaled)
+    clusterer.fit(reference_scaled)
+    return scaler, clusterer, actual_clusters
+
+
+def _fit_fold(train_pairs: list[dict[str, Any]], state_space):
+    if len(train_pairs) < 2 or state_space is None:
+        return None
+    scaler, clusterer, n_classes = state_space
+    x_train = np.asarray([p["x"] for p in train_pairs], dtype=float)
+    target_x_train = np.asarray([p["target_x"] for p in train_pairs], dtype=float)
+    target_state = clusterer.predict(scaler.transform(target_x_train))
     model = RandomForestClassifier(
         n_estimators=240,
         max_depth=12,
@@ -155,8 +160,8 @@ def _fit_fold(train_pairs: list[dict[str, Any]], n_clusters: int):
         random_state=42,
         n_jobs=-1,
     )
-    model.fit(current_scaled, target_state)
-    return scaler, clusterer, model, actual_clusters
+    model.fit(scaler.transform(x_train), target_state)
+    return scaler, clusterer, model, n_classes
 
 
 def _predict(fitted, pairs: list[dict[str, Any]]):
@@ -177,9 +182,9 @@ def _evaluate_step(
     rows: list[dict[str, Any]],
     *,
     steps: int,
-    n_clusters: int,
-    min_train: int,
+    state_space,
     test_block: int,
+    min_train: int,
     min_oos: int,
 ) -> dict[str, Any]:
     pairs = _build_pairs(rows, steps)
@@ -206,7 +211,7 @@ def _evaluate_step(
         test_pairs = development[test_start:min(test_start + test_block, len(development))]
         if len(train_pairs) < min_train or not test_pairs:
             continue
-        fitted = _fit_fold(train_pairs, n_clusters)
+        fitted = _fit_fold(train_pairs, state_space)
         if fitted is None:
             continue
         y, candidate, persistence = _predict(fitted, test_pairs)
@@ -224,7 +229,7 @@ def _evaluate_step(
         }
 
     final_train = development[:-steps] if len(development) > steps else []
-    fitted_final = _fit_fold(final_train, n_clusters)
+    fitted_final = _fit_fold(final_train, state_space)
     if fitted_final is None:
         return {
             "status": "DEFERRED",
@@ -303,12 +308,23 @@ def build_trajectory_oos(
             "horizons": {},
         }
 
+    state_space = _fit_state_space(normalized, n_clusters, min_train)
+    if state_space is None:
+        return {
+            "status": "DEFERRED",
+            "reason": "state_vocabulary_fit_unavailable",
+            "research_only": True,
+            "production_changed": False,
+            "evaluation_mode": "direct_multi_horizon",
+            "horizons": {},
+        }
+
     horizons = {}
     for step in steps:
         horizons[HORIZON_NAMES[step]] = _evaluate_step(
             normalized,
             steps=step,
-            n_clusters=n_clusters,
+            state_space=state_space,
             min_train=min_train,
             test_block=test_block,
             min_oos=min_oos,
@@ -325,5 +341,7 @@ def build_trajectory_oos(
         "input_interval_minutes": BASE_INTERVAL_MINUTES,
         "horizons": horizons,
         "state_representation": "unsupervised_feature-state_clusters",
+        "state_definition": "frozen_initial_training_window",
+        "state_vocabulary_fit_rows": min_train,
         "future_error_control": "direct_each_horizon_with_fold_purge",
     }
