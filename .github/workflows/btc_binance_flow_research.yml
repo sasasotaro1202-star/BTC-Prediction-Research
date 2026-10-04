@@ -231,6 +231,7 @@ jobs:
                 return 0
               fi
               git fetch --no-tags --depth=1 origin binance-flow-cache
+              git show origin/binance-flow-cache:data/binance_flow_5s.json > /tmp/btc_remote_flow_cache.json 2>/dev/null || echo '{"rows":[]}' > /tmp/btc_remote_flow_cache.json
               base="$(git rev-parse origin/binance-flow-cache)"
               remote_latest="$(python - <<'PY'
           import json
