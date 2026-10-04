@@ -1,4 +1,7 @@
-"""Robust BTC-only historical bootstrap trainer."""
+"""Robust BTC-only historical bootstrap trainer.
+
+This module never writes a Production model or model_registry entry.
+"""
 from __future__ import annotations
 
 import json
