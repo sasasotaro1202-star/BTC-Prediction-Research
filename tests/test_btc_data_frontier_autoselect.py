@@ -387,6 +387,33 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertIn("git worktree add --detach",section)
 
 
+    def test_historical_time_bounds_do_not_reverse_during_backfill(self):
+        state={
+            "historical_earliest_event_time":"2026-09-30T12:00:00+00:00",
+            "last_historical_event_time":"2026-10-04T01:40:00+00:00",
+        }
+        older={
+            "first_event_time":"2026-09-30T11:50:00+00:00",
+            "last_event_time":"2026-09-30T12:20:00+00:00",
+        }
+        mod._extend_historical_time_bounds(state,older)
+        self.assertEqual(state["historical_earliest_event_time"],"2026-09-30T11:50:00+00:00")
+        self.assertEqual(state["last_historical_event_time"],"2026-10-04T01:40:00+00:00")
+
+    def test_historical_time_bounds_extend_latest_on_forward_batch(self):
+        state={
+            "historical_earliest_event_time":"2026-09-30T11:50:00+00:00",
+            "last_historical_event_time":"2026-10-04T01:40:00+00:00",
+        }
+        newer={
+            "first_event_time":"2026-10-04T01:45:00+00:00",
+            "last_event_time":"2026-10-04T02:00:00+00:00",
+        }
+        mod._extend_historical_time_bounds(state,newer)
+        self.assertEqual(state["historical_earliest_event_time"],"2026-09-30T11:50:00+00:00")
+        self.assertEqual(state["last_historical_event_time"],"2026-10-04T02:00:00+00:00")
+
+
     def test_atomic_json_write_round_trips_valid_json(self):
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)/"state.json"
