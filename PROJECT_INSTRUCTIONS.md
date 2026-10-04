@@ -61,6 +61,8 @@ Production is a bundle, not a model file: model artifact, feature schema, source
 
 Block contradictory states such as PIT FAIL + PRODUCTION ACTIVE, registry/model mismatch, artifact hash mismatch, invalid holdout + promotion, stale trusted source, or snapshot mismatch.
 
+Bootstrap training is research-only. It may evaluate a historical seed candidate, but it must never overwrite an existing Production model or model_registry entry. Live scheduled workflows must not use model age alone as a Production refresh trigger; Production replacement requires the full local OOS/WFO → calibration → robustness → frozen holdout → shadow → promotion sequence.
+
 ## Completion
 Green CI, an existing model, generated artifacts, or a completed workflow do not prove performance verification or Production readiness.
 
@@ -160,4 +162,3 @@ Finalist selection is multi-objective rank-based across LogLoss, Brier, accuracy
 Exploratory winners are not Production evidence. The frozen holdout never chooses a pattern, feature, model, window, calibration, router, threshold or promotion decision.
 
 Selective prediction and timing remain separate research axes. Valid actions include PREDICT_NOW / ACQUIRE_MORE / WAIT / RECOMPUTE / ROUTE / FALLBACK / ABSTAIN. Any learned action must obey the knowledge-time maturity firewall.
-
