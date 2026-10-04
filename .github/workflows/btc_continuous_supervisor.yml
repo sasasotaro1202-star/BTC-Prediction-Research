@@ -72,7 +72,9 @@ jobs:
             route_reason="$(jq -r '.reason // "unspecified"' autonomous_route.json)"
           else
             echo 'ERROR: autonomous research router failed; fail-closed to readiness audit.' >&2
-            cat /tmp/btc_router.err >&2 || true
+            if [ -f /tmp/btc_router.err ]; then
+              cat /tmp/btc_router.err >&2
+            fi
             degraded=1
             route_workflow='btc_research_readiness.yml'
             route_threshold=3600
