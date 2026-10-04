@@ -430,17 +430,41 @@ jobs:
               and provenance.get('workspace_sha') == expected
               and {item.get('horizon') for item in artifacts} == {'5m', '10m'}
               and all(item.get('runtime_model_reload_ok') is True for item in artifacts)
+              and all(item.get('runtime_classes') == ['DOWN', 'FLAT', 'UP'] for item in artifacts)
+              and all(item.get('runtime_feature_count') == 15 for item in artifacts)
+              and set((provenance.get('policy_files') or {})) == {
+                  'PROJECT_INSTRUCTIONS.md',
+                  'docs/PROJECT_SOURCE.md',
+                  'requirements.txt',
+              }
           )
-          if persistable:
-              print('Persisting current-SHA production artifact audit evidence.')
+          archive_dir = Path('data/historical_research/production_artifact_audit_by_sha')
+          archive_path = archive_dir / f'{expected}.json' if expected else None
+          if persistable and archive_path is not None:
+              archive_dir.mkdir(parents=True, exist_ok=True)
+              payload['archive'] = {
+                  'schema_version': 1,
+                  'audited_commit': expected,
+                  'path': str(archive_path),
+                  'binding': 'checkout_sha',
+              }
+              archive_path.write_text(
+                  json.dumps(payload, indent=2, sort_keys=True) + '\\n',
+                  encoding='utf-8',
+              )
+              print(f'Persisting immutable production artifact audit for audited SHA {expected}.')
+              Path('/tmp/persist_production_artifact_audit').write_text(
+                  str(archive_path), encoding='utf-8'
+              )
           else:
-              print('Skipping production artifact audit persistence because evidence is not bound to the current workflow SHA.')
-          Path('/tmp/persist_production_artifact_audit').write_text(
-              '1' if persistable else '0', encoding='utf-8'
-          )
+              print('Skipping production artifact audit persistence because evidence is not fully bound to the audited workflow SHA.')
+              Path('/tmp/persist_production_artifact_audit').write_text(
+                  '', encoding='utf-8'
+              )
           PY
-            if [ "$(cat /tmp/persist_production_artifact_audit)" = "1" ]; then
-              git add data/historical_research/production_artifact_audit.json
+            archive_path="$(cat /tmp/persist_production_artifact_audit)"
+            if [ -n "$archive_path" ]; then
+              git add "$archive_path"
             fi
           fi
           if ! git diff --cached --quiet; then git commit -m 'Record V13 E2E run completion'; fi
