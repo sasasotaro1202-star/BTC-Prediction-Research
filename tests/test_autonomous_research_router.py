@@ -93,6 +93,20 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["threshold_seconds"], 86400)
             self.assertFalse(route["production_impact"])
 
+
+    def test_missing_generated_readiness_file_does_not_block_routing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            (root / "data" / "historical_research" / "research_readiness.json").unlink(missing_ok=True)
+            self._write(
+                root / "models",
+                "5m.calibration.json",
+                {"n_settled": 261, "fit_logloss": None, "holdout_logloss": None},
+            )
+            route = choose(root)
+            self.assertEqual(route["workflow"], "btc_adaptive_calibration_replay.yml")
+
     def test_invalid_route_is_rejected(self):
         with self.assertRaises(ValueError):
             validate({
