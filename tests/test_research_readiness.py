@@ -12,6 +12,10 @@ class TestResearchReadiness(unittest.TestCase):
             verified_primary_predictions=141,
             min_strict_pit_rows=300,
             promotion_status="HOLD",
+            primary_horizon_gate={
+                "5m": {"strict_primary_settled": 300, "minimum": 300, "ready": True},
+                "10m": {"strict_primary_settled": 300, "minimum": 300, "ready": True},
+            },
         )
         self.assertEqual(state, "PIT_COLLECTION")
         self.assertTrue(reasons)
@@ -43,6 +47,10 @@ class TestResearchReadiness(unittest.TestCase):
                 "verified_primary_predictions": 320,
                 "min_strict_pit_rows": 300,
                 "violation_count": 0,
+                "primary_horizon_gate": {
+                    "5m": {"strict_primary_settled": 320, "minimum": 300, "ready": True},
+                    "10m": {"strict_primary_settled": 301, "minimum": 300, "ready": True},
+                },
             },
             {"promotion_status": "ELIGIBLE_PENDING_EXPLICIT_PROMOTION", "promotion_allowed": False},
         )
@@ -65,7 +73,11 @@ class TestResearchReadiness(unittest.TestCase):
         result = build_readiness(
             {"status": "PASS"},
             {"ok": True, "checks": {"5m": {}, "10m": {}}},
-            {"pit_verified": True, "verified_primary_predictions": 392, "min_strict_pit_rows": 300, "violation_count": 0},
+            {"pit_verified": True, "verified_primary_predictions": 392, "min_strict_pit_rows": 300, "violation_count": 0,
+             "primary_horizon_gate": {
+                 "5m": {"strict_primary_settled": 392, "minimum": 300, "ready": True},
+                 "10m": {"strict_primary_settled": 392, "minimum": 300, "ready": True},
+             }},
             {"promotion_status": "HOLD"},
             {
                 "5m": {"status": "WAITING", "n_settled": 249, "remaining_rows": 151},
@@ -76,11 +88,57 @@ class TestResearchReadiness(unittest.TestCase):
         self.assertFalse(result["calibration"]["all_horizons_ready"])
         self.assertEqual(result["calibration"]["horizons"]["10m"]["remaining_rows"], 8)
 
+    def test_per_horizon_gate_blocks_when_one_horizon_is_below_minimum(self):
+        result = build_readiness(
+            {"status": "PASS"},
+            {"ok": True, "checks": {"5m": {}, "10m": {}}},
+            {
+                "pit_verified": True,
+                "verified_primary_predictions": 700,
+                "min_strict_pit_rows": 300,
+                "violation_count": 0,
+                "primary_horizon_gate": {
+                    "5m": {"strict_primary_settled": 299, "minimum": 300, "ready": False},
+                    "10m": {"strict_primary_settled": 401, "minimum": 300, "ready": True},
+                },
+            },
+            {"promotion_status": "HOLD"},
+            {
+                "5m": {"status": "READY", "n_settled": 500},
+                "10m": {"status": "READY", "n_settled": 500},
+            },
+        )
+        self.assertEqual(result["readiness_state"], "PIT_COLLECTION")
+        self.assertIn("per_horizon_strict_pit_gate_failed", result["reasons"][0])
+
+    def test_missing_per_horizon_gate_is_fail_closed(self):
+        result = build_readiness(
+            {"status": "PASS"},
+            {"ok": True, "checks": {"5m": {}, "10m": {}}},
+            {
+                "pit_verified": True,
+                "verified_primary_predictions": 800,
+                "min_strict_pit_rows": 300,
+                "violation_count": 0,
+            },
+            {"promotion_status": "HOLD"},
+            {
+                "5m": {"status": "READY", "n_settled": 500},
+                "10m": {"status": "READY", "n_settled": 500},
+            },
+        )
+        self.assertEqual(result["readiness_state"], "PIT_COLLECTION")
+        self.assertEqual(result["reasons"], ["per_horizon_strict_pit_gate_missing_or_invalid"])
+
     def test_calibration_waits_on_generation_or_artifact_hash_mismatch(self):
         result = build_readiness(
             {"status": "PASS"},
             {"ok": True, "checks": {"5m": {}, "10m": {}}},
-            {"pit_verified": True, "verified_primary_predictions": 500, "min_strict_pit_rows": 300, "violation_count": 0},
+            {"pit_verified": True, "verified_primary_predictions": 500, "min_strict_pit_rows": 300, "violation_count": 0,
+             "primary_horizon_gate": {
+                 "5m": {"strict_primary_settled": 500, "minimum": 300, "ready": True},
+                 "10m": {"strict_primary_settled": 500, "minimum": 300, "ready": True},
+             }},
             {"promotion_status": "HOLD"},
             {
                 "5m": {"status": "WAITING", "n_settled": 500, "model_version": "old.v1", "binding_ok": False},
