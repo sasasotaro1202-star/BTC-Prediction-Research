@@ -128,3 +128,14 @@ def test_checkpoint_rejects_cross_sha_resume():
     s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
     assert 'obj.get("analysis_git_sha")!=_analysis_sha()' in s
     assert 'obj.get("rows_fingerprint")!=rows_fp' in s
+
+
+def test_workflow_restores_same_sha_checkpoints():
+    s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
+    assert "actions: read" in s
+    assert "Restore same-SHA pattern checkpoints" in s
+    assert "head_sha == $sha" in s
+    assert 'conclusion == "failure" or .conclusion == "timed_out"' in s
+    assert "actions/artifacts/$" in s
+    assert "btc-pattern-matrix-checkpoints-" in s
+    assert "if: always()" in s
