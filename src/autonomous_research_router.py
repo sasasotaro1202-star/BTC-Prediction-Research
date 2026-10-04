@@ -56,6 +56,7 @@ def _route(
         "production_impact": False,
         "priority": priority,
         "evidence_state": evidence_state,
+        "signals": [],
     }
 
 
@@ -265,8 +266,18 @@ def choose(root: Path) -> dict[str, Any]:
 
     unique_routes.sort(key=lambda item: (-int(item["priority"]), item["workflow"]))
     first = unique_routes[0]
+    signals: list[str] = []
+    if calibration_waiting:
+        signals.append("calibration_evidence_below_400")
+    if confidence_triggered:
+        signals.append("high_confidence_overprediction_trigger")
+    if frontier_candidates:
+        signals.append(f"frontier_candidates:{frontier_candidates}")
+    if experience is None:
+        signals.append("experience_evidence_missing")
     return {
         **first,
+        "signals": signals,
         "candidates": unique_routes,
         "confidence_reliability": confidence_detail,
         "frontier_candidates": frontier_candidates,
@@ -288,6 +299,9 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
     raw_candidates = route.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ValueError("router_candidates_missing")
+    signals = route.get("signals")
+    if not isinstance(signals, list) or not all(isinstance(item, str) and item for item in signals):
+        raise ValueError("router_signals_invalid")
 
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -311,7 +325,7 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
             "reason": str(candidate.get("reason", "")),
             "production_impact": False,
             "priority": int(candidate.get("priority", 0)),
-            "evidence_state": str(candidate.get("evidence_state", "UNKNOWN")),
+                "evidence_state": str(candidate.get("evidence_state", "UNKNOWN")),
         })
 
     # The published first route must match the top candidate exactly.
@@ -328,6 +342,7 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
         "priority": int(route.get("priority", 0)),
         "evidence_state": str(route.get("evidence_state", "UNKNOWN")),
         "candidates": candidates,
+        "signals": list(signals),
         "confidence_reliability": route.get("confidence_reliability", {}),
         "frontier_candidates": int(route.get("frontier_candidates", 0) or 0),
     }
