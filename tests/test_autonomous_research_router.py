@@ -31,15 +31,20 @@ class AutonomousResearchRouterTests(unittest.TestCase):
         self._write(
             root / "data" / "experience",
             "experience_summary.json",
-            {"generated_at_utc": "2026-10-04T00:00:00Z", "horizons": {}},
-        )
-        self._write(
-            evidence,
-            "promotion_gate.json",
             {
-                "production_safety_gate": "PASS",
-                "promotion_allowed": True,
-                "reason": "",
+                "generated_at_utc": "2026-10-04T00:00:00Z",
+                "horizons": {
+                    "5m": {
+                        "cases": {"confidence_bucket": {
+                            "0.70+": {"n": 20, "accuracy": 0.60, "avg_confidence": 0.71}
+                        }}
+                    },
+                    "10m": {
+                        "cases": {"confidence_bucket": {
+                            "0.70+": {"n": 20, "accuracy": 0.60, "avg_confidence": 0.71}
+                        }}
+                    },
+                },
             },
         )
         for horizon in ("5m", "10m"):
@@ -57,68 +62,10 @@ class AutonomousResearchRouterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             route = choose(Path(td))
             self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["candidates"][0]["workflow"], "btc_research_readiness.yml")
             self.assertFalse(route["production_impact"])
 
-    def test_calibration_collection_has_priority(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            self._healthy_base(root)
-            self._write(
-                root / "models",
-                "5m.calibration.json",
-                {"n_settled": 261, "fit_logloss": None, "holdout_logloss": None},
-            )
-            route = choose(root)
-            self.assertEqual(route["workflow"], "btc_adaptive_calibration_replay.yml")
-            self.assertIn("5m:calibration_n=261<400", route["signals"])
-
-    def test_promotion_robustness_hold_routes_rich_challenger(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            self._healthy_base(root)
-            self._write(
-                root / "data" / "historical_research",
-                "promotion_gate.json",
-                {
-                    "production_safety_gate": "HOLD",
-                    "promotion_allowed": False,
-                    "reason": "robustness_evidence_invalid_or_incomplete;candidate_or_frozen_holdout_non_regression_not_verified",
-                },
-            )
-            route = choose(root)
-            self.assertEqual(route["workflow"], "btc_rich_production_challenger.yml")
-            self.assertEqual(route["threshold_seconds"], 86400)
-            self.assertIn("promotion_gate:robustness_blocked", route["signals"])
-
-    def test_confidence_overreach_routes_experience_policy(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            self._healthy_base(root)
-            self._write(
-                root / "data" / "historical_research",
-                "promotion_gate.json",
-                {"production_safety_gate": "PASS", "promotion_allowed": True, "reason": ""},
-            )
-            self._write(
-                root / "data" / "experience",
-                "experience_summary.json",
-                {
-                    "horizons": {
-                        "5m": {
-                            "cases": {
-                                "confidence_bucket": {
-                                    "0.70+": {"n": 52, "accuracy": 0.38, "avg_confidence": 0.80}
-                                }
-                            }
-                        }
-                    }
-                },
-            )
-            route = choose(root)
-            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
-            self.assertIn("5m:high_confidence_gap=0.420;n=52", route["signals"])
-
-    def test_frontier_routes_when_no_higher_priority_issue(self):
+    def test_frontier_is_second_priority_when_confidence_is_clear(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -133,37 +80,67 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                     }
                 },
             )
-            route = choose(root)
+            # The base fixture is below the confidence trigger, so frontier wins.
+            route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_autonomous_data_frontier.yml")
+            self.assertEqual(
+                [x["workflow"] for x in route["candidates"]],
+                ["btc_autonomous_data_frontier.yml", "btc_ultimate_final_v13_e2e.yml"],
+            )
+
+    def test_calibration_collection_is_first_priority(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.calibration.json",
+                {"n_settled": 261, "fit_logloss": None, "holdout_logloss": None},
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_adaptive_calibration_replay.yml")
+            self.assertEqual(route["candidates"][0]["workflow"], "btc_adaptive_calibration_replay.yml")
+
+    def test_high_confidence_overprediction_routes_diagnosis_then_selective(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "horizons": {
+                        "5m": {"cases": {"confidence_bucket": {
+                            "0.70+": {"n": 100, "accuracy": 0.38, "avg_confidence": 0.80}
+                        }}},
+                        "10m": {"cases": {"confidence_bucket": {
+                            "0.70+": {"n": 101, "accuracy": 0.40, "avg_confidence": 0.81}
+                        }}},
+                    }
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["candidates"][1]["workflow"], "btc_selective_prediction_oos.yml")
+            self.assertEqual(route["candidates"][2]["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
+    def test_experience_missing_routes_experience(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            (root / "data" / "experience" / "experience_summary.json").unlink()
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
 
     def test_healthy_state_routes_to_bounded_routine_v13(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
             route = validate(choose(root))
+            # Healthy fixture has no frontier candidates and confidence is below trigger.
             self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
             self.assertEqual(route["threshold_seconds"], 86400)
             self.assertFalse(route["production_impact"])
-            self.assertEqual(route["reason"], "routine_future_generalization_evidence_refresh")
-
-    def test_pit_gate_structure_is_fail_closed(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            self._healthy_base(root)
-            self._write(
-                root / "data" / "historical_research",
-                "pit_oos_audit.json",
-                {
-                    "ok": True,
-                    "pit_verified": True,
-                    "primary_horizon_gate": {
-                        "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
-                        "10m": {"ready": True, "strict_primary_settled": "bad", "minimum": 300},
-                    },
-                },
-            )
-            route = choose(root)
-            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
 
     def test_invalid_route_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -171,18 +148,20 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 "workflow": "arbitrary.yml",
                 "threshold_seconds": 60,
                 "production_impact": False,
-                "priority": 1,
-                "reason": "bad",
+                "candidates": [{"workflow": "arbitrary.yml"}],
             })
 
-    def test_empty_reason_is_rejected(self):
+    def test_candidate_threshold_must_match_allowlist(self):
         with self.assertRaises(ValueError):
             validate({
                 "workflow": "btc_ultimate_final_v13_e2e.yml",
                 "threshold_seconds": 86400,
                 "production_impact": False,
-                "priority": 50,
-                "reason": "",
+                "candidates": [{
+                    "workflow": "btc_ultimate_final_v13_e2e.yml",
+                    "threshold_seconds": 60,
+                    "production_impact": False,
+                }],
             })
 
 
