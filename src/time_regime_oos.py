@@ -24,6 +24,10 @@ for p in (ROOT, SRC):
         sys.path.insert(0, str(p))
 
 from feature_schema import FEATURES
+try:
+    from state_trajectory_oos import build_trajectory_oos
+except ModuleNotFoundError:
+    from src.state_trajectory_oos import build_trajectory_oos
 from model_compare import (
     HORIZONS,
     MIN_TRAIN,
@@ -292,6 +296,8 @@ def evaluate(horizon: str):
     }
 
 def main():
+    trajectory_rows = load_primary_production_strict_rows("5m")
+    trajectory = build_trajectory_oos(trajectory_rows)
     payload = {
         "schema_version": 1,
         "research_only": True,
@@ -299,6 +305,7 @@ def main():
         "feature_schema": list(FEATURES),
         "extra_features": list(EXTRA_FEATURES),
         "horizons": {h: evaluate(h) for h in HORIZONS},
+        "trajectory": trajectory,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
