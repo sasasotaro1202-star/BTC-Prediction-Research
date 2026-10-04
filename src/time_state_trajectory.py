@@ -221,3 +221,273 @@ def blend_probabilities(
     mixed = (1.0 - float(weight)) * base_arr + float(weight) * traj_arr
     totals = mixed.sum(axis=1, keepdims=True)
     return mixed / np.maximum(totals, 1e-12)
+
+
+def _probability_state_features(probabilities, previous_probabilities):
+    """Encode model-probability dynamics into the canonical momentum slots.
+
+    This is explicitly a model-state proxy, not a claim about a latent market
+    variable. It is useful when running the trajectory layer from persisted
+    prediction events without requiring a second feature snapshot.
+    """
+    p = _normalize_probability(np.asarray(probabilities, dtype=float))
+    prev = _normalize_probability(np.asarray(previous_probabilities, dtype=float)) if previous_probabilities is not None else p
+    delta = p - prev
+    momentum = float(delta[2] - delta[0])
+    features = np.zeros(len(FEATURES), dtype=float)
+    for name in ("ret_1m", "ret_3m", "ret_5m", "ret_10m"):
+        features[_FEATURE_INDEX[name]] = momentum
+    features[_FEATURE_INDEX["acceleration"]] = momentum
+    features[_FEATURE_INDEX["ema_gap_5m"]] = float(p[2] - p[0])
+    features[_FEATURE_INDEX["ema_gap_10m"]] = float(p[2] - p[0])
+    return features
+
+
+def run(db_path=None, output_dir=None):
+    """Run the prequential trajectory research over persisted predictions.
+
+    Outcomes are used only for scoring a prediction already produced at time T.
+    Transition states and transition probabilities at T use rows strictly before
+    T. The function always persists an explicit terminal status.
+    """
+    import hashlib
+    import os
+    import sqlite3
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    db = Path(db_path) if db_path is not None else root / "data" / "predictions.db"
+    out_root = Path(output_dir) if output_dir is not None else root / "data" / "historical_research"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from model_compare import metrics, prediction_precedes_target, strict_pit_provenance_reason
+    except ModuleNotFoundError:
+        from src.model_compare import metrics, prediction_precedes_target, strict_pit_provenance_reason
+
+    results = {}
+    for horizon in ("5m", "10m"):
+        artifact = out_root / f"time_state_trajectory_{horizon}.json"
+        base = {
+            "schema_version": 1,
+            "experiment": "time_state_trajectory_v1",
+            "horizon": horizon,
+            "research_only": True,
+            "production_changed": False,
+            "promotion_allowed": False,
+            "analysis_git_sha": os.environ.get("GITHUB_SHA", "LOCAL_UNPINNED"),
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            if not db.is_file() or db.stat().st_size <= 0:
+                raise RuntimeError("prediction_database_missing")
+            actual_col = f"actual_direction_{horizon}"
+            target_col = f"target_{horizon}"
+            with sqlite3.connect(db) as con:
+                rows = con.execute(
+                    f"""SELECT created_at_utc,{target_col},{actual_col},
+                               p_up_{horizon},p_down_{horizon},p_flat_{horizon},
+                               scenario_json,model_version
+                        FROM predictions
+                        ORDER BY created_at_utc"""
+                ).fetchall()
+
+            eligible = []
+            pit_excluded = 0
+            invalid_probability = 0
+            previous_created = None
+            spacing_history = []
+            state_history = []
+            transition_snapshots = []
+            scored = []
+
+            for row in rows:
+                created, target, actual, p_up, p_down, p_flat, scenario_text, model_version = row
+                if str(model_version or "").startswith("DEGRADED_NO_FRESH_DATA"):
+                    continue
+                try:
+                    current_dt = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    pit_excluded += 1
+                    continue
+                if previous_created is not None:
+                    delta_minutes = (current_dt - previous_created).total_seconds() / 60.0
+                    if delta_minutes > 0:
+                        spacing_history.append(delta_minutes)
+                previous_created = current_dt
+
+                try:
+                    scenario = __import__("json").loads(scenario_text or "{}")
+                except (TypeError, ValueError, __import__("json").JSONDecodeError):
+                    scenario = {}
+
+                if scenario.get("production_mode") != "binance_primary":
+                    continue
+                if strict_pit_provenance_reason(scenario, created) is not None:
+                    pit_excluded += 1
+                    continue
+                try:
+                    p = np.asarray([float(p_down), float(p_flat), float(p_up)], dtype=float)
+                except (TypeError, ValueError):
+                    invalid_probability += 1
+                    continue
+                if not np.all(np.isfinite(p)) or np.any(p < 0.0) or np.any(p > 1.0):
+                    invalid_probability += 1
+                    continue
+                p = _normalize_probability(p)
+
+                previous_p = None
+                if eligible:
+                    previous_p = eligible[-1]["probability"]
+                features = _probability_state_features(p, previous_p)
+                sid = state_id(p.reshape(1, -1), features)
+
+                spacing = float(np.median(spacing_history[-500:])) if spacing_history else 5.0
+                target_minutes = int(horizon.rstrip("m"))
+                target_steps = max(1, int(round(target_minutes / max(spacing, 1e-6))))
+                prior_states = list(state_history)
+
+                if prior_states:
+                    transition = build_transition_matrix([prior_states])
+                    future = forecast_probabilities(sid, transition, target_steps)
+                    trajectory_p = np.asarray(future[str(target_steps)], dtype=float)
+                else:
+                    trajectory_p = np.full(3, 1.0 / 3.0, dtype=float)
+
+                if actual is not None and prediction_precedes_target(created, target):
+                    blended = blend_probabilities(
+                        p.reshape(1, -1),
+                        trajectory_p.reshape(1, -1),
+                        weight=0.10,
+                    )[0]
+                    eligible.append({
+                        "created": created,
+                        "probability": p,
+                        "state_id": sid,
+                        "actual": actual,
+                    })
+                    transition_snapshots.append(sid)
+                    scored.append({
+                        "baseline": p.tolist(),
+                        "trajectory": trajectory_p.tolist(),
+                        "blend": blended.tolist(),
+                        "actual": actual,
+                        "state_id": sid,
+                        "target_steps": target_steps,
+                        "spacing_minutes": spacing,
+                    })
+                else:
+                    eligible.append({
+                        "created": created,
+                        "probability": p,
+                        "state_id": sid,
+                        "actual": None,
+                    })
+
+                state_history.append(sid)
+
+            minimum_scored = 100
+            if len(scored) < minimum_scored:
+                result = {
+                    **base,
+                    "status": "DEFERRED",
+                    "reason": "insufficient_strict_pit_scored_rows",
+                    "scored_rows": len(scored),
+                    "minimum_scored_rows": minimum_scored,
+                    "transition_rows": max(0, len(state_history) - 1),
+                }
+            else:
+                y = [item["actual"] for item in scored]
+                baseline = np.asarray([item["baseline"] for item in scored], dtype=float)
+                trajectory = np.asarray([item["trajectory"] for item in scored], dtype=float)
+                blend = np.asarray([item["blend"] for item in scored], dtype=float)
+                base_metrics = metrics(y, baseline)
+                trajectory_metrics = metrics(y, trajectory)
+                blend_metrics = metrics(y, blend)
+                result = {
+                    **base,
+                    "status": "OK",
+                    "scored_rows": len(scored),
+                    "transition_rows": max(0, len(state_history) - 1),
+                    "pit_excluded_rows": pit_excluded,
+                    "invalid_probability_rows": invalid_probability,
+                    "fixed_blend_weight": 0.10,
+                    "oos_prequential": True,
+                    "future_labels_used_for_transition_training": False,
+                    "metrics": {
+                        "baseline": base_metrics,
+                        "trajectory": trajectory_metrics,
+                        "blend": blend_metrics,
+                        "delta_blend_vs_baseline": {
+                            "accuracy": blend_metrics["accuracy"] - base_metrics["accuracy"],
+                            "logloss": blend_metrics["logloss"] - base_metrics["logloss"],
+                            "brier": blend_metrics["brier"] - base_metrics["brier"],
+                            "ece": blend_metrics["calibration_error"] - base_metrics["calibration_error"],
+                        },
+                    },
+                    "latest": {
+                        "prediction_cutoff": scored[-1]["created"],
+                        "state_id": int(scored[-1]["state_id"]),
+                        "state_components": list(state_components(scored[-1]["state_id"])),
+                        "target_steps": int(scored[-1]["target_steps"]),
+                        "observed_spacing_minutes": float(scored[-1]["spacing_minutes"]),
+                        "trajectory_probability": scored[-1]["trajectory"],
+                        "blended_probability": scored[-1]["blend"],
+                    },
+                    "selection": {
+                        "status": "FIXED_PRE_REGISTERED_CANDIDATE",
+                        "holdout_used": False,
+                        "weight_selection_from_scored_rows": False,
+                    },
+                }
+            artifact.write_text(__import__("json").dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            results[horizon] = result
+        except Exception as exc:
+            result = {
+                **base,
+                "status": "FAILED",
+                "reason": f"{type(exc).__name__}:{exc}",
+            }
+            artifact.write_text(__import__("json").dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            results[horizon] = result
+
+    registry_path = out_root / "time_state_trajectory_registry.json"
+    registry = {
+        "schema_version": 1,
+        "experiment": "time_state_trajectory_v1",
+        "research_only": True,
+        "production_changed": False,
+        "promotion_allowed": False,
+        "analysis_git_sha": os.environ.get("GITHUB_SHA", "LOCAL_UNPINNED"),
+        "horizons": results,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    registry_path.write_text(__import__("json").dumps(registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    v6_registry = out_root / "maximum_future_generalization_v6_registry.json"
+    if v6_registry.is_file():
+        try:
+            merged = __import__("json").loads(v6_registry.read_text(encoding="utf-8"))
+            merged["time_state_trajectory"] = {
+                "status": "RECORDED",
+                "artifact": registry_path.name,
+                "research_only": True,
+                "production_changed": False,
+                "horizons": {
+                    h: {
+                        "status": results[h].get("status"),
+                        "scored_rows": results[h].get("scored_rows", 0),
+                        "delta_blend_vs_baseline": results[h].get("metrics", {}).get("delta_blend_vs_baseline"),
+                    }
+                    for h in ("5m", "10m")
+                },
+            }
+            v6_registry.write_text(__import__("json").dumps(merged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except (OSError, ValueError, TypeError):
+            # The dedicated trajectory registry remains authoritative for this
+            # research lane; a malformed parent registry must not erase it.
+            pass
+
+    print(__import__("json").dumps(registry, indent=2, sort_keys=True))
+    return registry
