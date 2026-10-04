@@ -1,11 +1,22 @@
 import unittest
+from pathlib import Path
 import numpy as np
 
 from src.binary_target_research import _metrics, build_rows
 from src.label_policy import BINARY_CLASSES, BINARY_TARGET_VERSION, binary_direction_from_return
 
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "btc_binary_target_research.yml"
+
 
 class TestBinaryTargetResearch(unittest.TestCase):
+    def test_workflow_restores_prediction_state_before_oos(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Require repository prediction state", text)
+        self.assertIn("Restore repository prediction state", text)
+        self.assertIn("data/predictions.db.gz", text)
+        self.assertIn("restore_db", text)
+        self.assertIn("test -s data/predictions.db", text)
+
     def test_binary_policy_has_no_flat(self):
         self.assertEqual(BINARY_CLASSES, ("DOWN", "UP"))
         self.assertEqual(binary_direction_from_return(-0.001), "DOWN")
