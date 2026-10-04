@@ -5335,7 +5335,7 @@
       "historical_total_records_acquired": 13200,
       "last_historical_acquisition_at": "2026-10-04T01:42:28+00:00",
       "last_historical_cursor_ms": 1786849500000,
-      "last_historical_event_time": "2026-08-16T19:40:00+00:00",
+      "last_historical_event_time": "2026-09-30T11:50:00+00:00",
       "last_historical_payload_sha256": "6ddd0828b3448ebf538119de04ce2bb580d11d1f4401a2c1b94210dfec2f0100",
       "last_historical_record_count": 200,
       "last_latency_sec": 0.348,
@@ -5387,7 +5387,7 @@
       "historical_total_records_acquired": 13064,
       "last_historical_acquisition_at": "2026-10-04T01:42:28+00:00",
       "last_historical_cursor_ms": 1786911000000,
-      "last_historical_event_time": "2026-08-17T12:50:00+00:00",
+      "last_historical_event_time": "2026-09-30T12:10:00+00:00",
       "last_historical_payload_sha256": "8f984594fa70974efad13e5f04d85431ed89ce9c5f5b27201d969b6a38157968",
       "last_historical_record_count": 201,
       "last_latency_sec": 0.107,
@@ -5413,7 +5413,7 @@
       "historical_total_records_acquired": 4688,
       "last_historical_acquisition_at": "2026-10-02T08:32:23+00:00",
       "last_historical_cursor_ms": 1789423200000,
-      "last_historical_event_time": "2026-09-15T03:25:00+00:00",
+      "last_historical_event_time": "2026-09-30T12:00:00+00:00",
       "last_historical_payload_sha256": "18d0618c61c55b66130a25d0e6ed2ea9f9854d0b3f6ec03f73b4b902d2202e15",
       "last_historical_record_count": 66,
       "last_latency_sec": 0.265,
@@ -5447,5 +5447,28 @@
       "selected_for_next_cycle": false
     }
   },
-  "updated_at": "2026-10-04T01:46:51+00:00"
+  "updated_at": "2026-10-04T02:21:22.570Z",
+  "historical_bounds_repairs": [
+    {
+      "repaired_at_utc": "2026-10-04T02:21:22.569Z",
+      "reason": "conservative_metadata_repair_after_backfill_bound_inversion",
+      "items": [
+        {
+          "source_id": "bitget_public_ws",
+          "previous_latest": "2026-08-16T19:40:00+00:00",
+          "conservative_repaired_latest": "2026-09-30T11:50:00+00:00"
+        },
+        {
+          "source_id": "deribit_public",
+          "previous_latest": "2026-08-17T12:50:00+00:00",
+          "conservative_repaired_latest": "2026-09-30T12:10:00+00:00"
+        },
+        {
+          "source_id": "hyperliquid_ws",
+          "previous_latest": "2026-09-15T03:25:00+00:00",
+          "conservative_repaired_latest": "2026-09-30T12:00:00+00:00"
+        }
+      ]
+    }
+  ]
 }
