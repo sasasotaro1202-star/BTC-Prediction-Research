@@ -2313,7 +2313,7 @@ INFORMATION ACQUISITION
 SOURCE SCOPE
 
 Canonical matrix:
-10 feature sets × 8 model variants × 3 window policies = 240 configurations per horizon.
+10 feature sets × 8 deterministic model variants × 3 training-window policies = 240 configurations per horizon.
 
 Feature sets:
 all_15
