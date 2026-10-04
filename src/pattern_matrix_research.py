@@ -190,6 +190,71 @@ def screen(h,dev,c):
     return {**c,"horizon":h,"stage":"SCREEN","folds":len(details),"aggregate":{"candidate":cm,"frequency_baseline":rm,"relative_logloss_improvement":(rm["logloss"]-cm["logloss"])/abs(rm["logloss"]),"relative_brier_improvement":(rm["brier"]-cm["brier"])/abs(rm["brier"])},
             "stability":{"accuracy_non_worse_ratio":float(np.mean(ac>=-.005)),"logloss_improved_ratio":float(np.mean(ll<0)),"brier_improved_ratio":float(np.mean(br<0)),"worst_logloss_delta":float(ll.max()),"worst_accuracy_delta":float(ac.min())},"folds_detail":details}
 
+
+def _rank01(values, higher_is_better=True):
+    vals=np.asarray(values,dtype=float)
+    if len(vals)==0: return np.asarray([],dtype=float)
+    order=np.argsort(vals if higher_is_better else -vals,kind="mergesort")
+    ranks=np.empty(len(vals),dtype=float); ranks[order]=np.arange(len(vals),dtype=float)
+    if len(vals)==1: return np.ones(1,dtype=float)
+    return ranks/(len(vals)-1)
+
+def screen_selection_score(rows):
+    """Multi-objective screen score for future-generalization-oriented finalist selection."""
+    if not rows: return np.asarray([],dtype=float)
+    ll=_rank01([r["aggregate"]["relative_logloss_improvement"] for r in rows],True)
+    br=_rank01([r["aggregate"]["relative_brier_improvement"] for r in rows],True)
+    acc=_rank01([r["stability"]["accuracy_non_worse_ratio"] for r in rows],True)
+    lls=_rank01([r["stability"]["logloss_improved_ratio"] for r in rows],True)
+    brs=_rank01([r["stability"]["brier_improved_ratio"] for r in rows],True)
+    wll=_rank01([r["stability"]["worst_logloss_delta"] for r in rows],False)
+    wacc=_rank01([r["stability"]["worst_accuracy_delta"] for r in rows],True)
+    return 0.24*ll + 0.18*br + 0.18*acc + 0.12*lls + 0.10*brs + 0.10*wll + 0.08*wacc
+
+def select_finalists(screened, limit=FINALISTS):
+    """Select screen finalists while preserving model/feature/window diversity."""
+    if not screened: return []
+    scores=screen_selection_score(screened)
+    ranked=[]
+    for row,score in zip(screened,scores):
+        copy=dict(row)
+        copy["screen_selection_score"]=float(score)
+        ranked.append(copy)
+    ranked.sort(key=lambda x:(
+        -x["screen_selection_score"],
+        -x["aggregate"]["relative_logloss_improvement"],
+        -x["aggregate"]["relative_brier_improvement"],
+        x["stability"]["worst_logloss_delta"],
+    ))
+    pool=ranked[:max(limit*4,limit)]
+    chosen=[]
+    seen_feature=set()
+    seen_model=set()
+    seen_window=set()
+    while pool and len(chosen)<limit:
+        best=None
+        best_key=None
+        for row in pool:
+            bonus=0.0
+            if row["feature_set"] not in seen_feature: bonus+=0.035
+            if row["model"] not in seen_model: bonus+=0.025
+            if row["window"] not in seen_window: bonus+=0.020
+            key=(
+                row["screen_selection_score"]+bonus,
+                row["stability"]["accuracy_non_worse_ratio"],
+                -row["stability"]["worst_logloss_delta"],
+            )
+            if best is None or key>best_key:
+                best=row
+                best_key=key
+        chosen.append(best)
+        pool=[r for r in pool if r["fingerprint"]!=best["fingerprint"]]
+        seen_feature.add(best["feature_set"])
+        seen_model.add(best["model"])
+        seen_window.add(best["window"])
+    chosen.sort(key=lambda x:-x["screen_selection_score"])
+    return chosen
+
 def final(h,dev,c):
     starts=fold_ends(len(dev),MIN_TRAIN,FINAL_TEST,FINAL_BLOCKS); details=[]; ys=[]; refs=[]; cps=[]; parts=[]
     for s in starts:
@@ -239,7 +304,8 @@ def run_horizon(h,rows):
             screen_failures.append({"config":c,"error_type":type(e).__name__,"error":str(e)[:300]})
     screened.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
     fs=[]; failures=[]
-    for c in screened[:FINALISTS]:
+    selected_finalists=select_finalists(screened,FINALISTS)
+    for c in selected_finalists:
         clean={k:c[k] for k in ("feature_set","model","window","fingerprint")}
         try:
             r=final(h,dev,clean)
@@ -247,7 +313,7 @@ def run_horizon(h,rows):
         except Exception as e:failures.append({"config":clean,"error_type":type(e).__name__,"error":str(e)[:300]})
     fs.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
     best={k:fs[0][k] for k in ("feature_set","model","window","fingerprint")} if fs else None
-    return {"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":screen_failures+failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
+    return {"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"screen_selected_finalists":selected_finalists[:FINALISTS],"finalist_selection_policy":"rank_ensemble_plus_diversity_bonus;no_holdout_access","best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":screen_failures+failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
 
 def main():
     sha=os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"
