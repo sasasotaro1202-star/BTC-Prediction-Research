@@ -4,7 +4,7 @@ class PatternLabContractTests(unittest.TestCase):
     def test_candidate_budget(self):
         names=pattern_lab_oos._candidate_names()
         self.assertEqual(len(names),144)
-        self.assertEqual(len(set(names)),72)
+        self.assertEqual(len(set(names)),144)
         self.assertEqual(len(pattern_lab_oos.MODEL_NAMES),8)
         self.assertEqual(len(pattern_lab_oos.FEATURE_GROUPS),6)
         self.assertEqual(len(pattern_lab_oos.WINDOWS),3)
