@@ -204,11 +204,16 @@ jobs:
                   f"production artifact audit SHA mismatch: expected={expected} "
                   f"actual={provenance.get('git_sha')}"
               )
-          if provenance.get("workspace_sha") != expected:
+          if provenance.get("checkout_sha") != expected:
               raise SystemExit(
-                  f"production artifact workspace SHA mismatch: expected={expected} "
-                  f"actual={provenance.get('workspace_sha')}"
+                  f"production artifact checkout SHA mismatch: expected={expected} "
+                  f"actual={provenance.get('checkout_sha')}"
               )
+          workspace_sha = provenance.get("workspace_sha")
+          if not isinstance(workspace_sha, str) or len(workspace_sha) != 40:
+              raise SystemExit("production artifact workspace SHA is invalid")
+          if provenance.get("workspace_derived_from_checkout_sha") is not True and workspace_sha != expected:
+              raise SystemExit("production artifact workspace lineage is unverified")
           artifacts = payload.get("artifacts") or []
           if {item.get("horizon") for item in artifacts} != {"5m", "10m"}:
               raise SystemExit("production artifact audit missing primary horizon")
@@ -443,7 +448,13 @@ jobs:
           persistable = (
               bool(expected)
               and provenance.get('git_sha') == expected
-              and provenance.get('workspace_sha') == expected
+              and provenance.get('checkout_sha') == expected
+              and isinstance(provenance.get('workspace_sha'), str)
+              and len(provenance.get('workspace_sha')) == 40
+              and (
+                  provenance.get('workspace_derived_from_checkout_sha') is True
+                  or provenance.get('workspace_sha') == expected
+              )
               and {item.get('horizon') for item in artifacts} == {'5m', '10m'}
               and all(item.get('runtime_model_reload_ok') is True for item in artifacts)
               and all(item.get('runtime_classes') == ['DOWN', 'FLAT', 'UP'] for item in artifacts)
