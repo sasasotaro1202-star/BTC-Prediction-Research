@@ -96,6 +96,24 @@ jobs:
                       raise SystemExit(f'{h}: holdout not protected')
                   if result.get('promotion', {}).get('eligible') is not False:
                       raise SystemExit(f'{h}: binary target cannot auto-promote')
+                  if result.get('best_development_candidate') == 'frequency_baseline':
+                      raise SystemExit(f'{h}: baseline cannot be selected as a trainable candidate')
+                  summary = result.get('oos_summary', {})
+                  if 'frequency_baseline' not in summary:
+                      raise SystemExit(f'{h}: frequency baseline missing from OOS evidence')
+                  diagnostics = result.get('wfo_diagnostics', {})
+                  if diagnostics.get('blocks', 0) <= 0:
+                      raise SystemExit(f'{h}: WFO diagnostics missing')
+                  for name in ('logreg', 'rf', 'extra_trees'):
+                      item = diagnostics.get('models', {}).get(name, {})
+                      if item.get('status') != 'OK':
+                          raise SystemExit(f'{h}: WFO diagnostics incomplete for {name}')
+                      if not (0.0 <= float(item.get('logloss_non_degraded_fraction', -1.0)) <= 1.0):
+                          raise SystemExit(f'{h}: invalid logloss stability fraction for {name}')
+                      newest = item.get('newest_block', {})
+                      worst = item.get('worst_logloss_block', {})
+                      if not newest or not worst:
+                          raise SystemExit(f'{h}: newest/worst fold evidence missing for {name}')
                   live = result.get('live_primary', {})
                   if live.get('production_changed') not in (False, None):
                       raise SystemExit(f'{h}: live binary research mutated production state')
