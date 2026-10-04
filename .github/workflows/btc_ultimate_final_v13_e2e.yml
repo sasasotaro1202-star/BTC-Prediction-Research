@@ -35,22 +35,6 @@ jobs:
       - name: Install free dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
-      - name: Preflight compile and full tests
-        run: |
-          set -euo pipefail
-          PYTHONPATH=src:. python -m compileall -q src scripts tests
-          PYTHONPATH=src:. python -m pytest -q tests
-
-      - name: Restore prediction database
-        run: |
-          set -euo pipefail
-          test -s data/predictions.db.gz
-          PYTHONPATH=src:. python - <<'PY'
-          from pathlib import Path
-          from src.state_archive import restore_db
-          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
-          PY
-          test -s data/predictions.db
       - name: Record V13 run start
         shell: bash
         run: |
@@ -100,6 +84,23 @@ jobs:
           done
           exit 1
 
+
+      - name: Preflight compile and full tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python -m compileall -q src scripts tests
+          PYTHONPATH=src:. python -m pytest -q tests
+
+      - name: Restore prediction database
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          PYTHONPATH=src:. python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path('data/predictions.db.gz'), Path('data/predictions.db'))
+          PY
+          test -s data/predictions.db
       - name: Run V13 core — V6 future-generalization controller
         run: |
           set -euo pipefail
