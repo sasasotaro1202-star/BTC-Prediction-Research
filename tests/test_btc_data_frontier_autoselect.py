@@ -278,6 +278,59 @@ class TestBTCDataFrontierAutoSelect(TestCase):
             self.assertEqual(frontier["source_state"]["mempool_space"]["successful_probes"],7)
             self.assertEqual(frontier["history"][-1]["cycle"],12)
 
+    def test_legacy_selector_state_migrates_failure_count_to_cumulative_total(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            hist=root/"data/historical_research"
+            hist.mkdir(parents=True,exist_ok=True)
+            (hist/"data_frontier.json").write_text(
+                '{"schema_version":1,"candidates":{}}',encoding="utf-8"
+            )
+            (hist/"data_frontier_state.json").write_text(
+                '{"schema_version":1,"source_state":{"hyperliquid_ws":{"historical_acquisition_failures":58}},"history":[]}',
+                encoding="utf-8",
+            )
+            with patch.object(mod,"ROOT",root), patch.object(mod,"OUT",hist/"data_frontier.json"), patch.object(mod,"STATE_OUT",hist/"data_frontier_state.json"):
+                frontier=mod.load_frontier()
+            self.assertEqual(
+                frontier["source_state"]["hyperliquid_ws"]["historical_acquisition_failures_total"],
+                58,
+            )
+
+    def test_success_resets_consecutive_failures_but_retains_cumulative_total(self):
+        frontier={
+            "source_state":{
+                "bitget_public_ws":{
+                    "historical_acquisition_failures":3,
+                    "historical_acquisition_failures_total":9,
+                    "historical_batches_acquired":2,
+                }
+            },
+            "candidates":{},
+            "history":[],
+        }
+        success={
+            "source_id":"bitget_public_ws",
+            "status":"OK",
+            "retrieved_at":"2026-10-04T08:10:00+00:00",
+            "record_count":200,
+            "next_cursor_ms":100,
+            "payload_sha256":"abc",
+            "first_event_time":"2026-10-04T00:00:00+00:00",
+            "last_event_time":"2026-10-04T01:00:00+00:00",
+            "production_eligible":False,
+        }
+        with patch.object(mod,"_acquisition_due",return_value=True), patch.object(
+            mod,"acquire_bitget_history",return_value=success
+        ):
+            out=mod.acquire_selected_research_data(
+                frontier,{"gap":1,"strict_primary":299},["bitget_public_ws"]
+            )
+        self.assertEqual(out[0]["status"],"OK")
+        state=frontier["source_state"]["bitget_public_ws"]
+        self.assertEqual(state["historical_acquisition_failures"],0)
+        self.assertEqual(state["historical_acquisition_failures_total"],9)
+
     def test_workflow_persists_selector_state_on_dedicated_branch(self):
         workflow=Path(".github/workflows/btc_autonomous_data_frontier.yml").read_text(encoding="utf-8")
         self.assertIn("btc-data-frontier-state",workflow)
@@ -871,6 +924,22 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(summary["last_acquisition_error"],"HTTPError:429:Too Many Requests")
         self.assertEqual(summary["last_acquisition_error_at"],"2026-10-04T07:20:00+00:00")
 
+    def test_acquisition_summary_reports_cumulative_failure_rate(self):
+        frontier={
+            "source_state":{
+                "bitget_public_ws":{
+                    "historical_acquisition_failures":0,
+                    "historical_acquisition_failures_total":1,
+                    "historical_batches_acquired":2,
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(mod,"ACQUISITION_DIR",Path(td)):
+                out=mod.summarize_acquisition_evidence(frontier)
+        summary=out["by_source"]["bitget_public_ws"]
+        self.assertEqual(summary["acquisition_failures_total"],1)
+        self.assertAlmostEqual(summary["acquisition_failure_rate"],1/3)
 
 if __name__=="__main__":
     main()
