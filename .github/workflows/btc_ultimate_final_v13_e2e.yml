@@ -27,6 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Refuse stale verification SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_SHA:-}" || { echo "GITHUB_SHA missing; refusing verification" >&2; exit 1; }
+          current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$current_main_sha" || { echo "Unable to resolve current main SHA; refusing verification" >&2; exit 1; }
+          if [ "$current_main_sha" != "$GITHUB_SHA" ]; then
+            echo "STALE V13 VERIFICATION: workflow_sha=$GITHUB_SHA current_main=$current_main_sha" >&2
+            exit 1
+          fi
+          echo "V13 verification SHA is current: $GITHUB_SHA"
+
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
