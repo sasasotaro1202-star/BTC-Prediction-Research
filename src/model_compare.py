@@ -97,6 +97,64 @@ def _valid_timestamp(value):
         return None
 
 
+
+def _feature_pit_provenance_reason(scenario, cutoff):
+    """Validate optional feature-level PIT lineage without inventing absent metadata.
+
+    Cross-project hardening allows callers to attach either root-level feature
+    PIT fields or a structured feature_provenance mapping. Missing optional
+    lineage remains backward-compatible; supplied lineage must be explicit,
+    parseable and no later than the prediction cutoff.
+    """
+    feature = scenario.get("feature_provenance")
+    if feature is not None and not isinstance(feature, dict):
+        return "feature_provenance_not_object"
+    feature = feature if isinstance(feature, dict) else {}
+
+    def pick(name, *aliases):
+        for container in (scenario, feature):
+            for key in (name, *aliases):
+                if key in container:
+                    return container.get(key)
+        return None
+
+    status = pick("feature_pit_status", "pit_status")
+    if status is not None and str(status).strip().upper() != "PASS":
+        return f"feature_pit_status_{str(status).strip() or 'missing'}"
+
+    for field, aliases in (
+        ("feature_snapshot_cutoff", ("snapshot_cutoff",)),
+        ("feature_max_available_at", ("max_available_at",)),
+    ):
+        value = pick(field, *aliases)
+        if value is None:
+            continue
+        parsed = _valid_timestamp(value)
+        if parsed is None:
+            return f"{field}_invalid"
+        if parsed > cutoff:
+            return f"{field}_after_prediction_cutoff"
+
+    records = feature.get("features")
+    if records is not None:
+        if not isinstance(records, dict):
+            return "feature_records_not_object"
+        for name, info in records.items():
+            if not isinstance(info, dict):
+                return f"feature_{name}_provenance_not_object"
+            row_status = info.get("pit_status")
+            if row_status is not None and str(row_status).strip().upper() != "PASS":
+                return f"feature_{name}_pit_status_{str(row_status).strip() or 'missing'}"
+            value = info.get("available_at", info.get("source_available_at"))
+            if value is None:
+                continue
+            parsed = _valid_timestamp(value)
+            if parsed is None:
+                return f"feature_{name}_available_at_invalid"
+            if parsed > cutoff:
+                return f"feature_{name}_available_at_after_prediction_cutoff"
+    return None
+
 def strict_pit_provenance_reason(scenario, created_at_utc):
     """Return a stable fail-closed reason, or None when strict PIT passes."""
     if not isinstance(scenario, dict):
@@ -131,6 +189,12 @@ def strict_pit_provenance_reason(scenario, created_at_utc):
         <= decision
     ):
         return "top_level_pit_order_invalid"
+
+    feature_reason = _feature_pit_provenance_reason(
+        scenario, parsed_top["prediction_cutoff"]
+    )
+    if feature_reason is not None:
+        return feature_reason
 
     sources = provenance.get("sources")
     if not isinstance(sources, dict) or not sources:

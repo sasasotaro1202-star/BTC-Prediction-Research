@@ -2053,3 +2053,240 @@ Pull Requestのvalidationだけはhead branch単位でsuperseded runをcancelし
 source / test変更はUnit TestsとPull Request validationで検証し、mainへのcommitごとに25分captureを重複起動しない。
 
 これにより、checkpointの再開性を維持しながら、同一時間帯のcollector重複・Actions資源浪費・不要なcache競合を抑える。
+
+
+⸻
+
+92. CROSS-PROJECT MECHANISM GOVERNANCE — 2026-10-04
+
+The five-project research set is a mechanism reference layer only:
+
+Baseball-Prediction-System
+BTC-Prediction-Research
+7-Sport-Prediction-Research
+Soccer-Prediction-Research
+Stock-Daily-Prediction-3000
+
+External project performance, OOS, holdout, production, prediction or data are never transferable evidence for BTC.
+
+Reference mechanisms currently identified:
+
+7-Sport:
+* fail closed on selected-event enrichment errors
+* success-only checkpoint reuse
+* single-writer semantics for critical state
+* event-cluster-aware evaluation
+
+Soccer:
+* explicit prediction-cutoff lineage
+* optional feature-level PIT provenance
+* prior-mature outcome filtering for temporal meta-learning
+* fail-closed diagnostic state
+
+Baseball:
+* universal dataset/source contract
+* explicit source/scope readiness state machine
+* immutable production prediction / experience integrity audit
+* outcome-maturity-aware temporal conformal research
+
+Stock:
+* genuinely prequential nested model/window/ranking selection
+* contiguous prior-fold evidence
+* dependence-aware moving-block bootstrap
+* multiple-comparison-aware selection evidence
+* run provenance manifest binding code/config/holdout policy
+
+BTC transfer path:
+
+DISCOVER
+→ ABSTRACT_MECHANISM
+→ COMPATIBILITY
+→ LOCAL_IMPLEMENTATION
+→ TEST
+→ LOCAL_PIT
+→ LOCAL_OOS/WFO
+→ ROBUSTNESS
+→ LOCAL_FROZEN_HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+⸻
+
+93. FEATURE-LEVEL PIT FIREWALL
+
+Prediction-level provenance is not sufficient when a feature snapshot can carry its own timing state.
+
+When feature provenance fields are supplied, BTC strict PIT must additionally enforce:
+
+feature_pit_status = PASS
+feature_snapshot_cutoff <= prediction_cutoff
+feature_max_available_at <= prediction_cutoff
+
+Optional per-feature records are also checked for PIT status and available_at.
+
+Missing optional feature lineage is not converted to PASS by inference. Invalid, unknown, contradictory, or post-cutoff feature lineage is fail-closed.
+
+This control is backward-compatible with historical rows that predate feature-level provenance and does not rewrite those rows.
+
+⸻
+
+94. KNOWLEDGE-TIME / MATURE-OUTCOME FIREWALL
+
+A row's creation time does not prove that its outcome was known.
+
+For experience-derived or failure-risk research, labels used to train a prediction point must be mature before that point's prediction cutoff. Target/outcome timestamps and settlement/maturity state are preferred causal boundaries.
+
+The current experience learner already separates prior settled batches; future hardening must preserve same-boundary batching and must not allow an outcome settled at the current test boundary to train that same boundary.
+
+Rows with invalid maturity/target timestamps are UNKNOWN/DEFERRED, never silently usable.
+
+⸻
+
+95. DEPENDENCE-AWARE EVALUATION
+
+When multiple prediction snapshots belong to the same underlying event/case, the statistical unit is the case/event cluster rather than the raw snapshot count wherever cluster identity is available.
+
+Required safeguards include:
+
+* event/case cluster identifiers where available
+* no duplicate-cluster inflation of uncertainty estimates
+* chronological block separation
+* HAC, moving-block bootstrap, or cluster bootstrap where appropriate
+* effective sample size reporting
+
+The existing experience OOS batches same-settlement timestamps together. This is a partial safeguard; event-level clustering remains a frontier when snapshot revisions can share one market event without identical settlement times.
+
+⸻
+
+96. NESTED / PREQUENTIAL SELECTION FIREWALL
+
+Model, feature, training-window, router, calibration, return-estimator and weighting selection must never use the outcomes of the fold being scored.
+
+For each outer fold:
+
+1. select from strictly earlier folds;
+2. freeze the selected configuration;
+3. score the untouched current fold;
+4. only after scoring, expose its outcomes to later folds.
+
+Where candidate windows exist, selection should require contiguous prior-fold support. Global same-OOS selections are not valid substitutes for nested evidence.
+
+BTC already uses nested chronological calibration in the production challenger path; new routing/window research must follow the same contract.
+
+⸻
+
+97. PRODUCTION EVIDENCE PROVENANCE MANIFEST
+
+The Production Artifact Audit must bind the audited artifact set to:
+
+GITHUB_SHA
+GITHUB_REF_NAME
+PROJECT_INSTRUCTIONS.md SHA256
+docs/PROJECT_SOURCE.md SHA256
+requirements.txt SHA256
+model artifact SHA256
+metadata SHA256
+runtime reload result
+feature schema
+
+Local runs without a pinned repository SHA are labeled LOCAL_UNPINNED and are not Promotion evidence.
+
+A policy/config-only change is still an auditable state change even when the model artifacts are unchanged.
+
+⸻
+
+98. READINESS / SOURCE / SCOPE STATE MACHINE
+
+Registration is not readiness.
+
+For research sources and scopes, use explicit states such as:
+
+REGISTERED
+→ ADAPTER
+→ PIT
+→ OOS
+→ ROBUST
+→ FROZEN_HOLDOUT
+→ SHADOW
+→ PRODUCTION
+
+Failure states remain visible:
+
+HOLD
+REJECTED
+BLOCKED
+DEFERRED
+FAILED
+UNKNOWN
+
+A missing gate is not zero and never implies PASS.
+
+⸻
+
+99. AUTOMATION / WORKFLOW STATE INTEGRITY
+
+The workflow state machine distinguishes:
+
+REQUESTED
+QUEUED
+PENDING
+WAITING
+IN_PROGRESS
+SUCCESS
+FAILURE
+CANCELLED
+SKIPPED
+
+Only explicit terminal success can produce execution evidence. A cancelled run, retry, partial stage, missing job, or stale lookup is not silently normalized to success.
+
+Long-running research must use:
+
+checkpoint
+resume
+idempotency
+bounded retry
+stable concurrency
+immutable snapshot
+single-writer critical-state handling
+watchdog
+heartbeat
+stale-run detection
+
+Main-branch drift must not silently change the code/data snapshot being evaluated by later immutable stages.
+
+⸻
+
+100. EVIDENCE COMPLETENESS / KNOWLEDGE LINEAGE
+
+The durable evidence chain is:
+
+RAW
+→ SNAPSHOT
+→ PIT
+→ EXPERIMENT
+→ OOS/WFO
+→ CALIBRATION
+→ ROBUSTNESS
+→ FROZEN_HOLDOUT
+→ SHADOW
+→ PROMOTION
+→ PRODUCTION
+→ OUTCOME
+→ EXPERIENCE
+→ FAILURE
+→ NEXT_RESEARCH
+
+Each material result must retain enough lineage to answer:
+
+what code ran
+what data ran
+what policy ran
+what source ran
+what target/horizon ran
+what selection occurred
+what holdout boundary was protected
+what artifact was produced
+what decision was made
+why it was made
+
+Knowledge copied from another project must be labeled mechanism-derived, not locally validated performance evidence.

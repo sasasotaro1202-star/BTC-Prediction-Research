@@ -41,6 +41,36 @@ class TestStrictPITProvenance(unittest.TestCase):
         scenario["provenance"]["sources"]["bybit_futures"]["prediction_cutoff"] = later
         self.assertFalse(_strict_pit_provenance_ok(scenario, created))
 
+    def test_future_feature_snapshot_cutoff_fails_closed(self):
+        scenario, created = self._base()
+        later = (datetime.fromisoformat(created) + timedelta(seconds=1)).isoformat()
+        scenario["feature_snapshot_cutoff"] = later
+        self.assertFalse(_strict_pit_provenance_ok(scenario, created))
+
+    def test_unknown_feature_pit_status_fails_closed(self):
+        scenario, created = self._base()
+        scenario["feature_pit_status"] = "UNKNOWN"
+        self.assertFalse(_strict_pit_provenance_ok(scenario, created))
+
+    def test_feature_level_available_at_after_cutoff_fails_closed(self):
+        scenario, created = self._base()
+        later = (datetime.fromisoformat(created) + timedelta(seconds=1)).isoformat()
+        scenario["feature_provenance"] = {
+            "pit_status": "PASS",
+            "features": {"ret_1m": {"pit_status": "PASS", "available_at": later}},
+        }
+        self.assertFalse(_strict_pit_provenance_ok(scenario, created))
+
+    def test_valid_feature_provenance_is_backward_compatible(self):
+        scenario, created = self._base()
+        scenario["feature_provenance"] = {
+            "pit_status": "PASS",
+            "feature_snapshot_cutoff": created,
+            "feature_max_available_at": created,
+            "features": {"ret_1m": {"pit_status": "PASS", "available_at": created}},
+        }
+        self.assertTrue(_strict_pit_provenance_ok(scenario, created))
+
 
 if __name__ == "__main__":
     unittest.main()

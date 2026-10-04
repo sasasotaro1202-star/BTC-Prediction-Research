@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from datetime import datetime, timezone
 from feature_schema import FEATURES
 from pathlib import Path
@@ -29,6 +30,19 @@ def sha256(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
+
+def build_provenance(root: Path = ROOT) -> dict:
+    """Bind the artifact audit to the exact policy/config files under evaluation."""
+    policy_files = ("PROJECT_INSTRUCTIONS.md", "docs/PROJECT_SOURCE.md", "requirements.txt")
+    return {
+        "git_sha": os.environ.get("GITHUB_SHA") or "LOCAL_UNPINNED",
+        "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
+        "policy_files": {
+            name: sha256(root / name) if (root / name).is_file() else None
+            for name in policy_files
+        },
+    }
 
 def _estimator_contract(model):
     """Find the fitted estimator contract without assuming a specific sklearn wrapper."""
@@ -103,28 +117,34 @@ def audit_one(horizon: str) -> dict:
 
 def main() -> None:
     records = [audit_one(h) for h in ("5m", "10m")]
+    provenance = build_provenance(ROOT)
     fingerprint = [{k: r[k] for k in (
         "horizon", "model_version", "model_sha256", "metadata_sha256",
         "model_bytes", "metadata_bytes", "evaluation_milestone",
         "runtime_model_reload_ok", "runtime_classes", "runtime_feature_count"
     )} for r in records]
     previous = None
+    previous_provenance = None
     if AUDIT.exists():
         try:
-            previous = json.loads(AUDIT.read_text(encoding="utf-8")).get("artifacts")
+            previous_obj = json.loads(AUDIT.read_text(encoding="utf-8"))
+            previous = previous_obj.get("artifacts")
+            previous_provenance = previous_obj.get("provenance")
         except Exception:
             previous = None
-    if previous != fingerprint:
+            previous_provenance = None
+    if previous != fingerprint or previous_provenance != provenance:
         AUDIT.parent.mkdir(parents=True, exist_ok=True)
         AUDIT.write_text(json.dumps({
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "artifacts": fingerprint,
-            "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_on_production_artifact_or_metadata_change",
+            "provenance": provenance,
+            "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_plus_policy_provenance",
         }, indent=2) + "\n", encoding="utf-8")
         changed = True
     else:
         changed = False
-    print(json.dumps({"ok": True, "changed": changed, "artifacts": fingerprint}, ensure_ascii=False))
+    print(json.dumps({"ok": True, "changed": changed, "artifacts": fingerprint, "provenance": provenance}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
