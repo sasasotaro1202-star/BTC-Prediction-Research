@@ -88,11 +88,13 @@ jobs:
               assert r.get("holdout_used_for_gate") is False
           print("pattern matrix contract: VERIFIED")
           PY
-      - name: Upload pattern evidence
+      - name: Upload research evidence
         uses: actions/upload-artifact@v6
         with:
           name: btc-pattern-matrix-${{ github.sha }}
-          path: data/historical_research/pattern_matrix_research.json
+          path: |
+            data/historical_research/pattern_matrix_research.json
+            data/historical_research/production_artifact_audit.json
           if-no-files-found: error
           retention-days: 14
       - name: Persist evidence only if main lineage is unchanged
@@ -107,9 +109,9 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/historical_research/pattern_matrix_research.json
-          if git diff --cached --quiet -- data/historical_research/pattern_matrix_research.json; then
+          git add data/historical_research/pattern_matrix_research.json data/historical_research/production_artifact_audit.json
+          if git diff --cached --quiet -- data/historical_research/pattern_matrix_research.json data/historical_research/production_artifact_audit.json; then
             exit 0
           fi
-          git commit -m "research: record pattern matrix evidence"
+          git commit -m "research: record pattern and production audit evidence"
           git push origin HEAD:refs/heads/main
