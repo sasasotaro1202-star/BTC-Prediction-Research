@@ -105,6 +105,13 @@ def test_24h_stage4_does_not_self_reference_its_own_needs_result():
     stage4_block = workflow.split('\n  finalize:', 1)[0].split('\n  stage4_robustness:', 1)[1]
     assert 'needs.stage4_robustness.result' not in stage4_block
 
+def test_24h_stage4_directly_depends_on_every_upstream_stage_it_checks():
+    workflow = WORKFLOW.read_text(encoding='utf-8')
+    stage4_block = workflow.split('\n  finalize:', 1)[0].split('\n  stage4_robustness:', 1)[1]
+    assert 'needs: [stage1_maximum, stage2_historical, stage3_challenger]' in stage4_block
+    for result_var in ('needs.stage1_maximum.result', 'needs.stage2_historical.result', 'needs.stage3_challenger.result'):
+        assert result_var in stage4_block
+
 
 def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
     workflow = WORKFLOW.read_text(encoding="utf-8")
