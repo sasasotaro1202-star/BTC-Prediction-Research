@@ -71,7 +71,9 @@ def check_calibration_bindings(horizon: str, model_version: str, model_sha256: s
     if obj.get("model_version") != model_version:
         fail(f"{horizon}: calibration model generation mismatch")
     recorded_sha = str(obj.get("model_sha256", "")).strip()
-    if recorded_sha and recorded_sha != model_sha256:
+    if not recorded_sha:
+        fail(f"{horizon}: calibration artifact hash missing")
+    if recorded_sha != model_sha256:
         fail(f"{horizon}: calibration artifact hash mismatch")
     try:
         n = int(obj.get("n_settled", 0))
