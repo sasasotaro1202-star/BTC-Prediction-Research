@@ -2344,7 +2344,7 @@ recent_3000
 
 Finalist selection uses a deterministic multi-objective rank ensemble over development relative LogLoss/Brier improvement, accuracy stability, improved-fold ratios and worst-case block behavior, with diversity bonuses across feature pattern, model family and training window. Frozen Holdout remains excluded from selection and gate.
 
-The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout. Candidate execution errors and insufficient-fold candidates are retained as explicit research failures rather than silently discarded.
+The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout. Candidate execution errors and insufficient-fold candidates are retained as explicit research failures rather than silently discarded. Long-running execution also writes atomic per-horizon checkpoints and may restore a prior-run checkpoint only when analysis SHA, data fingerprint and candidate manifest all match; mismatched checkpoint state is ignored rather than reused.
 
 Evidence-affecting pushes may supersede older in-flight matrix runs. Scheduled/manual matrix runs are not cancelled merely because another scheduled/manual run exists; the final persistence step still rejects stale main lineage.
 
