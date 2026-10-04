@@ -1,6 +1,7 @@
 from unittest.mock import patch
 import unittest
 import numpy as np
+import src.context_model_oos as adaptive
 from sklearn.linear_model import LogisticRegression
 from src.context_model_oos import route_predictions, dynamic_route_predictions, fit_context_thresholds, context_of, _validation_slices
 
@@ -117,17 +118,15 @@ def test_multi_model_weight_floor_survives_normalization():
 
 
 
-    def test_context_confidence_factor_penalizes_ambiguous_disagreement(self):
-        confident = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
-        same = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
-        low = np.tile(np.asarray([[1/3, 1/3, 1/3]]), (20, 1))
-        disagree = np.tile(np.asarray([[0.01, 0.01, 0.98]]), (20, 1))
-        self.assertGreater(
-            adaptive._context_confidence_factor([confident, same]),
-            adaptive._context_confidence_factor([low, disagree]),
-        )
-        value = adaptive._context_confidence_factor([confident, disagree])
-        self.assertTrue(0.35 <= value <= 1.0)
+def test_context_confidence_factor_penalizes_ambiguous_disagreement():
+    confident = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
+    same = np.tile(np.asarray([[0.98, 0.01, 0.01]]), (20, 1))
+    low = np.tile(np.asarray([[1/3, 1/3, 1/3]]), (20, 1))
+    disagree = np.tile(np.asarray([[0.01, 0.01, 0.98]]), (20, 1))
+    assert adaptive._context_confidence_factor([confident, same]) > adaptive._context_confidence_factor([low, disagree])
+    value = adaptive._context_confidence_factor([confident, disagree])
+    assert 0.35 <= value <= 1.0
+
 
 if __name__ == "__main__":
     unittest.main()
