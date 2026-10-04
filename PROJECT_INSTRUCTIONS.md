@@ -1,146 +1,705 @@
 # PROJECT_INSTRUCTIONS — BTC-Prediction-Research
 
-## Mission
-Optimize future generalization of the BTC prediction system, not historical fit alone. Treat DATA → TIME/PIT → TARGET → FEATURES → MODELS → ENSEMBLE → ROUTING → CALIBRATION → UNCERTAINTY → PREDICTABILITY → INFORMATION ACQUISITION → DECISION → PRESENTATION → OUTCOME → EXPERIENCE → FAILURE ANALYSIS → RESEARCH → OOS/WFO → ROBUSTNESS → HOLDOUT → SHADOW → PROMOTION → PRODUCTION → MONITORING → RECOVERY as one evidence-driven system.
+## 1. Mission
+Optimize Future Generalization of the BTC prediction system, not historical fit alone.
 
-Primary target: UP / FLAT / DOWN. Primary production horizons: 5m and 10m. Any new target/horizon remains research-only until it passes local PIT, chronological OOS/WFO, calibration, robustness, frozen holdout, reproducibility and promotion gates.
+Treat the system as one evidence chain:
 
-## Source of truth
-The canonical technical Project Source governs detailed policy. Current GitHub HEAD, code, registries, immutable research artifacts, workflow state and validated evidence take precedence over stale historical notes.
+DATA
+→ TIME/PIT
+→ TARGET
+→ FEATURES
+→ MODELS
+→ ENSEMBLE
+→ ROUTING
+→ CALIBRATION
+→ UNCERTAINTY
+→ PREDICTABILITY
+→ INFORMATION ACQUISITION
+→ DECISION
+→ PRESENTATION
+→ OUTCOME
+→ EXPERIENCE
+→ FAILURE ANALYSIS
+→ RESEARCH
+→ OOS/WFO
+→ ROBUSTNESS
+→ FROZEN HOLDOUT
+→ SHADOW
+→ PROMOTION
+→ PRODUCTION
+→ MONITORING
+→ RECOVERY
+→ NEXT RESEARCH
 
-Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to make the current state look better.
+Optimize, separately and jointly:
+Future Generalization, case-level correctness, probabilistic quality, calibration, uncertainty quality, predictability awareness, OOD robustness, information value, forecast lifetime, timing, routing, fallback/abstention, compute efficiency, reproducibility and operational reliability.
 
-## Every run
-Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
+Do not optimize for model complexity, source count, feature count, workflow count or green Actions by themselves.
 
-## Current evidence snapshot
-The current recorded strict PIT audit is PASS for the admitted primary scope: 5m strict primary settled = 402 and 10m strict primary settled = 400, each independently above the 300-row per-horizon gate; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41). Robustness evidence is still sample-limited: current Production model evidence is 259 rows for 5m and 400 rows for 10m versus the 1,000-row robustness minimum, so both remain research-only. The situation-metadata cohort still needs 2,602 additional qualifying 5m-cycle rows for 5m and 2,604 for 10m to reach the 3,000-row maturity target. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
-Current production artifact bindings recorded in the repository are:
-- 5m: `bootstrap.soft_ensemble.v5.4`
-- 10m: `bootstrap.bootstrap_rf`
+## 2. Source of truth and every run
+The canonical technical source is docs/PROJECT_SOURCE.md.
 
-These are production artifact metadata, not automatic evidence of superiority. Runtime must verify registry ↔ metadata ↔ artifact ↔ feature schema before use.
+At the start of every material run:
+1. Re-read PROJECT_INSTRUCTIONS.md.
+2. Re-read the current canonical Project Source.
+3. Inspect current GitHub default branch/HEAD, code, configuration, dependencies and workflow definitions.
+4. Inspect current GitHub Actions states, jobs, artifacts and failures/cancellations/skips.
+5. Inspect Production, Champion, Challenger, registry and artifact bindings.
+6. Inspect data/source/PIT/OOS/calibration/robustness/holdout evidence, coverage debt and research frontier.
+7. Decide the highest expected-value next action and execute it autonomously when safe.
 
-## PIT / time
-Keep event/observation/publish/available/retrieved/processing/prediction/outcome/revision times separate. Historical feature availability must be proven with `source_available_time <= prediction_cutoff`. Retrieved-at alone is not PIT evidence. Unknown or unverifiable availability is UNKNOWN/DEFERRED/REJECTED, never PASS.
+Current GitHub state is authoritative over stale chat results and embedded historical notes.
 
-For primary readiness, strict PIT evidence is gated independently per production horizon. The PIT artifact must provide `primary_horizon_gate` entries for both 5m and 10m, and each entry must report `strict_primary_settled >= min_strict_pit_rows`, `minimum >= min_strict_pit_rows`, and `ready = true`. Aggregate verified-primary counts cannot substitute for a missing or failing horizon-specific gate.
+Never rewrite mature predictions, outcomes, OOS, holdouts or failure records merely to make the current state look consistent.
 
-## Leakage
-Audit data, feature, target, label, publication, revision, settlement, same-event, cross-fold, calibration, model-selection, hyperparameter, experiment-selection, research-priority, holdout, cross-project, knowledge-time, metadata and benchmark contamination.
+Prefer:
+REUSE → REPAIR → INTEGRATE → TEST → VERIFY
+over creating duplicate mechanisms.
 
-## Data integrity
-Missing ≠ zero. Preserve AVAILABLE / MISSING / STALE / UNKNOWN / UNVERIFIABLE / INVALID / DEGRADED states. Preserve source lineage, independence groups, snapshots, schema versions, revision behavior and canonical identity. Do not double-count mirrors, wrappers or republishers as independent evidence.
+## 3. Canonical target and horizon
+Primary classification:
+- UP
+- FLAT
+- DOWN
 
-## Evaluation
-Use chronological walk-forward OOS/WFO. Random temporal splits are prohibited for Production-grade evidence. Separate candidate selection from final evaluation and keep frozen holdout protected from selection, calibration, routing, feature, source and research-priority tuning. Report LogLoss, Brier, Accuracy and ECE with sample size, effective sample size, confidence intervals, variance, worst/newest fold and practical effect size where applicable.
+Primary Production horizons:
+- 5m
+- 10m
 
-## Models / routing
-Maintain simple baselines. Challengers require demonstrated incremental value, robustness and incumbent same-observation comparison. Specialist routing must have sufficient sample/fold/class support and its own PIT/OOS/robustness/holdout evidence; otherwise route to a broader validated model or fallback.
+Every target/horizon must preserve:
+target_definition_version
+observation_time
+prediction_cutoff
+horizon
+label_rule
+settlement_rule
+revision_rule
+missing_outcome_rule
 
-Separate Prediction Confidence from Data, Source, PIT, Model, Regime and System Confidence. Predictability is not accuracy.
+New targets/horizons such as return, volatility, tail event, regime transition, predictability, failure probability or forecast lifetime are research-only until they independently pass the complete local gates.
 
-## Decision layer
-Supported actions include PREDICT_NOW, ACQUIRE_MORE, WAIT, RECOMPUTE, ROUTE, FALLBACK and ABSTAIN. Abstention is a valid outcome when policy says information quality is inadequate, but the abstention policy itself must be evaluated OOS.
+Binary UP/DOWN (binary_sign_v1) is research-only. It must never silently replace the three-class Production target.
 
-## Research / external methods
-External Web/Search/Paper/OSS/plugin methods are discovery inputs only. Translate them into reproducible GitHub-compatible implementations and validate locally. Do not transfer performance claims from other projects or external benchmarks.
+## 4. Time / PIT contract
+Keep these times separate where relevant:
+event_time
+observation_time
+source_publish_time
+source_available_time
+retrieved_time
+processing_time
+prediction_time
+outcome_time
+revision_time
 
-Research state must distinguish DISCOVERED → SOURCE_VERIFIED → LOCALLY_REPRODUCED → OOS_CONFIRMED → ROBUST → INDEPENDENTLY_CONFIRMED → PRODUCTION_CONFIRMED.
+Canonical timezone is UTC.
 
-Negative results are retained with failure conditions and reopen triggers.
+The causal PIT rule is:
+source_available_time <= prediction_cutoff
 
-## Reliability / automation
-Use bounded retry/backoff, concurrency control, watchdog/heartbeat, stale-run detection, idempotent writes, checkpoints, recovery, replay, rollback and artifact preservation. Never hide failures, force success, use fail-open shell suppression, or treat cancelled/retried workflows as successful evidence.
+retrieved_time alone is never proof of historical availability.
 
-## Cost / security
-Prefer verified free, OSS, local and cached sources. Unknown-cost or billing-risk services are not automatic dependencies. Protect secrets, pin actions where appropriate, verify artifact integrity and reject production candidates with unresolved security uncertainty.
+Unknown, missing, contradictory, malformed or unverifiable availability is:
+UNKNOWN / DEFERRED / REJECTED
+and never PASS by inference.
 
-## Production state
-Production is a bundle, not a model file: model artifact, feature schema, source registry version, PIT policy, target definition, calibration, router, fallback, output schema, monitoring, rollback target and manifest must remain consistent.
+Primary readiness is horizon-specific. 5m cannot borrow PIT evidence from 10m and vice versa. The PIT artifact must contain independent primary_horizon_gate evidence for both 5m and 10m.
 
-Block contradictory states such as PIT FAIL + PRODUCTION ACTIVE, registry/model mismatch, artifact hash mismatch, invalid holdout + promotion, stale trusted source, or snapshot mismatch.
+When feature-level provenance is supplied, also require:
+feature_pit_status = PASS
+feature_snapshot_cutoff <= prediction_cutoff
+feature_max_available_at <= prediction_cutoff
 
-## Completion
-Green CI, an existing model, generated artifacts, or a completed workflow do not prove performance verification or Production readiness.
+Optional per-feature available_at records must obey the same cutoff rule. Missing optional lineage is not upgraded to PASS.
 
-Completion requires evidence covering SPEC, CODE, DATA, PIT, LEAKAGE, OOS/WFO, CALIBRATION, ROBUSTNESS, HOLDOUT, REPRODUCIBILITY, RECOVERY, MONITORING, ROLLBACK, STATE CONSISTENCY, RESULT PRESENTATION and KNOWLEDGE LINEAGE.
+## 5. Leakage / knowledge-time firewall
+Audit at minimum:
+data leakage, feature leakage, target/label leakage, publication leakage, revision leakage, settlement leakage, same-event leakage, cross-fold leakage, calibration leakage, model-selection leakage, hyperparameter leakage, experiment-selection leakage, research-priority leakage, holdout leakage, cross-project leakage, knowledge-time leakage, metadata leakage and benchmark contamination.
 
-## Status
-Use IMPLEMENTED / EXECUTED / VERIFIED / PERFORMANCE_VERIFIED / PROMOTION_CANDIDATE / ADOPTED / PRODUCTION / STABLE / HOLD / REJECTED / FAILED / BLOCKED / DEFERRED / ROLLED_BACK / UNKNOWN / UNVERIFIABLE / SUPERSEDED / RETIRED distinctly.
+A row's creation time is not proof that its outcome was known.
 
-## Loop
-MONITOR → DETECT → TRIAGE → RESEARCH → IMPLEMENT → TEST → PIT → OOS/WFO → CALIBRATION → ROBUSTNESS → HOLDOUT → SHADOW → ADOPT/HOLD/REJECT → RELEASE → PRODUCTION → RECONCILE → FAILURE ANALYSIS → MEMORY → NEXT RESEARCH.
+For experience-derived training, meta-models, error/failure models, predictability models, routing or calibration:
+- the target/outcome must be mature before the training prediction cutoff;
+- invalid/missing maturity timestamps are UNKNOWN/DEFERRED;
+- outcomes settling at the same scored boundary may not train that boundary;
+- same-event revisions are not independent samples.
 
+## 6. Data / source integrity
+Missing ≠ zero.
 
-## Binary target research snapshot
-The latest fixed CI run for binary_sign_v1 completed successfully. It remains research-only and did not change Production.
+Preserve explicit states:
+AVAILABLE / MISSING / STALE / UNKNOWN / UNVERIFIABLE / INVALID / DEGRADED / SOURCE_FAILED / NOT_APPLICABLE
 
-- 5m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51254, logloss 0.69323, Brier 0.25004, ECE 0.00097.
-- 10m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51557, logloss 0.69285, Brier 0.24985, ECE 0.00279.
-- 5m live Binance-primary strict-PIT: n=395, accuracy 0.51392, logloss 0.69166, Brier 0.24926, ECE 0.00629.
-- 10m live Binance-primary strict-PIT: n=395, accuracy 0.56962, logloss 0.68836, Brier 0.24761, ECE 0.05565.
-- Frozen holdout is descriptive only and remains protected from candidate selection.
-- Production replacement remains prohibited; independent longer robustness, calibration and shadow evidence are still required.
+Preserve:
+source lineage, upstream owner, endpoint, source type, independence group, license, cost, coverage, freshness, availability method, publication behavior, revision behavior, schema version, parser version, latency, incremental information value and production status.
 
-## Binary research integrity additions
+A mirror/wrapper/republisher of the same upstream is not an independent source.
 
-For binary_sign_v1, live-primary research training data must pass a knowledge-time firewall: a label is eligible only when its target/outcome timestamp is strictly before the first live prediction cutoff. Creation time alone is insufficient.
+Required-source partial failure must remain visible and must propagate to downstream status. A successful subset does not justify an overall success state.
 
-Binary chronological WFO evidence must retain a same-block frequency baseline, fold timestamps, sample size, Accuracy 95% CI, approximate effective sample size, worst/newest fold, and non-degraded fold fractions. Missing evidence is FAIL-CLOSED. The frequency baseline cannot be selected as a trainable challenger.
+Recommended source/scope readiness state:
+REGISTERED
+→ ADAPTER
+→ PIT
+→ OOS
+→ ROBUST
+→ FROZEN_HOLDOUT
+→ SHADOW
+→ PRODUCTION
 
-These controls are research-only and must not modify Production without the full local PIT → OOS/WFO → calibration → robustness → holdout → shadow → promotion sequence.
+Failure states remain explicit:
+HOLD / REJECTED / BLOCKED / DEFERRED / FAILED / UNKNOWN
 
+Current/future live data may be usable for current prediction without proving historical PIT. Historical OOS requires separate historical availability evidence.
 
-## Binary evidence lineage
+## 7. Feature contract
+Feature presence in source code is not proof of Production use.
 
-Binary research evidence must record the analysis Git SHA used to generate it. CI must fail when the recorded analysis SHA does not equal the workflow's GITHUB_SHA. The later bot evidence commit is separate and does not replace the analysis SHA.
+The exact Production feature bundle must be reproducible by:
+- ordered feature list;
+- feature-set identity;
+- feature manifest/policy version;
+- source-set fingerprint;
+- schema hash;
+- target/horizon;
+- model version;
+- calibration/router/fallback configuration.
 
-This is an evidence lineage control only; it does not promote or activate any binary target in Production.
+Use feature states:
+ACTIVE
+CONDITIONAL
+OBSERVATION_ONLY
+RESEARCH_CANDIDATE
 
+Feature selection is a research axis. Evaluate family, subset, window, representation, aggregation, interaction, source/channel, model, training window, calibration and routing as separate or jointly prequential choices.
 
-## Prediction-confidence reliability
+Feature selection is target/horizon-specific.
 
-The existing Experience Policy OOS module is the canonical research surface for prediction-confidence reliability. It must report confidence buckets, observed accuracy, confidence gap, Accuracy 95% CI, ECE, Brier score, and an explicit 0.70+ high-confidence bucket. It also reports calibration of the learned prediction-error probability.
+High-dimensional feature accumulation is not a success criterion. Prefer incremental information and source/group ablations. Retire redundant, unstable, leakage-prone, high-maintenance and low-value features.
 
-These are post-outcome research diagnostics only. They must not directly change Production routing, abstention, calibration, or model artifacts. High-confidence overprediction is evidence for further research, not automatic promotion or suppression.
+## 8. Model ecology / routing / decision
+Maintain simple baselines.
 
+Challengers must show incremental value against the incumbent on the same chronological observations and then pass robustness and protected holdout evidence.
 
-## Frontier historical time-bound integrity
+Specialist routing requires adequate sample/fold/class support, PIT-safe context, calibration and recent stability. Otherwise:
+ROUTE → broader validated model → FALLBACK → ABSTAIN/DEFER
 
-Historical backfill must not move the durable latest event-time bound backward. State updates use MIN for earliest and MAX for latest. Reversed or malformed bounds are treated as integrity issues, not silently corrected.
+Allowed decisions:
+PREDICT_NOW
+ACQUIRE_MORE
+WAIT
+RECOMPUTE
+ROUTE
+FALLBACK
+ABSTAIN
 
-When bounds are invalid, the frontier loop must prioritize historical reacquisition and may bypass normal acquisition cooldown. No frontier acquisition is production-eligible. Invalid existing state remains unverified until a new acquisition provides evidence.
+Abstention is a valid decision, but the abstention policy must itself be evaluated OOS.
 
-## Cross-project mechanism governance — 2026-10-04
+Separate:
+Prediction Confidence
+Data Confidence
+Source Confidence
+PIT Confidence
+Model Confidence
+Regime Confidence
+System Confidence
 
-The five-repository research set is used only for mechanism discovery and engineering controls. Performance metrics, OOS results, holdouts, production states, or predictions from another repository are never transferable evidence for BTC.
+Predictability is a separate concept from probability confidence.
 
-Reference mechanisms incorporated into BTC governance:
-- 7-Sport: fail closed on pre-event enrichment failure, success-only checkpoint reuse, single-writer semantics for critical registries, and event-cluster-aware evaluation.
-- Soccer: explicit prediction-cutoff lineage, optional feature-level PIT provenance, mature-prior training for temporal meta models, and fail-closed diagnostic boundaries.
-- Baseball: universal dataset/source contracts, explicit readiness states, immutable prediction/experience integrity audits, and outcome-maturity-aware conformal research.
-- Stock: genuinely prequential/nested model-window-ranking selection, contiguous prior-fold evidence, dependence-aware bootstrap evidence, explicit selection statistics, and run provenance manifests.
+Track, where computable:
+model disagreement, OOD, regime stability, recent error, calibration stability, data quality, source reliability and forecast lifetime.
 
-BTC adoption rule:
-DISCOVER → ABSTRACT_MECHANISM → COMPATIBILITY → LOCAL_IMPLEMENTATION → TEST → LOCAL_PIT → LOCAL_OOS/WFO → ROBUSTNESS → FROZEN_HOLDOUT → SHADOW → PROMOTION.
+Do not fabricate Predictability/OOD/Failure Risk/Delta when runtime does not compute them. Use explicit NOT_COMPUTED/NOT_AVAILABLE states.
 
-## Feature-level PIT firewall
+## 9. Calibration
+Calibration is chronological.
 
-When feature-level provenance is supplied, feature_pit_status must be PASS, feature_snapshot_cutoff must be valid and no later than the prediction cutoff, and feature_max_available_at must be valid and no later than the prediction cutoff. Optional per-feature provenance is checked similarly. Missing optional lineage is not upgraded to PASS by inference.
+Never tune calibration on the same outer OOS block being scored.
 
-## Evidence provenance binding
+Calibration artifacts must bind to the exact model artifact/generation by model version and model hash.
 
-Production artifact audits must bind the evaluated artifact set to GITHUB_SHA (or explicitly LOCAL_UNPINNED) and hash PROJECT_INSTRUCTIONS.md, docs/PROJECT_SOURCE.md, and requirements.txt. A policy/config provenance change is an audit change even when the model files are unchanged.
+Calibration failure is a safety failure, not a cosmetic metric issue.
 
-## Statistical dependence and nested selection
+## 10. OOS / WFO / statistical integrity
+Production-grade evaluation is:
+Chronological
+→ Walk-forward
+→ PIT-safe
+→ Candidate-selection separated
+→ Frozen-holdout separated
 
-Evaluation units must respect dependence. Multiple snapshots from one underlying event/case are not treated as independent evidence when the evaluation layer can identify the cluster. Model/router/window/return-estimator selection must be based only on outcomes available before the scored fold; global same-OOS selections cannot leak into the outer evaluation. Where applicable, contiguous prior folds and block/HAC/cluster-aware uncertainty are preferred.
+Random temporal splits are not Production-grade evidence.
 
-## Long-running research state
+Nested/prequential selection rule for every outer fold:
+1. use strictly earlier outcomes to select model/window/features/router/calibration/weighting;
+2. freeze the selected configuration;
+3. score the untouched current fold;
+4. only then expose that fold's outcome to later selection.
 
-Requested/queued/pending/waiting/in_progress are active transient workflow states. Only explicit terminal conclusions are evidence. Long-running jobs use checkpoints, idempotent writes, bounded retries, stable concurrency semantics, immutable research snapshots, and single-writer handling for critical state. Main-branch changes must not silently invalidate or mutate an already-started immutable research snapshot.
+Where candidate windows are compared, prefer contiguous prior-fold support.
 
-## Current-state discipline
+Retain for each material candidate:
+train_end, test_start, test_end, test_n, baseline, candidate metrics, effect size, confidence interval, effective sample size and selection statistics.
 
-The evidence snapshot in this file is descriptive and may age immediately. On every run, re-read current GitHub HEAD, current artifacts, current Actions, current registries, and current production state before making a claim or decision. Never use this instruction file's historical numbers as a substitute for fresh evidence.
+Respect dependence. Multiple snapshots from one underlying market event are not automatically independent evidence. Use event/case cluster identifiers where available and use HAC, moving-block bootstrap or cluster-aware methods where appropriate.
+
+Maintain multiple-comparison awareness and record degrees of freedom:
+candidate count, feature trials, source trials, hyperparameter trials, calibration trials, router/timing trials and selection iterations.
+
+## 11. Adoption gates
+Reference gates are evidence thresholds, not automatic promotion rules.
+
+Typical reference:
+- primary OOS relative improvement ≥3%;
+- auxiliary improvement ≥1%;
+- ≥70% non-degraded evaluation periods;
+- newest protected evaluation non-degraded;
+- no material calibration degradation;
+- zero active PIT violations.
+
+Also evaluate:
+sample size, dependence, ESS, CI, effect size, regime concentration, robustness, implementation risk, complexity and operational failure surface.
+
+Production requires:
+PIT PASS
+Leakage PASS
+Reproducibility
+Robustness
+Incumbent same-observation comparison
+Calibration safety
+Newest/frozen holdout safety
+Independent confirmation
+Explicit promotion
+
+No single fold, benchmark, live streak or external claim is sufficient.
+
+## 12. Holdout firewall
+Frozen holdout may not be used for:
+model selection
+feature selection
+hyperparameter tuning
+source selection
+router tuning
+calibration tuning
+timing optimization
+research prioritization
+adoption winner selection
+
+Holdout access must be auditable.
+
+A descriptive holdout score does not authorize promotion.
+
+## 13. Research handoff / state machine
+Expensive OOS may start only with explicit:
+TESTS_PASSED = true
+AUDIT_PASSED = true
+
+Missing/invalid handoff is BLOCKED.
+
+Research status:
+DISCOVERED
+→ SOURCE_VERIFIED
+→ LOCALLY_REPRODUCED
+→ OOS_CONFIRMED
+→ ROBUST
+→ INDEPENDENTLY_CONFIRMED
+→ PRODUCTION_CONFIRMED
+
+Code-exists ≠ implemented
+Implemented ≠ executed
+Executed ≠ verified
+Verified ≠ performance_verified
+Performance_verified ≠ promotion
+Promotion ≠ production
+Green CI ≠ research success
+
+## 14. Evidence lineage / freshness
+Every material result should retain:
+Git SHA
+ref
+environment/dependencies
+configuration
+seed
+data snapshot/hash
+feature schema/hash
+source registry/version
+target version
+model artifact/hash
+calibration artifact/hash
+router/fallback version
+holdout policy
+experiment fingerprint
+
+Production Artifact Audit must bind its evidence to:
+GITHUB_SHA (or LOCAL_UNPINNED)
+GITHUB_REF_NAME
+PROJECT_INSTRUCTIONS.md SHA256
+docs/PROJECT_SOURCE.md SHA256
+requirements.txt SHA256
+model and metadata SHA256
+runtime reload result
+feature schema
+
+Any change capable of altering PIT semantics, target/labeling, feature schema, scoring, model selection, calibration, routing, adoption, production artifact identity or policy provenance is evidence-affecting and must invalidate stale evidence as appropriate.
+
+Later evidence-publication commits do not replace the analysis SHA of the code that actually ran the experiment.
+
+## 15. Workflow / automation reliability
+Distinguish:
+REQUESTED
+QUEUED
+PENDING
+WAITING
+IN_PROGRESS
+SUCCESS
+FAILURE
+CANCELLED
+SKIPPED
+
+Only explicit terminal success is execution evidence.
+
+Use:
+checkpoint
+resume
+idempotency
+bounded retry/backoff
+stable concurrency
+single-writer critical state
+deterministic writes
+watchdog
+heartbeat
+stale-run detection
+immutable research snapshots
+replay
+recovery
+rollback
+
+Success-only checkpoint reuse is required. Failed/partial checkpoints are not treated as completed evidence.
+
+Long-running capture/research must not be cancelled by ordinary main commits when its immutable snapshot remains valid. Avoid duplicate long-running collectors; serialize or otherwise coordinate durable writers.
+
+Stale remote state must never be overwritten by an older local snapshot. Compare local and remote generation/end-time/version before publish and re-check after conflicts.
+
+## 16. Safe degradation / recovery
+When a critical dependency is unavailable:
+FULL
+→ REDUCED
+→ FALLBACK
+→ SELECTIVE
+→ ABSTAIN
+→ RECOVERY
+
+PIT failure is not the same as ordinary data availability degradation.
+
+Required recovery evidence:
+checkpoint_id
+stage
+scope
+input snapshot
+completed outputs
+pending work
+expected next state
+artifact hashes
+recovery safety
+
+Recovery must be bounded and observable.
+
+## 17. Production bundle / state consistency
+Production is a bundle, not a model file.
+
+The bundle must reconcile:
+model
+feature schema
+source registry
+PIT policy
+target definition
+calibration
+router
+fallback
+output schema
+monitoring
+rollback target
+manifest
+
+Block contradictions such as:
+PIT FAIL + PRODUCTION ACTIVE
+registry/model mismatch
+model hash mismatch
+invalid calibration binding
+invalid holdout + promotion
+stale trusted source
+snapshot mismatch
+candidate artifact exposed as Production
+
+## 18. Experience / result presentation
+Prediction revisions are append-only.
+
+Store:
+prediction_before
+prediction_after
+delta
+reason
+changed sources/features/model/regime/calibration
+
+Outcome maturity must be verified before Experience scoring.
+
+Historical/research and current Production views must remain separate.
+
+Current result presentation should expose, when available:
+Target
+Horizon
+UP/FLAT/DOWN probabilities
+Top prediction
+Prediction State
+Decision
+Reliability
+Prediction Cutoff
+Data As-of
+Data Age
+Model
+Ensemble
+Model Agreement
+Predictability
+OOD
+Failure Risk
+Data Reliability
+Source Health
+PIT
+Forecast Lifetime
+Previous → Current Delta
+Change Drivers
+Prediction ID
+Experiment ID
+Model Version
+Data Snapshot
+Feature Schema
+Git SHA
+PIT result
+Leakage result
+Reproducibility
+
+Do not infer missing fields.
+
+## 19. Research prioritization / failure frontier
+Choose the next research task from:
+expected OOS gain
+information gain
+failure reduction
+coverage debt
+urgency
+novelty
+transferability
+cost
+runtime
+reproducibility
+complexity
+failure surface
+risk
+
+Frontiers:
+DATA
+SOURCE
+FEATURE
+MODEL
+ROUTING
+CALIBRATION
+TIMING
+TARGET
+REGIME
+UNCERTAINTY
+FAILURE
+INFORMATION ACQUISITION
+UNKNOWN-UNKNOWN
+
+Prefer a small number of high-information experiments over large uncontrolled search.
+
+Retain negative knowledge:
+hypothesis
+scope
+data
+failure
+failed conditions
+reason
+confidence
+reopen trigger
+
+Stop/defer duplicated or low-yield research.
+
+## 20. Cost / security
+Priority:
+Verified Free
+→ Free Quota
+→ OSS/local
+→ Cached
+→ Lightweight compute
+
+Paid-only, billing-risk, unknown-cost, auto-renew trial or quota-overage dependencies are not automatically adopted.
+
+Do not expose secrets in code, logs, artifacts, reports, commits or test fixtures.
+
+Review:
+workflow permissions
+action pinning
+dependency/supply-chain risk
+artifact tampering
+license/redistribution restrictions
+rate limits
+source retention
+
+## 21. Cross-project mechanism transfer
+Reference repositories:
+- Baseball-Prediction-System
+- BTC-Prediction-Research
+- 7-Sport-Prediction-Research
+- Soccer-Prediction-Research
+- Stock-Daily-Prediction-3000
+
+Only mechanisms transfer, never performance evidence, holdouts, production states, predictions or datasets.
+
+Mechanisms incorporated as references:
+7-Sport:
+- explicit fail-closed enrichment semantics
+- success-only checkpoint discipline
+- critical-state single-writer semantics
+- event-aware evaluation
+
+Soccer:
+- explicit prediction-cutoff lineage
+- optional feature-level PIT provenance
+- mature-prior temporal meta-learning
+- fail-closed source/diagnostic states
+- nested feature-selection contract
+
+Baseball:
+- universal data/source contract
+- explicit readiness states
+- immutable prediction/experience audit
+- source quality separated from identity coverage
+- outcome-maturity-aware conformal/uncertainty research
+
+Stock:
+- nested/prequential model-window-ranking selection
+- contiguous prior-fold evidence
+- dependence-aware moving-block bootstrap
+- multiple-comparison-aware selection statistics
+- heartbeat/transient-state handling
+- run provenance manifest
+
+BTC adoption path:
+DISCOVER
+→ ABSTRACT_MECHANISM
+→ COMPATIBILITY
+→ LOCAL_IMPLEMENTATION
+→ TEST
+→ LOCAL_PIT
+→ LOCAL_OOS/WFO
+→ ROBUSTNESS
+→ LOCAL_FROZEN_HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+Cross-project success never bypasses a BTC-local gate.
+
+## 22. Current-state discipline
+Volatile metrics and Action statuses are not authoritative because this file is static.
+
+On every run, read the live artifacts instead:
+- data/live_cycle_status.json
+- data/historical_research/production_integrity.json
+- data/historical_research/pit_oos_audit.json
+- data/historical_research/research_input_audit.json
+- data/historical_research/research_readiness.json
+- data/historical_research/performance_snapshot.json
+- data/historical_research/performance_change.json
+- data/historical_research/robustness_oos_report.json
+- data/historical_research/promotion_gate.json
+- relevant model/registry/source manifests
+- current GitHub Actions state
+
+Never use historical numbers embedded in instructions as a substitute for fresh state.
+
+## 23. Completion definition
+Completion is not:
+- green Action
+- code existence
+- generated artifact
+- model-file existence
+- one good live streak
+- one good fold
+- external benchmark superiority
+
+Completion requires evidence appropriate to the change across:
+SPEC
+CODE
+DATA
+PIT
+LEAKAGE
+OOS/WFO
+CALIBRATION
+ROBUSTNESS
+FROZEN_HOLDOUT
+REPRODUCIBILITY
+RECOVERY
+MONITORING
+ROLLBACK
+STATE_CONSISTENCY
+RESULT_PRESENTATION
+KNOWLEDGE_LINEAGE
+
+Unverified requirements remain UNKNOWN/UNVERIFIABLE/BLOCKED/HOLD.
+
+## 24. Status taxonomy
+Use these distinctly:
+IMPLEMENTED
+EXECUTED
+VERIFIED
+PERFORMANCE_VERIFIED
+PROMOTION_CANDIDATE
+ADOPTED
+PRODUCTION
+STABLE
+HOLD
+REJECTED
+FAILED
+BLOCKED
+DEFERRED
+ROLLED_BACK
+UNKNOWN
+UNVERIFIABLE
+SUPERSEDED
+RETIRED
+
+## 25. Permanent operating loop
+MONITOR
+→ DETECT
+→ TRIAGE
+→ RESEARCH
+→ IMPLEMENT
+→ TEST
+→ PIT
+→ OOS/WFO
+→ CALIBRATION
+→ ROBUSTNESS
+→ FROZEN_HOLDOUT
+→ SHADOW
+→ ADOPT/HOLD/REJECT
+→ RELEASE
+→ PRODUCTION
+→ RECONCILE
+→ FAILURE ANALYSIS
+→ MEMORY
+→ NEXT RESEARCH
+
+The top-level objective remains:
+PIT integrity > apparent backtest gain
+Future generalization > historical fit
+Case-level correctness > aggregate-only optimization
+Calibration > raw confidence
+Independent evidence > source count
+Robustness > single-period improvement
+Failure learning > repeated failure
+Safe degradation > forced prediction
+Reproducibility/state consistency > convenient output
+Information efficiency > complexity
