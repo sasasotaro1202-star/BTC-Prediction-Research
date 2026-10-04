@@ -30,6 +30,33 @@ ci_gh_api_get() {
   shift || true
   ci_gh api "$endpoint" "$@"
 }
+ci_gh_api_download() {
+  local endpoint="$1"
+  local output="$2"
+  shift 2 || true
+  local attempts="${CI_GH_ATTEMPTS:-${CI_GH_API_ATTEMPTS:-5}}"
+  local timeout_s="${CI_GH_TIMEOUT_SECONDS:-${CI_GH_API_TIMEOUT_SECONDS:-30}}"
+  local backoff_s="${CI_GH_BACKOFF_SECONDS:-${CI_GH_API_BACKOFF_SECONDS:-3}}"
+  local attempt errfile tmp
+  errfile="$(mktemp)"
+  tmp="${output}.tmp.$"
+  rm -f "$tmp"
+  for attempt in $(seq 1 "$attempts"); do
+    if timeout --signal=TERM --kill-after=5s "${timeout_s}s" gh api "$endpoint" --output "$tmp" "$@" 2>"$errfile"; then
+      mv -f "$tmp" "$output"
+      rm -f "$errfile"
+      return 0
+    fi
+    echo "WARN: gh api download failed (attempt ${attempt}/${attempts}): gh api $endpoint --output $output" >&2
+    rm -f "$tmp"
+    if [ "$attempt" -lt "$attempts" ]; then
+      sleep "$((backoff_s * attempt))"
+    fi
+  done
+  cat "$errfile" >&2
+  rm -f "$errfile" "$tmp"
+  return 1
+}
 
 ci_git_fetch() {
   ci_git_fetch_cwd "" "$@"
