@@ -50,6 +50,46 @@ jobs:
 
       - name: Compile source and tests
         run: python -m compileall -q src tests scripts
+      - name: Validate current production artifact integrity and SHA provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src:. python src/production_artifact_audit.py | tee /tmp/production_artifact_audit.jsonl
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          audit_path = Path("data/historical_research/production_artifact_audit.json")
+          if not audit_path.is_file():
+              raise SystemExit("production artifact audit did not produce an evidence file")
+          payload = json.loads(audit_path.read_text(encoding="utf-8"))
+          provenance = payload.get("provenance") or {}
+          expected = os.environ.get("GITHUB_SHA")
+          if not expected:
+              raise SystemExit("GITHUB_SHA missing in CI")
+          if provenance.get("git_sha") != expected:
+              raise SystemExit(
+                  f"production artifact evidence SHA mismatch: "
+                  f"expected={expected} actual={provenance.get('git_sha')}"
+              )
+          if provenance.get("workspace_sha") != expected:
+              raise SystemExit(
+                  f"production artifact workspace SHA mismatch: "
+                  f"expected={expected} actual={provenance.get('workspace_sha')}"
+              )
+          artifacts = payload.get("artifacts") or []
+          if {item.get("horizon") for item in artifacts} != {"5m", "10m"}:
+              raise SystemExit("production artifact evidence missing a primary horizon")
+          if any(item.get("runtime_model_reload_ok") is not True for item in artifacts):
+              raise SystemExit("production artifact runtime reload contract failed")
+          if any(item.get("runtime_classes") != ["DOWN", "FLAT", "UP"] for item in artifacts):
+              raise SystemExit("production artifact class contract failed")
+          if any(item.get("runtime_feature_count") != 15 for item in artifacts):
+              raise SystemExit("production artifact feature-count contract failed")
+          print("production artifact integrity: VERIFIED")
+          PY
+
       - name: Validate CI network retry helper
         run: bash -n scripts/ci_network_retry.sh
       - name: Run unit tests
