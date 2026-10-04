@@ -103,3 +103,12 @@ def test_supervisor_route_errors_are_explicitly_degraded():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     assert 'if [ "${route_mode}" -eq 1 ]; then return 20; fi' in text
     assert 'elif [ "${candidate_rc}" -eq 20 ]; then' in text
+
+
+
+def test_frontier_push_trigger_excludes_test_only_changes():
+    text = Path('.github/workflows/btc_autonomous_data_frontier.yml').read_text(encoding='utf-8')
+    trigger = text.split('permissions:', 1)[0]
+    assert 'src/btc_data_frontier_autoselect.py' in trigger
+    assert 'tests/test_btc_data_frontier_autoselect.py' not in trigger
+    assert '.github/workflows/btc_autonomous_data_frontier.yml' not in trigger
