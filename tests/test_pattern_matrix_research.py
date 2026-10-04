@@ -69,3 +69,29 @@ def test_workflow_expressions_are_not_backslash_escaped():
     assert "\\${{" not in s
     assert "ref: ${{ github.sha }}" in s
     assert "group: btc-pattern-matrix-research" in s
+
+def test_screen_selection_is_multi_objective_and_diverse():
+    rows=[]
+    for i in range(18):
+        rows.append({
+            "feature_set":f"f{i%6}",
+            "model":f"m{i%4}",
+            "window":["expanding","recent_1500","recent_3000"][i%3],
+            "fingerprint":str(i),
+            "aggregate":{
+                "relative_logloss_improvement":0.01+i/1000,
+                "relative_brier_improvement":0.005+(17-i)/2000
+            },
+            "stability":{
+                "accuracy_non_worse_ratio":0.5+(i%5)/10,
+                "logloss_improved_ratio":0.5+(i%4)/10,
+                "brier_improved_ratio":0.5+(i%3)/10,
+                "worst_logloss_delta":0.2-i/1000,
+                "worst_accuracy_delta":-0.1+i/1000
+            }
+        })
+    selected=pm.select_finalists(rows,limit=12)
+    assert len(selected)==12
+    assert len({x["fingerprint"] for x in selected})==12
+    assert len({x["model"] for x in selected})>=3
+    assert all("screen_selection_score" in x for x in selected)
