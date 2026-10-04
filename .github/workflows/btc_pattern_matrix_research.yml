@@ -1,0 +1,115 @@
+name: BTC Pattern Matrix Research
+
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pattern_matrix_research.py'
+      - 'tests/test_pattern_matrix_research.py'
+      - '.github/workflows/btc_pattern_matrix_research.yml'
+      - 'requirements.txt'
+
+concurrency:
+  group: btc-pattern-matrix-research
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  pattern_matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: \${{ github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+      - name: Compile research code
+        run: python -m compileall -q src tests
+      - name: Run pattern-matrix contract tests
+        run: python -m pytest -q tests/test_pattern_matrix_research.py
+        env:
+          PYTHONPATH: \${{ github.workspace }}/src
+      - name: Explicit TESTS_PASSED / AUDIT_PASSED handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/production_artifact_audit.py
+          test -s data/historical_research/production_artifact_audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path("data/historical_research/production_artifact_audit.json").read_text())
+          artifacts=obj.get("artifacts", [])
+          if len(artifacts) != 2 or any(x.get("runtime_model_reload_ok") is not True for x in artifacts):
+              raise SystemExit("AUDIT_PASSED=false")
+          print("AUDIT_PASSED=true")
+          PY
+          echo "TESTS_PASSED=true" >> "$GITHUB_ENV"
+          echo "AUDIT_PASSED=true" >> "$GITHUB_ENV"
+      - name: Run broad pattern matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TESTS_PASSED" = "true"
+          test "$AUDIT_PASSED" = "true"
+          python src/pattern_matrix_research.py
+          test -s data/historical_research/pattern_matrix_research.json
+      - name: Verify research-only contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path("data/historical_research/pattern_matrix_research.json").read_text())
+          assert obj.get("research_only") is True
+          assert obj.get("production_changed") is False
+          assert obj.get("promotion_allowed") is False
+          assert obj.get("analysis_git_sha") and obj.get("analysis_git_sha") != "LOCAL_UNPINNED"
+          for h in ("5m","10m"):
+              r=obj.get("horizons",{}).get(h,{})
+              assert r.get("final_holdout_protected") is True
+              assert r.get("holdout_used_for_selection") is False
+              assert r.get("holdout_used_for_gate") is False
+          print("pattern matrix contract: VERIFIED")
+          PY
+      - name: Upload pattern evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-pattern-matrix-\${{ github.sha }}
+          path: data/historical_research/pattern_matrix_research.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Persist evidence only if main lineage is unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$main_sha" != "$GITHUB_SHA" ]; then
+            echo "SUPERSEDED_MAIN_DRIFT expected=$GITHUB_SHA observed=$main_sha"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/historical_research/pattern_matrix_research.json
+          if git diff --cached --quiet -- data/historical_research/pattern_matrix_research.json; then
+            exit 0
+          fi
+          git commit -m "research: record pattern matrix evidence"
+          git push origin HEAD:refs/heads/main

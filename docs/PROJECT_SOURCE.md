@@ -2290,3 +2290,341 @@ what decision was made
 why it was made
 
 Knowledge copied from another project must be labeled mechanism-derived, not locally validated performance evidence.
+
+
+⸻
+
+101. BROAD PATTERN MATRIX RESEARCH
+
+Broad experimentation is a first-class research capability, but complexity is budgeted.
+
+Axes:
+TARGET/HORIZON
+FEATURE SET
+MODEL/PARAMETERS
+TRAINING WINDOW
+CALIBRATION
+ENSEMBLE
+ROUTING
+UNCERTAINTY
+SELECTIVE ACTION
+TIMING
+INFORMATION ACQUISITION
+SOURCE SCOPE
+
+Canonical matrix:
+7 feature sets × 6 model variants × 2 window policies = 84 configurations per horizon.
+
+Feature sets:
+all_15
+returns_momentum
+volatility_regime
+candle_shape
+volume_flow
+trend
+compact_cross
+
+Models:
+logreg_c0.1
+logreg_c1.0
+extra_trees
+rf
+hgb
+soft_ensemble
+
+Windows:
+expanding
+recent_3000
+
+The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout.
+
+⸻
+
+102. TWO-STAGE PREQUENTIAL SEARCH
+
+Stage A:
+Development chronological WFO
+→ purge
+→ embargo
+→ train-window policy
+→ fit candidate
+→ score untouched block
+→ same-block frequency baseline
+→ block stability
+
+Stage B:
+Finalists only
+→ chronological temperature calibration from earlier training rows
+→ untouched later block
+→ incumbent same-observation comparison
+→ moving-block bootstrap
+→ effective sample size
+→ newest/worst block inspection
+
+Frozen Holdout:
+descriptive only, one final score surface, never used for selection or gate.
+
+No candidate is promotion-ready from this matrix alone.
+
+⸻
+
+103. FEATURE ECOLOGY
+
+研究はfeature countではなくincremental informationを目的とする。
+
+Group ablation:
+returns/momentum
+volatility/regime
+candle shape
+volume/flow
+trend
+compact cross-family
+
+Future candidates may add interactions, transformations, conditional features and redundancy deletion. Each feature set is an ordered identity linked to the canonical feature schema. Same-upstream features do not increase source independence.
+
+Feature-level PIT provenance, when present, requires:
+feature_pit_status = PASS
+feature_snapshot_cutoff <= prediction_cutoff
+feature_max_available_at <= prediction_cutoff
+
+Missing optional lineage is not inferred as PASS.
+
+⸻
+
+104. MODEL / HYPERPARAMETER ECOLOGY
+
+Model family and parameter regime are separate experiment axes.
+
+Candidate dimensions include:
+regularization
+tree depth
+leaf size
+number of estimators
+learning rate
+class weighting
+feature subsampling
+
+Equivalent candidates must be fingerprinted and deduplicated. High-complexity candidates require incremental OOS and robustness value before adoption.
+
+⸻
+
+105. WINDOW / RECENCY ECOLOGY
+
+Compare:
+expanding
+recent fixed windows
+future rolling windows
+regime-conditioned windows
+
+Window selection must be prequential. The scored outer block cannot influence the selected window. A recent-window gain is not sufficient when newest block, worst block, calibration, robustness or failure concentration degrades.
+
+⸻
+
+106. CALIBRATION / PROBABILITY ECOLOGY
+
+Separate raw prediction skill from probability reliability.
+
+Research:
+raw
+temperature scaling
+future validated vector/scalar calibration
+probability averaging
+confidence shrinkage
+selective confidence threshold
+
+Calibration parameters are chosen from data available before the scored block. Accuracy-only gains are insufficient for adoption.
+
+⸻
+
+107. ROUTING / UNCERTAINTY / SELECTIVE ECOLOGY
+
+Routing candidates:
+regime
+volatility
+liquidity
+model disagreement
+OOD
+data quality
+source reliability
+recent error
+forecast age
+
+Decision candidates:
+PREDICT_NOW
+ACQUIRE_MORE
+WAIT
+RECOMPUTE
+ROUTE
+FALLBACK
+ABSTAIN
+
+Separate:
+Prediction Confidence
+Data Confidence
+Source Confidence
+PIT Confidence
+Model Confidence
+Regime Confidence
+System Confidence
+Predictability
+
+Selective policies must report coverage, retained accuracy, LogLoss, Brier, ECE and failure concentration.
+
+⸻
+
+108. TIMING / INFORMATION-VALUE ECOLOGY
+
+Test the information acquisition policy itself:
+
+immediate
+5m
+10m
+15m
+30m
+late refresh
+wait-for-confirmation
+
+and:
+
+acquire_more_source
+recompute_features
+wait_for_new_candle
+wait_for_liquidity_confirmation
+fallback_to_independent_source
+abstain
+
+Compare PIT, latency, coverage, incremental information value, compute, failure risk and forecast lifetime.
+
+⸻
+
+109. TARGET / HORIZON FIREWALL
+
+Primary target remains:
+UP / FLAT / DOWN
+5m / 10m
+
+Adjacent research targets include:
+binary direction
+return
+volatility
+tail event
+regime transition
+predictability
+failure probability
+forecast lifetime
+
+Every adjacent target has an independent target_definition_version and evidence chain. No 3-class Production evidence transfers automatically.
+
+⸻
+
+110. MULTIPLE TESTING / DEPENDENCE
+
+Every broad experiment records:
+candidate_count
+screened_count
+finalist_count
+experiment_fingerprint
+analysis_git_sha
+source/data snapshot
+feature set
+model
+window
+calibration
+folds
+n
+effective sample size
+worst block
+newest block
+
+Candidate-vs-baseline and candidate-vs-incumbent comparisons use identical observations.
+
+Prefer HAC / moving-block bootstrap / cluster bootstrap to IID inference for time-dependent evidence. Exploratory winner ≠ performance verification ≠ promotion approval.
+
+⸻
+
+111. EVIDENCE AND MAIN-LINEAGE FIREWALL
+
+Pattern output must always declare:
+research_only=true
+production_changed=false
+promotion_allowed=false
+
+Analysis Git SHA is the SHA that actually executed the experiment. A later evidence-persistence commit never replaces that analysis identity.
+
+If main advances while a long experiment is running, the stale run may preserve an artifact but must refuse to push its evidence into main. This prevents stale code/data snapshots from becoming current evidence.
+
+⸻
+
+112. CROSS-PROJECT MECHANISM TRANSFER — 2026-10-04
+
+Reference repositories:
+Baseball-Prediction-System
+BTC-Prediction-Research
+7-Sport-Prediction-Research
+Soccer-Prediction-Research
+Stock-Daily-Prediction-3000
+
+Transferred mechanisms only:
+
+7-Sport:
+event/cluster-aware evaluation
+enrichment failure fail-closed
+success-only checkpoint
+critical-state single writer
+
+Soccer:
+prediction-cutoff lineage
+feature-level PIT provenance
+mature-prior temporal learning
+fail-closed diagnostic states
+
+Baseball:
+dataset/source readiness
+immutable prediction/experience audit
+outcome maturity firewall
+temporal conformal research
+
+Stock:
+nested/prequential selection
+contiguous prior-fold evidence
+dependence-aware block bootstrap
+explicit TESTS_PASSED / AUDIT_PASSED handoff
+evidence freshness
+
+Transfer path:
+DISCOVER
+→ ABSTRACT_MECHANISM
+→ COMPATIBILITY
+→ LOCAL_IMPLEMENTATION
+→ TEST
+→ LOCAL_PIT
+→ LOCAL_OOS/WFO
+→ ROBUSTNESS
+→ LOCAL_FROZEN_HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+Cross-project performance, OOS, holdout, Production, prediction and data snapshots never become BTC evidence.
+
+⸻
+
+113. PATTERN MATRIX DEFINITION OF DONE
+
+The broad search is considered execution-complete only when:
+SPEC
+CODE
+DATA
+PIT
+LEAKAGE
+OOS/WFO
+CALIBRATION
+INCUMBENT COMPARISON
+DEPENDENCE-AWARE STATISTICS
+FROZEN HOLDOUT FIREWALL
+REPRODUCIBILITY
+RECOVERY
+EVIDENCE PERSISTENCE
+STATE CONSISTENCY
+
+are represented in the artifact or explicitly marked unavailable/deferred.
+
