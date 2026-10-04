@@ -2336,7 +2336,9 @@ Windows:
 expanding
 recent_3000
 
-The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout.
+The matrix is research-only. It does not mutate Production, model registry, live prediction state or frozen holdout. Candidate execution errors and insufficient-fold candidates are retained as explicit research failures rather than silently discarded.
+
+Evidence-affecting pushes may supersede older in-flight matrix runs. Scheduled/manual matrix runs are not cancelled merely because another scheduled/manual run exists; the final persistence step still rejects stale main lineage.
 
 ⸻
 

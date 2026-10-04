@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: btc-pattern-matrix-research
-  cancel-in-progress: false
+  cancel-in-progress: \${{ github.event_name == 'push' }}
 
 permissions:
   contents: write

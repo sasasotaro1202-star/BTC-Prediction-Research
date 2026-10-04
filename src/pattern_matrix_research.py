@@ -219,13 +219,16 @@ def holdout(h,rows,c):
 
 def run_horizon(h,rows):
     if len(rows)<=HOLDOUT+MIN_TRAIN+FINAL_TEST*5:return {"status":"DEFERRED","reason":"insufficient_archive_rows","n":len(rows)}
-    dev=rows[:-HOLDOUT]; cs=candidates(); screened=[]
+    dev=rows[:-HOLDOUT]; cs=candidates(); screened=[]; screen_failures=[]
     for c in cs:
         try:
             r=screen(h,dev,c)
-            if r is not None:screened.append(r)
-        except Exception:
-            pass
+            if r is not None:
+                screened.append(r)
+            else:
+                screen_failures.append({"config":c,"error_type":"NO_VALID_SCREEN_FOLDS","error":"candidate produced fewer than the minimum valid chronological screen blocks"})
+        except Exception as e:
+            screen_failures.append({"config":c,"error_type":type(e).__name__,"error":str(e)[:300]})
     screened.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
     fs=[]; failures=[]
     for c in screened[:FINALISTS]:
@@ -236,7 +239,7 @@ def run_horizon(h,rows):
         except Exception as e:failures.append({"config":clean,"error_type":type(e).__name__,"error":str(e)[:300]})
     fs.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
     best={k:fs[0][k] for k in ("feature_set","model","window","fingerprint")} if fs else None
-    return {"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
+    return {"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":screen_failures+failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
 
 def main():
     sha=os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"

@@ -50,6 +50,12 @@ def test_lineage_and_promotion_firewall():
     assert '"production_changed":False' in s
     assert '"promotion_allowed":False' in s
 
+def test_screen_failures_are_persisted_not_silently_discarded():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert "screen_failures=[]" in s
+    assert 'screen_failures.append({"config":c,"error_type":type(e).__name__' in s
+    assert '"failures":screen_failures+failures' in s
+
 def test_workflow_handoff_and_stale_main_guard():
     s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
     assert 'echo "TESTS_PASSED=true" >> "$GITHUB_ENV"' in s
