@@ -1299,6 +1299,7 @@ STALE SOURCE + TRUSTED PRODUCTION
 Snapshot mismatch
 
 Bootstrap trainingはresearch-onlyとする。bootstrapで開発gateを通過しても、既存Productionのmodel artifactまたはmodel_registryを直接更新してはならない。Production replacementはLOCAL PIT → LOCAL OOS/WFO → CALIBRATION → ROBUSTNESS → FROZEN HOLDOUT → SHADOW → PROMOTIONの独立証拠を要求する。scheduled live workflowはmodel ageだけを理由にProduction generationをrefreshしてはならず、既存generationを安定保持する。
+Promotion Gateはaggregate strict-PIT件数だけではPASSしてはならない。5mと10mそれぞれの`primary_horizon_gate`が存在し、`ready=true`かつstrict-primary件数が共通minimum以上であることを独立に検証する。片方でも欠落・不足・FAILならpromotion_allowed=falseとする。
 
 ⸻
 
