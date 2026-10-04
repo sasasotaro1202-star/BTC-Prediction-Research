@@ -32,6 +32,18 @@ class LiveResearchEvidenceContractTests(unittest.TestCase):
         text = (ROOT / ".github" / "workflows" / "btc_live_cycle.yml").read_text(encoding="utf-8")
         self.assertIn('PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py', text)
         self.assertNotIn('PYTHONPATH="\\${GITHUB_WORKSPACE}/src:\\${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py', text)
+    def test_bootstrap_is_not_a_production_refresh_path(self):
+        text = (ROOT / ".github" / "workflows" / "btc_live_cycle.yml").read_text(encoding="utf-8")
+        self.assertIn("bootstrap as research-only diagnosis", text)
+        self.assertIn("Production generations remain stable", text)
+        self.assertNotIn("max(ages, default=float(\"inf\")) >= 24 * 3600", text)
+
+    def test_bootstrap_training_module_cannot_publish_to_production(self):
+        text = (ROOT / "src" / "bootstrap_train.py").read_text(encoding="utf-8")
+        self.assertIn("def _current_production_version", text)
+        self.assertIn("production_publish_blocked_research_only", text)
+        self.assertIn("never writes a Production model or model_registry entry", text)
+        self.assertNotIn("joblib.dump(model, MODEL_DIR / f\"{horizon}.joblib\")", text)
 
 if __name__ == "__main__":
     unittest.main()

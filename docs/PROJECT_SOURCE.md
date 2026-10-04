@@ -1298,6 +1298,8 @@ STALE SOURCE + TRUSTED PRODUCTION
 
 Snapshot mismatch
 
+Bootstrap trainingはresearch-onlyとする。bootstrapで開発gateを通過しても、既存Productionのmodel artifactまたはmodel_registryを直接更新してはならない。Production replacementはLOCAL PIT → LOCAL OOS/WFO → CALIBRATION → ROBUSTNESS → FROZEN HOLDOUT → SHADOW → PROMOTIONの独立証拠を要求する。scheduled live workflowはmodel ageだけを理由にProduction generationをrefreshしてはならず、既存generationを安定保持する。
+
 ⸻
 
 56. HOLDOUT FIREWALL
@@ -2637,4 +2639,3 @@ EVIDENCE PERSISTENCE
 STATE CONSISTENCY
 
 are represented in the artifact or explicitly marked unavailable/deferred.
-
