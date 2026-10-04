@@ -317,9 +317,14 @@ def load_frontier():
    if not isinstance(state,dict) or state.get("schema_version")!=1: raise RuntimeError("invalid data frontier state schema")
    p["source_state"]=dict(state.get("source_state") or {})
    for source_state in p["source_state"].values():
-    if isinstance(source_state,dict) and "historical_acquisition_failures_total" not in source_state:
-     source_state["historical_acquisition_failures_total"]=int(
-      source_state.get("historical_acquisition_failures",0) or 0
+    if isinstance(source_state,dict):
+     current_consecutive=int(source_state.get("historical_acquisition_failures",0) or 0)
+     current_total=int(source_state.get("historical_acquisition_failures_total",0) or 0)
+     # Cumulative failures must never be below the current consecutive count.
+     # This also repairs partial migrations created by overlapping workflow runs.
+     source_state["historical_acquisition_failures_total"]=max(
+      current_total,
+      current_consecutive,
      )
    p["history"]=list(state.get("history") or [])
   else:
