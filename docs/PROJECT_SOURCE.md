@@ -1885,8 +1885,9 @@ The latest fixed CI run for binary_sign_v1 completed successfully. It remains RE
 
 * 5m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51254, logloss 0.69323, Brier 0.25004, ECE 0.00097.
 * 10m chronological OOS: 18,500 evaluated rows; ExtraTrees best development candidate; OOS accuracy 0.51557, logloss 0.69285, Brier 0.24985, ECE 0.00279.
-* 5m live Binance-primary strict-PIT: n=395, accuracy 0.51392, logloss 0.69166, Brier 0.24926, ECE 0.00629.
-* 10m live Binance-primary strict-PIT: n=395, accuracy 0.56962, logloss 0.68836, Brier 0.24761, ECE 0.05565.
+* 5m live Binance-primary strict-PIT: n=397, accuracy 0.52141, logloss 0.69166, Brier 0.24926, ECE 0.01380.
+* 10m live Binance-primary strict-PIT: n=396, accuracy 0.56818, logloss 0.68858, Brier 0.24772, ECE 0.05426.
+* Validated CI run: #15; analysis Git SHA: 1724b871d100942619666cba117c4b33dfbcae35.
 * Frozen holdout is descriptive only and remains protected from candidate selection.
 * Production replacement remains prohibited; independent longer robustness, calibration and shadow evidence are still required.
 
@@ -2037,18 +2038,3 @@ Pull Requestのvalidationはsuperseded runをcancelしてよいが、schedule / 
 並行collector間のcheckpoint競合では、push retryごと、および最終publish時にlocal `end_time_ms` とremote `end_time_ms` を再比較する。localがremote以下なら古いsnapshotの上書きを行わず終了する。
 
 この制御はData/PIT evidenceの欠損・巻き戻しを防ぐための運用整合性機構であり、Production model/stateを変更しない。
-
-⸻
-
-91. RESUMABLE FLOW COLLECTOR SERIALIZATION
-
-Binance Flow Researchの長時間collectorは、schedule / workflow_dispatchだけで起動する。
-
-長時間capture同士はstableなcollector concurrency groupでserializeし、後続runをqueueする。
-mainへの新しいcommitでactive captureをcancelしない。
-
-Pull Requestのvalidationだけはhead branch単位でsuperseded runをcancelしてよい。
-
-source / test変更はUnit TestsとPull Request validationで検証し、mainへのcommitごとに25分captureを重複起動しない。
-
-これにより、checkpointの再開性を維持しながら、同一時間帯のcollector重複・Actions資源浪費・不要なcache競合を抑える。
