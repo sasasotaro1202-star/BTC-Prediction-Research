@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,11 +17,27 @@ from sklearn.preprocessing import StandardScaler
 try:
     from bootstrap_train import make_features
     from binance_history import binance_archive_rows
-    from label_policy import BINARY_CLASSES, BINARY_TARGET_VERSION, binary_direction_from_return
+    from label_policy import (
+        BINARY_CLASSES,
+        BINARY_TARGET_VERSION,
+        binary_direction_from_return,
+        binary_direction_from_prices,
+    )
+    from db import DB
+    from feature_schema import FEATURES
+    from model_compare import strict_pit_provenance_reason
 except ModuleNotFoundError:
     from src.bootstrap_train import make_features
     from src.binance_history import binance_archive_rows
-    from src.label_policy import BINARY_CLASSES, BINARY_TARGET_VERSION, binary_direction_from_return
+    from src.label_policy import (
+        BINARY_CLASSES,
+        BINARY_TARGET_VERSION,
+        binary_direction_from_return,
+        binary_direction_from_prices,
+    )
+    from src.db import DB
+    from src.feature_schema import FEATURES
+    from src.model_compare import strict_pit_provenance_reason
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "historical_research" / "binary_target_oos.json"
@@ -156,6 +173,101 @@ def _wfo(rows, end_index):
     return {"status": "OK", "blocks": len(block_metrics), "summary": summary, "block_metrics": block_metrics}
 
 
+
+def load_live_primary_rows(horizon):
+    actual_col = f"actual_price_{horizon}"
+    with sqlite3.connect(DB) as con:
+        rows = con.execute(
+            f"""SELECT prediction_id, created_at_utc, base_price, feature_json,
+                       {actual_col}, scenario_json
+                FROM predictions
+                WHERE {actual_col} IS NOT NULL
+                ORDER BY created_at_utc, prediction_id"""
+        ).fetchall()
+    out = []
+    for pid, created, base, feature_json, actual, scenario_text in rows:
+        try:
+            scenario = json.loads(scenario_text or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if str(scenario.get("production_mode", "")) != "binance_primary":
+            continue
+        if strict_pit_provenance_reason(scenario, created) is not None:
+            continue
+        try:
+            feature_obj = json.loads(feature_json)
+            x = [float(feature_obj[name]) for name in FEATURES]
+            if not np.isfinite(np.asarray(x, dtype=float)).all():
+                continue
+            label = binary_direction_from_prices(float(base), float(actual))
+            out.append({
+                "id": int(pid),
+                "created": str(created),
+                "x": x,
+                "y": label,
+                "target_version": BINARY_TARGET_VERSION,
+                "data_source": "live_binance_primary",
+            })
+        except (TypeError, ValueError, KeyError, json.JSONDecodeError, FloatingPointError):
+            continue
+    return out
+
+
+def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
+    if not live_rows:
+        return {
+            "status": "DEFERRED",
+            "reason": "no_strict_live_binance_primary_rows",
+            "n": 0,
+            "target_version": BINARY_TARGET_VERSION,
+            "research_only": True,
+            "production_changed": False,
+        }
+
+    # Train strictly before the first live observation. This prevents archive/live
+    # overlap from contaminating the local live-primary evaluation.
+    first_live = min(r["created"] for r in live_rows)
+    train = [r for r in archive_rows if r["created"] < first_live]
+    if len(train) < MIN_TRAIN:
+        return {
+            "status": "DEFERRED",
+            "reason": "insufficient_pre_live_archive_training_rows",
+            "n_live": len(live_rows),
+            "n_train": len(train),
+            "minimum_train": MIN_TRAIN,
+            "target_version": BINARY_TARGET_VERSION,
+            "research_only": True,
+            "production_changed": False,
+        }
+
+    model = _factories()[candidate]()
+    X = np.asarray([r["x"] for r in train], dtype=float)
+    y = np.asarray([r["y"] for r in train])
+    Xt = np.asarray([r["x"] for r in live_rows], dtype=float)
+    yt = [r["y"] for r in live_rows]
+    model.fit(X, y)
+    p = np.asarray(model.predict_proba(Xt), dtype=float)
+    classes = [str(c) for c in getattr(model, "classes_", [])]
+    up_idx = classes.index("UP")
+    up_p = np.clip(p[:, up_idx], 1e-6, 1 - 1e-6)
+    return {
+        "status": "OK",
+        "target_version": BINARY_TARGET_VERSION,
+        "classes": list(BINARY_CLASSES),
+        "source": "live_binance_primary",
+        "model": candidate,
+        "n": len(live_rows),
+        "train_n": len(train),
+        "train_end": train[-1]["created"],
+        "live_start": live_rows[0]["created"],
+        "metrics": _metrics(yt, up_p),
+        "pit": "strict_primary",
+        "cross_source_overlap_guard": True,
+        "research_only": True,
+        "production_changed": False,
+    }
+
+
 def evaluate(horizon):
     raw = binance_archive_rows(MAX_ROWS + 100)
     rows = build_rows(raw, horizon)
@@ -192,6 +304,8 @@ def evaluate(horizon):
         up_idx = classes.index("UP")
         holdout_scores[name] = _metrics(y_hold, p[:, up_idx])
     baseline = wfo["block_metrics"][0]["frequency_baseline"]
+    live_rows = load_live_primary_rows(horizon)
+    live_primary = _evaluate_live_primary(horizon, rows, live_rows, best)
     return {
         "status": "OK",
         "schema_version": 1,
@@ -215,6 +329,7 @@ def evaluate(horizon):
         "best_development_candidate": best,
         "holdout_descriptive_only": True,
         "holdout_scores": holdout_scores,
+        "live_primary": live_primary,
         "promotion": {
             "decision": "HOLD",
             "eligible": False,
