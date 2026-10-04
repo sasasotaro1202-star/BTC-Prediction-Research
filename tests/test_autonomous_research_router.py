@@ -158,6 +158,17 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
 
+    def test_missing_trajectory_evidence_prioritizes_v13_refresh(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+            self.assertEqual(route["priority"], 88)
+            self.assertEqual(route["reason"], "time_state_trajectory_evidence_missing_stale_or_failed")
+            self.assertIn("5m:trajectory_artifact_missing", route["signals"])
+            self.assertIn("10m:trajectory_artifact_missing", route["signals"])
+
     def test_frontier_is_used_when_no_higher_priority_issue_exists(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -61,6 +61,7 @@ try:
     )
     from src.model_compare import load_archive_research_rows, metrics
     from src.prediction_policy_oos import evaluate_policy_case, summarize_policy_blocks, evaluate_policy_holdout_case
+    from src.time_state_trajectory import run as run_time_state_trajectory
 except ModuleNotFoundError:
     from innovative_control_layer_oos import (
         EXPERTS,
@@ -80,6 +81,7 @@ except ModuleNotFoundError:
     )
     from model_compare import load_archive_research_rows, metrics
     from prediction_policy_oos import evaluate_policy_case, summarize_policy_blocks, evaluate_policy_holdout_case
+    from time_state_trajectory import run as run_time_state_trajectory
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "historical_research"
@@ -1485,6 +1487,7 @@ def main():
         encoding="utf-8",
     )
     print(json.dumps(aggregate, indent=2, sort_keys=True))
+    run_time_state_trajectory()
 
 
 if __name__ == "__main__":

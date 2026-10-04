@@ -10,6 +10,7 @@ higher-priority lane is already active or fresh.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +199,43 @@ def _high_confidence_overreach(root: Path) -> list[str]:
     return signals
 
 
+
+TRAJECTORY_STALE_SECONDS = 21600
+
+
+def _trajectory_refresh_signals(root: Path) -> list[str]:
+    """Return research-only refresh signals for the persisted trajectory lane."""
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        path = root / "data" / "historical_research" / f"time_state_trajectory_{horizon}.json"
+        if not path.is_file():
+            signals.append(f"{horizon}:trajectory_artifact_missing")
+            continue
+        obj = _load(path)
+        if obj is None:
+            signals.append(f"{horizon}:trajectory_artifact_invalid")
+            continue
+        if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+            signals.append(f"{horizon}:trajectory_safety_contract_invalid")
+            continue
+        if obj.get("status") in {"FAILED", "DEFERRED"}:
+            signals.append(f"{horizon}:trajectory_status={obj.get('status')}")
+            continue
+        raw_generated = obj.get("generated_at_utc")
+        if not isinstance(raw_generated, str):
+            signals.append(f"{horizon}:trajectory_generated_at_missing")
+            continue
+        try:
+            generated = datetime.fromisoformat(raw_generated.replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - generated).total_seconds()
+        except (TypeError, ValueError):
+            signals.append(f"{horizon}:trajectory_generated_at_invalid")
+            continue
+        if age > TRAJECTORY_STALE_SECONDS:
+            signals.append(f"{horizon}:trajectory_age_seconds={int(age)}>{TRAJECTORY_STALE_SECONDS}")
+    return signals
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -283,6 +321,7 @@ def choose(root: Path) -> dict[str, Any]:
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
+    trajectory_signals = _trajectory_refresh_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -303,6 +342,15 @@ def choose(root: Path) -> dict[str, Any]:
             90,
             "PROMOTION_HOLD_RESEARCH",
             promotion_signals,
+        ))
+
+    if trajectory_signals:
+        routes.append(_decision(
+            "btc_ultimate_final_v13_e2e.yml",
+            "time_state_trajectory_evidence_missing_stale_or_failed",
+            88,
+            "TRAJECTORY_RESEARCH_REFRESH",
+            trajectory_signals,
         ))
 
     if uncertainty_signals:

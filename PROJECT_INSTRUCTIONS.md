@@ -184,3 +184,7 @@ The auto-merge workflow never checks out or executes PR code, keeps Production m
 
 
 The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.
+
+
+## Time-state trajectory research
+The existing V13 lane now runs a research-only prequential time-state trajectory layer from persisted Binance-primary prediction events. It forecasts future direction/state transitions from strictly prior prediction-time states and evaluates a fixed 10% trajectory blend against the same-observation incumbent. The artifact records PIT/research-only/analysis-SHA lineage and never changes Production. Missing, failed, deferred, or stale trajectory evidence automatically routes back through the existing V13 lane; cross-horizon alignment remains separate until independently verified.
