@@ -2025,3 +2025,15 @@ GitHub Actionsの `needs` contextは直接依存jobだけを保証するため�
 
 24H Stage 4はStage 1 / 2 / 3を直接依存として保持し、terminal guardで全upstream resultを確認する。これは研究成果ではなくWorkflow Integrityの制御であり、修正時もProduction stateへ影響させない。
 
+
+⸻
+
+90. RESUMABLE FLOW COLLECTOR CONCURRENCY INTEGRITY
+
+Binance Flow Researchのrolling collectorはcheckpointを専用branchへ保存するため、後続main commitで実行中captureをキャンセルしてはならない。
+
+Pull Requestのvalidationはsuperseded runをcancelしてよいが、schedule / pushのcollectorはrun-id単位で並行可能とし、後続main state commitによるSIGTERMを避ける。
+
+並行collector間のcheckpoint競合では、push retryごと、および最終publish時にlocal `end_time_ms` とremote `end_time_ms` を再比較する。localがremote以下なら古いsnapshotの上書きを行わず終了する。
+
+この制御はData/PIT evidenceの欠損・巻き戻しを防ぐための運用整合性機構であり、Production model/stateを変更しない。
