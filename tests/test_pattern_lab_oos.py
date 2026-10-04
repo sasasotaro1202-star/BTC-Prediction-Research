@@ -23,3 +23,5 @@ class PatternLabContractTests(unittest.TestCase):
             if a is not None: os.environ["TESTS_PASSED"]=a
             if b is not None: os.environ["AUDIT_PASSED"]=b
 if __name__=="__main__": unittest.main()
+
+# CI contract marker: latest multi-pattern model matrix.
