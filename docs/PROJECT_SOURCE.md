@@ -2037,3 +2037,18 @@ Pull Requestのvalidationはsuperseded runをcancelしてよいが、schedule / 
 並行collector間のcheckpoint競合では、push retryごと、および最終publish時にlocal `end_time_ms` とremote `end_time_ms` を再比較する。localがremote以下なら古いsnapshotの上書きを行わず終了する。
 
 この制御はData/PIT evidenceの欠損・巻き戻しを防ぐための運用整合性機構であり、Production model/stateを変更しない。
+
+⸻
+
+91. RESUMABLE FLOW COLLECTOR SERIALIZATION
+
+Binance Flow Researchの長時間collectorは、schedule / workflow_dispatchだけで起動する。
+
+長時間capture同士はstableなcollector concurrency groupでserializeし、後続runをqueueする。
+mainへの新しいcommitでactive captureをcancelしない。
+
+Pull Requestのvalidationだけはhead branch単位でsuperseded runをcancelしてよい。
+
+source / test変更はUnit TestsとPull Request validationで検証し、mainへのcommitごとに25分captureを重複起動しない。
+
+これにより、checkpointの再開性を維持しながら、同一時間帯のcollector重複・Actions資源浪費・不要なcache競合を抑える。

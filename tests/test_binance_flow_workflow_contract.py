@@ -8,11 +8,22 @@ def _concurrency_block() -> str:
     return text.split("\njobs:", 1)[0]
 
 
-def test_flow_research_collector_is_not_cancelled_by_main_pushes_or_schedule():
+def test_flow_research_collectors_are_serialized_and_not_cancelled_by_main_commits():
     block = _concurrency_block()
-    assert "group: btc-binance-flow-research-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}" in block
+    assert "group: btc-binance-flow-research-${{ github.event_name == 'pull_request' && github.head_ref || 'collector' }}" in block
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in block
-    assert "cancel-in-progress: ${{ github.event_name != 'schedule' }}" not in block
+    assert "github.event_name == 'push'" not in block
+    assert "github.event_name != 'schedule'" not in block
+
+
+def test_flow_research_long_collector_is_schedule_or_manual_only():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    collector = workflow.split("\n  collector:", 1)[1]
+    assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in collector
+    assert "github.event_name == 'push'" not in collector
+    assert "capture-seconds 1500" in collector
+
+
 
 
 def test_flow_research_pull_requests_remain_cancelable_when_superseded():
