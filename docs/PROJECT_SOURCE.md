@@ -1933,3 +1933,19 @@ A baseline cannot be selected as a trainable challenger.
 
 Missing diagnostic evidence is a verification failure, not a zero or PASS.
 
+
+
+⸻
+
+85. BINARY EVIDENCE CODE-LINEAGE BINDING
+
+Binary Target Research evidence must record the exact analysis Git SHA used to generate the evidence.
+
+The workflow must require:
+
+analysis_git_sha = workflow GITHUB_SHA
+
+A research-evidence commit created after the analysis is intentionally distinct from the analysis commit. The recorded analysis SHA identifies the code/data logic under evaluation and prevents stale or regenerated evidence from being mistaken for evidence produced by the current implementation.
+
+LOCAL_UNPINNED runs are not Production evidence.
+
