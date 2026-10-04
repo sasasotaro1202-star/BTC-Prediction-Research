@@ -103,9 +103,12 @@ def test_screen_selection_is_multi_objective_and_diverse():
 def test_canonical_docs_match_matrix_contract():
     instructions=Path("PROJECT_INSTRUCTIONS.md").read_text(encoding="utf-8")
     source=Path("docs/PROJECT_SOURCE.md").read_text(encoding="utf-8")
+    expected_matrix_markers = (
+        "10 feature sets × 8 deterministic model variants × 3 training-window policies",
+        "240 configurations",
+    )
     for text in (instructions,source):
-        assert "10 feature sets" in text or "10 feature sets × 8 deterministic model variants × 3 training-window policies = 240 configurations" in text
-        assert "240 configurations per horizon" in text
+        assert all(marker in text for marker in expected_matrix_markers)
         assert "recent_1500" in text
         assert "logreg_c0.03" in text
         assert "mean_reversion" in text
