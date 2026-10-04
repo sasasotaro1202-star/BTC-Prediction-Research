@@ -23,3 +23,26 @@ def test_supervisor_monitors_case_adaptation_research_lanes():
         'btc_selective_prediction_oos.yml',
     ):
         assert f'dispatch_if_stale {workflow}' in text
+
+
+def test_supervisor_routes_one_additional_evidence_driven_lane():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'python src/autonomous_research_router.py' in text
+    assert 'autonomous_route.json' in text
+    assert 'Dispatching routed research candidate:' in text
+    for workflow in (
+        'btc_research_readiness.yml',
+        'btc_autonomous_data_frontier.yml',
+        'btc_adaptive_calibration_replay.yml',
+        'btc_experience_policy_oos.yml',
+        'btc_rich_production_challenger.yml',
+        'btc_ultimate_final_v13_e2e.yml',
+    ):
+        assert workflow in text
+
+
+def test_supervisor_fail_closes_router_failure_to_readiness():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert "route_workflow='btc_research_readiness.yml'" in text
+    assert "route_reason='router_failed_fail_closed'" in text
+

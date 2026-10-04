@@ -42,6 +42,42 @@ jobs:
           set -u
           . scripts/ci_network_retry.sh
           degraded=0
+          route_workflow=''
+          route_threshold=''
+          route_reason='router_unavailable'
+
+          # Select at most one additional research lane from current published evidence.
+          # This router is deterministic, research-only, fail-closed, and allowlisted.
+          set +e
+          route_json="$(python src/autonomous_research_router.py 2>/tmp/btc_router.err)"
+          route_status=$?
+          set -e
+          printf '%s\n' "$route_json" > autonomous_route.json
+          if [ "$route_status" -eq 0 ] && jq -e '
+              .production_impact == false
+              and (
+                .workflow == "btc_research_readiness.yml"
+                or .workflow == "btc_autonomous_data_frontier.yml"
+                or .workflow == "btc_adaptive_calibration_replay.yml"
+                or .workflow == "btc_experience_policy_oos.yml"
+                or .workflow == "btc_rich_production_challenger.yml"
+                or .workflow == "btc_ultimate_final_v13_e2e.yml"
+              )
+              and (.threshold_seconds | type == "number")
+              and (.threshold_seconds > 0)
+              and (.threshold_seconds <= 604800)
+            ' autonomous_route.json >/dev/null 2>&1; then
+            route_workflow="$(jq -r '.workflow // empty' autonomous_route.json)"
+            route_threshold="$(jq -r '.threshold_seconds // empty' autonomous_route.json)"
+            route_reason="$(jq -r '.reason // "unspecified"' autonomous_route.json)"
+          else
+            echo 'ERROR: autonomous research router failed; fail-closed to readiness audit.' >&2
+            cat /tmp/btc_router.err >&2 || true
+            degraded=1
+            route_workflow='btc_research_readiness.yml'
+            route_threshold=3600
+            route_reason='router_failed_fail_closed'
+          fi
 
           dispatch_if_stale() {
             workflow="$1"
@@ -109,9 +145,14 @@ jobs:
           dispatch_if_stale btc_uncertainty_layer_oos.yml 21600
           dispatch_if_stale btc_multiscale_frozen_replay.yml 21600
           dispatch_if_stale btc_time_regime_research.yml 28800
-          dispatch_if_stale btc_adaptive_calibration_replay.yml 28800
           dispatch_if_stale btc_selective_prediction_oos.yml 43200
 
+
+          # Run one evidence-driven research lane after the independent stale checks.
+          if [ -n "${route_workflow}" ] && [ -n "${route_threshold}" ]; then
+            echo "Dispatching routed research candidate: ${route_workflow} (${route_reason})"
+            dispatch_if_stale "${route_workflow}" "${route_threshold}"
+          fi
           cat > supervisor_status.json <<EOF
           {
             "schema_version": 2,
@@ -133,6 +174,8 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: btc-continuous-supervisor-status-${{ github.run_id }}
-          path: supervisor_status.json
+          path: |
+            supervisor_status.json
+            autonomous_route.json
           if-no-files-found: error
           retention-days: 3

@@ -162,3 +162,7 @@ Finalist selection is multi-objective rank-based across LogLoss, Brier, accuracy
 Exploratory winners are not Production evidence. The frozen holdout never chooses a pattern, feature, model, window, calibration, router, threshold or promotion decision.
 
 Selective prediction and timing remain separate research axes. Valid actions include PREDICT_NOW / ACQUIRE_MORE / WAIT / RECOMPUTE / ROUTE / FALLBACK / ABSTAIN. Any learned action must obey the knowledge-time maturity firewall.
+
+## GitHub-side autonomous research routing
+
+The BTC Continuous Supervisor invokes `src/autonomous_research_router.py` and dispatches at most one additional research workflow from a deterministic explicit allowlist based on current published evidence. The router is research-only, fail-closed, and cannot select a Production model or change the Production registry. Existing PIT, OOS, robustness, frozen-holdout, shadow, and promotion gates remain mandatory. No paid API or external LLM service is required.
