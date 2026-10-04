@@ -66,8 +66,14 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self._healthy_base(root)
             self._write(
                 root / "data" / "historical_research",
-                "data_frontier_run.json",
-                {"next_best_action": "repair_historical_frontier_bounds"},
+                "data_frontier.json",
+                {
+                    "candidates": {
+                        "candidate:demo": {
+                            "lifecycle": {"research_selection_eligible": True}
+                        }
+                    }
+                },
             )
             route = choose(root)
             self.assertEqual(route["workflow"], "btc_autonomous_data_frontier.yml")
