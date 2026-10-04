@@ -348,10 +348,22 @@ def audit() -> dict:
 
     # Promotion evidence is tied to the production benchmark venue. Fallback
     # observations remain useful research data but cannot satisfy the primary
-    # PIT requirement.
+    # PIT requirement. The primary horizons are independent gates: satisfying
+    # the aggregate prediction count is insufficient if one horizon has weak
+    # or immature strict-PIT coverage.
+    primary_horizon_gate = {
+        horizon: {
+            "strict_primary_settled": int(coverage[horizon]["strict_primary_settled"]),
+            "minimum": MIN_STRICT_PIT_ROWS,
+            "ready": bool(
+                coverage[horizon]["strict_primary_settled"] >= MIN_STRICT_PIT_ROWS
+            ),
+        }
+        for horizon in ("5m", "10m")
+    }
     pit_ready = bool(
         not violations
-        and verified_primary_count >= MIN_STRICT_PIT_ROWS
+        and all(item["ready"] for item in primary_horizon_gate.values())
     )
     for horizon in ("5m", "10m"):
         item = coverage[horizon]
@@ -371,13 +383,19 @@ def audit() -> dict:
         "pit_verified_reason": (
             "strict_binance_primary_scope_verified"
             if pit_ready
-            else f"insufficient_binance_primary_pit_rows:{verified_primary_count}/{MIN_STRICT_PIT_ROWS}"
+            else "insufficient_binance_primary_pit_rows:"
+                 + ",".join(
+                     f"{h}={primary_horizon_gate[h]['strict_primary_settled']}/{MIN_STRICT_PIT_ROWS}"
+                     for h in ("5m", "10m")
+                     if not primary_horizon_gate[h]["ready"]
+                 )
         ),
         "checked_predictions": checked,
         "verified_predictions": verified_count,
         "verified_primary_predictions": verified_primary_count,
         "verified_fallback_predictions": verified_fallback_count,
         "min_strict_pit_rows": MIN_STRICT_PIT_ROWS,
+        "primary_horizon_gate": primary_horizon_gate,
         "coverage": coverage,
         "extended_horizon_audit": {
             "horizons": list(EXTENDED_RESEARCH_HORIZONS),
