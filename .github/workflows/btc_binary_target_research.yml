@@ -70,6 +70,11 @@ jobs:
                       raise SystemExit(f'{h}: holdout not protected')
                   if result.get('promotion', {}).get('eligible') is not False:
                       raise SystemExit(f'{h}: binary target cannot auto-promote')
+                  live = result.get('live_primary', {})
+                  if live.get('production_changed') not in (False, None):
+                      raise SystemExit(f'{h}: live binary research mutated production state')
+                  if live.get('status') == 'OK' and live.get('classes') != ['DOWN', 'UP']:
+                      raise SystemExit(f'{h}: live binary class contract mismatch')
           print('binary UP/DOWN target contract: VERIFIED')
           PY
 
