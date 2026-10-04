@@ -1974,3 +1974,21 @@ A material negative confidence gap in the 0.70+ bucket is an overconfidence sign
 
 The same surface also reports reliability of the learned prediction-error probability.
 
+
+
+87. FRONTIER HISTORICAL TIME-BOUND INTEGRITY
+
+Autonomous historical backfill moves from newer to older event-time windows. Durable frontier state must therefore extend:
+- earliest_event_time with MIN(existing, batch_first)
+- latest_event_time with MAX(existing, batch_last)
+
+Overwriting latest_event_time with the most recent backfill batch is invalid and can produce first_event_time > last_event_time.
+
+The frontier selector now:
+- detects reversed/malformed durable historical time bounds
+- records an explicit integrity issue instead of silently normalizing it
+- forces historical archive reacquisition when the issue exists, bypassing source cooldown
+- preserves production_eligible=false for all frontier acquisitions
+- validates that every acquisition source exposes a time_bounds_status
+
+Repair is evidence-generating and research-only. Existing invalid state is not manually rewritten without source-derived evidence.
