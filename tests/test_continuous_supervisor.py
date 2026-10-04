@@ -128,6 +128,8 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Rich Production Challenger',
         'BTC Ultimate Final V13 — Maximum Future-Generalization E2E',
         'BTC Autonomous Data Frontier',
+        'BTC Unit Tests',
+        'BTC Ops Preflight',
     ):
         assert f'- "{workflow}"' in text
     assert 'types: [completed]' in text
