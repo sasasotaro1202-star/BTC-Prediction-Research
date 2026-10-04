@@ -62,3 +62,12 @@ def test_ops_preflight_triggers_on_supervisor_and_router_changes():
         "tests/test_autonomous_research_router.py",
     ):
         assert f"      - '{path}'" in text
+
+
+
+def test_ops_preflight_validates_autonomous_router_output():
+    text = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
+    assert 'python src/autonomous_research_router.py > /tmp/autonomous_route.json' in text
+    assert 'router produced workflow outside allowlist' in text
+    assert 'router production_impact must be false' in text
+    assert 'router threshold is outside safe bounds' in text
