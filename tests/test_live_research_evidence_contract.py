@@ -28,5 +28,10 @@ class LiveResearchEvidenceContractTests(unittest.TestCase):
         self.assertIn("BTC_ROBUSTNESS_LIVE_ONLY", text)
 
 
+    def test_live_cycle_expands_workspace_for_experience_ledger(self):
+        text = (ROOT / ".github" / "workflows" / "btc_live_cycle.yml").read_text(encoding="utf-8")
+        self.assertIn('PYTHONPATH="${GITHUB_WORKSPACE}/src:${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py', text)
+        self.assertNotIn('PYTHONPATH="\\${GITHUB_WORKSPACE}/src:\\${GITHUB_WORKSPACE}/scripts" python src/experience_ledger.py', text)
+
 if __name__ == "__main__":
     unittest.main()
