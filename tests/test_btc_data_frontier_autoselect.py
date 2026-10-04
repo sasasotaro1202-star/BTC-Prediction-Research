@@ -831,3 +831,48 @@ class TestBTCDataFrontierAutoSelect(TestCase):
 
 if __name__=="__main__":
     main()
+
+
+
+    def test_historical_acquisition_failure_persists_reason(self):
+        frontier={"source_state":{}, "candidates":{}, "history":[]}
+        failed={
+            "source_id":"hyperliquid_ws",
+            "status":"ERROR",
+            "retrieved_at":"2026-10-04T07:20:00+00:00",
+            "production_eligible":False,
+            "error":"HTTPError:429:Too Many Requests",
+        }
+        with patch.object(mod, "_acquisition_due", return_value=True), patch.object(
+            mod, "acquire_hyperliquid_history", return_value=failed
+        ):
+            out=mod.acquire_selected_research_data(
+                frontier, {"gap":1,"strict_primary":299}, ["hyperliquid_ws"]
+            )
+        self.assertEqual(out[0]["status"],"ERROR")
+        state=frontier["source_state"]["hyperliquid_ws"]
+        self.assertEqual(state["historical_acquisition_failures"],1)
+        self.assertEqual(state["last_historical_acquisition_error"],"HTTPError:429:Too Many Requests")
+        self.assertEqual(
+            state["last_historical_acquisition_error_at"],
+            "2026-10-04T07:20:00+00:00",
+        )
+
+
+    def test_acquisition_summary_exposes_last_failure_reason(self):
+        frontier={
+            "source_state":{
+                "hyperliquid_ws":{
+                    "historical_acquisition_failures":58,
+                    "last_historical_acquisition_error":"HTTPError:429:Too Many Requests",
+                    "last_historical_acquisition_error_at":"2026-10-04T07:20:00+00:00",
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(mod, "ACQUISITION_DIR", Path(td)):
+                out=mod.summarize_acquisition_evidence(frontier)
+        summary=out["by_source"]["hyperliquid_ws"]
+        self.assertEqual(summary["acquisition_failures"],58)
+        self.assertEqual(summary["last_acquisition_error"],"HTTPError:429:Too Many Requests")
+        self.assertEqual(summary["last_acquisition_error_at"],"2026-10-04T07:20:00+00:00")
