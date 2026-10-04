@@ -1238,6 +1238,9 @@ idempotency
 rollback
 replay
 watchdog
+schedule recovery
+workflow_run event wakeup
+concurrency collapse
 
 ⸻
 
