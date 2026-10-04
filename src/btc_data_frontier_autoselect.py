@@ -452,6 +452,32 @@ def _persist_candle_batch(source_id,url,normalized,transport,temporal_basis,retr
  }
 
 
+def _extend_historical_time_bounds(state, result):
+ """Extend durable event-time bounds without moving the latest bound backward during backfill."""
+ if not isinstance(state, dict) or not isinstance(result, dict):
+  return
+ def parse(value):
+  try:
+   parsed=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+   if parsed.tzinfo is None:
+    return None
+   return parsed.astimezone(timezone.utc)
+  except (TypeError,ValueError):
+   return None
+ first=parse(result.get("first_event_time"))
+ last=parse(result.get("last_event_time"))
+ earliest=parse(state.get("historical_earliest_event_time"))
+ latest=parse(state.get("last_historical_event_time"))
+ if first is not None:
+  state["historical_earliest_event_time"]=min(
+   [value for value in (earliest, first) if value is not None]
+  ).isoformat()
+ if last is not None:
+  state["last_historical_event_time"]=max(
+   [value for value in (latest, last) if value is not None]
+  ).isoformat()
+
+
 def summarize_acquisition_evidence(frontier=None):
  """Audit durable acquisition state separately from current-workspace row artifacts."""
  result={
@@ -745,8 +771,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-    state["last_historical_event_time"]=result.get("last_event_time")
+    
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
     state["historical_acquisition_failures"]=0
@@ -766,8 +791,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["last_historical_record_count"]=int(result.get("record_count",0))
     state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
     state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-    state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-    state["last_historical_event_time"]=result.get("last_event_time")
+    
     state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
     state["last_historical_payload_sha256"]=result.get("payload_sha256")
     state["historical_acquisition_failures"]=0
@@ -789,8 +813,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    state["last_historical_record_count"]=int(result.get("record_count",0))
    state["historical_batches_acquired"]=int(state.get("historical_batches_acquired",0))+1
    state["historical_total_records_acquired"]=int(state.get("historical_total_records_acquired",0))+int(result.get("record_count",0))
-   state["historical_earliest_event_time"]=state.get("historical_earliest_event_time") or result.get("first_event_time")
-   state["last_historical_event_time"]=result.get("last_event_time")
+   
    state["last_historical_cursor_ms"]=int(result.get("next_cursor_ms",0) or 0)
    state["last_historical_payload_sha256"]=result.get("payload_sha256")
    state["historical_acquisition_failures"]=0
