@@ -2687,3 +2687,25 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+⸻
+
+116. STATE TRAJECTORY RESEARCH LAYER
+
+既存のTime-Regime OOS laneに、research-onlyのdirect multi-horizon state-trajectory evaluatorを統合する。
+
+目的は価格そのものを逐次外挿することではなく、現在のfeature stateから将来のlatent market-stateを時間軸別に予測し、5m / 10m / 15m / 30m / 60mの状態遷移情報を将来予測研究へ供給すること。
+
+Contract:
+
+* canonical inputはstrict PITを通過したprimary 5m prediction observations
+* 5分間隔を満たさないpairは作成せず、欠損区間をbridgeしない
+* state vocabularyは初期training windowから固定し、OOS fold間でstate IDの意味を変えない
+* state modelとtransition classifierはchronological prequential trainingを行い、scored blockのoutcome/target featureをselectionへ使わない
+* horizonごとに直接予測し、future-error propagationを避ける
+* final frozen holdoutはselection/tuningに使用せずdescriptive only
+* persistence baselineを併記し、state-transition predictionのincremental valueを評価する
+* Accuracy / LogLoss / Brier / ECEを最低限記録し、将来はESS / CI / worst-newest block / regime / OOD / calibrationを拡張評価する
+* research_only=true / production_changed=false / promotion_allowed=falseを維持する
+
+Current live sample is intentionally allowed to return DEFERRED when contiguous evidence is insufficient. DEFERRED is not converted to zero or PASS. Continuous execution/recovery reuses the existing Time-Regime schedule and Continuous Supervisor; a new long-running workflow is not required.

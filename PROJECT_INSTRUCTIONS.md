@@ -184,3 +184,7 @@ The auto-merge workflow never checks out or executes PR code, keeps Production m
 
 
 The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.
+
+## State trajectory research layer
+
+A research-only direct multi-horizon state-trajectory evaluator is integrated into the existing Time-Regime OOS lane. It predicts latent feature-state transitions at 5m, 10m, 15m, 30m and 60m horizons from exact 5-minute observations, never bridges missing intervals, freezes the state vocabulary from the initial training window for cross-fold comparability, and uses chronological prequential OOS with horizon-specific purge plus a descriptive protected holdout. This layer is not Production evidence and cannot change Production, the model registry, live prediction state, or frozen-holdout policy. The existing scheduled Time-Regime lane and Continuous Supervisor provide the continuous GitHub-side execution/recovery path.
