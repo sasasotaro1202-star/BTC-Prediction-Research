@@ -245,7 +245,7 @@ def test_ci_gh_api_download_is_binary_safe_and_retries(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert state.read_text() == "2"
-    assert output.read_bytes() == b"\\x00\\x01ZIP-BYTES"
+    assert output.read_bytes() == bytes([0, 1]) + b"ZIP-BYTES"
     lines = log.read_text().splitlines()
     assert len(lines) == 2
     assert all("--output" in line for line in lines)
