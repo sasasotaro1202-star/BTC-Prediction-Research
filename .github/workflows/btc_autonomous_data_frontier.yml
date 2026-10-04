@@ -98,6 +98,10 @@ jobs:
               raise SystemExit("next-best frontier action is invalid")
           for row in p.get("candidates",{}).values():
               if row.get("production_eligible") is not False: raise SystemExit("unverified candidate became production eligible")
+          evidence=p.get("acquisition_evidence") or {}
+          for sid,item in (evidence.get("by_source") or {}).items():
+              if item.get("time_bounds_status") not in {"OK","INVALID_REVERSED","UNKNOWN"}:
+                  raise SystemExit(f"{sid}: historical time-bound integrity status missing")
           print({"cycle":last.get("cycle"),"gap":last.get("gap"),"selected":last.get("selected_source_ids"),"discovered":len(p.get("candidates",{})),"actions":actions})
           PY
       - name: Recover missing verified primary data
