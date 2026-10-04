@@ -23,6 +23,14 @@ jobs:
   research:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      # The research modules intentionally support both package imports
+      # (src.foo) and direct sibling imports (foo). Make the sibling-import
+      # contract explicit in CI so transitive dependencies such as db and
+      # http_resilience resolve exactly as they do in the repository runtime.
+      PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
