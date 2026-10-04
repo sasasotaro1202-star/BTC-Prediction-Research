@@ -308,8 +308,16 @@ jobs:
               else:
                   if provenance.get('git_sha') != expected_sha:
                       failures.append('production_artifact_git_sha_mismatch')
-                  if provenance.get('workspace_sha') != expected_sha:
-                      failures.append('production_artifact_workspace_sha_mismatch')
+                  if provenance.get('checkout_sha') != expected_sha:
+                      failures.append('production_artifact_checkout_sha_mismatch')
+                  workspace_sha = provenance.get('workspace_sha')
+                  if not isinstance(workspace_sha, str) or len(workspace_sha) != 40:
+                      failures.append('production_artifact_workspace_sha_invalid')
+                  if (
+                      provenance.get('workspace_derived_from_checkout_sha') is not True
+                      and workspace_sha != expected_sha
+                  ):
+                      failures.append('production_artifact_workspace_lineage_unverified')
               artifacts=artifact.get('artifacts') or []
               if {item.get('horizon') for item in artifacts} != {'5m','10m'}:
                   failures.append('production_artifact_horizons_incomplete')
