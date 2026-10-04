@@ -110,6 +110,11 @@ def fold_ends(n,minimum,test_size,count):
     if latest<=minimum:return []
     return sorted({int(v) for v in np.linspace(minimum,latest,num=count,dtype=int) if minimum<=int(v)<=latest})
 
+def min_train_for_window(window):
+    """Return the minimum chronological training geometry for a window policy."""
+    w=WINDOWS[window]
+    return MIN_TRAIN if w is None else min(MIN_TRAIN, int(w))
+
 def train_rows(rows,end,window):
     w=WINDOWS[window]
     return rows[:end] if w is None else rows[max(0,end-w):end]
@@ -175,10 +180,11 @@ def candidates():
     return [cfg(f,m,w) for f in FEATURE_SETS for m in MODELS for w in WINDOWS]
 
 def screen(h,dev,c):
-    starts=fold_ends(len(dev),MIN_TRAIN,SCREEN_TEST,SCREEN_BLOCKS); details=[]; ys=[]; refs=[]; cps=[]
+    minimum_train=min_train_for_window(c["window"])
+    starts=fold_ends(len(dev),minimum_train,SCREEN_TEST,SCREEN_BLOCKS); details=[]; ys=[]; refs=[]; cps=[]
     for s in starts:
         tr=train_rows(dev,max(0,s-PURGE[h]-EMBARGO[h]),c["window"]); te=dev[s:s+SCREEN_TEST]
-        if len(tr)<MIN_TRAIN or len(te)<250: continue
+        if len(tr)<minimum_train or len(te)<250: continue
         try: cp=fit_raw(c,tr,te)
         except (ValueError,RuntimeError): continue
         y=[str(r["y"]) for r in te]; rp=freq(tr,len(te)); cm,rm=metrics(y,cp),metrics(y,rp)
@@ -256,10 +262,11 @@ def select_finalists(screened, limit=FINALISTS):
     return chosen
 
 def final(h,dev,c):
-    starts=fold_ends(len(dev),MIN_TRAIN,FINAL_TEST,FINAL_BLOCKS); details=[]; ys=[]; refs=[]; cps=[]; parts=[]
+    minimum_train=min_train_for_window(c["window"])
+    starts=fold_ends(len(dev),minimum_train,FINAL_TEST,FINAL_BLOCKS); details=[]; ys=[]; refs=[]; cps=[]; parts=[]
     for s in starts:
         tr=train_rows(dev,max(0,s-PURGE[h]-EMBARGO[h]),c["window"]); te=dev[s:s+FINAL_TEST]
-        if len(tr)<MIN_TRAIN or len(te)<200:continue
+        if len(tr)<minimum_train or len(te)<200:continue
         try: cp=fit_temp(c,tr,te)
         except (ValueError,RuntimeError):continue
         y=[str(r["y"]) for r in te]; rp=freq(tr,len(te)); cm,rm=metrics(y,cp),metrics(y,rp)
