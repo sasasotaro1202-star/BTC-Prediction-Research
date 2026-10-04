@@ -101,29 +101,6 @@ def choose(root: Path) -> dict[str, Any]:
             "evidence_state": "PIT_COLLECTION",
         }
 
-    # The frontier controller already knows whether it needs discovery,
-    # historical-bound repair, or live evidence accumulation. Only route it
-    # here for actions that can be advanced without changing Production.
-    frontier_candidates = 0
-    if isinstance(frontier, dict):
-        candidates = frontier.get("candidates")
-        if isinstance(candidates, dict):
-            for item in candidates.values():
-                if not isinstance(item, dict):
-                    continue
-                lifecycle = item.get("lifecycle")
-                if isinstance(lifecycle, dict) and lifecycle.get("research_selection_eligible") is True:
-                    frontier_candidates += 1
-    if frontier_candidates > 0:
-        return {
-            "workflow": "btc_autonomous_data_frontier.yml",
-            "threshold_seconds": 900,
-            "reason": "eligible_frontier_candidates_pending_research_review",
-            "production_impact": False,
-            "priority": 90,
-            "evidence_state": "FRONTIER_WORK_AVAILABLE",
-        }
-
     # Current-generation production calibration is a live-evidence problem.
     # Replay research is still useful while enough strict-PIT observations
     # accumulate, but it must never activate calibration automatically.
@@ -152,6 +129,29 @@ def choose(root: Path) -> dict[str, Any]:
             "production_impact": False,
             "priority": 80,
             "evidence_state": "CALIBRATION_COLLECTION",
+        }
+
+    # The frontier controller already knows whether it needs discovery,
+    # historical-bound repair, or live evidence accumulation. Only route it
+    # here for actions that can be advanced without changing Production.
+    frontier_candidates = 0
+    if isinstance(frontier, dict):
+        candidates = frontier.get("candidates")
+        if isinstance(candidates, dict):
+            for item in candidates.values():
+                if not isinstance(item, dict):
+                    continue
+                lifecycle = item.get("lifecycle")
+                if isinstance(lifecycle, dict) and lifecycle.get("research_selection_eligible") is True:
+                    frontier_candidates += 1
+    if frontier_candidates > 0:
+        return {
+            "workflow": "btc_autonomous_data_frontier.yml",
+            "threshold_seconds": 900,
+            "reason": "eligible_frontier_candidates_pending_research_review",
+            "production_impact": False,
+            "priority": 90,
+            "evidence_state": "FRONTIER_WORK_AVAILABLE",
         }
 
     # Once safety evidence is healthy, keep experience-policy research moving.
