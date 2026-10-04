@@ -1714,4 +1714,36 @@ MONITOR
 → MONITOR
 
 を繰り返す。
+
+77. BINARY TARGET CANDIDATE — UP / DOWN ONLY
+
+Binary target experiment version: binary_sign_v1.
+
+Classes:
+DOWN
+UP
+
+future_return > 0
+→ UP
+
+future_return <= 0
+→ DOWN
+
+FLATはbinary targetでは存在しない。
+
+ただし既存Productionの3-class artifactは自動で置換しない。
+Binary targetは、
+
+LOCAL PIT
+→ CHRONOLOGICAL OOS
+→ ROBUSTNESS
+→ CALIBRATION
+→ FROZEN HOLDOUT
+→ SHADOW
+→ PROMOTION
+
+を独立に通過するまでRESEARCH ONLYとする。
+
+3-class Production evidenceをbinary targetのevidenceとして直接transferしない。
+
 === COPY END ===
