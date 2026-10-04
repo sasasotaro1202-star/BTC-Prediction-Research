@@ -804,11 +804,12 @@ def select_auto_acquisition_sources(frontier,selected,gap):
 
 def acquire_selected_research_data(frontier,gap,selected):
  candidate_ids=select_auto_acquisition_sources(frontier,selected,gap)
+ force_historical_repair=bool(gap.get("historical_bounds_invalid"))
  out=[]
  for sid in candidate_ids[:3]:
   state=frontier["source_state"].setdefault(sid,{})
   if sid=="deribit_public":
-   if not _acquisition_due(state):
+   if not force_historical_repair and not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                 "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
     continue
@@ -829,7 +830,7 @@ def acquire_selected_research_data(frontier,gap,selected):
    out.append(result)
    continue
   if sid=="hyperliquid_ws":
-   if not _acquisition_due(state):
+   if not force_historical_repair and not _acquisition_due(state):
     out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                 "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
     continue
@@ -849,7 +850,7 @@ def acquire_selected_research_data(frontier,gap,selected):
     state["historical_acquisition_failures"]=int(state.get("historical_acquisition_failures",0))+1
    out.append(result)
    continue
-  if not _acquisition_due(state):
+  if not force_historical_repair and not _acquisition_due(state):
    out.append({"source_id":sid,"status":"SKIPPED_COOLDOWN","production_eligible":False,
                "last_historical_acquisition_at":state.get("last_historical_acquisition_at")})
    continue
