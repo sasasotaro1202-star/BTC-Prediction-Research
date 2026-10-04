@@ -99,7 +99,7 @@ def build_provenance(root: Path = ROOT) -> dict:
         "git_sha": git_sha,
         "checkout_sha": expected if expected else workspace_sha,
         "workspace_sha": workspace_sha,
-        "workspace_derived_from_checkout_sha": bool(expected and workspace_sha != expected) or not bool(expected),
+        "workspace_derived_from_checkout_sha": bool(expected and workspace_sha != expected),
         "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
         "policy_files": policy_hashes,
     }
