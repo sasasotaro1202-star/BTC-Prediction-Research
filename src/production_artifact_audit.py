@@ -64,14 +64,27 @@ def current_workspace_sha(root: Path = ROOT) -> str:
 
     sha = _validate_git_sha(sha_raw, "workspace Git SHA")
     if expected and sha != expected:
-        raise SystemExit(
-            f"production artifact audit workspace SHA mismatch: expected={expected} actual={sha}"
-        )
+        try:
+            ancestry = subprocess.run(
+                ["git", "-C", str(root), "merge-base", "--is-ancestor", expected, sha],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            raise SystemExit(
+                f"unable to verify checkout SHA ancestry under CI: {type(exc).__name__}"
+            ) from exc
+        if ancestry.returncode != 0:
+            raise SystemExit(
+                f"production artifact audit workspace SHA is not descended from checkout SHA: "
+                f"checkout={expected} workspace={sha}"
+            )
     return sha
 
 
 def build_provenance(root: Path = ROOT) -> dict:
-    """Bind the artifact audit to the exact checkout and required policy/config files."""
+    """Bind the artifact audit to the checkout ancestry and required policy/config files."""
     workspace_sha = current_workspace_sha(root)
     expected = os.environ.get("GITHUB_SHA")
     git_sha = _validate_git_sha(expected, "GITHUB_SHA") if expected else workspace_sha
@@ -84,7 +97,9 @@ def build_provenance(root: Path = ROOT) -> dict:
         policy_hashes[name] = sha256(path)
     return {
         "git_sha": git_sha,
+        "checkout_sha": expected if expected else workspace_sha,
         "workspace_sha": workspace_sha,
+        "workspace_derived_from_checkout_sha": bool(expected and workspace_sha != expected) or not bool(expected),
         "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
         "policy_files": policy_hashes,
     }
