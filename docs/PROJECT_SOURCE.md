@@ -1949,3 +1949,28 @@ A research-evidence commit created after the analysis is intentionally distinct 
 
 LOCAL_UNPINNED runs are not Production evidence.
 
+
+
+⸻
+
+86. PREDICTION-CONFIDENCE RELIABILITY DIAGNOSTIC
+
+The existing Experience Policy OOS surface now reports post-outcome prediction-confidence reliability without using realized outcomes as model inputs.
+
+For each primary horizon it records:
+
+confidence bucket sample count
+average prediction confidence
+observed accuracy
+confidence gap
+Accuracy 95% CI
+confidence ECE
+confidence Brier score
+explicit 0.70+ high-confidence bucket status
+
+This diagnostic is descriptive/research-only. It does not alter production confidence, routing, abstention, calibration, or model artifacts.
+
+A material negative confidence gap in the 0.70+ bucket is an overconfidence signal requiring further calibration/selective-prediction research rather than automatic production action.
+
+The same surface also reports reliability of the learned prediction-error probability.
+
