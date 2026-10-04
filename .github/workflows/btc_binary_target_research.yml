@@ -86,6 +86,8 @@ jobs:
               raise SystemExit('binary target changed production state')
           if obj.get('target_version') != 'binary_sign_v1':
               raise SystemExit('unexpected binary target version')
+          if obj.get('analysis_git_sha') != __import__('os').environ.get('GITHUB_SHA'):
+              raise SystemExit('binary evidence must bind to the workflow analysis commit SHA')
           if set(obj.get('horizons', {})) != {'5m', '10m'}:
               raise SystemExit('binary target horizon set incomplete')
           for h, result in obj['horizons'].items():
