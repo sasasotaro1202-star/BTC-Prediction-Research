@@ -47,6 +47,7 @@ TEST_BLOCK = 500
 HOLDOUT_FRAC = 0.20
 MAX_ROWS = 30000
 SEED = 42
+Z95 = 1.959963984540054
 
 
 def _contiguous_suffix(rows):
@@ -107,6 +108,42 @@ def _factories():
     }
 
 
+def _wilson_ci(successes, n, z=Z95):
+    n = int(n)
+    if n <= 0:
+        return [None, None]
+    p = float(successes) / n
+    denom = 1.0 + (z * z) / n
+    center = (p + (z * z) / (2.0 * n)) / denom
+    half = z * math.sqrt((p * (1.0 - p) / n) + (z * z) / (4.0 * n * n)) / denom
+    return [max(0.0, center - half), min(1.0, center + half)]
+
+
+def _effective_sample_size(values, max_lag=100):
+    """Approximate ESS from positive autocorrelation of the binary hit series.
+
+    This is a diagnostic, not a formal dependence model. Overlapping rolling
+    horizons can make the raw row count materially overstate independent cases.
+    """
+    arr = np.asarray(values, dtype=float)
+    n = int(arr.size)
+    if n < 3:
+        return float(n)
+    centered = arr - float(arr.mean())
+    variance = float(np.dot(centered, centered) / n)
+    if variance <= 1e-15:
+        return float(n)
+    total_rho = 0.0
+    for lag in range(1, min(max_lag, n - 2) + 1):
+        cov = float(np.dot(centered[:-lag], centered[lag:]) / n)
+        rho = cov / variance
+        if not math.isfinite(rho) or rho <= 0.0:
+            break
+        total_rho += rho
+    ess = n / max(1.0, 1.0 + 2.0 * total_rho)
+    return float(max(1.0, min(float(n), ess)))
+
+
 def _metrics(y_true, probs):
     y = np.asarray(y_true)
     p = np.clip(np.asarray(probs, dtype=float), 1e-6, 1 - 1e-6)
@@ -123,9 +160,12 @@ def _metrics(y_true, probs):
             ece += float(mask.mean()) * abs(float(hit[mask].mean()) - float(conf[mask].mean()))
     one = yi.astype(float)
     brier = float(np.mean((p - one) ** 2))
+    accuracy = float(np.mean(pred == y))
     return {
         "n": int(len(y)),
-        "accuracy": float(np.mean(pred == y)),
+        "accuracy": accuracy,
+        "accuracy_ci95": _wilson_ci(float(hit.sum()), len(y)),
+        "effective_sample_size_accuracy": round(_effective_sample_size(hit), 3),
         "logloss": float(log_loss(yi, p, labels=[0, 1])),
         "brier": brier,
         "ece": ece,
@@ -137,6 +177,7 @@ def _wfo(rows, end_index):
     factories = _factories()
     points = list(range(MIN_TRAIN, end_index, TEST_BLOCK))
     preds = {name: [] for name in factories}
+    baseline_preds = []
     block_metrics = []
     for test_start in points:
         test_end = min(test_start + TEST_BLOCK, end_index)
@@ -149,8 +190,14 @@ def _wfo(rows, end_index):
         y = np.asarray([r["y"] for r in train])
         Xt = np.asarray([r["x"] for r in test], dtype=float)
         yt = [r["y"] for r in test]
-        block = {}
+        block = {
+            "train_end": train[-1]["created"],
+            "test_start": test[0]["created"],
+            "test_end": test[-1]["created"],
+            "test_n": len(test),
+        }
         base_p = float(np.mean(y == "UP"))
+        baseline_preds.extend(zip(yt, np.full(len(yt), base_p)))
         block["frequency_baseline"] = _metrics(yt, np.full(len(yt), base_p))
         for name, factory in factories.items():
             model = factory()
@@ -162,7 +209,12 @@ def _wfo(rows, end_index):
             preds[name].extend(zip(yt, up_p))
             block[name] = _metrics(yt, up_p)
         block_metrics.append(block)
-    summary = {}
+    summary = {
+        "frequency_baseline": (
+            _metrics([y for y, _ in baseline_preds], [p for _, p in baseline_preds])
+            if baseline_preds else {"status": "DEFERRED", "reason": "no_baseline_predictions", "n": 0}
+        )
+    }
     for name, items in preds.items():
         if not items:
             summary[name] = {"status": "DEFERRED", "reason": "no_oos_predictions", "n": 0}
@@ -172,6 +224,54 @@ def _wfo(rows, end_index):
         return {"status": "DEFERRED", "reason": "insufficient_wfo_history", "blocks": 0, "summary": summary}
     return {"status": "OK", "blocks": len(block_metrics), "summary": summary, "block_metrics": block_metrics}
 
+
+def _wfo_diagnostics(wfo):
+    """Summarize fold stability and effect size versus the same-block baseline."""
+    blocks = list(wfo.get("block_metrics") or [])
+    models = [name for name in _factories() if name in wfo.get("summary", {})]
+    out = {"blocks": len(blocks), "models": {}}
+    for name in models:
+        observations = []
+        for idx, block in enumerate(blocks):
+            candidate = block.get(name)
+            baseline = block.get("frequency_baseline")
+            if not isinstance(candidate, dict) or not isinstance(baseline, dict):
+                continue
+            base_ll = float(baseline["logloss"])
+            cand_ll = float(candidate["logloss"])
+            base_brier = float(baseline["brier"])
+            cand_brier = float(candidate["brier"])
+            observations.append({
+                "index": idx,
+                "train_end": block.get("train_end"),
+                "test_start": block.get("test_start"),
+                "test_end": block.get("test_end"),
+                "test_n": int(block.get("test_n", candidate.get("n", 0))),
+                "logloss_delta": cand_ll - base_ll,
+                "logloss_relative_improvement": (base_ll - cand_ll) / base_ll if base_ll else 0.0,
+                "brier_delta": cand_brier - base_brier,
+                "brier_relative_improvement": (base_brier - cand_brier) / base_brier if base_brier else 0.0,
+                "accuracy_delta": float(candidate["accuracy"]) - float(baseline["accuracy"]),
+            })
+        if not observations:
+            out["models"][name] = {"status": "DEFERRED", "reason": "no_comparable_blocks"}
+            continue
+        worst = max(observations, key=lambda x: x["logloss_delta"])
+        newest = observations[-1]
+        out["models"][name] = {
+            "status": "OK",
+            "n_blocks": len(observations),
+            "logloss_non_degraded_blocks": sum(x["logloss_delta"] <= 0.0 for x in observations),
+            "logloss_non_degraded_fraction": float(np.mean([x["logloss_delta"] <= 0.0 for x in observations])),
+            "brier_non_degraded_blocks": sum(x["brier_delta"] <= 0.0 for x in observations),
+            "brier_non_degraded_fraction": float(np.mean([x["brier_delta"] <= 0.0 for x in observations])),
+            "accuracy_non_degraded_blocks": sum(x["accuracy_delta"] >= 0.0 for x in observations),
+            "accuracy_non_degraded_fraction": float(np.mean([x["accuracy_delta"] >= 0.0 for x in observations])),
+            "mean_logloss_relative_improvement": float(np.mean([x["logloss_relative_improvement"] for x in observations])),
+            "worst_logloss_block": worst,
+            "newest_block": newest,
+        }
+    return out
 
 
 def load_live_primary_rows(horizon):
@@ -224,8 +324,6 @@ def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
             "production_changed": False,
         }
 
-    # Train strictly before the first live observation. This prevents archive/live
-    # overlap from contaminating the local live-primary evaluation.
     first_live = min(r["created"] for r in live_rows)
     train = [r for r in archive_rows if r["created"] < first_live]
     if len(train) < MIN_TRAIN:
@@ -250,6 +348,7 @@ def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
     classes = [str(c) for c in getattr(model, "classes_", [])]
     up_idx = classes.index("UP")
     up_p = np.clip(p[:, up_idx], 1e-6, 1 - 1e-6)
+    metrics = _metrics(yt, up_p)
     return {
         "status": "OK",
         "target_version": BINARY_TARGET_VERSION,
@@ -260,7 +359,7 @@ def _evaluate_live_primary(horizon, archive_rows, live_rows, candidate):
         "train_n": len(train),
         "train_end": train[-1]["created"],
         "live_start": live_rows[0]["created"],
-        "metrics": _metrics(yt, up_p),
+        "metrics": metrics,
         "pit": "strict_primary",
         "cross_source_overlap_guard": True,
         "research_only": True,
@@ -288,7 +387,7 @@ def evaluate(horizon):
     if wfo.get("status") != "OK":
         return {**wfo, "horizon": horizon, "n_rows": len(rows), "target_version": BINARY_TARGET_VERSION, "research_only": True, "production_changed": False}
     best = min(
-        (name for name in wfo["summary"] if wfo["summary"][name].get("status") == "OK"),
+        (name for name in wfo["summary"] if name != "frequency_baseline" and wfo["summary"][name].get("status") == "OK"),
         key=lambda name: (wfo["summary"][name]["logloss"], wfo["summary"][name]["brier"], -wfo["summary"][name]["accuracy"]),
     )
     X_dev = np.asarray([r["x"] for r in development], dtype=float)
@@ -303,7 +402,6 @@ def evaluate(horizon):
         classes = [str(c) for c in getattr(model, "classes_", [])]
         up_idx = classes.index("UP")
         holdout_scores[name] = _metrics(y_hold, p[:, up_idx])
-    baseline = wfo["block_metrics"][0]["frequency_baseline"]
     live_rows = load_live_primary_rows(horizon)
     live_primary = _evaluate_live_primary(horizon, rows, live_rows, best)
     return {
@@ -326,6 +424,7 @@ def evaluate(horizon):
         },
         "oos_summary": wfo["summary"],
         "blocks": wfo["blocks"],
+        "wfo_diagnostics": _wfo_diagnostics(wfo),
         "best_development_candidate": best,
         "holdout_descriptive_only": True,
         "holdout_scores": holdout_scores,
