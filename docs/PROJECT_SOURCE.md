@@ -2015,3 +2015,13 @@ are required before Readiness can advance beyond PIT_COLLECTION.
 A combined `verified_primary_predictions` total is diagnostic only and cannot satisfy a missing or failed horizon-specific gate. Missing, malformed, or incomplete `primary_horizon_gate` evidence fails closed.
 
 This guard prevents one horizon from borrowing evidence from another horizon and preserves the target/horizon-specific PIT contract. It is a readiness/read-only research control and does not activate or alter Production.
+⸻
+
+89. 24H MARATHON DEPENDENCY INTEGRITY
+
+各24H stageが参照する `needs.<job>.result` は、必ずそのjobを同stageの直接dependencyとして `needs` に列挙する。
+
+GitHub Actionsの `needs` contextは直接依存jobだけを保証するため、上流stageを間接依存のまま参照して空値を成功判定へ混入させてはならない。
+
+24H Stage 4はStage 1 / 2 / 3を直接依存として保持し、terminal guardで全upstream resultを確認する。これは研究成果ではなくWorkflow Integrityの制御であり、修正時もProduction stateへ影響させない。
+
