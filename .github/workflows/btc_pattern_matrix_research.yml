@@ -97,6 +97,15 @@ jobs:
             data/historical_research/production_artifact_audit.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload pattern checkpoints
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-pattern-matrix-checkpoints-${{ github.sha }}
+          path: data/historical_research/pattern_matrix_checkpoints
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Persist evidence only if main lineage is unchanged
         shell: bash
         run: |
