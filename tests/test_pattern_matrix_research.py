@@ -57,7 +57,8 @@ def test_lineage_and_promotion_firewall():
 
 def test_screen_failures_are_persisted_not_silently_discarded():
     s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
-    assert "screen_failures=[]" in s
+    assert "screen_failures=list(checkpoint.get" in s
+    assert "screen_failures" in s
     assert 'screen_failures.append({"config":c,"error_type":type(e).__name__' in s
     assert '"failures":screen_failures+failures' in s
 
@@ -74,6 +75,7 @@ def test_workflow_expressions_are_not_backslash_escaped():
     assert "\\${{" not in s
     assert "ref: ${{ github.sha }}" in s
     assert "group: btc-pattern-matrix-research" in s
+    assert "cancel-in-progress: false" in s
 
 def test_screen_selection_is_multi_objective_and_diverse():
     rows=[]
@@ -112,3 +114,30 @@ def test_canonical_docs_match_matrix_contract():
         assert "recent_1500" in text
         assert "logreg_c0.03" in text
         assert "mean_reversion" in text
+
+
+def test_checkpoint_lineage_contract():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert "CHECKPOINT_DIR" in s
+    assert "rows_fingerprint(rows)" in s
+    assert "candidate_manifest_hash(cs)" in s
+    assert "load_checkpoint(h,rows_fp,candidate_hash)" in s
+    assert "save_checkpoint(h," in s
+    assert '"status":"RUNNING" if stage!="COMPLETED" else "COMPLETED"' in s
+    assert '"COMPLETED"' in s
+
+def test_checkpoint_rejects_cross_sha_resume():
+    s=Path("src/pattern_matrix_research.py").read_text(encoding="utf-8")
+    assert 'obj.get("analysis_git_sha")!=_analysis_sha()' in s
+    assert 'obj.get("rows_fingerprint")!=rows_fp' in s
+
+
+def test_workflow_restores_same_sha_checkpoints():
+    s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
+    assert "actions: read" in s
+    assert "Restore same-SHA pattern checkpoints" in s
+    assert "head_sha == $sha" in s
+    assert 'conclusion == "failure" or .conclusion == "timed_out"' in s
+    assert "actions/artifacts/$" in s
+    assert "btc-pattern-matrix-checkpoints-" in s
+    assert "if: always()" in s

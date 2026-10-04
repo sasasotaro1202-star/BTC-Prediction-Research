@@ -20,6 +20,8 @@ from ensemble_model import SoftVotingEnsemble
 from model_compare import CLASSES, load_archive_research_rows
 
 OUT=ROOT/"data/historical_research/pattern_matrix_research.json"
+CHECKPOINT_DIR=ROOT/"data/historical_research/pattern_matrix_checkpoints"
+CHECKPOINT_SCHEMA_VERSION=1
 HORIZONS=("5m","10m")
 MAX_ROWS=16000
 HOLDOUT=2000
@@ -51,6 +53,69 @@ FEATURE_ORDER=FEATURE_SETS["all_15"]
 FEATURE_INDEX={x:i for i,x in enumerate(FEATURE_ORDER)}
 WINDOWS={"expanding":None,"recent_1500":1500,"recent_3000":3000}
 MODELS=("logreg_c0.03","logreg_c0.1","logreg_c1.0","logreg_c3.0","extra_trees","rf","hgb","soft_ensemble")
+
+def _analysis_sha():
+    return os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"
+
+def rows_fingerprint(rows):
+    h=hashlib.sha256()
+    for row in rows:
+        payload={
+            "id":row.get("id"),
+            "created":row.get("created"),
+            "y":row.get("y"),
+            "x":row.get("x"),
+            "production":row.get("production"),
+        }
+        h.update(json.dumps(payload,sort_keys=True,separators=(",",":"),default=str).encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+def candidate_manifest_hash(candidates_):
+    payload=[{k:c[k] for k in ("feature_set","model","window","fingerprint")} for c in candidates_]
+    return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":")).encode("utf-8")).hexdigest()
+
+def _checkpoint_path(horizon):
+    return CHECKPOINT_DIR/f"pattern_matrix_{horizon}.checkpoint.json"
+
+def save_checkpoint(horizon,stage,rows_fp,candidate_hash,**extra):
+    CHECKPOINT_DIR.mkdir(parents=True,exist_ok=True)
+    payload={
+        "schema_version":CHECKPOINT_SCHEMA_VERSION,
+        "experiment_id":"btc_pattern_matrix",
+        "status":"RUNNING" if stage!="COMPLETED" else "COMPLETED",
+        "stage":stage,
+        "analysis_git_sha":_analysis_sha(),
+        "horizon":horizon,
+        "rows_fingerprint":rows_fp,
+        "candidate_manifest_hash":candidate_hash,
+        "updated_at_utc":datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
+    path=_checkpoint_path(horizon)
+    tmp=path.with_suffix(path.suffix+".tmp")
+    tmp.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    tmp.replace(path)
+
+def load_checkpoint(horizon,rows_fp,candidate_hash):
+    path=_checkpoint_path(horizon)
+    if not path.is_file():
+        return None
+    try:
+        obj=json.loads(path.read_text(encoding="utf-8"))
+    except (OSError,TypeError,ValueError,json.JSONDecodeError):
+        return None
+    if obj.get("schema_version")!=CHECKPOINT_SCHEMA_VERSION:
+        return None
+    if obj.get("experiment_id")!="btc_pattern_matrix" or obj.get("horizon")!=horizon:
+        return None
+    if obj.get("analysis_git_sha")!=_analysis_sha():
+        return None
+    if obj.get("rows_fingerprint")!=rows_fp or obj.get("candidate_manifest_hash")!=candidate_hash:
+        return None
+    if obj.get("status") not in {"RUNNING","COMPLETED"}:
+        return None
+    return obj
 
 def factory(name):
     if name=="logreg_c0.03":
@@ -299,8 +364,19 @@ def holdout(h,rows,c):
 
 def run_horizon(h,rows):
     if len(rows)<=HOLDOUT+MIN_TRAIN+FINAL_TEST*5:return {"status":"DEFERRED","reason":"insufficient_archive_rows","n":len(rows)}
-    dev=rows[:-HOLDOUT]; cs=candidates(); screened=[]; screen_failures=[]
+    dev=rows[:-HOLDOUT]
+    cs=candidates()
+    rows_fp=rows_fingerprint(rows)
+    candidate_hash=candidate_manifest_hash(cs)
+    checkpoint=load_checkpoint(h,rows_fp,candidate_hash)
+    screened=list(checkpoint.get("screened",[])) if checkpoint else []
+    screen_failures=list(checkpoint.get("screen_failures",[])) if checkpoint else []
+    completed_screen={str(x) for x in (checkpoint.get("completed_screen_fingerprints",[]) if checkpoint else [])}
+    if checkpoint:
+        print(f"checkpoint resume horizon={h} stage={checkpoint.get('stage')} screened={len(screened)} failed={len(screen_failures)}")
     for c in cs:
+        if c["fingerprint"] in completed_screen:
+            continue
         try:
             r=screen(h,dev,c)
             if r is not None:
@@ -309,18 +385,49 @@ def run_horizon(h,rows):
                 screen_failures.append({"config":c,"error_type":"NO_VALID_SCREEN_FOLDS","error":"candidate produced fewer than the minimum valid chronological screen blocks"})
         except Exception as e:
             screen_failures.append({"config":c,"error_type":type(e).__name__,"error":str(e)[:300]})
+        completed_screen.add(c["fingerprint"])
+        save_checkpoint(h,"SCREENING",rows_fp,candidate_hash,
+            screened=screened,screen_failures=screen_failures,
+            completed_screen_fingerprints=sorted(completed_screen))
     screened.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
-    fs=[]; failures=[]
+    fs=list(checkpoint.get("final_results",[])) if checkpoint and checkpoint.get("stage") in {"FINALIZING","COMPLETED"} else []
+    failures=list(checkpoint.get("final_failures",[])) if checkpoint and checkpoint.get("stage") in {"FINALIZING","COMPLETED"} else []
+    completed_final={str(x) for x in (checkpoint.get("completed_final_fingerprints",[]) if checkpoint and checkpoint.get("stage") in {"FINALIZING","COMPLETED"} else [])}
     selected_finalists=select_finalists(screened,FINALISTS)
+    selected_hashes=[x["fingerprint"] for x in selected_finalists]
+    save_checkpoint(h,"FINALIZING",rows_fp,candidate_hash,
+        screened=screened,screen_failures=screen_failures,
+        completed_screen_fingerprints=sorted(completed_screen),
+        selected_finalist_fingerprints=selected_hashes,
+        final_results=fs,final_failures=failures,
+        completed_final_fingerprints=sorted(completed_final))
     for c in selected_finalists:
+        if c["fingerprint"] in completed_final:
+            continue
         clean={k:c[k] for k in ("feature_set","model","window","fingerprint")}
         try:
             r=final(h,dev,clean)
             if r is not None:fs.append(r)
-        except Exception as e:failures.append({"config":clean,"error_type":type(e).__name__,"error":str(e)[:300]})
+        except Exception as e:
+            failures.append({"config":clean,"error_type":type(e).__name__,"error":str(e)[:300]})
+        completed_final.add(c["fingerprint"])
+        save_checkpoint(h,"FINALIZING",rows_fp,candidate_hash,
+            screened=screened,screen_failures=screen_failures,
+            completed_screen_fingerprints=sorted(completed_screen),
+            selected_finalist_fingerprints=selected_hashes,
+            final_results=fs,final_failures=failures,
+            completed_final_fingerprints=sorted(completed_final))
     fs.sort(key=lambda x:(-x["aggregate"]["relative_logloss_improvement"],-x["aggregate"]["relative_brier_improvement"],-x["stability"]["accuracy_non_worse_ratio"],x["stability"]["worst_logloss_delta"]))
     best={k:fs[0][k] for k in ("feature_set","model","window","fingerprint")} if fs else None
-    return {"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"screen_selected_finalists":selected_finalists[:FINALISTS],"finalist_selection_policy":"rank_ensemble_plus_diversity_bonus;no_holdout_access","best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":screen_failures+failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
+    result={"status":"OK","horizon":h,"archive_rows":len(rows),"data_sources":sorted({str(r.get("data_source",r.get("production_mode","unknown"))) for r in rows}),"development_rows":len(dev),"frozen_holdout_rows":HOLDOUT,"candidate_count":len(cs),"screened_count":len(screened),"finalist_count":len(fs),"final_holdout_protected":True,"holdout_used_for_selection":False,"holdout_used_for_gate":False,"candidate_budget":{"feature_sets":len(FEATURE_SETS),"models":len(MODELS),"windows":len(WINDOWS),"cartesian_candidates":len(cs),"screen_blocks":SCREEN_BLOCKS,"final_blocks":FINAL_BLOCKS,"finalists_evaluated":FINALISTS},"screen_top":screened[:20],"finalists":fs,"screen_selected_finalists":selected_finalists[:FINALISTS],"finalist_selection_policy":"rank_ensemble_plus_diversity_bonus;no_holdout_access","best_development_pattern":best,"descriptive_frozen_holdout":holdout(h,rows,best) if best else {"status":"DEFERRED","reason":"no_finalist"},"failures":screen_failures+failures,"research_only":True,"production_changed":False,"promotion_allowed":False}
+    save_checkpoint(h,"COMPLETED",rows_fp,candidate_hash,
+        screened=screened,screen_failures=screen_failures,
+        completed_screen_fingerprints=sorted(completed_screen),
+        selected_finalist_fingerprints=selected_hashes,
+        final_results=fs,final_failures=failures,
+        completed_final_fingerprints=sorted(completed_final),
+        result_summary={"screened_count":len(screened),"finalist_count":len(fs),"failure_count":len(screen_failures)+len(failures)})
+    return result
 
 def main():
     sha=os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"
