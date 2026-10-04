@@ -450,9 +450,24 @@ def train_one(X, y, purge_gap=0):
     }
 
 
+def _current_production_version(horizon):
+    with sqlite3.connect(DB) as con:
+        row = con.execute(
+            "SELECT production_version FROM model_registry WHERE horizon=?",
+            (horizon,),
+        ).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
 def publish(horizon, result):
+    """Return a bootstrap research result without mutating Production.
+
+    Bootstrap training may discover a seed candidate, but Production updates
+    require the full independent OOS/WFO -> calibration -> robustness ->
+    holdout -> shadow -> promotion sequence. Therefore this function never
+    writes a Production model or model_registry entry.
+    """
     name = result["model_name"]
-    model = result["model"]
     if not result["promotion_allowed"]:
         return False, {
             "status": "development_gate_rejected",
@@ -467,19 +482,21 @@ def publish(horizon, result):
             "holdout_used_for_selection": False,
             "holdout_used_for_gate": False,
             "holdout_is_descriptive_only": True,
+            "research_only": True,
+            "production_changed": False,
         }
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, MODEL_DIR / f"{horizon}.joblib")
+    current = _current_production_version(horizon)
     version = f"bootstrap.{name}.v5.4"
-    meta = {
+    return False, {
+        "status": "production_publish_blocked_research_only",
+        "model": name,
         "model_version": version,
-        "horizon": horizon,
-        "classes": list(model.classes_),
-        "features": FEATURES,
-        "artifact": f"{horizon}.joblib",
-        "candidate": False,
+        "existing_production_version": current,
+        "candidate": True,
         "bootstrap": True,
+        "research_only": True,
+        "production_changed": False,
         "selection_method": result["selection_method"],
         "holdout_used_for_selection": False,
         "holdout_used_for_gate": False,
@@ -493,21 +510,9 @@ def publish(horizon, result):
         "final_holdout_metrics": result["holdout_score"],
         "validation_metrics": result["validation_results"],
         "validation_errors": result.get("validation_errors", []),
-        "final_fit_fraction": 0.85,
         "trained_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    (MODEL_DIR / f"{horizon}.json").write_text(
-        json.dumps(meta, indent=2),
-        encoding="utf-8",
-    )
-    with sqlite3.connect(DB) as con:
-        con.execute(
-            "INSERT INTO model_registry(horizon,production_version,updated_at_utc) "
-            "VALUES(?,?,?) ON CONFLICT(horizon) DO UPDATE SET "
-            "production_version=excluded.production_version,updated_at_utc=excluded.updated_at_utc",
-            (horizon, version, datetime.now(timezone.utc).isoformat()),
-        )
-    return True, meta
+
 
 def main():
     MODEL_DIR.mkdir(parents=True, exist_ok=True); DATA_DIR.mkdir(parents=True, exist_ok=True); init_db()
