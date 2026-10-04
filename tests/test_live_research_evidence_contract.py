@@ -45,5 +45,14 @@ class LiveResearchEvidenceContractTests(unittest.TestCase):
         self.assertIn("never writes a Production model or model_registry entry", text)
         self.assertNotIn("joblib.dump(model, MODEL_DIR / f\"{horizon}.joblib\")", text)
 
+    def test_v13_final_gate_imports_required_environment_module(self):
+        text = (ROOT / ".github" / "workflows" / "btc_ultimate_final_v13_e2e.yml").read_text(encoding="utf-8")
+        start = text.index("      - name: Final fail-closed V13 safety gate")
+        end = text.index("      - name: Generate V13 E2E report")
+        gate = text[start:end]
+        self.assertIn("import os", gate)
+        self.assertIn("os.environ.get('GITHUB_SHA')", gate)
+        self.assertIn("V13 FINAL SAFETY GATE: FAIL", gate)
+
 if __name__ == "__main__":
     unittest.main()
