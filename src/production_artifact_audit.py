@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import subprocess
 from datetime import datetime, timezone
 from feature_schema import FEATURES
 from pathlib import Path
@@ -32,11 +33,36 @@ def sha256(path: Path) -> str:
 
 
 
+def current_workspace_sha(root: Path = ROOT) -> str:
+    """Resolve the exact checkout under audit; fail closed when CI pins a different SHA."""
+    try:
+        sha = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.STDOUT,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        if os.environ.get("GITHUB_SHA"):
+            raise SystemExit(
+                f"unable to resolve workspace Git SHA under CI: {type(exc).__name__}"
+            ) from exc
+        return "LOCAL_UNPINNED"
+
+    expected = os.environ.get("GITHUB_SHA")
+    if expected and sha != expected:
+        raise SystemExit(
+            f"production artifact audit workspace SHA mismatch: expected={expected} actual={sha}"
+        )
+    return sha
+
+
 def build_provenance(root: Path = ROOT) -> dict:
-    """Bind the artifact audit to the exact policy/config files under evaluation."""
+    """Bind the artifact audit to the exact checkout and policy/config files under evaluation."""
+    workspace_sha = current_workspace_sha(root)
     policy_files = ("PROJECT_INSTRUCTIONS.md", "docs/PROJECT_SOURCE.md", "requirements.txt")
     return {
-        "git_sha": os.environ.get("GITHUB_SHA") or "LOCAL_UNPINNED",
+        "git_sha": os.environ.get("GITHUB_SHA") or workspace_sha,
+        "workspace_sha": workspace_sha,
         "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
         "policy_files": {
             name: sha256(root / name) if (root / name).is_file() else None
@@ -139,7 +165,7 @@ def main() -> None:
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "artifacts": fingerprint,
             "provenance": provenance,
-            "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_plus_policy_provenance",
+            "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_plus_policy_provenance_plus_workspace_sha_binding",
         }, indent=2) + "\n", encoding="utf-8")
         changed = True
     else:
