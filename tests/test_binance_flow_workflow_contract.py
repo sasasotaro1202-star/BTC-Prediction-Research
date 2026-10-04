@@ -23,8 +23,11 @@ def test_flow_research_pull_requests_remain_cancelable_when_superseded():
 def test_flow_cache_publisher_rechecks_remote_recency_after_push_conflicts():
     text = WORKFLOW.read_text(encoding="utf-8")
     retry_region = text.split("for attempt in 1 2 3 4; do", 1)[1].split("done", 1)[0]
-    assert 'remote_latest="$(python - <<' not in retry_region or 'local_latest" -le "$remote_latest"' in retry_region
-    assert 'Flow checkpoint became older than remote cache after conflict' in retry_region
+    fetch_pos = retry_region.index("git fetch --no-tags --depth=1 origin binance-flow-cache")
+    show_pos = retry_region.index("git show origin/binance-flow-cache:data/binance_flow_5s.json", fetch_pos)
+    compare_pos = retry_region.index('if [ "$local_latest" -le "$remote_latest" ]; then', show_pos)
+    assert fetch_pos < show_pos < compare_pos
+    assert "Flow checkpoint became older than remote cache after conflict" in retry_region
 
 
 def test_final_flow_cache_publish_refuses_stale_local_overwrite():
