@@ -1886,3 +1886,50 @@ The latest fixed CI run for binary_sign_v1 completed successfully. It remains RE
 * Production replacement remains prohibited; independent longer robustness, calibration and shadow evidence are still required.
 
 === COPY END ===
+
+⸻
+
+83. BINARY LIVE KNOWLEDGE-TIME FIREWALL
+
+For the binary_sign_v1 live-primary evaluation, archive training labels must satisfy:
+
+label maturity / target timestamp
+<
+first live prediction cutoff
+
+Filtering by prediction-row creation time alone is insufficient because a historical prediction can exist before the live window while its future outcome becomes known after the live window starts.
+
+Rows with invalid or missing target timestamps are excluded from the training set.
+
+This firewall is research-only and has no Production activation effect.
+
+⸻
+
+84. BINARY OOS STATISTICAL EVIDENCE CONTRACT
+
+Binary Target Research must preserve both model and baseline evidence.
+
+For each chronological WFO block and candidate:
+
+train_end
+test_start
+test_end
+test_n
+same-block frequency baseline
+candidate LogLoss/Brier/Accuracy
+
+must be retained.
+
+The aggregate evidence must additionally expose:
+
+Accuracy 95% CI
+approximate effective sample size
+non-degraded fold fraction
+worst LogLoss fold
+newest fold
+mean relative LogLoss improvement versus the same-block baseline
+
+A baseline cannot be selected as a trainable challenger.
+
+Missing diagnostic evidence is a verification failure, not a zero or PASS.
+
