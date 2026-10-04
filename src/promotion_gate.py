@@ -26,6 +26,33 @@ def _valid_sha256(value: Any) -> bool:
         return False
 
 
+def _pit_horizon_gates_ok(pit: dict[str, Any]) -> bool:
+    """Require explicit strict-PIT readiness for every production horizon."""
+    if not isinstance(pit, dict):
+        return False
+    gate = pit.get("primary_horizon_gate")
+    if not isinstance(gate, dict) or set(gate) != set(HORIZONS):
+        return False
+    try:
+        minimum = int(pit.get("min_strict_pit_rows", 300))
+    except (TypeError, ValueError):
+        return False
+    if minimum < 300:
+        return False
+    for horizon in HORIZONS:
+        item = gate.get(horizon)
+        if not isinstance(item, dict):
+            return False
+        try:
+            strict = int(item.get("strict_primary_settled", 0))
+            item_minimum = int(item.get("minimum", 0))
+        except (TypeError, ValueError):
+            return False
+        if item.get("ready") is not True or strict < minimum or item_minimum < minimum:
+            return False
+    return True
+
+
 def _calibration_model_binding_ok(item: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
@@ -72,6 +99,7 @@ def evaluate_promotion(prod: dict[str, Any], robust: dict[str, Any], blends: dic
         and int(pit.get("violation_count", 1)) == 0
         and int(pit.get("checked_predictions", 0)) > 0
         and int(pit.get("verified_primary_predictions", 0)) >= int(pit.get("min_strict_pit_rows", 300))
+        and _pit_horizon_gates_ok(pit)
     )
     calibration_ok = True
     for h in HORIZONS:
@@ -169,6 +197,7 @@ def _production_integrity_from_evidence(evidence: Path) -> dict[str, Any]:
         and pit.get("pit_verified") is True
         and int(pit.get("violation_count", 1)) == 0
         and int(pit.get("verified_primary_predictions", 0)) >= int(pit.get("min_strict_pit_rows", 300))
+        and _pit_horizon_gates_ok(pit)
     )
     return {
         "schema_version": 1,
