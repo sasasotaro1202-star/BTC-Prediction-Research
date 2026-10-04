@@ -602,6 +602,14 @@ def summarize_acquisition_evidence(frontier=None):
     summary["last_event_time"]=event_time if summary["last_event_time"] is None else max(summary["last_event_time"],event_time)
   summary["unique_event_times"]=len(source_event_times)
   summary["duplicate_event_rows"]=max(0,summary["valid_row_count"]-summary["unique_event_times"])
+  try:
+   earliest_dt=datetime.fromisoformat(str(summary.get("first_event_time")).replace("Z","+00:00"))
+   latest_dt=datetime.fromisoformat(str(summary.get("last_event_time")).replace("Z","+00:00"))
+   if earliest_dt.tzinfo is None or latest_dt.tzinfo is None:
+    raise ValueError("timezone_missing")
+   summary["time_bounds_status"]="OK" if earliest_dt <= latest_dt else "INVALID_REVERSED"
+  except (TypeError,ValueError):
+   summary["time_bounds_status"]="UNKNOWN"
   if summary["file_count"]==0:
    summary["artifact_status"]="MISSING"
   elif summary["invalid_row_count"]>0 or not provenance_complete or summary["valid_row_count"]==0:
