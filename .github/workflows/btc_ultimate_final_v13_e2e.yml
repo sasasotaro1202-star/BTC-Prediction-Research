@@ -382,6 +382,39 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add data/historical_research/btc_ultimate_final_v13_run.json
+          if [ -s data/historical_research/production_artifact_audit.json ]; then
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('data/historical_research/production_artifact_audit.json')
+          try:
+              payload = json.loads(path.read_text(encoding='utf-8'))
+          except (OSError, ValueError, TypeError):
+              payload = {}
+          provenance = payload.get('provenance') or {}
+          expected = os.environ.get('GITHUB_SHA')
+          artifacts = payload.get('artifacts') or []
+          persistable = (
+              bool(expected)
+              and provenance.get('git_sha') == expected
+              and provenance.get('workspace_sha') == expected
+              and {item.get('horizon') for item in artifacts} == {'5m', '10m'}
+              and all(item.get('runtime_model_reload_ok') is True for item in artifacts)
+          )
+          if persistable:
+              print('Persisting current-SHA production artifact audit evidence.')
+          else:
+              print('Skipping production artifact audit persistence because evidence is not bound to the current workflow SHA.')
+          Path('/tmp/persist_production_artifact_audit').write_text(
+              '1' if persistable else '0', encoding='utf-8'
+          )
+          PY
+            if [ "$(cat /tmp/persist_production_artifact_audit)" = "1" ]; then
+              git add data/historical_research/production_artifact_audit.json
+            fi
+          fi
           if ! git diff --cached --quiet; then git commit -m 'Record V13 E2E run completion'; fi
           # Research outputs are intentionally left as uncommitted working-tree
           # evidence. Stash them before rebasing the immutable run ledger so
