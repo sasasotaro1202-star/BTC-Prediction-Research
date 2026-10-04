@@ -47,5 +47,22 @@ class TimeRegimeOOSTests(unittest.TestCase):
         self.assertTrue(np.isfinite(np.asarray(out[0]["x"], dtype=float)).all())
 
 
+
+class StateTrajectoryOOSTests(unittest.TestCase):
+    def test_direct_multi_horizon_trajectory_contract_exists(self):
+        from src.state_trajectory_oos import build_trajectory_oos
+        from datetime import datetime, timedelta, timezone
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        rows = [
+            {"id": i, "created": (start + timedelta(minutes=5 * i)).isoformat(), "x": [float(i % 4)] * 15}
+            for i in range(220)
+        ]
+        out = build_trajectory_oos(
+            rows, steps=(1, 2), n_clusters=4, min_train=80, test_block=20, min_oos=60
+        )
+        self.assertEqual(out["evaluation_mode"], "direct_multi_horizon")
+        self.assertTrue(out["research_only"])
+        self.assertFalse(out["production_changed"])
+
 if __name__ == "__main__":
     unittest.main()
