@@ -173,6 +173,38 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src:. python src/production_artifact_audit.py
           test -s data/historical_research/production_artifact_audit.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("data/historical_research/production_artifact_audit.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          provenance = payload.get("provenance") or {}
+          expected = os.environ.get("GITHUB_SHA")
+          if not expected:
+              raise SystemExit("GITHUB_SHA missing during production artifact audit")
+          if provenance.get("git_sha") != expected:
+              raise SystemExit(
+                  f"production artifact audit SHA mismatch: expected={expected} "
+                  f"actual={provenance.get('git_sha')}"
+              )
+          if provenance.get("workspace_sha") != expected:
+              raise SystemExit(
+                  f"production artifact workspace SHA mismatch: expected={expected} "
+                  f"actual={provenance.get('workspace_sha')}"
+              )
+          artifacts = payload.get("artifacts") or []
+          if {item.get("horizon") for item in artifacts} != {"5m", "10m"}:
+              raise SystemExit("production artifact audit missing primary horizon")
+          if any(item.get("runtime_model_reload_ok") is not True for item in artifacts):
+              raise SystemExit("production artifact runtime reload contract failed")
+          if any(item.get("runtime_classes") != ["DOWN", "FLAT", "UP"] for item in artifacts):
+              raise SystemExit("production artifact class contract failed")
+          if any(item.get("runtime_feature_count") != 15 for item in artifacts):
+              raise SystemExit("production artifact feature contract failed")
+          print("production artifact provenance/runtime contract: VERIFIED")
+          PY
 
       - name: Validate artifacts, promotion HOLD, and evidence state
         if: always()
@@ -213,6 +245,7 @@ jobs:
           reg_path=root/'maximum_future_generalization_v6_registry.json'
           policy_path=root/'prediction_policy_oos.json'
           codes_path=root/'v13_safety_audit_exit_codes.json'
+          artifact_path=root/'production_artifact_audit.json'
           if not reg_path.is_file():
               failures.append('missing_v13_core_registry')
           else:
@@ -228,6 +261,28 @@ jobs:
                       failures.append(f'{h}:promotion_not_hold')
                   if r.get('prediction_policy_oos',{}).get('frozen_holdout_used_for_selection') is not False:
                       failures.append(f'{h}:holdout_selection_contamination')
+          if not artifact_path.is_file():
+              failures.append('missing_production_artifact_audit')
+          else:
+              artifact=json.loads(artifact_path.read_text())
+              provenance=artifact.get('provenance') or {}
+              expected_sha=__import__('os').environ.get('GITHUB_SHA')
+              if not expected_sha:
+                  failures.append('missing_github_sha')
+              else:
+                  if provenance.get('git_sha') != expected_sha:
+                      failures.append('production_artifact_git_sha_mismatch')
+                  if provenance.get('workspace_sha') != expected_sha:
+                      failures.append('production_artifact_workspace_sha_mismatch')
+              artifacts=artifact.get('artifacts') or []
+              if {item.get('horizon') for item in artifacts} != {'5m','10m'}:
+                  failures.append('production_artifact_horizons_incomplete')
+              if any(item.get('runtime_model_reload_ok') is not True for item in artifacts):
+                  failures.append('production_artifact_runtime_reload_failed')
+              if any(item.get('runtime_classes') != ['DOWN','FLAT','UP'] for item in artifacts):
+                  failures.append('production_artifact_class_contract_failed')
+              if any(item.get('runtime_feature_count') != 15 for item in artifacts):
+                  failures.append('production_artifact_feature_contract_failed')
           if not policy_path.is_file():
               failures.append('missing_v13_policy_output')
           else:
