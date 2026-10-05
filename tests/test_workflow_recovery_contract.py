@@ -56,3 +56,8 @@ def test_watchdog_checks_out_repository_before_using_versioned_recovery_helpers(
     text = _workflow("btc_watchdog.yml")
     assert "actions/checkout@v7" in text
     assert "scripts/ci_failure_streak.sh" in text
+
+def test_watchdog_runs_immediately_when_its_recovery_workflow_changes():
+    text = _workflow("btc_watchdog.yml")
+    assert "  push:" in text
+    assert "      - '.github/workflows/btc_watchdog.yml'" in text
