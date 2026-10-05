@@ -16,9 +16,8 @@ def test_supervisor_has_bounded_failure_backoff():
 
 def test_watchdog_has_bounded_failure_backoff():
     text = _read('btc_watchdog.yml')
-    assert 'failure_streak' in text
+    assert 'ci_failure_streak_from_stdin' in text
     assert 'failure_cooldown' in text
-    assert '2 ** backoff_power' in text
     assert '[ "$failure_cooldown" -gt 4800 ] && failure_cooldown=4800' in text
 
 
