@@ -547,3 +547,60 @@ class AutonomousResearchRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_recent_performance_degradation_routes_recency_challenger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "generated_at_utc": "2026-10-05T00:00:00Z",
+                    "status": "OK",
+                    "horizons": {
+                        "5m": {
+                            "recent": {
+                                "100": {"n": 100, "accuracy": 0.46},
+                                "300": {"n": 300, "accuracy": 0.5366666667},
+                            }
+                        },
+                        "10m": {
+                            "recent": {
+                                "100": {"n": 100, "accuracy": 0.28},
+                                "300": {"n": 300, "accuracy": 0.39},
+                            }
+                        },
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertEqual(route["evidence_state"], "RECENCY_RISK")
+            self.assertIn(
+                "10m:recent100_accuracy=0.280;recent300_accuracy=0.390;gap=0.110;n100=100;n300=300",
+                route["signals"],
+            )
+
+    def test_recent_performance_signal_fails_closed_on_insufficient_or_invalid_data(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "status": "OK",
+                    "horizons": {
+                        "10m": {
+                            "recent": {
+                                "100": {"n": 99, "accuracy": 0.10},
+                                "300": {"n": 300, "accuracy": 0.50},
+                            }
+                        }
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+            self.assertNotIn("RECENCY_RISK", route["evidence_state"])
