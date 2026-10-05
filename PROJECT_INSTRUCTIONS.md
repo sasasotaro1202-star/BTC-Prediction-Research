@@ -212,3 +212,7 @@ Full unit tests run on source, test, script, and dependency changes. GitHub Acti
 
 ## Shared recovery failure-streak helper
 Supervisor and Watchdog must source `scripts/ci_failure_streak.sh` for the failure-streak calculation. The helper counts only consecutive non-success terminal generations since the most recent explicit success and stops at the first neutral/unknown terminal conclusion. The helper is independently unit-tested and syntax-checked by Ops Preflight. Duplicate inline jq recovery logic is prohibited.
+
+
+## Production-first Actions queue backpressure
+When the 5m Live Cycle is queued, pending, or in progress, queue pressure is applied to research-only Actions lanes. The janitor may cancel only queued/pending research runs from the bounded research list; in-progress research is preserved. Production, live settlement, PIT/OOS audit, and protected state are never cancelled by this backpressure. The goal is runner-capacity protection only; research candidates remain eligible for later retry and no research priority, model selection, Promotion, or Production state is changed.
