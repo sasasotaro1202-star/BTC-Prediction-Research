@@ -196,3 +196,8 @@ Evidence is bound to both analysis_git_sha and a prediction-DB snapshot hash. Th
 ## Immutable research snapshot recovery
 
 Long-running research workflows must remain valid when `main` advances while they are queued or executing. The analysis is bound to its immutable `GITHUB_SHA` and the prediction-DB snapshot used for that analysis; a concurrent main-branch state commit must not invalidate the already-started research run. Before committing research evidence, the workflow must reconcile against the current `main` and preserve the analysis SHA as provenance. A stale-head or concurrent state commit is not itself a research failure. Only actual execution, integrity, PIT, OOS, or boundary failures are evidence of failure.
+
+
+## Automation recovery backoff
+The Continuous Supervisor and Workflow Watchdog apply bounded exponential backoff to repeated non-success generations. The base cooldown is 5 minutes and is capped at 80 minutes. This prevents deterministic failures from creating an unbounded GitHub Actions dispatch storm while preserving automatic recovery. The stale-run janitor is cancellation-only for the production/research spine; recovery dispatch is centralized in the Supervisor, Watchdog and Production Sentinel.
+
