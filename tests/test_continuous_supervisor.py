@@ -184,3 +184,11 @@ def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
     assert 'length >= 1 and length <= 9' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight
+
+
+def test_supervisor_initializes_route_candidate_count_before_production_backpressure():
+    text = _read_workflow()
+    init = text.index("route_candidate_count=0")
+    gate = text.index('if [ "${production_active}" -eq 0 ]; then', init)
+    status = text.index('"route_candidate_count": ${route_candidate_count}', gate)
+    assert init < gate < status
