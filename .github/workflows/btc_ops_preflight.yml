@@ -90,6 +90,10 @@ jobs:
 
           if "actions: write" not in watchdog:
               raise SystemExit("watchdog must retain Actions write permission for recovery")
+          if '            if [ "$workflow" != "btc_live_cycle.yml" ]; then' not in watchdog:
+              raise SystemExit("watchdog self-change trigger must permit only production-critical Live recovery")
+          print("watchdog self-change Live recovery scope: VERIFIED")
+
           if "      - uses: actions/checkout@v7" not in watchdog:
               raise SystemExit("watchdog must checkout repository before using versioned recovery helpers")
           if "  push:" not in watchdog or "      - '.github/workflows/btc_watchdog.yml'" not in watchdog:
