@@ -36,3 +36,10 @@ def test_ops_preflight_does_not_wake_on_live_prediction_db_commit():
 def test_unit_tests_have_periodic_full_suite_safety_net():
     text = _read('btc_unit_tests.yml')
     assert "cron: '47 */6 * * *'" in text
+
+
+def test_collector_janitor_collapses_duplicate_active_generations():
+    janitor = _read('btc_stale_run_janitor.yml')
+    assert 'collapsing to newest active generation' in janitor
+    assert 'btc_binance_ws_collector.yml/runs' in janitor
+    assert '.[1:][]?.id' in janitor
