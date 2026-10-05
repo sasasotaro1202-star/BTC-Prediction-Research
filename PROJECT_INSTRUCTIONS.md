@@ -212,3 +212,5 @@ Full unit tests run on source, test, script, and dependency changes. GitHub Acti
 
 ## Shared recovery failure-streak helper
 Supervisor and Watchdog must source `scripts/ci_failure_streak.sh` for the failure-streak calculation. The helper counts only consecutive non-success terminal generations since the most recent explicit success and stops at the first neutral/unknown terminal conclusion. The helper is independently unit-tested and syntax-checked by Ops Preflight. Duplicate inline jq recovery logic is prohibited.
+
+The research PR auto-merge controller also wakes on completion of BTC Workflow Contract Tests. For an explicit ready_for_review wake, that event is the authoritative readiness transition; all other wake paths continue to enforce the live draft-state firewall. This is recovery hardening only and never authorizes a Production/data/holdout/workflow change to bypass manual review.
