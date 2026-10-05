@@ -197,3 +197,7 @@ The current research urgency threshold is 7 days. This threshold is routing poli
 ## Research PR current-head merge safety
 
 GitHub-side research auto-merge must require the PR head to be at least current with main at evaluation time. A green PR that is behind main is HOLD and must not be auto-merged; it must be rebased/revalidated against current main. This is an engineering safety condition and does not relax the separate workflow/data/Production/holdout path firewall.
+
+## V13 current-main race recovery
+
+A V13 E2E run triggered by an older main SHA must not be classified as a research failure solely because main advanced during scheduling. The workflow must pin an immutable verification snapshot from the current main ref before evidence generation, bind provenance to that pinned verification SHA, and keep Production/promotion gates unchanged. A pinned snapshot is evidence for that exact SHA, not a claim about later main state.
