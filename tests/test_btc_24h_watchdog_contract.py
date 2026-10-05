@@ -23,3 +23,9 @@ def test_24h_watchdog_has_failure_circuit_breaker():
     assert "FAILURE_CIRCUIT_BREAKER" in workflow
     assert 'print("ACTION=HOLD")' in workflow
     assert '[ "$action" = "HOLD" ]' in workflow
+
+def test_24h_watchdog_self_enables_marathon_before_dispatch():
+    text = Path('.github/workflows/btc_24h_watchdog.yml').read_text(encoding='utf-8')
+    assert 'ci_gh workflow enable btc_24h_autonomous_research.yml --repo "$REPO"' in text
+    assert '24H marathon workflow enable check completed.' in text
+    assert 'BTC 24H marathon dispatch verified:' in text
