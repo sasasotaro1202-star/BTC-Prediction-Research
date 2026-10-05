@@ -126,6 +126,21 @@ jobs:
 
             add_audit "PR=$PR HEAD=$head_sha"
 
+            # Never auto-merge a stale branch against a newer main. This keeps
+            # autonomous merge decisions bound to the current repository head and
+            # prevents an old green research PR from silently bypassing newer state.
+            compare_json="$(gh api "repos/$REPO/compare/main...$head_sha")"
+            behind_by="$(jq -r '.behind_by // -1' <<<"$compare_json")"
+            ahead_by="$(jq -r '.ahead_by // -1' <<<"$compare_json")"
+            if ! [[ "$behind_by" =~ ^[0-9]+$ ]] || ! [[ "$ahead_by" =~ ^[0-9]+$ ]]; then
+              add_audit "PR=$PR HOLD invalid-current-main-compare"
+              continue
+            fi
+            if [ "$behind_by" -ne 0 ]; then
+              add_audit "PR=$PR HOLD branch-behind-main=${behind_by}"
+              continue
+            fi
+
             mapfile -t FILES < <(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')
 
             blocked=0

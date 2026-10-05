@@ -10,6 +10,7 @@ higher-priority lane is already active or fresh.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ HORIZONS = ("5m", "10m")
 
 ALLOWED = {
     "btc_research_readiness.yml": 3600,
+    "btc_recency_challenger.yml": 86400,
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_experience_policy_oos.yml": 21600,
@@ -32,6 +34,19 @@ HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
+MODEL_STALE_DAYS = 7.0
+
+
+def _parse_utc_timestamp(raw: object) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -198,6 +213,56 @@ def _high_confidence_overreach(root: Path) -> list[str]:
     return signals
 
 
+def _model_staleness_signals(root: Path) -> list[str]:
+    """Detect stale Production Champion generations for research routing only.
+
+    The reference clock is the durable experience snapshot rather than wall time,
+    keeping replay/test behavior deterministic. Missing, malformed, candidate,
+    or future-dated model metadata is fail-closed and does not trigger routing.
+    """
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+    if experience is None:
+        return []
+
+    if "status" in experience and experience.get("status") != "OK":
+        return []
+
+    reference_raw = experience.get("generated_at_utc")
+    if not reference_raw:
+        return []
+    reference = _parse_utc_timestamp(reference_raw)
+    if reference is None:
+        return []
+
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        meta = _load(root / "models" / f"{horizon}.json")
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("candidate") is not False:
+            continue
+        model_version = str(meta.get("model_version", "")).strip()
+        artifact = str(meta.get("artifact", "")).strip()
+        if not model_version or not artifact:
+            continue
+
+        trained_raw = meta.get("trained_at_utc")
+        if not trained_raw:
+            continue
+        trained = _parse_utc_timestamp(trained_raw)
+        if trained is None:
+            continue
+
+        age_days = (reference - trained).total_seconds() / 86400.0
+        if age_days < 0.0:
+            continue
+        if age_days >= MODEL_STALE_DAYS:
+            signals.append(
+                f"{horizon}:model={model_version};age_days={age_days:.1f}>{MODEL_STALE_DAYS:g}"
+            )
+    return signals
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -283,6 +348,7 @@ def choose(root: Path) -> dict[str, Any]:
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
+    model_staleness_signals = _model_staleness_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -294,6 +360,15 @@ def choose(root: Path) -> dict[str, Any]:
             95,
             "CALIBRATION_COLLECTION",
             calibration_signals,
+        ))
+
+    if model_staleness_signals:
+        routes.append(_decision(
+            "btc_recency_challenger.yml",
+            "production_champion_generation_is_stale_and_requires_recent_data_reassessment",
+            92,
+            "MODEL_STALENESS_RISK",
+            model_staleness_signals,
         ))
 
     if promotion_blocked:

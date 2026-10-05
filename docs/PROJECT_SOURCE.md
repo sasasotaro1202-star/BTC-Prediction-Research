@@ -2687,3 +2687,39 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+
+⸻
+
+116. PRODUCTION CHAMPION STALENESS AS RESEARCH PRIORITIZATION
+
+Production model age may be used as a bounded research-routing trigger when compared against the latest durable mature-experience evidence. This is not a Production refresh mechanism.
+
+The current research trigger is 7 days:
+
+experience_snapshot_generated_at - production_model_trained_at >= 7 days
+
+The router must use a deterministic durable evidence clock rather than wall-clock time. The experience snapshot must be valid; when a status field is present it must be `OK`.
+
+Production model metadata must explicitly prove:
+
+* candidate = false
+* non-empty model_version
+* non-empty artifact
+* valid trained_at_utc
+
+Missing, malformed, candidate, or future-dated metadata is fail-closed and must not produce a stale-model signal.
+
+A stale-model signal may route the existing Recency Challenger only. It must never mutate Production, registry, calibration, live prediction state, or frozen holdout. Recency research remains behind the normal LOCAL PIT → OOS/WFO → CALIBRATION → ROBUSTNESS → FROZEN HOLDOUT → SHADOW → PROMOTION evidence chain.
+
+Adding the recency route expands the bounded router candidate surface from seven to eight. The Continuous Supervisor candidate-count contract is therefore updated to accept the eight-candidate maximum. This is workflow-integrity evidence, not research-performance evidence.
+
+
+117. CURRENT-MAIN ALIGNMENT FOR RESEARCH PR AUTO-MERGE
+
+The GitHub-side research PR auto-merge gate must compare each eligible PR head against the current main before attempting a merge.
+
+* behind_by must be exactly 0.
+* Invalid or missing compare evidence is HOLD, not PASS.
+* A green but stale/behind research PR is not auto-merged; it must be rebased/revalidated against the current main lineage.
+* This control is independent of, and does not weaken, the existing workflow/data/Production/registry/frozen-holdout firewall.

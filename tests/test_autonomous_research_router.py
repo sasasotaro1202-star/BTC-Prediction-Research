@@ -261,6 +261,215 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 ],
             )
 
+    def test_stale_champion_routes_recency_challenger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.json",
+                {
+                    "candidate": False,
+                    "model_version": "fresh-5m",
+                    "artifact": "5m.joblib",
+                    "trained_at_utc": "2026-10-03T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {
+                    "candidate": False,
+                    "model_version": "stale-10m",
+                    "artifact": "10m.joblib",
+                    "trained_at_utc": "2026-09-13T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "generated_at_utc": "2026-10-05T00:00:00Z",
+                    "status": "OK",
+                    "horizons": {},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertEqual(route["priority"], 92)
+            self.assertIn("10m:model=stale-10m;age_days=22.0>7", route["signals"])
+            self.assertFalse(route["production_impact"])
+
+    def test_stale_route_is_fail_closed_for_candidate_models(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.json",
+                {
+                    "candidate": True,
+                    "model_version": "candidate-5m",
+                    "artifact": "5m.joblib",
+                    "trained_at_utc": "2026-08-01T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {
+                    "candidate": False,
+                    "model_version": "fresh-10m",
+                    "artifact": "10m.joblib",
+                    "trained_at_utc": "2026-10-04T00:00:00Z",
+                },
+            )
+            route = validate(choose(root))
+            self.assertNotEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertNotIn("candidate-5m", route["signals"])
+
+    def test_stale_route_is_fail_closed_for_future_model_timestamp(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.json",
+                {
+                    "candidate": False,
+                    "model_version": "future-5m",
+                    "artifact": "5m.joblib",
+                    "trained_at_utc": "2026-10-06T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {
+                    "candidate": False,
+                    "model_version": "fresh-10m",
+                    "artifact": "10m.joblib",
+                    "trained_at_utc": "2026-10-04T00:00:00Z",
+                },
+            )
+            route = validate(choose(root))
+            self.assertNotEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertFalse(any("future-5m" in s for s in route["signals"]))
+
+    def test_stale_route_is_fail_closed_for_naive_timestamps(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.json",
+                {
+                    "candidate": False,
+                    "model_version": "naive-5m",
+                    "artifact": "5m.joblib",
+                    "trained_at_utc": "2026-08-01T00:00:00",
+                },
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {
+                    "candidate": False,
+                    "model_version": "fresh-10m",
+                    "artifact": "10m.joblib",
+                    "trained_at_utc": "2026-10-04T00:00:00Z",
+                },
+            )
+            route = validate(choose(root))
+            self.assertNotEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertFalse(any("naive-5m" in s for s in route["signals"]))
+
+    def test_recency_route_can_coexist_with_all_other_candidates(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.calibration.json",
+                {"n_settled": 399, "fit_logloss": 1.0, "holdout_logloss": 1.0},
+            )
+            self._write(
+                root / "models",
+                "5m.json",
+                {
+                    "candidate": False,
+                    "model_version": "fresh-5m",
+                    "artifact": "5m.joblib",
+                    "trained_at_utc": "2026-10-04T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {
+                    "candidate": False,
+                    "model_version": "stale-10m",
+                    "artifact": "10m.joblib",
+                    "trained_at_utc": "2026-09-13T00:00:00Z",
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "promotion_gate.json",
+                {
+                    "production_safety_gate": "HOLD",
+                    "promotion_allowed": False,
+                    "reason": "robustness evidence invalid or incomplete;holdout evidence incomplete",
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "data_frontier.json",
+                {
+                    "candidates": {
+                        "candidate:demo": {
+                            "lifecycle": {"research_selection_eligible": True}
+                        }
+                    }
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "innovative_control_5m_drift_detector.json",
+                {
+                    "research_only": True,
+                    "latest_drift": {
+                        "drift_score": 0.20,
+                        "model_disagreement_drift": 0.20,
+                    },
+                },
+            )
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "generated_at_utc": "2026-10-05T00:00:00Z",
+                    "status": "OK",
+                    "horizons": {
+                        "5m": {
+                            "cases": {
+                                "confidence_bucket": {
+                                    "0.70+": {"n": 60, "accuracy": 0.30, "avg_confidence": 0.80}
+                                }
+                            }
+                        }
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(len(route["candidates"]), 8)
+            self.assertEqual(route["candidates"][0]["workflow"], "btc_adaptive_calibration_replay.yml")
+            self.assertIn(
+                "btc_recency_challenger.yml",
+                [item["workflow"] for item in route["candidates"]],
+            )
+            self.assertEqual(route["candidates"][-1]["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
     def test_invalid_route_is_rejected(self):
         with self.assertRaises(ValueError):
             validate(
