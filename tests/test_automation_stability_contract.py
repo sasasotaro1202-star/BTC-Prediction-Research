@@ -43,3 +43,8 @@ def test_collector_janitor_collapses_duplicate_active_generations():
     assert 'collapsing to newest active generation' in janitor
     assert 'btc_binance_ws_collector.yml/runs' in janitor
     assert '.[1:][]?.id' in janitor
+
+
+def test_stale_janitor_releases_obsolete_supervisor_generations_promptly():
+    janitor = _read('btc_stale_run_janitor.yml')
+    assert '[btc_continuous_supervisor.yml]=600' in janitor
