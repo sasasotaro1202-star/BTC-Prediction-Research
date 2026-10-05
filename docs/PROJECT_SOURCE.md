@@ -2687,3 +2687,30 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+⸻
+
+117. STATE TRAJECTORY PIT CORRECTION
+
+State-trajectory researchは、latent-state vocabularyを全historical rowsからfitしてはならない。
+
+各chronological foldごとに、training boundary以前のrowsだけでStandardScaler/KMeansをfitし、同じfoldのtest/holdoutはstate assignment専用にする。
+
+したがって、
+
+future row → state vocabulary fit
+
+という経路は禁止する。
+
+必要な証跡:
+
+* fold-local state fitting
+* exact 5-minute contiguous pairing
+* fold purge
+* frozen final holdout protection
+* persistence baseline
+* research_only=true
+* production_changed=false
+* promotion_allowed=false
+
+この研究層のDEFERREDはデータ不足を意味し、PASSや0への置換をしない。
