@@ -84,6 +84,7 @@ def test_supervisor_publishes_route_priority_and_evidence_signals():
 
 def test_supervisor_routes_through_ordered_candidate_list():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'route_candidate_count=0' in text
     assert 'route_candidate_count="$(jq' in text
     assert 'for ((i=0; i<route_candidate_count; i++)); do' in text
     assert 'dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1' in text
@@ -170,6 +171,13 @@ def test_supervisor_recovers_only_the_24h_watchdog_not_the_marathon():
     assert 'dispatch_if_stale btc_24h_watchdog.yml 900' in text
     assert 'dispatch_if_stale btc_24h_autonomous_research.yml' not in text
     assert '24H marathon remains exclusively owned by its dedicated watchdog.' in text
+
+def test_supervisor_initializes_routed_candidate_count_before_production_backpressure_gate():
+    text = _read_workflow()
+    init = text.index("route_candidate_count=0")
+    gate = text.index('if [ "${production_active}" -eq 0 ]; then', init)
+    status = text.index('"route_candidate_count": ${route_candidate_count}', gate)
+    assert init < gate < status
 
 def test_supervisor_defers_routed_research_when_production_spine_is_active():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
