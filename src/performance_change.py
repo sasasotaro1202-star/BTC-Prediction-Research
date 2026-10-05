@@ -73,6 +73,7 @@ def _strict_pit_scores(
             "brier": None,
             "ece": None,
             "mode_counts": {},
+            "required_model_version": required_model_version,
         }
 
     try:
@@ -133,7 +134,15 @@ def _strict_pit_scores(
         mode_counts[mode] = mode_counts.get(mode, 0) + 1
 
     if not eligible:
-        return {"n": 0, "accuracy": None, "logloss": None, "brier": None, "ece": None, "mode_counts": mode_counts}
+        return {
+            "n": 0,
+            "accuracy": None,
+            "logloss": None,
+            "brier": None,
+            "ece": None,
+            "mode_counts": mode_counts,
+            "required_model_version": required_model_version,
+        }
 
     accuracy, logloss, brier, ece = multiclass_metrics(eligible, horizon)
     return {
@@ -143,6 +152,7 @@ def _strict_pit_scores(
         "brier": float(brier),
         "ece": float(ece),
         "mode_counts": mode_counts,
+        "required_model_version": required_model_version,
     }
 
 
