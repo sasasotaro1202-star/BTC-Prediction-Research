@@ -106,7 +106,7 @@ def test_supervisor_route_errors_are_explicitly_degraded():
     assert 'route_dispatch_outcome=1' in text
     assert 'return 10' not in text
     assert 'return 20' not in text
-    assert 'elif [ "${candidate_rc}" -eq 20 ]; then' in text
+    assert 'elif [ "${route_dispatch_outcome}" -eq 2 ]; then' in text
 
 
 
@@ -134,6 +134,7 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Autonomous Data Frontier',
         'BTC Ops Preflight',
         'BTC 24H Autonomous Research',
+        'BTC 24H Research Watchdog',
     ):
         assert f'- "{workflow}"' in text
     assert 'types: [completed]' in text
