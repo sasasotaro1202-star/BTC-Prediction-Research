@@ -25,6 +25,7 @@ on:
       - "BTC Return Distribution Tail OOS Research"
       - "BTC Ops Preflight"
       - "BTC 24H Autonomous Research"
+      - "BTC 24H Research Watchdog"
     types: [completed]
 
 concurrency:
@@ -257,9 +258,8 @@ jobs:
             # Research remains bounded by its own active-run guard.
             dispatch_if_stale btc_rolling_challenger.yml 21600
             dispatch_if_stale btc_9h_research_marathon.yml 28800
-            # The 24H autonomous marathon is a long-running research lane. Recover
-            # missed/failed daily generations without starting a duplicate while active.
-            dispatch_if_stale btc_24h_autonomous_research.yml 86400
+            # 24H recovery is owned by its dedicated watchdog so its circuit breaker
+            # remains authoritative and the general supervisor cannot bypass it.
 
             # High-value case-adaptation research must also recover when its own
             # schedule/trigger is delayed. These lanes are research-only and have
