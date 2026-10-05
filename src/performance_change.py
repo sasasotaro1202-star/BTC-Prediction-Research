@@ -11,6 +11,34 @@ SNAPSHOT = ROOT / "data" / "historical_research" / "performance_snapshot.json"
 CHANGE = ROOT / "data" / "historical_research" / "performance_change.json"
 PREDICTIONS_DB = ROOT / "data" / "predictions.db"
 HORIZONS = ("5m", "10m")
+
+
+def _current_production_model_version(horizon: str, db_path: Path) -> str | None:
+    """Return the exact Production model version registered for one horizon.
+
+    Monitoring-only helper: registry read failure becomes UNKNOWN rather than
+    inventing a generation or falling back to a stale metadata value.
+    """
+    if horizon not in HORIZONS or not db_path.is_file():
+        return None
+    try:
+        with sqlite3.connect(db_path) as con:
+            row = con.execute(
+                "SELECT production_version FROM model_registry WHERE horizon=?",
+                (horizon,),
+            ).fetchone()
+        value = str(row[0]).strip() if row and row[0] else ""
+        return value or None
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return None
+
+
+def _version_segment_present(horizon: str, stored: object, expected: str) -> bool:
+    """Match one horizon:model token exactly inside the combined model field."""
+    if not expected:
+        return False
+    tokens = [token.strip() for token in str(stored or "").split("|") if token.strip()]
+    return f"{horizon}:{expected}" in tokens
 def _load(path: Path) -> dict:
     if not path.is_file():
         raise SystemExit(f"required performance artifact missing: {path}")
@@ -23,7 +51,7 @@ def _load(path: Path) -> dict:
     return obj
 
 
-def _strict_pit_scores(horizon: str, db_path: Path = PREDICTIONS_DB) -> dict:
+def _strict_pit_scores(\n    horizon: str,\n    db_path: Path = PREDICTIONS_DB,\n    required_model_version: str | None = None,\n) -> dict:
     """Score settled Binance-primary predictions that pass the canonical strict-PIT contract.
 
     Legacy/pre-contract/unknown-venue and fallback-venue rows are deliberately
