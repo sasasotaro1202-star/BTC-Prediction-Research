@@ -145,5 +145,11 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('stale=true', block)
         self.assertIn('raise SystemExit(2)', block)
 
+    def test_collector_workflow_serializes_generations(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'btc_binance_ws_collector.yml').read_text(encoding='utf-8')
+        self.assertIn('group: btc-binance-ws-cache', workflow)
+        self.assertIn('cancel-in-progress: false', workflow)
+        self.assertNotIn('group: btc-binance-ws-cache-${{', workflow)
+
 if __name__ == '__main__':
     unittest.main()
