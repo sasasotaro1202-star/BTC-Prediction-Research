@@ -63,19 +63,19 @@ class TestLiveCollectorSelfHeal(unittest.TestCase):
         self.assertIn('event_age>180000', block)
         self.assertIn('stale_or_insufficient_at_prediction_boundary', block)
 
-    def test_self_heal_allows_one_additional_collector_but_caps_at_two(self):
+    def test_self_heal_caps_collector_concurrency_at_one(self):
         workflow = (ROOT / '.github' / 'workflows' / 'btc_live_cycle.yml').read_text(encoding='utf-8')
         start = workflow.index('      - name: Self-heal stale Binance WS collector')
         end = workflow.index('      - name: Load latest Binance depth cache', start)
         block = workflow[start:end]
-        self.assertIn('if [ "${active:-0}" -ge 2 ]; then', block)
+        self.assertIn('if [ "${active:-0}" -ge 1 ]; then', block)
         self.assertIn('ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/.github/workflows/btc_binance_ws_collector.yml?ref=main"', block)
         self.assertIn('ci_gh_api_get "repos/$GITHUB_REPOSITORY/contents/src/binance_ws.py?ref=main"', block)
         self.assertIn('ci_gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"', block)
         self.assertIn('headSha', block)
         self.assertIn('current_workflow_blob', block)
         self.assertIn('current_source_blob', block)
-        self.assertIn('self-heal dispatch capped to avoid a recovery storm', block)
+        self.assertIn('self-heal dispatch capped to one collector slot', block)
         self.assertNotIn('if [ "${active:-0}" -gt 0 ]; then', block)
 
     def test_prediction_boundary_checks_depth_event_age(self):
