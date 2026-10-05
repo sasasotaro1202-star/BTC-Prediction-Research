@@ -2687,3 +2687,26 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+
+78. CONDITIONAL RETURN DISTRIBUTION / TAIL RESEARCH
+
+A research-only lane may estimate conditional endpoint-return quantiles q10/q50/q90 for the canonical 5m and 10m horizons using only matured strict-PIT Binance-primary prediction observations from the canonical prediction ledger.
+
+Evaluation:
+- chronological walk-forward
+- purge + embargo
+- training-window unconditional quantile baseline
+- pinball loss
+- 80% interval coverage
+- lower/upper tail-breach rate
+- newest-block performance
+- interval width
+
+The lane is explicitly research-only. It cannot become promotion evidence and cannot change Production artifacts or model_registry. It must not claim intrahorizon maximum drawdown unless path-level future observations are added under a separately validated target/data contract.
+
+Evidence must retain analysis Git SHA and the prediction-database snapshot hash. The autonomous supervisor may dispatch the lane when evidence is missing or stale and may be woken by its completed workflow. Any eventual promotion remains subject to the independent PIT → OOS/WFO → calibration → robustness → frozen holdout → shadow → promotion gates.
+
+79. AUTONOMOUS RESEARCH CONTINUITY EXTENSION
+
+The Continuous Supervisor allowlist includes the return-distribution/tail lane. Its six-hour research freshness threshold is independent of the daily and multi-hour research schedules, and completed return-tail runs are included in the Supervisor workflow_run wakeup set. This is a research continuity mechanism only; failure or staleness never authorizes Production mutation.
