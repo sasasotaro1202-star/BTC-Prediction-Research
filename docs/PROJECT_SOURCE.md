@@ -2723,3 +2723,10 @@ The GitHub-side research PR auto-merge gate must compare each eligible PR head a
 * Invalid or missing compare evidence is HOLD, not PASS.
 * A green but stale/behind research PR is not auto-merged; it must be rebased/revalidated against the current main lineage.
 * This control is independent of, and does not weaken, the existing workflow/data/Production/registry/frozen-holdout firewall.
+
+
+118. V13 CURRENT-MAIN SNAPSHOT PINNING
+
+The V13 E2E workflow may be triggered by an older main SHA while the repository advances before the runner starts. This condition is an operational race, not by itself a research failure.
+
+The workflow must fail closed when it cannot resolve a current main snapshot, but when resolution succeeds it should pin the verification workspace to the fetched current main commit and use that immutable verification SHA for artifact/provenance binding. The original trigger SHA remains recorded as trigger metadata. Production, registry, frozen holdout, PIT, leakage, OOS, calibration and promotion semantics are unchanged.
