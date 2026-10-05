@@ -87,7 +87,9 @@ def test_supervisor_routes_through_ordered_candidate_list():
     assert 'route_candidate_count="$(jq' in text
     assert 'for ((i=0; i<route_candidate_count; i++)); do' in text
     assert 'dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1' in text
-    assert 'if [ "${candidate_rc}" -eq 10 ]; then' in text
+    assert 'if [ "${route_dispatch_outcome}" -eq 1 ]; then' in text
+    assert 'candidate_rc=$?' in text
+    assert 'if [ "${candidate_rc}" -ne 0 ]; then' in text
     assert 'non-stale lanes remain eligible for a later heartbeat' in text
 
 
@@ -100,7 +102,10 @@ def test_supervisor_preserves_readiness_candidate_on_router_failure():
 
 def test_supervisor_route_errors_are_explicitly_degraded():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
-    assert 'if [ "${route_mode}" -eq 1 ]; then return 20; fi' in text
+    assert 'route_dispatch_outcome=2' in text
+    assert 'route_dispatch_outcome=1' in text
+    assert 'return 10' not in text
+    assert 'return 20' not in text
     assert 'elif [ "${candidate_rc}" -eq 20 ]; then' in text
 
 
@@ -128,6 +133,7 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Ultimate Final V13 — Maximum Future-Generalization E2E',
         'BTC Autonomous Data Frontier',
         'BTC Ops Preflight',
+        'BTC 24H Autonomous Research',
     ):
         assert f'- "{workflow}"' in text
     assert 'types: [completed]' in text
