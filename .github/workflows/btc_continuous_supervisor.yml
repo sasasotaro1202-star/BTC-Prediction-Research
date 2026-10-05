@@ -165,25 +165,27 @@ jobs:
             workflow="${1}"
             threshold="${2}"
             route_mode="${3:-0}"
+            # Internal dispatch state must never become the Actions step exit code.
+            route_dispatch_outcome=0
 
             response="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=50" 2>/dev/null)" || {
               echo "ERROR: cannot inspect ${workflow}" >&2
               degraded=1
-              if [ "${route_mode}" -eq 1 ]; then return 20; fi
+              if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
               return 0
             }
 
             active="$(jq '[.workflow_runs[]? | select(.status=="queued" or .status=="pending" or .status=="in_progress")] | length' <<<"${response}" 2>/dev/null)" || {
               echo "ERROR: cannot parse active state for ${workflow}" >&2
               degraded=1
-              if [ "${route_mode}" -eq 1 ]; then return 20; fi
+              if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
               return 0
             }
 
             latest="$(jq -r '[.workflow_runs[]? | select(.status=="completed" and .conclusion!="skipped")] | sort_by(.updated_at) | last // empty | [.updated_at,.head_sha,.conclusion] | @tsv' <<<"${response}" 2>/dev/null)" || {
               echo "ERROR: cannot parse latest state for ${workflow}" >&2
               degraded=1
-              if [ "${route_mode}" -eq 1 ]; then return 20; fi
+              if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
               return 0
             }
 
@@ -205,7 +207,7 @@ jobs:
               latest_epoch="$(date -d "${latest_updated}" +%s 2>/dev/null)" || {
                 echo "ERROR: invalid latest timestamp for ${workflow}: ${latest_updated}" >&2
                 degraded=1
-                if [ "${route_mode}" -eq 1 ]; then return 20; fi
+                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
                 return 0
               }
             fi
@@ -227,14 +229,14 @@ jobs:
               echo "Dispatching stale ${workflow}"
               if ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via workflow_dispatch API: ${workflow}"
-                if [ "${route_mode}" -eq 1 ]; then return 10; fi
+                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=1; fi
               elif ci_gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
                 echo "Dispatch succeeded via gh workflow run: ${workflow}"
-                if [ "${route_mode}" -eq 1 ]; then return 10; fi
+                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=1; fi
               else
                 echo "ERROR: dispatch failed through both REST and gh CLI: ${workflow}" >&2
                 degraded=1
-                if [ "${route_mode}" -eq 1 ]; then return 20; fi
+                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
               fi
             fi
             return 0
@@ -284,11 +286,18 @@ jobs:
               [ -n "${candidate_workflow}" ] || continue
               [ -n "${candidate_threshold}" ] || continue
               echo "Evaluating routed research candidate ${i}: ${candidate_workflow} (${candidate_reason})"
+              route_dispatch_outcome=0
               set +e
               dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1
               candidate_rc=$?
               set -e
-              if [ "${candidate_rc}" -eq 10 ]; then
+              if [ "${candidate_rc}" -ne 0 ]; then
+                echo "ERROR: unexpected supervisor dispatch return code ${candidate_rc}: ${candidate_workflow}" >&2
+                echo "The dispatch helper uses outcome state and must return 0." >&2
+                degraded=1
+                continue
+              fi
+              if [ "${route_dispatch_outcome}" -eq 1 ]; then
                 route_workflow="${candidate_workflow}"
                 route_threshold="${candidate_threshold}"
                 route_reason="${candidate_reason}"
@@ -298,7 +307,7 @@ jobs:
                 route_dispatched=1
                 echo "Dispatched routed research candidate: ${route_workflow} (${route_reason})"
                 break
-              elif [ "${candidate_rc}" -eq 20 ]; then
+              elif [ "${route_dispatch_outcome}" -eq 2 ]; then
                 echo "ERROR: routed candidate inspection/dispatch failed: ${candidate_workflow}" >&2
               fi
             done
