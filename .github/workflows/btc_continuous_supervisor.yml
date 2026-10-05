@@ -187,7 +187,7 @@ jobs:
               return 0
             }
 
-            failure_streak="$(jq -r \'[.workflow_runs[]? | select(.status=="completed") | {conclusion,updated_at}] | sort_by(.updated_at) | reverse | reduce .[] as $r (0; if $r.conclusion == "success" then . else if ($r.conclusion == "failure" or $r.conclusion == "cancelled" or $r.conclusion == "timed_out" or $r.conclusion == "action_required" or $r.conclusion == "stale") then . + 1 else . end end)\' <<<"${response}" 2>/dev/null)" || failure_streak=0
+            failure_streak="$(jq -r '[.workflow_runs[]? | select(.status=="completed") | {conclusion,updated_at}] | sort_by(.updated_at) | reverse | reduce .[] as $r (0; if $r.conclusion == "success" then . else if ($r.conclusion == "failure" or $r.conclusion == "cancelled" or $r.conclusion == "timed_out" or $r.conclusion == "action_required" or $r.conclusion == "stale") then . + 1 else . end end)\' <<<"${response}" 2>/dev/null)" || failure_streak=0
             if ! [[ "${failure_streak}" =~ ^[0-9]+$ ]]; then failure_streak=0; fi
             failure_cooldown=300
             if [ "${failure_streak}" -gt 1 ]; then
