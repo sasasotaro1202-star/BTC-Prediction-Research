@@ -51,7 +51,11 @@ def _load(path: Path) -> dict:
     return obj
 
 
-def _strict_pit_scores(\n    horizon: str,\n    db_path: Path = PREDICTIONS_DB,\n    required_model_version: str | None = None,\n) -> dict:
+def _strict_pit_scores(
+    horizon: str,
+    db_path: Path = PREDICTIONS_DB,
+    required_model_version: str | None = None,
+) -> dict:
     """Score settled Binance-primary predictions that pass the canonical strict-PIT contract.
 
     Legacy/pre-contract/unknown-venue and fallback-venue rows are deliberately
