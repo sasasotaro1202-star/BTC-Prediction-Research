@@ -138,3 +138,11 @@ def test_supervisor_has_event_driven_recovery_triggers():
 def test_supervisor_records_trigger_event():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     assert '"trigger_event": "${GITHUB_EVENT_NAME}"' in text
+
+
+def test_supervisor_prioritizes_production_capacity_over_stale_research_dispatch():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'production_active=0' in text
+    assert 'production_response="$(ci_gh_api_get' in text
+    assert 'if [ "${production_active}" -eq 0 ]; then' in text
+    assert 'suppressing avoidable research stale-dispatches' in text
