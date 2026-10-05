@@ -2725,3 +2725,8 @@ Repeated failure/cancellation/timeout must not cause an unbounded 5-minute dispa
 82. WORKFLOW CONTRACT VALIDATION LANE
 
 The automation control plane uses a lightweight dedicated workflow-contract lane for `.github/workflows/*` changes. The full unit suite remains focused on source/tests/scripts/dependency changes, while workflow edits receive compile and recovery-contract validation. This reduces avoidable queue churn without weakening validation of Supervisor, Watchdog, immutable research recovery, or stale-run controls.
+
+
+83. SHARED RECOVERY FAILURE STREAK
+
+The Supervisor and Watchdog use the shared `scripts/ci_failure_streak.sh` helper for consecutive failure/cancellation counting. This removes duplicated inline recovery logic and makes the recovery state calculation directly testable. The helper counts only the terminal non-success streak since the latest explicit success; neutral/unknown terminal conclusions stop the streak. Ops Preflight syntax-checks the helper.
