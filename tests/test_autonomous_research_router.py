@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.autonomous_research_router import choose, validate
@@ -61,7 +62,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 "research_only": True,
                 "production_changed": False,
                 "promotion_evidence_eligible": False,
-                "generated_at_utc": "2099-01-01T00:00:00Z",
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                 "horizons": {
                     "5m": {"status": "OK"},
                     "10m": {"status": "OK"},
