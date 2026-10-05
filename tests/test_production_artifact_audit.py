@@ -108,3 +108,31 @@ def test_build_provenance_records_all_required_policy_hashes(monkeypatch, tmp_pa
         "requirements.txt",
     }
     assert all(len(value) == 64 for value in provenance["policy_files"].values())
+
+
+def test_current_workspace_sha_prefers_pinned_verification_sha(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("BTC_VERIFICATION_SHA", "b" * 40)
+    monkeypatch.setattr(
+        audit.subprocess,
+        "check_output",
+        lambda *args, **kwargs: "b" * 40 + "\n",
+    )
+
+    assert audit.current_workspace_sha(tmp_path) == "b" * 40
+
+
+def test_build_provenance_prefers_pinned_verification_sha(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("BTC_VERIFICATION_SHA", "b" * 40)
+    monkeypatch.setattr(audit, "current_workspace_sha", lambda root: "b" * 40)
+    (tmp_path / "PROJECT_INSTRUCTIONS.md").write_text("instructions\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/PROJECT_SOURCE.md").write_text("source\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("pytest\n", encoding="utf-8")
+
+    provenance = audit.build_provenance(tmp_path)
+
+    assert provenance["git_sha"] == "b" * 40
+    assert provenance["checkout_sha"] == "b" * 40
+    assert provenance["verification_sha_source"] == "BTC_VERIFICATION_SHA"
