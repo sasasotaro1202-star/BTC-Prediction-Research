@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from src.binary_target_research import (
+    _factories,
     _metrics,
     _training_rows_before_cutoff,
     _wfo_diagnostics,
@@ -27,6 +28,13 @@ class TestBinaryTargetResearch(unittest.TestCase):
         self.assertEqual(binary_direction_from_return(-0.001), "DOWN")
         self.assertEqual(binary_direction_from_return(0.001), "UP")
         self.assertEqual(binary_direction_from_return(0.0), "DOWN")
+
+    def test_extra_trees_challenger_grid_contains_bounded_leaf_variants(self):
+        factories = _factories()
+        self.assertIn("extra_trees", factories)
+        self.assertIn("extra_trees_leaf5", factories)
+        self.assertIn("extra_trees_leaf20", factories)
+        self.assertGreaterEqual(len(factories), 5)
 
     def test_binary_metrics_contract(self):
         out = _metrics(["DOWN", "UP", "UP", "DOWN"], [0.1, 0.9, 0.8, 0.2])
