@@ -98,6 +98,7 @@ jobs:
               "dispatch_if_stale btc_binance_ws_collector.yml 900",
               "dispatch_if_stale btc_rolling_challenger.yml 21600",
               "dispatch_if_stale btc_9h_research_marathon.yml 28800",
+              "dispatch_if_stale btc_24h_watchdog.yml 900",
           }
           missing_supervisor = sorted(required_supervisor_calls - set(
               line.strip() for line in supervisor.splitlines()
