@@ -225,6 +225,7 @@ jobs:
               "btc_adaptive_calibration_replay.yml",
               "btc_experience_policy_oos.yml",
               "btc_selective_prediction_oos.yml",
+              "btc_return_distribution_tail_oos.yml",
               "btc_uncertainty_layer_oos.yml",
               "btc_rich_production_challenger.yml",
               "btc_ultimate_final_v13_e2e.yml",
@@ -234,7 +235,7 @@ jobs:
           if obj.get("production_impact") is not False:
               raise SystemExit("router production_impact must be false")
           candidates = obj.get("candidates")
-          if not isinstance(candidates, list) or not (1 <= len(candidates) <= 7):
+          if not isinstance(candidates, list) or not (1 <= len(candidates) <= 8):
               raise SystemExit("router candidates missing or out of bounds")
           expected_thresholds = {
               "btc_research_readiness.yml": 3600,
@@ -243,6 +244,7 @@ jobs:
               "btc_experience_policy_oos.yml": 21600,
               "btc_selective_prediction_oos.yml": 43200,
               "btc_uncertainty_layer_oos.yml": 21600,
+              "btc_return_distribution_tail_oos.yml": 21600,
               "btc_rich_production_challenger.yml": 86400,
               "btc_ultimate_final_v13_e2e.yml": 86400,
           }
