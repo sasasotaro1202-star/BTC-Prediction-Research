@@ -22,6 +22,7 @@ on:
       - "BTC Ultimate Final V13 — Maximum Future-Generalization E2E"
       - "BTC Autonomous Data Frontier"
       - "BTC Uncertainty Layer OOS"
+      - "BTC Return Distribution Tail OOS Research"
       - "BTC Unit Tests"
       - "BTC Ops Preflight"
     types: [completed]
@@ -85,6 +86,7 @@ jobs:
                 or .workflow == "btc_experience_policy_oos.yml"
                 or .workflow == "btc_selective_prediction_oos.yml"
                 or .workflow == "btc_uncertainty_layer_oos.yml"
+                or .workflow == "btc_return_distribution_tail_oos.yml"
                 or .workflow == "btc_rich_production_challenger.yml"
                 or .workflow == "btc_ultimate_final_v13_e2e.yml"
               )
@@ -95,7 +97,7 @@ jobs:
               and (.reason | type == "string" and length > 0)
               and (.evidence_state | type == "string" and length > 0)
               and (.signals | type == "array")
-              and (.candidates | type == "array" and length >= 1 and length <= 7)
+              and (.candidates | type == "array" and length >= 1 and length <= 8)
               and all(.candidates[];
                 .production_impact == false
                 and (
@@ -105,6 +107,7 @@ jobs:
                   or .workflow == "btc_experience_policy_oos.yml"
                   or .workflow == "btc_selective_prediction_oos.yml"
                 or .workflow == "btc_uncertainty_layer_oos.yml"
+                or .workflow == "btc_return_distribution_tail_oos.yml"
                   or .workflow == "btc_rich_production_challenger.yml"
                   or .workflow == "btc_ultimate_final_v13_e2e.yml"
                 )
@@ -229,6 +232,7 @@ jobs:
           # schedule/trigger is delayed. These lanes are research-only and have
           # independent concurrency guards, so stale dispatch does not alter production.
           dispatch_if_stale btc_uncertainty_layer_oos.yml 21600
+          dispatch_if_stale btc_return_distribution_tail_oos.yml 21600
           dispatch_if_stale btc_multiscale_frozen_replay.yml 21600
           dispatch_if_stale btc_time_regime_research.yml 28800
           dispatch_if_stale btc_selective_prediction_oos.yml 43200
