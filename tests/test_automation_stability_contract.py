@@ -25,4 +25,4 @@ def test_watchdog_failure_streak_stops_at_latest_success():
 def test_stale_janitor_is_not_a_dispatcher():
     text = _read('btc_stale_run_janitor.yml')
     assert 'dispatch_if_stale()' not in text
-    assert 'cancellation-only' in text
+    assert 'recovery dispatch is centralized' in text
