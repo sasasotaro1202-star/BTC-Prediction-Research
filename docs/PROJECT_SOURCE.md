@@ -2730,3 +2730,14 @@ The automation control plane uses a lightweight dedicated workflow-contract lane
 83. SHARED RECOVERY FAILURE STREAK
 
 The Supervisor and Watchdog use the shared `scripts/ci_failure_streak.sh` helper for consecutive failure/cancellation counting. This removes duplicated inline recovery logic and makes the recovery state calculation directly testable. The helper counts only the terminal non-success streak since the latest explicit success; neutral/unknown terminal conclusions stop the streak. Ops Preflight syntax-checks the helper.
+
+
+⸻
+
+116. PRODUCTION-FIRST SUPERVISOR BACKPRESSURE
+
+When the 5m Live Cycle is queued, pending, or in progress, the Continuous Supervisor must not dispatch an additional evidence-routed research lane during the same heartbeat.
+
+The selected research candidate remains observable in the supervisor status artifact and is reconsidered on a later heartbeat after Production capacity clears. This rule controls operational queue pressure only; it does not change Research priority, PIT policy, OOS/WFO policy, Promotion gates, or Production model selection.
+
+This is required to preserve Production cadence on constrained GitHub Actions capacity and to prevent low-priority research dispatch from starving the primary 5m/10m prediction spine.
