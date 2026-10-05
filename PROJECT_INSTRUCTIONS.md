@@ -192,3 +192,7 @@ A research-only return-distribution lane is part of the autonomous research queu
 The lane reports pinball loss, 80% interval coverage, tail-breach rates, interval width, median-sign accuracy, newest-block behavior and a training-window quantile baseline. It must remain research_only=true, production_changed=false, and promotion_evidence_eligible=false. It does not claim intrahorizon drawdown because the current research contract does not persist the full future path.
 
 Evidence is bound to both analysis_git_sha and a prediction-DB snapshot hash. The Continuous Supervisor treats the lane as an allowlisted, non-production research candidate, dispatches it when its evidence is missing/stale, and wakes again after its completion. This lane must never bypass the existing PIT → OOS/WFO → calibration → robustness → frozen holdout → shadow → promotion sequence.
+
+## Immutable research snapshot recovery
+
+Long-running research workflows must remain valid when `main` advances while they are queued or executing. The analysis is bound to its immutable `GITHUB_SHA` and the prediction-DB snapshot used for that analysis; a concurrent main-branch state commit must not invalidate the already-started research run. Before committing research evidence, the workflow must reconcile against the current `main` and preserve the analysis SHA as provenance. A stale-head or concurrent state commit is not itself a research failure. Only actual execution, integrity, PIT, OOS, or boundary failures are evidence of failure.

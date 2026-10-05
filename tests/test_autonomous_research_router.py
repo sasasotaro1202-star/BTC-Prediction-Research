@@ -32,7 +32,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
         self._write(
             root / "data" / "experience",
             "experience_summary.json",
-            {"generated_at_utc": "2026-10-04T00:00:00Z", "horizons": {}},
+            {"generated_at_utc": datetime.now(timezone.utc).isoformat(), "horizons": {}},
         )
         self._write(
             evidence,

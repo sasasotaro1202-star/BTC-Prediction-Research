@@ -2710,3 +2710,7 @@ Evidence must retain analysis Git SHA and the prediction-database snapshot hash.
 79. AUTONOMOUS RESEARCH CONTINUITY EXTENSION
 
 The Continuous Supervisor allowlist includes the return-distribution/tail lane. Its six-hour research freshness threshold is independent of the daily and multi-hour research schedules, and completed return-tail runs are included in the Supervisor workflow_run wakeup set. This is a research continuity mechanism only; failure or staleness never authorizes Production mutation.
+
+80. IMMUTABLE RESEARCH SNAPSHOT RECOVERY
+
+Long-running research lanes are immutable-analysis jobs, not moving-main jobs. A queued or running job may legitimately start from a prior main commit while Live/settlement state continues advancing main. The job must preserve its `GITHUB_SHA` as the analysis provenance and its exact input/data snapshot; concurrent main movement must not force a false failure. Before publishing evidence, the workflow reconciles with the latest main and commits only the research artifact. This preserves reproducibility without allowing stale code or stale evidence to masquerade as current Production state. A failed analysis is determined by the actual research/validation result, not merely by main advancing.
