@@ -26,3 +26,8 @@ def test_stale_janitor_is_not_a_dispatcher():
     text = _read('btc_stale_run_janitor.yml')
     assert 'dispatch_if_stale()' not in text
     assert 'Recovery dispatch is centralized' in text
+
+
+def test_ops_preflight_does_not_wake_on_live_prediction_db_commit():
+    text = _read('btc_ops_preflight.yml')
+    assert "      - 'data/predictions.db.gz'" not in text
