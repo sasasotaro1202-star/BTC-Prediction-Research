@@ -74,6 +74,34 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["candidates"][0]["priority"], 95)
             self.assertIn("5m:calibration_n=261<400", route["signals"])
 
+    def test_stale_champion_routes_recency_challenger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "models",
+                "5m.json",
+                {"trained_at_utc": "2026-10-03T00:00:00Z"},
+            )
+            self._write(
+                root / "models",
+                "10m.json",
+                {"trained_at_utc": "2026-09-13T00:00:00Z"},
+            )
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "generated_at_utc": "2026-10-05T00:00:00Z",
+                    "horizons": {},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertEqual(route["priority"], 88)
+            self.assertIn("10m:model_age_days=22.0>7", route["signals"])
+            self.assertFalse(route["production_impact"])
+
     def test_promotion_robustness_hold_is_a_prioritized_fallback(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
