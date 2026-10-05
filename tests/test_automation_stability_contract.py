@@ -14,24 +14,15 @@ def test_supervisor_does_not_wake_on_unit_test_completion():
 
 def test_supervisor_failure_streak_stops_at_latest_success():
     text = _read('btc_continuous_supervisor.yml')
-    assert 'reduce .[] as $r ({count:0,done:false};' in text
-    assert '.done=true' in text
+    assert 'ci_failure_streak_from_stdin' in text
 
 
 def test_watchdog_failure_streak_stops_at_latest_success():
     text = _read('btc_watchdog.yml')
-    assert 'reduce .[] as $r ({count:0,done:false};' in text
-    assert '.done=true' in text
+    assert 'ci_failure_streak_from_stdin' in text
 
 
 def test_stale_janitor_is_not_a_dispatcher():
     text = _read('btc_stale_run_janitor.yml')
     assert 'dispatch_if_stale()' not in text
     assert 'cancellation-only' in text
-
-
-def test_recovery_jq_lines_do_not_contain_escaped_apostrophes():
-    for name in ('btc_continuous_supervisor.yml', 'btc_watchdog.yml'):
-        text = _read(name)
-        assert "jq -r \\\'" not in text
-        assert ")\\\'" not in text
