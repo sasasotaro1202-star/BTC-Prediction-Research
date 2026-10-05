@@ -171,6 +171,16 @@ def _research_artifact_refresh_signal(
     age = (datetime.now(timezone.utc) - parsed).total_seconds()
     if age < 0:
         return [f"{label}_generated_in_future"]
+
+    # A fresh artifact can still be a durable failure. Explicitly terminal
+    # failure states must re-enter the research lane instead of being treated
+    # as healthy merely because their timestamp is recent.
+    status = obj.get("status")
+    if status is not None:
+        normalized_status = str(status).strip().upper()
+        if normalized_status in {"FAILED", "ERROR", "BLOCKED", "REJECTED", "INVALID"}:
+            return [f"{label}_status_unhealthy:{normalized_status}"]
+
     if age >= threshold_seconds:
         return [f"{label}_stale:{int(age)}s"]
     return []
