@@ -69,6 +69,7 @@ jobs:
               "btc_live_cycle.yml",
               "btc_binance_ws_collector.yml",
               "btc_9h_research_marathon.yml",
+              "btc_24h_autonomous_research.yml",
               "btc_unit_tests.yml",
           }
           absent = sorted(required - set(names))
@@ -97,6 +98,7 @@ jobs:
               "dispatch_if_stale btc_binance_ws_collector.yml 900",
               "dispatch_if_stale btc_rolling_challenger.yml 21600",
               "dispatch_if_stale btc_9h_research_marathon.yml 28800",
+              "dispatch_if_stale btc_24h_autonomous_research.yml 86400",
           }
           missing_supervisor = sorted(required_supervisor_calls - set(
               line.strip() for line in supervisor.splitlines()
@@ -129,6 +131,7 @@ jobs:
               "BTC Autonomous Data Frontier",
               "BTC Uncertainty Layer OOS",
               "BTC Ops Preflight",
+              "BTC 24H Autonomous Research",
           }
           for workflow_name in required_event_wakeups:
               if f'- "{workflow_name}"' not in supervisor:
