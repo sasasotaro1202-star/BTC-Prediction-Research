@@ -573,7 +573,8 @@ class TestBinanceWebSocket(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "btc_binance_ws_collector.yml").read_text(encoding="utf-8")
         self.assertNotIn("      - 'tests/test_binance_ws.py'", workflow)
         self.assertIn("  cancel-in-progress: false", workflow)
-        self.assertIn("github.event_name == 'schedule' && github.run_id || github.sha", workflow)
+        self.assertIn("group: btc-binance-ws-cache", workflow)
+        self.assertNotIn("btc-binance-ws-cache-${{", workflow)
 
 
     def test_collector_publishes_initial_cache_before_checkpoint_loop(self):
