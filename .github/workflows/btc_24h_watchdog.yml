@@ -135,9 +135,17 @@ jobs:
             done < /tmp/btc24_decision
           fi
 
+          # The 24H watchdog is the single recovery owner for the marathon.
+          # Re-enable the intended workflow before dispatch so a disabled target
+          # cannot silently break the otherwise healthy recovery chain.
+          if ci_gh workflow enable btc_24h_autonomous_research.yml --repo "$REPO"; then
+            echo "24H marathon workflow enable check completed."
+          else
+            echo "WARN: could not enable 24H marathon workflow; dispatch will still be attempted." >&2
+          fi
+
           dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          for attempt in 1 2 3 4; do
-            if ! ci_gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
+          for attempt in 1 2 3 4; do            if ! ci_gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
               echo "dispatch attempt $attempt failed; retrying" >&2
               sleep $((attempt * 5))
               continue
