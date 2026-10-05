@@ -51,3 +51,8 @@ def test_return_tail_lane_has_fail_closed_current_main_and_research_only_boundar
     assert 'obj.get("analysis_git_sha") != __import__("os").environ.get("GITHUB_SHA")' in text
     assert 'obj.get("prediction_db_sha256")' in text
     assert 'result.get("promotion_evidence_eligible") is True' in text
+
+def test_watchdog_checks_out_repository_before_using_versioned_recovery_helpers():
+    text = _workflow("btc_watchdog.yml")
+    assert "actions/checkout@v7" in text
+    assert "scripts/ci_failure_streak.sh" in text
