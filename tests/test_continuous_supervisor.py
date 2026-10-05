@@ -4,7 +4,7 @@ from pathlib import Path
 def test_supervisor_uses_rest_dispatch_first():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     assert 'actions/workflows/${workflow}/dispatches' in text
-    assert 'Dispatch succeeded via workflow_dispatch API' in text
+    assert 'Dispatch request accepted via workflow_dispatch API' in text
 
 
 def test_supervisor_degrades_explicitly_on_dispatch_failure():
