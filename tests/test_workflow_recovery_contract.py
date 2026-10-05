@@ -26,6 +26,16 @@ def test_watchdog_recovers_failed_generations_on_current_main():
     assert '[ "$failure_retry_due" = true ]' in text
 
 
+def test_24h_research_marathon_is_in_supervisor_and_watchdog_recovery_spine():
+    supervisor = _workflow("btc_continuous_supervisor.yml")
+    watchdog = _workflow("btc_watchdog.yml")
+
+    assert '"BTC 24H Autonomous Research"' in supervisor
+    assert "dispatch_if_stale btc_24h_autonomous_research.yml 86400" in supervisor
+    assert "btc_24h_autonomous_research.yml" in watchdog
+    assert "recover_if_stale btc_24h_autonomous_research.yml 86400 93600 900" in watchdog
+
+
 def test_return_tail_lane_has_fail_closed_current_main_and_research_only_boundaries():
     text = _workflow("btc_return_distribution_tail_oos.yml")
     assert "Bind immutable analysis snapshot" in text
