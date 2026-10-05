@@ -3,6 +3,10 @@ name: BTC Stale Run Janitor
 on:
   schedule:
     - cron: '*/5 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_stale_run_janitor.yml'
   workflow_dispatch:
 
 permissions:
