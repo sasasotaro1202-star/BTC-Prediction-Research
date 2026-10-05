@@ -102,6 +102,13 @@ def _strict_pit_scores(
         created_at, target_at, actual, p_up, p_down, p_flat, model_version, scenario_text = row
         if str(model_version or "").startswith("DEGRADED_NO_FRESH_DATA"):
             continue
+        if (
+            required_model_version is not None
+            and not _version_segment_present(
+                horizon, model_version, required_model_version
+            )
+        ):
+            continue
         if not prediction_precedes_target(created_at, target_at):
             continue
         try:
