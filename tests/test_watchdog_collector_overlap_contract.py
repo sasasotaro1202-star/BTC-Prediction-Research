@@ -29,3 +29,11 @@ def test_janitor_self_validation_trigger():
     assert 'push:' in janitor
     assert 'branches: [main]' in janitor
     assert "'.github/workflows/btc_stale_run_janitor.yml'" in janitor
+
+
+
+def test_watchdog_self_change_push_can_recover_live_but_not_research():
+    workflow = Path(".github/workflows/btc_watchdog.yml").read_text(encoding="utf-8")
+    assert "push)" in workflow
+    assert 'if [ "$workflow" != "btc_live_cycle.yml" ]; then' in workflow
+    assert "dispatch_allowed=false" in workflow
