@@ -98,7 +98,7 @@ jobs:
               and (.reason | type == "string" and length > 0)
               and (.evidence_state | type == "string" and length > 0)
               and (.signals | type == "array")
-              and (.candidates | type == "array" and length >= 1 and length <= 8)
+              and (.candidates | type == "array" and length >= 1 and length <= 9)
               and all(.candidates[];
                 .production_impact == false
                 and (
@@ -326,45 +326,54 @@ jobs:
 
 
           # Run at most one evidence-driven research lane after the independent stale checks.
-          # Try ordered candidates so a fresh high-priority lane does not starve other research.
+          # Production-first backpressure: an active/queued Live Cycle suppresses routed research.
+          # The selected candidate remains observable and is reconsidered on a later heartbeat.
           route_dispatched=0
-          route_candidate_count="$(jq '.candidates | length' autonomous_route.json 2>/dev/null)" || route_candidate_count=0
-          if [ -n "${route_workflow}" ] && [ "${route_candidate_count}" -gt 0 ] 2>/dev/null; then
-            for ((i=0; i<route_candidate_count; i++)); do
-              candidate_workflow="$(jq -r ".candidates[${i}].workflow // empty" autonomous_route.json)"
-              candidate_threshold="$(jq -r ".candidates[${i}].threshold_seconds // empty" autonomous_route.json)"
-              candidate_reason="$(jq -r ".candidates[${i}].reason // \"unspecified\"" autonomous_route.json)"
-              [ -n "${candidate_workflow}" ] || continue
-              [ -n "${candidate_threshold}" ] || continue
-              echo "Evaluating routed research candidate ${i}: ${candidate_workflow} (${candidate_reason})"
-              route_dispatch_outcome=0
-              set +e
-              dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1
-              candidate_rc=$?
-              set -e
-              if [ "${candidate_rc}" -ne 0 ]; then
-                echo "ERROR: unexpected supervisor dispatch return code ${candidate_rc}: ${candidate_workflow}" >&2
-                echo "The dispatch helper uses outcome state and must return 0." >&2
-                degraded=1
-                continue
-              fi
-              if [ "${route_dispatch_outcome}" -eq 1 ]; then
-                route_workflow="${candidate_workflow}"
-                route_threshold="${candidate_threshold}"
-                route_reason="${candidate_reason}"
-                route_priority="$(jq -r ".candidates[${i}].priority // 0" autonomous_route.json)"
-                route_evidence_state="$(jq -r ".candidates[${i}].evidence_state // \"UNKNOWN\"" autonomous_route.json)"
-                route_signals="$(jq -c ".candidates[${i}].signals // []" autonomous_route.json)"
-                route_dispatched=1
-                echo "Dispatched routed research candidate: ${route_workflow} (${route_reason})"
-                break
-              elif [ "${route_dispatch_outcome}" -eq 2 ]; then
-                echo "ERROR: routed candidate inspection/dispatch failed: ${candidate_workflow}" >&2
-              fi
-            done
-          fi
-          if [ "${route_dispatched}" -eq 0 ]; then
-            echo "No routed research candidate was dispatched this heartbeat; non-stale lanes remain eligible for a later heartbeat."
+          route_deferred_by_production=0
+          if [ "${production_active}" -eq 0 ]; then
+            # Try ordered candidates so a fresh high-priority lane does not starve other research.
+            route_dispatched=0
+            route_candidate_count="$(jq '.candidates | length' autonomous_route.json 2>/dev/null)" || route_candidate_count=0
+            if [ -n "${route_workflow}" ] && [ "${route_candidate_count}" -gt 0 ] 2>/dev/null; then
+              for ((i=0; i<route_candidate_count; i++)); do
+                candidate_workflow="$(jq -r ".candidates[${i}].workflow // empty" autonomous_route.json)"
+                candidate_threshold="$(jq -r ".candidates[${i}].threshold_seconds // empty" autonomous_route.json)"
+                candidate_reason="$(jq -r ".candidates[${i}].reason // \"unspecified\"" autonomous_route.json)"
+                [ -n "${candidate_workflow}" ] || continue
+                [ -n "${candidate_threshold}" ] || continue
+                echo "Evaluating routed research candidate ${i}: ${candidate_workflow} (${candidate_reason})"
+                route_dispatch_outcome=0
+                set +e
+                dispatch_if_stale "${candidate_workflow}" "${candidate_threshold}" 1
+                candidate_rc=$?
+                set -e
+                if [ "${candidate_rc}" -ne 0 ]; then
+                  echo "ERROR: unexpected supervisor dispatch return code ${candidate_rc}: ${candidate_workflow}" >&2
+                  echo "The dispatch helper uses outcome state and must return 0." >&2
+                  degraded=1
+                  continue
+                fi
+                if [ "${route_dispatch_outcome}" -eq 1 ]; then
+                  route_workflow="${candidate_workflow}"
+                  route_threshold="${candidate_threshold}"
+                  route_reason="${candidate_reason}"
+                  route_priority="$(jq -r ".candidates[${i}].priority // 0" autonomous_route.json)"
+                  route_evidence_state="$(jq -r ".candidates[${i}].evidence_state // \"UNKNOWN\"" autonomous_route.json)"
+                  route_signals="$(jq -c ".candidates[${i}].signals // []" autonomous_route.json)"
+                  route_dispatched=1
+                  echo "Dispatched routed research candidate: ${route_workflow} (${route_reason})"
+                  break
+                elif [ "${route_dispatch_outcome}" -eq 2 ]; then
+                  echo "ERROR: routed candidate inspection/dispatch failed: ${candidate_workflow}" >&2
+                fi
+              done
+            fi
+            if [ "${route_dispatched}" -eq 0 ]; then
+              echo "No routed research candidate was dispatched this heartbeat; non-stale lanes remain eligible for a later heartbeat."
+            fi
+          else
+            route_deferred_by_production=1
+            echo "Production spine active; deferring evidence-driven routed research until a later heartbeat."
           fi
 
           cat > supervisor_status.json <<EOF
@@ -383,6 +392,7 @@ jobs:
             "route_signals": ${route_signals},
             "route_dispatched": ${route_dispatched},
             "route_candidate_count": ${route_candidate_count},
+            "route_deferred_by_production": ${route_deferred_by_production},
             "trigger_event": "${GITHUB_EVENT_NAME}",
             "design": "stateless_5m_plus_event_driven_supervisor_ordered_evidence_router_no_self_dispatch_no_multi_hour_runner"
           }
