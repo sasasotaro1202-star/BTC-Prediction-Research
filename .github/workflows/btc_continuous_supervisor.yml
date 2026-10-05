@@ -228,16 +228,64 @@ jobs:
 
             if [ "${active}" -eq 0 ] && { [ "${latest_epoch}" -eq 0 ] || [ "${age}" -ge "${threshold}" ] || [ "${failure_retry_due}" = true ]; }; then
               echo "Dispatching stale ${workflow}"
+              dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+              dispatch_target_sha="$(ci_gh_api_get "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)" || dispatch_target_sha=''
+              if [ -z "${dispatch_target_sha}" ]; then
+                echo "ERROR: cannot resolve current main SHA before dispatch: ${workflow}" >&2
+                degraded=1
+                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
+                return 0
+              fi
+
+              # A workflow can lose its schedule/dispatch capability when it is
+              # disabled. Re-enable intended autonomous lanes before dispatching,
+              # while still allowing the dispatch attempt to fail closed if the
+              # enable request itself is unavailable.
+              if ci_gh workflow enable "${workflow}" --repo "${REPO}" >/dev/null 2>&1; then
+                echo "Workflow enable check completed: ${workflow}"
+              else
+                echo "WARN: workflow enable check failed; dispatch will still be attempted: ${workflow}" >&2
+              fi
+
+              dispatch_sent=false
               if ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/dispatches" --method POST -f ref=main >/dev/null 2>&1; then
-                echo "Dispatch succeeded via workflow_dispatch API: ${workflow}"
-                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=1; fi
+                echo "Dispatch request accepted via workflow_dispatch API: ${workflow}"
+                dispatch_sent=true
               elif ci_gh workflow run "${workflow}" --ref main >/dev/null 2>&1; then
-                echo "Dispatch succeeded via gh workflow run: ${workflow}"
-                if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=1; fi
+                echo "Dispatch request accepted via gh workflow run: ${workflow}"
+                dispatch_sent=true
               else
                 echo "ERROR: dispatch failed through both REST and gh CLI: ${workflow}" >&2
                 degraded=1
                 if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
+              fi
+
+              # An accepted dispatch request is not sufficient evidence that a
+              # workflow run was actually created. Verify creation on current main
+              # with a short bounded poll; the independent Watchdog remains the
+              # fallback when this verification cannot be completed.
+              if [ "${dispatch_sent}" = true ]; then
+                dispatch_verified=false
+                for check in 1 2 3 4; do
+                  sleep 5
+                  verify_response="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=30" 2>/dev/null)" || verify_response=''
+                  if [ -n "${verify_response}" ] && jq -e \
+                      --arg sha "${dispatch_target_sha}" \
+                      --arg started "${dispatch_started_at}" \
+                      '[.workflow_runs[]? | select(.head_branch=="main") | select(.head_sha==$sha) | select(.event=="workflow_dispatch") | select(.created_at >= $started)] | length > 0' \
+                      <<<"${verify_response}" >/dev/null 2>&1; then
+                    dispatch_verified=true
+                    echo "Dispatch creation verified: ${workflow} sha=${dispatch_target_sha}"
+                    break
+                  fi
+                done
+                if [ "${dispatch_verified}" = true ]; then
+                  if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=1; fi
+                else
+                  echo "ERROR: dispatch request accepted but no matching workflow_dispatch run was created within the verification window: ${workflow}" >&2
+                  degraded=1
+                  if [ "${route_mode}" -eq 1 ]; then route_dispatch_outcome=2; fi
+                fi
               fi
             fi
             return 0
