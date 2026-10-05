@@ -92,6 +92,8 @@ jobs:
               raise SystemExit("watchdog must retain Actions write permission for recovery")
           if "      - uses: actions/checkout@v7" not in watchdog:
               raise SystemExit("watchdog must checkout repository before using versioned recovery helpers")
+          if "  push:" not in watchdog or "      - '.github/workflows/btc_watchdog.yml'" not in watchdog:
+              raise SystemExit("watchdog self-change push trigger missing")
           if "scripts/ci_failure_streak.sh" not in watchdog:
               raise SystemExit("watchdog recovery helper dependency missing")
           print("watchdog repository checkout + helper dependency: VERIFIED")
