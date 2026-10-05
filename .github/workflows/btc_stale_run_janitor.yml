@@ -59,7 +59,7 @@ jobs:
           # The 5-minute watchdog owns broader recovery; this job only handles clearly
           # stale main-branch runs that can block the spine.
           declare -A THRESHOLD=(
-            [btc_continuous_supervisor.yml]=21600
+            [btc_continuous_supervisor.yml]=600
             [btc_live_cycle.yml]=1800
             [btc_binance_ws_collector.yml]=3900
             [btc_9h_research_marathon.yml]=36000
