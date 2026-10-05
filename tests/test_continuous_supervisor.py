@@ -36,6 +36,7 @@ def test_supervisor_routes_one_additional_evidence_driven_lane():
         'btc_adaptive_calibration_replay.yml',
         'btc_experience_policy_oos.yml',
         'btc_rich_production_challenger.yml',
+        'btc_recency_challenger.yml',
         'btc_ultimate_final_v13_e2e.yml',
     ):
         assert workflow in text
@@ -127,6 +128,7 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Experience Policy OOS Learning',
         'BTC Selective Prediction OOS',
         'BTC Rich Production Challenger',
+        'BTC Recency Challenger',
         'BTC Ultimate Final V13 — Maximum Future-Generalization E2E',
         'BTC Autonomous Data Frontier',
         'BTC Unit Tests',
