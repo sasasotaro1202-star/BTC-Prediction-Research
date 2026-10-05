@@ -259,6 +259,15 @@ jobs:
 
             latest_updated=$(jq -r '.updated_at // ""' <<<"$latest")
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
+            failure_streak=$(jq -r \'[.workflow_runs[]? | select(.status=="completed") | {conclusion,updated_at}] | sort_by(.updated_at) | reverse | reduce .[] as $r (0; if $r.conclusion == "success" then . else if ($r.conclusion == "failure" or $r.conclusion == "cancelled" or $r.conclusion == "timed_out" or $r.conclusion == "action_required" or $r.conclusion == "stale") then . + 1 else . end end)\' <<<"$response")
+            if ! [[ "$failure_streak" =~ ^[0-9]+$ ]]; then failure_streak=0; fi
+            failure_cooldown=300
+            if [ "$failure_streak" -gt 1 ]; then
+              backoff_power=$((failure_streak - 1))
+              [ "$backoff_power" -gt 4 ] && backoff_power=4
+              failure_cooldown=$((300 * (2 ** backoff_power)))
+              [ "$failure_cooldown" -gt 4800 ] && failure_cooldown=4800
+            fi
             latest_conclusion=$(jq -r '.conclusion // ""' <<<"$latest")
             latest_head_sha=$(jq -r '.head_sha // ""' <<<"$latest")
             latest_attempt=$(jq -r '.run_attempt // 1' <<<"$latest")
@@ -269,10 +278,10 @@ jobs:
                 # Failed generations are never "fresh" evidence. Retry the same
                 # current-main generation through the bounded retry-history path;
                 # when that is exhausted or the SHA is old, dispatch a new run on main.
-                if [ "$age" -ge 300 ]; then failure_retry_due=true; fi
+                if [ "$age" -ge "$failure_cooldown" ]; then failure_retry_due=true; fi
                 ;;
             esac
-            echo "${workflow}: latest=${latest_updated:-none} age=${age}s conclusion=${latest_conclusion:-none} head_sha=${latest_head_sha:-unknown} attempt=${latest_attempt} running=${running} threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s failure_retry_due=${failure_retry_due}"
+            echo "${workflow}: latest=${latest_updated:-none} age=${age}s conclusion=${latest_conclusion:-none} head_sha=${latest_head_sha:-unknown} attempt=${latest_attempt} running=${running} failure_streak=${failure_streak} failure_cooldown=${failure_cooldown}s threshold=${threshold}s active_grace=${active_grace}s stale_head_grace=${stale_head_grace}s failure_retry_due=${failure_retry_due}"
             should_dispatch=false
             if [ "$workflow" = "btc_live_cycle.yml" ] && [ "$live_status_stale" -eq 1 ] && [ "$running" -eq 0 ]; then
               should_dispatch=true
