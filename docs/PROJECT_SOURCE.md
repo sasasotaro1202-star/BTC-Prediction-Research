@@ -2730,3 +2730,10 @@ The automation control plane uses a lightweight dedicated workflow-contract lane
 83. SHARED RECOVERY FAILURE STREAK
 
 The Supervisor and Watchdog use the shared `scripts/ci_failure_streak.sh` helper for consecutive failure/cancellation counting. This removes duplicated inline recovery logic and makes the recovery state calculation directly testable. The helper counts only the terminal non-success streak since the latest explicit success; neutral/unknown terminal conclusions stop the streak. Ops Preflight syntax-checks the helper.
+
+
+117. PRODUCTION-FIRST ACTIONS QUEUE BACKPRESSURE
+
+When the 5m Live Cycle is queued, pending, or in progress, the Actions stale-run janitor applies bounded backpressure to queued/pending research-only lanes. It may cancel only those non-production research runs that have not started; in-progress research is preserved. Production Live Cycle, settlement/collector, PIT/OOS audit, protected Holdout, Production registry, and Production artifacts are outside the cancellation set.
+
+This is queue control only. It does not alter research priority, candidate selection, model selection, calibration, Promotion, Production state, or evidence. Cancelled queued research remains eligible for later supervisor/router dispatch. The policy exists to reduce runner starvation and preserve the continuous Production cadence.
