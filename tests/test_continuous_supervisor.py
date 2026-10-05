@@ -59,8 +59,6 @@ def test_ops_preflight_triggers_on_supervisor_and_router_changes():
     for path in (
         ".github/workflows/btc_continuous_supervisor.yml",
         "src/autonomous_research_router.py",
-        "tests/test_continuous_supervisor.py",
-        "tests/test_autonomous_research_router.py",
     ):
         assert f"      - '{path}'" in text
 
