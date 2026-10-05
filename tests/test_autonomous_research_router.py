@@ -53,6 +53,22 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 },
             )
 
+        self._write(
+            root / "data" / "historical_research",
+            "return_distribution_tail_oos.json",
+            {
+                "schema_version": 1,
+                "research_only": True,
+                "production_changed": False,
+                "promotion_evidence_eligible": False,
+                "generated_at_utc": "2099-01-01T00:00:00Z",
+                "horizons": {
+                    "5m": {"status": "OK"},
+                    "10m": {"status": "OK"},
+                },
+            },
+        )
+
     def test_missing_durable_evidence_fails_closed_to_readiness(self):
         with tempfile.TemporaryDirectory() as td:
             route = choose(Path(td))
@@ -179,6 +195,40 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 [x["workflow"] for x in route["candidates"]],
                 ["btc_autonomous_data_frontier.yml", "btc_ultimate_final_v13_e2e.yml"],
             )
+
+
+    def test_return_tail_lane_runs_when_evidence_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            (root / "data" / "historical_research" / "return_distribution_tail_oos.json").unlink()
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_return_distribution_tail_oos.yml")
+            self.assertEqual(route["priority"], 88)
+            self.assertIn("return_distribution_tail_evidence_missing", route["signals"])
+
+    def test_return_tail_lane_runs_when_evidence_is_stale(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "return_distribution_tail_oos.json",
+                {
+                    "schema_version": 1,
+                    "research_only": True,
+                    "production_changed": False,
+                    "promotion_evidence_eligible": False,
+                    "generated_at_utc": "2020-01-01T00:00:00Z",
+                    "horizons": {
+                        "5m": {"status": "DEFERRED"},
+                        "10m": {"status": "DEFERRED"},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_return_distribution_tail_oos.yml")
+            self.assertIn("return_distribution_tail_stale:", route["signals"][0])
 
     def test_healthy_state_routes_to_bounded_routine_v13(self):
         with tempfile.TemporaryDirectory() as td:
