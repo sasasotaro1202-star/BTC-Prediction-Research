@@ -259,7 +259,8 @@ jobs:
 
             latest_updated=$(jq -r '.updated_at // ""' <<<"$latest")
             latest_epoch=$(date -d "$latest_updated" +%s 2>/dev/null || echo 0)
-             failure_streak=$(jq -r '[.workflow_runs[]? | select(.status=="completed") | {conclusion,updated_at}] | sort_by(.updated_at) | reverse | reduce .[] as $r ({count:0,done:false}; if .done then . elif $r.conclusion == "success" then .done=true elif ($r.conclusion == "failure" or $r.conclusion == "cancelled" or $r.conclusion == "timed_out" or $r.conclusion == "action_required" or $r.conclusion == "stale") then .count += 1 else .done=true end) | .count' <<<"$response")
+             . scripts/ci_failure_streak.sh
+             failure_streak="$(printf "%s" "${response}" | ci_failure_streak_from_stdin)" || failure_streak=0
             if ! [[ "$failure_streak" =~ ^[0-9]+$ ]]; then failure_streak=0; fi
             failure_cooldown=300
             if [ "$failure_streak" -gt 1 ]; then
