@@ -170,3 +170,17 @@ def test_supervisor_recovers_only_the_24h_watchdog_not_the_marathon():
     assert 'dispatch_if_stale btc_24h_watchdog.yml 900' in text
     assert 'dispatch_if_stale btc_24h_autonomous_research.yml' not in text
     assert '24H marathon remains exclusively owned by its dedicated watchdog.' in text
+
+def test_supervisor_defers_routed_research_when_production_spine_is_active():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'route_deferred_by_production=0' in text
+    assert 'route_deferred_by_production=1' in text
+    assert 'Production spine active; deferring evidence-driven routed research until a later heartbeat.' in text
+    assert '"route_deferred_by_production": ${route_deferred_by_production}' in text
+
+
+def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
+    supervisor = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
+    assert 'length >= 1 and length <= 9' in supervisor
+    assert '1 <= len(candidates) <= len(allowed)' in preflight
