@@ -164,3 +164,9 @@ def test_supervisor_verifies_dispatch_created_on_target_sha():
     assert 'Dispatch creation verified: ${workflow} sha=${dispatch_target_sha}' in text
     assert 'no matching workflow_dispatch run was created within the verification window' in text
     assert 'select(.event=="workflow_dispatch")' in text
+
+def test_supervisor_recovers_only_the_24h_watchdog_not_the_marathon():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'dispatch_if_stale btc_24h_watchdog.yml 900' in text
+    assert 'dispatch_if_stale btc_24h_autonomous_research.yml' not in text
+    assert '24H marathon remains exclusively owned by its dedicated watchdog.' in text
