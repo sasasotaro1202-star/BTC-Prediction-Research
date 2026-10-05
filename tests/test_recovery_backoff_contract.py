@@ -24,4 +24,4 @@ def test_watchdog_has_bounded_failure_backoff():
 def test_stale_janitor_is_not_a_second_dispatcher():
     text = _read('btc_stale_run_janitor.yml')
     assert 'dispatch_if_stale()' not in text
-    assert 'recovery dispatch is centralized' in text
+    assert 'Recovery dispatch is centralized' in text
