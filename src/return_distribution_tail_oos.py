@@ -11,8 +11,10 @@ the prediction ledger.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -311,6 +313,8 @@ def evaluate_horizon(horizon: str) -> dict[str, Any]:
     return {
         "status": "OK",
         "schema_version": 1,
+        "analysis_git_sha": os.environ.get("GITHUB_SHA", "LOCAL_UNPINNED"),
+
         "research_only": True,
         "production_changed": False,
         "target_definition": "settled_endpoint_return=(actual_price/base_price)-1",
@@ -360,11 +364,22 @@ def evaluate_horizon(horizon: str) -> dict[str, Any]:
 
 
 def main() -> int:
+    db_path = Path(DB)
+    db_hash = None
+    if db_path.is_file():
+        digest = hashlib.sha256()
+        with db_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        db_hash = digest.hexdigest()
+
     payload = {
         "schema_version": 1,
         "research_only": True,
         "production_changed": False,
         "source_snapshot": "canonical_prediction_ledger",
+        "analysis_git_sha": os.environ.get("GITHUB_SHA", "LOCAL_UNPINNED"),
+        "prediction_db_sha256": db_hash,
         "horizons": {h: evaluate_horizon(h) for h in HORIZONS},
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
