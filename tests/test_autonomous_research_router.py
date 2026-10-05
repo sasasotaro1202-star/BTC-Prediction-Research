@@ -543,12 +543,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                     ],
                 }
             )
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-    def test_recent_performance_degradation_routes_recency_challenger(self):
+def test_recent_performance_degradation_routes_recency_challenger(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -604,3 +599,7 @@ if __name__ == "__main__":
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
             self.assertNotIn("RECENCY_RISK", route["evidence_state"])
+
+
+if __name__ == "__main__":
+    unittest.main()
