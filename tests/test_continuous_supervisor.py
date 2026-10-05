@@ -151,3 +151,16 @@ def test_supervisor_prioritizes_production_capacity_over_stale_research_dispatch
     assert 'production_response="$(ci_gh_api_get' in text
     assert 'if [ "${production_active}" -eq 0 ]; then' in text
     assert 'suppressing avoidable research stale-dispatches' in text
+
+def test_supervisor_reenables_intended_workflow_before_recovery_dispatch():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'ci_gh workflow enable "${workflow}" --repo "${REPO}"' in text
+    assert 'Workflow enable check completed: ${workflow}' in text
+
+
+def test_supervisor_verifies_dispatch_created_on_target_sha():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'dispatch_target_sha="$(ci_gh_api_get "/repos/${REPO}/git/ref/heads/main"' in text
+    assert 'Dispatch creation verified: ${workflow} sha=${dispatch_target_sha}' in text
+    assert 'no matching workflow_dispatch run was created within the verification window' in text
+    assert 'select(.event=="workflow_dispatch")' in text
