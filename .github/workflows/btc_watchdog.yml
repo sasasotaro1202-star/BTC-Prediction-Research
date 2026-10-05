@@ -193,6 +193,14 @@ jobs:
             dispatch_allowed=true
             case "${GITHUB_EVENT_NAME:-schedule}" in
               schedule|workflow_dispatch) ;;
+              push)
+                # The watchdog self-change trigger is intentionally allowed to
+                # recover only the Production-critical Live heartbeat. Research
+                # fan-out remains disabled on push to avoid dispatch storms.
+                if [ "$workflow" != "btc_live_cycle.yml" ]; then
+                  dispatch_allowed=false
+                fi
+                ;;
               *) dispatch_allowed=false ;;
             esac
 
