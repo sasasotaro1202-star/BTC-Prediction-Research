@@ -10,6 +10,7 @@ higher-priority lane is already active or fresh.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ HORIZONS = ("5m", "10m")
 
 ALLOWED = {
     "btc_research_readiness.yml": 3600,
+    "btc_recency_challenger.yml": 86400,
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_experience_policy_oos.yml": 21600,
@@ -31,6 +33,7 @@ MIN_CALIBRATION_ROWS = 400
 HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 DRIFT_SCORE_TRIGGER = 0.10
+MODEL_STALE_DAYS = 7.0
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 
 
@@ -198,6 +201,43 @@ def _high_confidence_overreach(root: Path) -> list[str]:
     return signals
 
 
+def _model_staleness_signals(root: Path) -> list[str]:
+    """Detect production Champion generations that are materially older than durable evidence.
+
+    This is a research-routing trigger only. It never changes the model registry or
+    Production artifacts. The reference clock comes from the durable experience
+    snapshot so tests and replays remain deterministic rather than depending on
+    wall-clock time inside the router.
+    """
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+    if experience is None:
+        return []
+    reference_raw = experience.get("generated_at_utc")
+    if not reference_raw:
+        return []
+    try:
+        reference = datetime.fromisoformat(str(reference_raw).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return []
+
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        meta = _load(root / "models" / f"{horizon}.json")
+        if not isinstance(meta, dict):
+            continue
+        trained_raw = meta.get("trained_at_utc")
+        if not trained_raw:
+            continue
+        try:
+            trained = datetime.fromisoformat(str(trained_raw).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        age_days = (reference - trained).total_seconds() / 86400.0
+        if age_days >= MODEL_STALE_DAYS:
+            signals.append(f"{horizon}:model_age_days={age_days:.1f}>{MODEL_STALE_DAYS:g}")
+    return signals
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -283,6 +323,7 @@ def choose(root: Path) -> dict[str, Any]:
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
+    model_staleness_signals = _model_staleness_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -294,6 +335,15 @@ def choose(root: Path) -> dict[str, Any]:
             95,
             "CALIBRATION_COLLECTION",
             calibration_signals,
+        ))
+
+    if model_staleness_signals:
+        routes.append(_decision(
+            "btc_recency_challenger.yml",
+            "production_champion_generation_is_stale_and_requires_recent_data_reassessment",
+            88,
+            "MODEL_STALENESS_RISK",
+            model_staleness_signals,
         ))
 
     if promotion_blocked:
