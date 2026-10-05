@@ -48,6 +48,18 @@ jobs:
       - name: Install research dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
+      - name: Restore canonical prediction state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s data/predictions.db.gz
+          python - <<'PY'
+          from pathlib import Path
+          from src.state_archive import restore_db
+          restore_db(Path("data/predictions.db.gz"), Path("data/predictions.db"))
+          PY
+          test -s data/predictions.db
+
       - name: Compile research code
         run: python -m compileall -q src tests
 
