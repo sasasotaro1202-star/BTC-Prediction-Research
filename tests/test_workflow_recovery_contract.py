@@ -28,7 +28,9 @@ def test_watchdog_recovers_failed_generations_on_current_main():
 
 def test_return_tail_lane_has_fail_closed_current_main_and_research_only_boundaries():
     text = _workflow("btc_return_distribution_tail_oos.yml")
-    assert "WORKFLOW_SHA_NOT_CURRENT_MAIN" in text
+    assert "Bind immutable analysis snapshot" in text
+    assert "RETURN_TAIL_WORKFLOW_MUST_RUN_FROM_MAIN" in text
+    assert "Current main may advance while this immutable research snapshot runs" in text
     assert 'obj.get("research_only") is not True' in text
     assert 'obj.get("production_changed") is not False' in text
     assert 'obj.get("analysis_git_sha") != __import__("os").environ.get("GITHUB_SHA")' in text
