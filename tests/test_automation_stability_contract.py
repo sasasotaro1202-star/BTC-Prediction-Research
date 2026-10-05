@@ -28,3 +28,10 @@ def test_stale_janitor_is_not_a_dispatcher():
     text = _read('btc_stale_run_janitor.yml')
     assert 'dispatch_if_stale()' not in text
     assert 'cancellation-only' in text
+
+
+def test_recovery_jq_lines_do_not_contain_escaped_apostrophes():
+    for name in ('btc_continuous_supervisor.yml', 'btc_watchdog.yml'):
+        text = _read(name)
+        assert "jq -r \\\'" not in text
+        assert ")\\\'" not in text
