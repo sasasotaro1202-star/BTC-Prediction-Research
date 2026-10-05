@@ -52,6 +52,9 @@ Research state must distinguish DISCOVERED → SOURCE_VERIFIED → LOCALLY_REPRO
 Negative results are retained with failure conditions and reopen triggers.
 
 ## Reliability / automation
+
+Production-first backpressure: when the 5m Live Cycle is queued, pending or in progress, the Continuous Supervisor must not dispatch an additional evidence-routed research lane. The selected research candidate remains observable and is reconsidered on a later heartbeat after Production capacity clears. This is an operational queue-control rule only and never changes research priority or Production promotion policy.
+
 Use bounded retry/backoff, concurrency control, watchdog/heartbeat, stale-run detection, idempotent writes, checkpoints, recovery, replay, rollback and artifact preservation. Never hide failures, force success, use fail-open shell suppression, or treat cancelled/retried workflows as successful evidence.
 
 ## Cost / security
