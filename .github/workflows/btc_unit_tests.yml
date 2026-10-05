@@ -21,6 +21,12 @@ on:
       - 'tests/**'
       - 'scripts/**'
       - 'requirements.txt'
+      - '!tests/test_continuous_supervisor.py'
+      - '!tests/test_autonomous_research_router.py'
+      - '!tests/test_workflow_recovery_contract.py'
+      - '!tests/test_recovery_backoff_contract.py'
+      - '!tests/test_automation_stability_contract.py'
+      - '!tests/test_ci_failure_streak.py'
   workflow_dispatch:
 
 
