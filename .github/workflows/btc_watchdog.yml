@@ -5,6 +5,10 @@ on:
   # more recovery opportunities without colliding with the exact top of the hour.
   schedule:
     - cron: '4-59/5 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_watchdog.yml'
   workflow_dispatch:
   # The 5-minute scheduled heartbeat is the authoritative recovery loop.
   # Do not start a watchdog run for every workflow completion; that creates
