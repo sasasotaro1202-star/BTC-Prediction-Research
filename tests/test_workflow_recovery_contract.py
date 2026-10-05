@@ -61,3 +61,17 @@ def test_watchdog_runs_immediately_when_its_recovery_workflow_changes():
     text = _workflow("btc_watchdog.yml")
     assert "  push:" in text
     assert "      - '.github/workflows/btc_watchdog.yml'" in text
+
+def test_stale_run_janitor_applies_production_first_backpressure_to_queued_research():
+    text = _workflow("btc_stale_run_janitor.yml")
+    assert 'live_response="$(gh api "/repos/${REPO}/actions/workflows/btc_live_cycle.yml/runs?branch=main&per_page=20")"' in text
+    assert 'production_queue_backpressure=0' in text
+    assert 'if [ "${production_active}" -gt 0 ]; then' in text
+    assert 'production_queue_backpressure=1' in text
+    assert "btc_research.yml" in text
+    assert "btc_exogenous_research.yml" in text
+    assert "btc_recency_research.yml" in text
+    assert "queued|pending" in text
+    assert '[ "${production_queue_backpressure}" -eq 1 ] || return 0' in text
+    assert 'case "${status}" in' in text
+    assert 'queued|pending) ;;' in text
