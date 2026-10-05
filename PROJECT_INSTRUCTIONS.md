@@ -184,3 +184,11 @@ The auto-merge workflow never checks out or executes PR code, keeps Production m
 
 
 The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.
+
+## Conditional return-distribution / tail research lane
+
+A research-only return-distribution lane is part of the autonomous research queue. It uses only matured, strict-PIT Binance-primary prediction observations from the canonical prediction ledger and estimates conditional q10/q50/q90 endpoint returns with chronological walk-forward evaluation plus purge/embargo.
+
+The lane reports pinball loss, 80% interval coverage, tail-breach rates, interval width, median-sign accuracy, newest-block behavior and a training-window quantile baseline. It must remain research_only=true, production_changed=false, and promotion_evidence_eligible=false. It does not claim intrahorizon drawdown because the current research contract does not persist the full future path.
+
+Evidence is bound to both analysis_git_sha and a prediction-DB snapshot hash. The Continuous Supervisor treats the lane as an allowlisted, non-production research candidate, dispatches it when its evidence is missing/stale, and wakes again after its completion. This lane must never bypass the existing PIT → OOS/WFO → calibration → robustness → frozen holdout → shadow → promotion sequence.
