@@ -2687,3 +2687,51 @@ Manual GitHub repository Auto-Merge configuration is therefore not a prerequisit
 The research PR auto-merge gate is protected from self-modification.
 
 Any Pull Request changing `.github/workflows/*` is treated as sensitive and cannot be auto-merged. Changes to the auto-merge workflow, Ops Preflight, Watchdog, Supervisor, or any other GitHub Action therefore require an independently reviewed/manual merge path.
+
+⸻
+
+117. STATE TRAJECTORY PIT CORRECTION
+
+State-trajectory researchは、latent-state vocabularyを全historical rowsからfitしてはならない。
+
+最初のscored foldより前のinitial chronological training windowだけでStandardScaler/KMeansを一度fitし、OOS全foldとfinal holdoutではそのstate vocabularyを固定してstate assignmentに使う。
+
+したがって、
+
+future row → state vocabulary fit
+
+という経路は禁止する。
+
+必要な証跡:
+
+* initial-training-window-frozen state vocabulary
+* exact 5-minute contiguous pairing
+* fold purge
+* frozen final holdout protection
+* persistence baseline
+* research_only=true
+* production_changed=false
+* promotion_allowed=false
+
+この研究層のDEFERREDはデータ不足を意味し、PASSや0への置換をしない。
+
+
+⸻
+
+118. STATE-TRAJECTORY CROSS-FOLD LABEL STABILITY
+
+State-trajectory latent-state IDs must remain comparable across chronological folds.
+
+The StandardScaler + KMeans state vocabulary is fitted exactly once using only the initial chronological training window available before the first scored OOS block, then frozen for all OOS folds and the descriptive final holdout.
+
+The transition classifier is retrained prequentially per fold, but target labels are always generated through the same frozen initial state vocabulary.
+
+This prevents arbitrary KMeans label permutation between folds from making pooled Accuracy / LogLoss / Brier / ECE incomparable.
+
+Required artifact fields:
+
+state_label_method = initial-training-window-kmeans
+state_definition = initial-training-window-frozen
+state_fit_scope = initial_training_window_only
+
+The state vocabulary must never use scored observations or the frozen holdout. A missing or unverifiable initial state fit is DEFERRED/FAILED, never PASS.
