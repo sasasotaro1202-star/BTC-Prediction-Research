@@ -187,6 +187,15 @@ jobs:
               return 0
             }
 
+            failure_streak="$(jq -r \'[.workflow_runs[]? | select(.status=="completed") | {conclusion,updated_at}] | sort_by(.updated_at) | reverse | reduce .[] as $r (0; if $r.conclusion == "success" then . else if ($r.conclusion == "failure" or $r.conclusion == "cancelled" or $r.conclusion == "timed_out" or $r.conclusion == "action_required" or $r.conclusion == "stale") then . + 1 else . end end)\' <<<"${response}" 2>/dev/null)" || failure_streak=0
+            if ! [[ "${failure_streak}" =~ ^[0-9]+$ ]]; then failure_streak=0; fi
+            failure_cooldown=300
+            if [ "${failure_streak}" -gt 1 ]; then
+              backoff_power=$((failure_streak - 1))
+              [ "${backoff_power}" -gt 4 ] && backoff_power=4
+              failure_cooldown=$((300 * (2 ** backoff_power)))
+              [ "${failure_cooldown}" -gt 4800 ] && failure_cooldown=4800
+            fi
             latest_updated="$(cut -f1 <<<"${latest}")"
             latest_conclusion="$(cut -f3 <<<"${latest}")"
             if [ -z "${latest_updated}" ]; then
@@ -208,10 +217,10 @@ jobs:
                 # A failed/cancelled generation must not be considered fresh merely
                 # because it completed recently. Wait 5 minutes to avoid a dispatch
                 # storm, then recover on current main.
-                if [ "${age}" -ge 300 ]; then failure_retry_due=true; fi
+                if [ "${age}" -ge "${failure_cooldown}" ]; then failure_retry_due=true; fi
                 ;;
             esac
-            echo "${workflow}: active=${active} latest_age=${age}s latest_conclusion=${latest_conclusion:-none} threshold=${threshold}s failure_retry_due=${failure_retry_due}"
+            echo "${workflow}: active=${active} latest_age=${age}s latest_conclusion=${latest_conclusion:-none} failure_streak=${failure_streak} failure_cooldown=${failure_cooldown}s threshold=${threshold}s failure_retry_due=${failure_retry_due}"
 
             if [ "${active}" -eq 0 ] && { [ "${latest_epoch}" -eq 0 ] || [ "${age}" -ge "${threshold}" ] || [ "${failure_retry_due}" = true ]; }; then
               echo "Dispatching stale ${workflow}"
