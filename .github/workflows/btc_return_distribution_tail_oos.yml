@@ -1,0 +1,101 @@
+name: BTC Return Distribution Tail OOS Research
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+# Research-only. Never mutates Production artifacts or model_registry.
+# The supervisor also recovers this lane when its scheduled run becomes stale.
+concurrency:
+  group: btc-return-distribution-tail-oos
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify immutable current-main snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/ci_network_retry.sh
+          ci_git_fetch origin main --depth=1
+          main_sha="$(git rev-parse origin/main)"
+          test "$GITHUB_SHA" = "$main_sha" || {
+            echo "WORKFLOW_SHA_NOT_CURRENT_MAIN current=$GITHUB_SHA main=$main_sha" >&2
+            exit 1
+          }
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install research dependencies
+        run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
+
+      - name: Compile research code
+        run: python -m compileall -q src tests
+
+      - name: Run return distribution and tail OOS
+        run: |
+          set -euo pipefail
+          rm -f data/historical_research/return_distribution_tail_oos.json
+          python src/return_distribution_tail_oos.py
+          test -s data/historical_research/return_distribution_tail_oos.json
+
+      - name: Verify research-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/historical_research/return_distribution_tail_oos.json")
+          obj = json.loads(p.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("return-distribution research must remain research-only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("return-distribution research changed Production")
+          for h, result in obj.get("horizons", {}).items():
+              if result.get("research_only") is not True:
+                  raise SystemExit(f"{h}: research-only flag missing")
+              if result.get("promotion_evidence_eligible") is True:
+                  raise SystemExit(f"{h}: return-distribution evidence must not become promotion evidence")
+          print("return-distribution/tail research boundary: VERIFIED")
+          PY
+
+      - name: Commit research evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/historical_research/return_distribution_tail_oos.json
+          if git diff --cached --quiet; then
+            echo "No return-distribution evidence changes."
+            exit 0
+          fi
+          git commit -m "Record BTC return distribution tail OOS research"
+          . scripts/ci_network_retry.sh
+          ci_git_fetch --prune origin main
+          if ! git merge --no-edit --strategy-option=ours origin/main; then
+            git merge --abort
+            git reset --hard origin/main
+            git add data/historical_research/return_distribution_tail_oos.json
+            git commit -m "Record BTC return distribution tail OOS research"
+          fi
+          git push origin HEAD:main
