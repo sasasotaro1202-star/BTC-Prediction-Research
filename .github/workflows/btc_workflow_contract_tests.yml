@@ -14,8 +14,12 @@ on:
     paths:
       - '.github/workflows/**'
       - 'tests/test_*workflow*.py'
+      - 'tests/test_continuous_supervisor.py'
+      - 'tests/test_autonomous_research_router.py'
       - 'tests/test_recovery_backoff_contract.py'
       - 'tests/test_automation_stability_contract.py'
+      - 'tests/test_ci_failure_streak.py'
+      - 'scripts/ci_failure_streak.sh'
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -37,7 +41,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check pytest
+        run: python -m pip install --disable-pip-version-check 'pytest<9'
       - name: Compile workflow contract tests
         env:
           PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
