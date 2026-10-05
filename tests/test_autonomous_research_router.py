@@ -220,6 +220,26 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
 
 
+    def test_fresh_failed_binary_artifact_routes_for_research_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "binary_target_oos.json",
+                {
+                    "research_only": True,
+                    "production_changed": False,
+                    "target_version": "binary_sign_v1",
+                    "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "status": "FAILED",
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_binary_target_research.yml")
+            self.assertIn("binary_target_status_unhealthy:FAILED", route["signals"])
+
+
     def test_return_tail_lane_runs_when_evidence_is_missing(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
