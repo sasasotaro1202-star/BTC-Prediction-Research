@@ -294,7 +294,10 @@ jobs:
           # Production freshness is the fastest recovery path.
           dispatch_if_stale btc_live_cycle.yml 300
           dispatch_if_stale btc_binance_ws_collector.yml 900
-
+          # The 24H marathon remains exclusively owned by its dedicated watchdog.
+          # The Supervisor only keeps that watchdog heartbeat alive, so a lost
+          # watchdog schedule cannot strand the long-running research chain.
+          dispatch_if_stale btc_24h_watchdog.yml 900
           # Never add avoidable research load while the production/data spine is
           # already queued or running. The next heartbeat/event will retry research.
           production_active=0
