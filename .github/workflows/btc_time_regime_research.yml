@@ -96,9 +96,11 @@ jobs:
                   raise SystemExit(f'{h}: unexpected evaluation status {item.get("status")}')
           print('time-regime evidence state: VERIFIED')
           PY
-      - name: Upload time-regime evidence
+      - name: Upload time-regime and state-trajectory evidence
         uses: actions/upload-artifact@v6
         with:
           name: btc-time-regime-oos
-          path: data/historical_research/time_regime_oos.json
+          path: |
+            data/historical_research/time_regime_oos.json
+            data/historical_research/state_trajectory_oos.json
           retention-days: 7
