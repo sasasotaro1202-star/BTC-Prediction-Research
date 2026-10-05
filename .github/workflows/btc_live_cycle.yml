@@ -188,10 +188,10 @@ jobs:
             exit 0
           fi
 
-          # A stale cache with current-code collectors may still need one additional
-          # recovery run. Avoid an unbounded dispatch storm when two collectors are active.
-          if [ "${active:-0}" -ge 2 ]; then
-            echo "Binance WS collector already has ${active} active current-code run(s); self-heal dispatch capped to avoid a recovery storm."
+          # A stale cache needs at most one active collector. The collector itself
+          # runs longer than the 30m schedule cadence, so one serialized slot is enough.
+          if [ "${active:-0}" -ge 1 ]; then
+            echo "Binance WS collector already has ${active} active run(s); self-heal dispatch capped to one collector slot."
             exit 0
           fi
 
