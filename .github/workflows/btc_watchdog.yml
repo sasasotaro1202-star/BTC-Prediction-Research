@@ -348,6 +348,9 @@ jobs:
           recover_if_stale btc_archive_primary_bridge.yml 21600 32400 900
           recover_if_stale btc_canonical_state_compaction.yml 21600 32400 900
           recover_if_stale btc_time_regime_research.yml 21600 32400 900
+          # Recency Challenger is a bounded 4-hour research job. Recover stale
+          # active runs and missed daily executions without affecting Production.
+          recover_if_stale btc_recency_challenger.yml 86400 129600 3600
           recover_if_stale btc_calibration_frozen_replay.yml 28800 43200 900
           recover_if_stale btc_adaptive_calibration_replay.yml 28800 43200 900
           recover_if_stale btc_multiscale_frozen_replay.yml 21600 32400 900

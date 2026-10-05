@@ -27,18 +27,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Refuse stale verification SHA
+      - name: Pin verification snapshot to current main
         shell: bash
         run: |
           set -euo pipefail
           test -n "${GITHUB_SHA:-}" || { echo "GITHUB_SHA missing; refusing verification" >&2; exit 1; }
-          current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          test -n "$current_main_sha" || { echo "Unable to resolve current main SHA; refusing verification" >&2; exit 1; }
-          if [ "$current_main_sha" != "$GITHUB_SHA" ]; then
-            echo "STALE V13 VERIFICATION: workflow_sha=$GITHUB_SHA current_main=$current_main_sha" >&2
-            exit 1
+          pinned_sha=""
+          for attempt in 1 2 3; do
+            if git fetch --prune origin main; then
+              pinned_sha="$(git rev-parse origin/main)"
+              if [ -n "$pinned_sha" ]; then
+                break
+              fi
+            fi
+            sleep $((2 * attempt))
+          done
+          test -n "$pinned_sha" || { echo "Unable to resolve current main snapshot; refusing verification" >&2; exit 1; }
+          git checkout --detach "$pinned_sha"
+          printf 'BTC_VERIFICATION_SHA=%s\n' "$pinned_sha" >> "$GITHUB_ENV"
+          if [ "$pinned_sha" != "$GITHUB_SHA" ]; then
+            echo "V13 trigger SHA was stale; safely repinned verification to current main snapshot: trigger=$GITHUB_SHA verification=$pinned_sha"
+          else
+            echo "V13 verification snapshot is current: $pinned_sha"
           fi
-          echo "V13 verification SHA is current: $GITHUB_SHA"
 
       - uses: actions/setup-python@v7
         with:
@@ -64,7 +75,7 @@ jobs:
               "experiment":"btc_ultimate_final_v13_e2e",
               "status":"RUNNING",
               "run_id":os.environ.get("GITHUB_RUN_ID",""),
-              "commit":os.environ.get("GITHUB_SHA",""),
+              "commit":os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA",""),
               "started_at_utc":datetime.now(timezone.utc).isoformat(),
           }
           p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
@@ -87,7 +98,7 @@ jobs:
               "experiment":"btc_ultimate_final_v13_e2e",
               "status":"RUNNING",
               "run_id":os.environ.get("GITHUB_RUN_ID",""),
-              "commit":os.environ.get("GITHUB_SHA",""),
+              "commit":os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA",""),
               "started_at_utc":datetime.now(timezone.utc).isoformat(),
           }
           p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
@@ -196,9 +207,9 @@ jobs:
           path = Path("data/historical_research/production_artifact_audit.json")
           payload = json.loads(path.read_text(encoding="utf-8"))
           provenance = payload.get("provenance") or {}
-          expected = os.environ.get("GITHUB_SHA")
+          expected = os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA")
           if not expected:
-              raise SystemExit("GITHUB_SHA missing during production artifact audit")
+              raise SystemExit("verification SHA missing during production artifact audit")
           if provenance.get("git_sha") != expected:
               raise SystemExit(
                   f"production artifact audit SHA mismatch: expected={expected} "
@@ -302,7 +313,7 @@ jobs:
           else:
               artifact=json.loads(artifact_path.read_text())
               provenance=artifact.get('provenance') or {}
-              expected_sha=os.environ.get('GITHUB_SHA')
+              expected_sha=os.environ.get('BTC_VERIFICATION_SHA') or os.environ.get('GITHUB_SHA')
               if not expected_sha:
                   failures.append('missing_github_sha')
               else:
@@ -432,7 +443,7 @@ jobs:
               "status":os.environ.get("JOB_STATUS","unknown").upper(),
               "completed_at_utc":datetime.now(timezone.utc).isoformat(),
               "run_id":os.environ.get("GITHUB_RUN_ID",""),
-              "commit":os.environ.get("GITHUB_SHA","")
+              "commit":os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA","")
           })
           p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
           PY
@@ -451,7 +462,7 @@ jobs:
           except (OSError, ValueError, TypeError):
               payload = {}
           provenance = payload.get('provenance') or {}
-          expected = os.environ.get('GITHUB_SHA')
+          expected = os.environ.get('BTC_VERIFICATION_SHA') or os.environ.get('GITHUB_SHA')
           artifacts = payload.get('artifacts') or []
           persistable = (
               bool(expected)
@@ -531,7 +542,7 @@ jobs:
               "experiment":"btc_ultimate_final_v13_e2e",
               "status":os.environ.get("JOB_STATUS","unknown").upper(),
               "run_id":os.environ.get("GITHUB_RUN_ID",""),
-              "commit":os.environ.get("GITHUB_SHA",""),
+              "commit":os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA",""),
               "completed_at_utc":datetime.now(timezone.utc).isoformat(),
           }
           p.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")

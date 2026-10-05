@@ -43,7 +43,7 @@ def _validate_git_sha(value: str, label: str) -> str:
 
 def current_workspace_sha(root: Path = ROOT) -> str:
     """Resolve the exact checkout under audit; fail closed when CI pins a different SHA."""
-    expected_raw = os.environ.get("GITHUB_SHA")
+    expected_raw = os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA")
     if expected_raw:
         expected = _validate_git_sha(expected_raw, "GITHUB_SHA")
     else:
@@ -86,8 +86,8 @@ def current_workspace_sha(root: Path = ROOT) -> str:
 def build_provenance(root: Path = ROOT) -> dict:
     """Bind the artifact audit to the checkout ancestry and required policy/config files."""
     workspace_sha = current_workspace_sha(root)
-    expected = os.environ.get("GITHUB_SHA")
-    git_sha = _validate_git_sha(expected, "GITHUB_SHA") if expected else workspace_sha
+    expected = os.environ.get("BTC_VERIFICATION_SHA") or os.environ.get("GITHUB_SHA")
+    git_sha = _validate_git_sha(expected, "BTC_VERIFICATION_SHA" if os.environ.get("BTC_VERIFICATION_SHA") else "GITHUB_SHA") if expected else workspace_sha
     policy_files = ("PROJECT_INSTRUCTIONS.md", "docs/PROJECT_SOURCE.md", "requirements.txt")
     policy_hashes = {}
     for name in policy_files:
@@ -101,6 +101,7 @@ def build_provenance(root: Path = ROOT) -> dict:
         "workspace_sha": workspace_sha,
         "workspace_derived_from_checkout_sha": bool(expected and workspace_sha != expected),
         "ref": os.environ.get("GITHUB_REF_NAME") or "LOCAL",
+        "verification_sha_source": "BTC_VERIFICATION_SHA" if os.environ.get("BTC_VERIFICATION_SHA") else ("GITHUB_SHA" if os.environ.get("GITHUB_SHA") else "LOCAL_UNPINNED"),
         "policy_files": policy_hashes,
     }
 

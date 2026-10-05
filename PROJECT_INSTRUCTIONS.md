@@ -184,3 +184,24 @@ The auto-merge workflow never checks out or executes PR code, keeps Production m
 
 
 The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.
+
+
+## Production Champion staleness routing
+
+Production Champion age may trigger research prioritization only. It may route the existing Recency Challenger, but model age alone must never refresh, replace, calibrate, or mutate Production.
+
+The router uses the durable mature-experience snapshot timestamp as its deterministic reference clock rather than wall-clock time. A staleness signal requires Production model metadata to explicitly identify a non-candidate artifact with a non-empty model version, artifact name, and valid `trained_at_utc`. Missing, malformed, candidate, or future-dated metadata fails closed and must not create a stale-model trigger.
+
+The current research urgency threshold is 7 days. This threshold is routing policy, not a performance or promotion gate. Recency Challenger evidence remains subject to the normal local PIT → chronological OOS/WFO → calibration → robustness → frozen holdout → shadow → promotion chain before any Production consideration.
+
+## Research PR current-head merge safety
+
+GitHub-side research auto-merge must require the PR head to be at least current with main at evaluation time. A green PR that is behind main is HOLD and must not be auto-merged; it must be rebased/revalidated against current main. This is an engineering safety condition and does not relax the separate workflow/data/Production/holdout path firewall.
+
+## V13 current-main race recovery
+
+A V13 E2E run triggered by an older main SHA must not be classified as a research failure solely because main advanced during scheduling. The workflow must pin an immutable verification snapshot from the current main ref before evidence generation, bind provenance to that pinned verification SHA, and keep Production/promotion gates unchanged. A pinned snapshot is evidence for that exact SHA, not a claim about later main state.
+
+## Recent-performance recency routing
+
+In addition to Champion age, the research router may trigger the Recency Challenger when the newest settled 100-case window is materially weaker than the 300-case window. This signal is research triage only; it must fail closed on missing/invalid sample evidence and cannot alter Production or promotion gates.
