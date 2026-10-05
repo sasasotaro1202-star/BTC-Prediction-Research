@@ -299,16 +299,9 @@ jobs:
               fi
             fi
 
-            # The collector uses a run-id keyed concurrency group, so one healthy
-            # in-progress capture can overlap a second run. Starting the next run
-            # after 30 minutes preserves roughly 15 minutes of rolling overlap.
-            if [ "$workflow" = "btc_binance_ws_collector.yml" ] \
-              && [ "$active_count" -eq 1 ] \
-              && [ "$in_progress_active_count" -eq 1 ] \
-              && [ "$oldest_in_progress_age" -ge 1800 ]; then
-              should_dispatch=true
-              echo "btc_binance_ws_collector.yml: starting staggered overlap collector after 30 minutes."
-            fi
+            # The Binance WS collector now has one shared concurrency slot.
+            # Recovery waits for the slot to become inactive; the standard
+            # stale/failure recovery path handles the next generation.
             secondary_dispatch=false
             case "$workflow" in
               btc_live_cycle.yml|btc_binance_ws_collector.yml|btc_continuous_supervisor.yml|btc_integrity.yml|btc_pit_oos_audit.yml)
