@@ -184,3 +184,7 @@ The auto-merge workflow never checks out or executes PR code, keeps Production m
 
 
 The research PR auto-merge firewall treats every `.github/workflows/*` change as sensitive and requires manual review; the auto-merge gate itself is therefore not self-modifiable by an auto-merged research PR.
+
+## State-trajectory research safety
+
+The state-trajectory research layer is strictly research-only. Its latent-state vocabulary must be fit fold-locally using only pre-test training observations; fitting scaler/KMeans on the full historical dataset is a PIT/leakage violation. Exact 5-minute contiguous pairs are required and gaps must never be bridged. Each horizon is evaluated directly with a horizon-specific purge, persistence baseline, and frozen final holdout. DEFERRED remains DEFERRED and is never converted to zero/PASS. Production model artifacts, registry, and live prediction state are never changed by this layer.\n
