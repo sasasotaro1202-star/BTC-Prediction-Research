@@ -201,3 +201,7 @@ GitHub-side research auto-merge must require the PR head to be at least current 
 ## V13 current-main race recovery
 
 A V13 E2E run triggered by an older main SHA must not be classified as a research failure solely because main advanced during scheduling. The workflow must pin an immutable verification snapshot from the current main ref before evidence generation, bind provenance to that pinned verification SHA, and keep Production/promotion gates unchanged. A pinned snapshot is evidence for that exact SHA, not a claim about later main state.
+
+## Recent-performance recency routing
+
+In addition to Champion age, the research router may trigger the Recency Challenger when the newest settled 100-case window is materially weaker than the 300-case window. This signal is research triage only; it must fail closed on missing/invalid sample evidence and cannot alter Production or promotion gates.
