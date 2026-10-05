@@ -21,3 +21,10 @@ def test_stale_janitor_collapses_existing_collector_duplicates():
     assert 'collector_runs=' in janitor
     assert 'collapsing to newest active generation' in janitor
     assert '.[1:][]?.id' in janitor
+
+
+def test_janitor_self_validation_trigger():
+    janitor = Path('.github/workflows/btc_stale_run_janitor.yml').read_text(encoding='utf-8')
+    assert 'push:' in janitor
+    assert 'branches: [main]' in janitor
+    assert "'.github/workflows/btc_stale_run_janitor.yml'" in janitor
