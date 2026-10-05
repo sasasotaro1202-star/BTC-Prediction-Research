@@ -205,3 +205,7 @@ The Continuous Supervisor and Workflow Watchdog apply bounded exponential backof
 
 ## Workflow contract validation lane
 Full unit tests run on source, test, script, and dependency changes. GitHub Actions workflow changes are validated by a lightweight dedicated contract lane, including compile checks and recovery/automation contract tests. This avoids repeatedly queueing the full suite for orchestration-only edits while preserving fail-closed validation of the automation control plane.
+
+
+## Shared recovery failure-streak helper
+Supervisor and Watchdog must source `scripts/ci_failure_streak.sh` for the failure-streak calculation. The helper counts only consecutive non-success terminal generations since the most recent explicit success and stops at the first neutral/unknown terminal conclusion. The helper is independently unit-tested and syntax-checked by Ops Preflight. Duplicate inline jq recovery logic is prohibited.
