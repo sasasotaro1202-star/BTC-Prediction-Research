@@ -184,3 +184,8 @@ def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
     assert 'length >= 1 and length <= 9' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight
+
+def test_project_source_records_production_first_backpressure():
+    text = Path('docs/PROJECT_SOURCE.md').read_text(encoding='utf-8')
+    assert '116. PRODUCTION-FIRST SUPERVISOR BACKPRESSURE' in text
+    assert 'must not dispatch an additional evidence-routed research lane' in text
