@@ -2730,3 +2730,8 @@ The GitHub-side research PR auto-merge gate must compare each eligible PR head a
 The V13 E2E workflow may be triggered by an older main SHA while the repository advances before the runner starts. This condition is an operational race, not by itself a research failure.
 
 The workflow must fail closed when it cannot resolve a current main snapshot, but when resolution succeeds it should pin the verification workspace to the fetched current main commit and use that immutable verification SHA for artifact/provenance binding. The original trigger SHA remains recorded as trigger metadata. Production, registry, frozen holdout, PIT, leakage, OOS, calibration and promotion semantics are unchanged.
+
+
+119. RECENT-PERFORMANCE RECENCY SIGNAL
+
+The autonomous router may treat a materially degraded newest 100-case accuracy versus the 300-case window as a RECENCY_RISK research signal. The signal is diagnostic/triage evidence only, requires numeric and sufficiently sized windows, fails closed on malformed or immature evidence, and routes to the existing Recency Challenger without changing Production or promotion state.
