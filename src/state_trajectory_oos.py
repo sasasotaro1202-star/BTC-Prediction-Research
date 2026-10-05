@@ -131,27 +131,28 @@ def _metrics(y_true: np.ndarray, probs: np.ndarray, n_classes: int) -> dict[str,
     }
 
 
-def _fit_state_space(rows: list[dict[str, Any]], n_clusters: int, fit_rows: int):
-    if len(rows) < fit_rows or fit_rows < 2:
+
+def _fit_state_space(train_rows: list[dict[str, Any]], n_clusters: int):
+    if len(train_rows) < max(2, n_clusters):
         return None
-    reference = np.asarray([row["_x"] for row in rows[:fit_rows]], dtype=float)
-    actual_clusters = min(int(n_clusters), len(reference))
-    if actual_clusters < 2:
-        return None
+    x = np.asarray([row["x"] for row in train_rows], dtype=float)
     scaler = StandardScaler()
-    reference_scaled = scaler.fit_transform(reference)
-    clusterer = KMeans(n_clusters=actual_clusters, random_state=42, n_init=10)
-    clusterer.fit(reference_scaled)
-    return scaler, clusterer, actual_clusters
+    xs = scaler.fit_transform(x)
+    k = min(int(n_clusters), len(train_rows))
+    if k < 2:
+        return None
+    clusterer = KMeans(n_clusters=k, random_state=42, n_init=10)
+    clusterer.fit(xs)
+    return scaler, clusterer, k
 
 
-def _fit_fold(train_pairs: list[dict[str, Any]], state_space):
-    if len(train_pairs) < 2 or state_space is None:
+def _fit_transition_model(train_pairs: list[dict[str, Any]], state_space):
+    if state_space is None or len(train_pairs) < 2:
         return None
     scaler, clusterer, n_classes = state_space
-    x_train = np.asarray([p["x"] for p in train_pairs], dtype=float)
-    target_x_train = np.asarray([p["target_x"] for p in train_pairs], dtype=float)
-    target_state = clusterer.predict(scaler.transform(target_x_train))
+    x = np.asarray([pair["x"] for pair in train_pairs], dtype=float)
+    target_x = np.asarray([pair["target_x"] for pair in train_pairs], dtype=float)
+    target_state = clusterer.predict(scaler.transform(target_x))
     model = RandomForestClassifier(
         n_estimators=240,
         max_depth=12,
@@ -160,88 +161,120 @@ def _fit_fold(train_pairs: list[dict[str, Any]], state_space):
         random_state=42,
         n_jobs=-1,
     )
-    model.fit(scaler.transform(x_train), target_state)
+    model.fit(scaler.transform(x), target_state)
     return scaler, clusterer, model, n_classes
 
 
-def _predict(fitted, pairs: list[dict[str, Any]]):
+def _predict(pairs: list[dict[str, Any]], fitted):
     scaler, clusterer, model, n_classes = fitted
-    x = np.asarray([p["x"] for p in pairs], dtype=float)
-    target_x = np.asarray([p["target_x"] for p in pairs], dtype=float)
+    x = np.asarray([pair["x"] for pair in pairs], dtype=float)
+    target_x = np.asarray([pair["target_x"] for pair in pairs], dtype=float)
     current_state = clusterer.predict(scaler.transform(x))
     future_state = clusterer.predict(scaler.transform(target_x))
-    raw = model.predict_proba(scaler.transform(x))
+    raw = np.asarray(model.predict_proba(scaler.transform(x)), dtype=float)
     probs = np.zeros((len(pairs), n_classes), dtype=float)
-    for col, cls in enumerate(model.classes_.astype(int)):
+    for col, cls in enumerate(np.asarray(model.classes_, dtype=int)):
         probs[:, cls] = raw[:, col]
-    persistence = _one_hot(current_state, n_classes)
+    probs = np.clip(probs, 1e-8, 1.0)
+    probs /= probs.sum(axis=1, keepdims=True)
+    persistence = np.zeros_like(probs)
+    persistence[np.arange(len(pairs)), current_state] = 1.0
     return future_state.astype(int), probs, persistence
+
+
+def _metrics(y_true: np.ndarray, probs: np.ndarray, n_classes: int) -> dict[str, float]:
+    y_true = np.asarray(y_true, dtype=int)
+    probs = np.asarray(probs, dtype=float)
+    if len(y_true) == 0:
+        raise ValueError("trajectory_empty_evaluation")
+    probs = np.clip(probs, 1e-8, 1.0)
+    probs /= probs.sum(axis=1, keepdims=True)
+    pred = probs.argmax(axis=1)
+    correct = (pred == y_true).astype(float)
+    conf = probs.max(axis=1)
+    ece = 0.0
+    edges = np.linspace(0.0, 1.0, 11)
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        mask = (conf >= lo) & ((conf < hi) if hi < 1.0 else (conf <= hi))
+        if mask.any():
+            ece += float(mask.mean()) * abs(float(correct[mask].mean()) - float(conf[mask].mean()))
+    one = np.zeros((len(y_true), n_classes), dtype=float)
+    one[np.arange(len(y_true)), y_true] = 1.0
+    return {
+        "accuracy": float(accuracy_score(y_true, pred)),
+        "logloss": float(log_loss(y_true, probs, labels=list(range(n_classes)))),
+        "brier": float(np.mean(np.sum((probs - one) ** 2, axis=1))),
+        "ece": float(ece),
+    }
 
 
 def _evaluate_step(
     rows: list[dict[str, Any]],
     *,
     steps: int,
-    state_space,
-    test_block: int,
+    n_clusters: int,
     min_train: int,
+    test_block: int,
     min_oos: int,
 ) -> dict[str, Any]:
     pairs = _build_pairs(rows, steps)
     if len(pairs) < min_train + min_oos:
-        return {
-            "status": "DEFERRED",
-            "reason": "insufficient_contiguous_pairs",
-            "pair_n": len(pairs),
-            "oos_n": 0,
-            "final_holdout_n": 0,
-        }
+        return {"status": "DEFERRED", "reason": "insufficient_contiguous_pairs", "pair_n": len(pairs), "oos_n": 0, "final_holdout_n": 0}
 
     split = int(len(pairs) * (1.0 - FINAL_HOLDOUT_FRAC))
     development = pairs[:split]
     holdout = pairs[split:]
+    if len(development) < min_train or not holdout:
+        return {"status": "DEFERRED", "reason": "insufficient_development_holdout_split", "pair_n": len(pairs), "oos_n": 0, "final_holdout_n": len(holdout)}
 
     oos_y: list[int] = []
     oos_candidate: list[list[float]] = []
     oos_persistence: list[list[float]] = []
+    fold_rows: list[dict[str, Any]] = []
 
     for test_start in range(min_train, len(development), test_block):
-        train_end = max(0, test_start - steps)
-        train_pairs = development[:train_end]
-        test_pairs = development[test_start:min(test_start + test_block, len(development))]
+        test_end = min(test_start + test_block, len(development))
+        train_pairs = development[: max(0, test_start - steps)]
+        test_pairs = development[test_start:test_end]
         if len(train_pairs) < min_train or not test_pairs:
             continue
-        fitted = _fit_fold(train_pairs, state_space)
+
+        # The state vocabulary is fitted ONLY on observations whose timestamps
+        # are inside the fold's pre-test training boundary. Nothing from the
+        # scored block or frozen holdout participates in scaler/KMeans fitting.
+        max_target_index = max((int(pair["to_index"]) for pair in train_pairs), default=-1) + 1
+        train_rows = rows[:max_target_index]
+        state_space = _fit_state_space(train_rows, n_clusters)
+        fitted = _fit_transition_model(train_pairs, state_space)
         if fitted is None:
             continue
-        y, candidate, persistence = _predict(fitted, test_pairs)
+
+        y, candidate, persistence = _predict(test_pairs, fitted)
         oos_y.extend(y.tolist())
         oos_candidate.extend(candidate.tolist())
         oos_persistence.extend(persistence.tolist())
+        fold_rows.append({
+            "test_start": test_start,
+            "test_end": test_end,
+            "train_pair_n": len(train_pairs),
+            "state_fit_row_n": len(train_rows),
+            "state_fit_latest_created": train_rows[-1]["created"].isoformat() if train_rows else None,
+            "test_pair_first_created": test_pairs[0]["created"],
+            "purge_steps": steps,
+        })
 
     if len(oos_y) < min_oos:
-        return {
-            "status": "DEFERRED",
-            "reason": "insufficient_prequential_oos_rows",
-            "pair_n": len(pairs),
-            "oos_n": len(oos_y),
-            "final_holdout_n": len(holdout),
-        }
+        return {"status": "DEFERRED", "reason": "insufficient_prequential_oos_rows", "pair_n": len(pairs), "oos_n": len(oos_y), "final_holdout_n": len(holdout), "folds": fold_rows}
 
-    final_train = development[:-steps] if len(development) > steps else []
-    fitted_final = _fit_fold(final_train, state_space)
-    if fitted_final is None:
-        return {
-            "status": "DEFERRED",
-            "reason": "final_training_fit_unavailable",
-            "pair_n": len(pairs),
-            "oos_n": len(oos_y),
-            "final_holdout_n": len(holdout),
-        }
+    final_train_pairs = development[:-steps] if len(development) > steps else []
+    max_target_index = max((int(pair["to_index"]) for pair in final_train_pairs), default=-1) + 1
+    final_state_space = _fit_state_space(rows[:max_target_index], n_clusters)
+    final_fitted = _fit_transition_model(final_train_pairs, final_state_space)
+    if final_fitted is None:
+        return {"status": "DEFERRED", "reason": "final_training_fit_unavailable", "pair_n": len(pairs), "oos_n": len(oos_y), "final_holdout_n": len(holdout), "folds": fold_rows}
 
-    hold_y, hold_candidate, hold_persistence = _predict(fitted_final, holdout)
-
-    n_classes = int(fitted_final[-1])
+    hold_y, hold_candidate, hold_persistence = _predict(holdout, final_fitted)
+    n_classes = int(final_fitted[-1])
     oos_metrics = {
         "candidate": _metrics(np.asarray(oos_y, dtype=int), np.asarray(oos_candidate), n_classes),
         "persistence": _metrics(np.asarray(oos_y, dtype=int), np.asarray(oos_persistence), n_classes),
@@ -250,6 +283,8 @@ def _evaluate_step(
         "candidate": _metrics(hold_y, hold_candidate, n_classes),
         "persistence": _metrics(hold_y, hold_persistence, n_classes),
     }
+    oos_delta = {k: oos_metrics["candidate"][k] - oos_metrics["persistence"][k] for k in ("accuracy", "logloss", "brier", "ece")}
+    hold_delta = {k: hold_metrics["candidate"][k] - hold_metrics["persistence"][k] for k in ("accuracy", "logloss", "brier", "ece")}
 
     return {
         "status": "OK",
@@ -257,19 +292,14 @@ def _evaluate_step(
         "oos_n": len(oos_y),
         "final_holdout_n": len(holdout),
         "state_count": n_classes,
-        "state_label_method": "train-fold-kmeans",
-        "evaluation": {
-            "purge_steps": steps,
-            "test_block": test_block,
-            "final_holdout_fraction": FINAL_HOLDOUT_FRAC,
-        },
+        "state_label_method": "fold-local-kmeans",
+        "evaluation": {"purge_steps": steps, "test_block": test_block, "final_holdout_fraction": FINAL_HOLDOUT_FRAC},
         "oos": oos_metrics,
-        "oos_delta_candidate_minus_persistence": {
-            key: oos_metrics["candidate"][key] - oos_metrics["persistence"][key]
-            for key in ("accuracy", "logloss", "brier", "ece")
-        },
+        "oos_delta_candidate_minus_persistence": oos_delta,
         "final_holdout": hold_metrics,
-        "selection_uses_future_test_outcomes": False,
+        "final_holdout_delta_candidate_minus_persistence": hold_delta,
+        "folds": fold_rows,
+        "future_rows_used_for_state_space_fit": False,
         "final_holdout_used_for_selection": False,
     }
 
@@ -284,14 +314,7 @@ def build_trajectory_oos(
     min_oos: int = DEFAULT_MIN_OOS,
 ) -> dict[str, Any]:
     if not rows:
-        return {
-            "status": "DEFERRED",
-            "reason": "no_pit_safe_rows",
-            "research_only": True,
-            "production_changed": False,
-            "evaluation_mode": "direct_multi_horizon",
-            "horizons": {},
-        }
+        return {"status": "DEFERRED", "reason": "no_pit_safe_rows", "research_only": True, "production_changed": False, "promotion_allowed": False, "horizons": {}}
     if any(step not in HORIZON_NAMES for step in steps):
         raise ValueError("unsupported_trajectory_step")
     if n_clusters < 2 or min_train < 2 or test_block < 1 or min_oos < 1:
@@ -299,37 +322,19 @@ def build_trajectory_oos(
 
     normalized = _normalize_rows(rows)
     if not normalized:
-        return {
-            "status": "DEFERRED",
-            "reason": "no_valid_timestamped_feature_rows",
-            "research_only": True,
-            "production_changed": False,
-            "evaluation_mode": "direct_multi_horizon",
-            "horizons": {},
-        }
+        return {"status": "DEFERRED", "reason": "no_valid_timestamped_feature_rows", "research_only": True, "production_changed": False, "promotion_allowed": False, "horizons": {}}
 
-    state_space = _fit_state_space(normalized, n_clusters, min_train)
-    if state_space is None:
-        return {
-            "status": "DEFERRED",
-            "reason": "state_vocabulary_fit_unavailable",
-            "research_only": True,
-            "production_changed": False,
-            "evaluation_mode": "direct_multi_horizon",
-            "horizons": {},
-        }
-
-    horizons = {}
-    for step in steps:
-        horizons[HORIZON_NAMES[step]] = _evaluate_step(
+    horizons = {
+        HORIZON_NAMES[step]: _evaluate_step(
             normalized,
             steps=step,
-            state_space=state_space,
+            n_clusters=n_clusters,
             min_train=min_train,
             test_block=test_block,
             min_oos=min_oos,
         )
-
+        for step in steps
+    }
     ok_count = sum(item.get("status") == "OK" for item in horizons.values())
     return {
         "status": "OK" if ok_count else "DEFERRED",
@@ -341,8 +346,7 @@ def build_trajectory_oos(
         "input_interval_minutes": BASE_INTERVAL_MINUTES,
         "horizons": horizons,
         "state_representation": "unsupervised_feature-state_clusters",
-        "state_definition": "frozen_initial_training_window",
-        "state_vocabulary_fit_rows": min_train,
+        "state_definition": "fold-local-training-window",
         "future_error_control": "direct_each_horizon_with_fold_purge",
     }
 
@@ -362,7 +366,7 @@ def main():
         "promotion_effect": "none",
     })
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({
         "status": payload.get("status"),
         "source_row_count": len(rows),
