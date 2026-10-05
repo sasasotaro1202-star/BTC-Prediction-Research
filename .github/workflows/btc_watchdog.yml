@@ -44,7 +44,7 @@ jobs:
             btc_binance_ws_collector.yml
             btc_continuous_supervisor.yml
             btc_9h_research_marathon.yml
-            btc_24h_autonomous_research.yml
+            btc_24h_watchdog.yml
             btc_rolling_challenger.yml
             btc_return_distribution_tail_oos.yml
             btc_unit_tests.yml
@@ -362,9 +362,9 @@ jobs:
           # there is no active run and no completed run for 10 hours.
           # A 9H run has a hard workflow timeout; allow it to finish before treating an old-head run as stale.
           recover_if_stale btc_9h_research_marathon.yml 36000 39600 900
-          # The 24H marathon is intentionally recovered as a single long-running
-          # research lane; never start another generation while one is active.
-          recover_if_stale btc_24h_autonomous_research.yml 86400 93600 900
+          # Recover the dedicated 24H watchdog itself if its 10-minute schedule
+          # is lost; the watchdog owns the marathon's circuit breaker.
+          recover_if_stale btc_24h_watchdog.yml 900 1200 300
           # Research-only model/feature and maintenance lanes are recoverable
           # independently. They never mutate production probabilities directly.
           recover_if_stale btc_rolling_challenger.yml 28800 43200 900
