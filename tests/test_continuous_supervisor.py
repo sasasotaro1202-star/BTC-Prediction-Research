@@ -192,3 +192,24 @@ def test_supervisor_initializes_route_candidate_count_before_production_backpres
     gate = text.index('if [ "${production_active}" -eq 0 ]; then', init)
     status = text.index('"route_candidate_count": ${route_candidate_count}', gate)
     assert init < gate < status
+
+def test_supervisor_owned_research_lanes_do_not_self_schedule():
+    for workflow in (
+        '.github/workflows/btc_research_readiness.yml',
+        '.github/workflows/btc_autonomous_data_frontier.yml',
+        '.github/workflows/btc_adaptive_calibration_replay.yml',
+        '.github/workflows/btc_experience_policy_oos.yml',
+        '.github/workflows/btc_selective_prediction_oos.yml',
+        '.github/workflows/btc_return_distribution_tail_oos.yml',
+        '.github/workflows/btc_rich_production_challenger.yml',
+        '.github/workflows/btc_ultimate_final_v13_e2e.yml',
+    ):
+        text = Path(workflow).read_text(encoding='utf-8')
+        trigger = text.split('permissions:', 1)[0]
+        assert '\n  schedule:' not in trigger
+        assert '\nschedule:' not in trigger
+
+    frontier = Path('.github/workflows/btc_autonomous_data_frontier.yml').read_text(encoding='utf-8')
+    adaptive = Path('.github/workflows/btc_adaptive_calibration_replay.yml').read_text(encoding='utf-8')
+    assert '\n  workflow_run:' not in frontier.split('permissions:', 1)[0]
+    assert '\n  workflow_run:' not in adaptive.split('permissions:', 1)[0]
