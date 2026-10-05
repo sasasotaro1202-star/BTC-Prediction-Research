@@ -27,17 +27,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Verify immutable current-main snapshot
+      - name: Bind immutable analysis snapshot
         shell: bash
         run: |
           set -euo pipefail
-          . scripts/ci_network_retry.sh
-          ci_git_fetch origin main --depth=1
-          main_sha="$(git rev-parse origin/main)"
-          test "$GITHUB_SHA" = "$main_sha" || {
-            echo "WORKFLOW_SHA_NOT_CURRENT_MAIN current=$GITHUB_SHA main=$main_sha" >&2
+          test "${GITHUB_REF_NAME:-}" = "main" || {
+            echo "RETURN_TAIL_WORKFLOW_MUST_RUN_FROM_MAIN ref=${GITHUB_REF_NAME:-unknown}" >&2
             exit 1
           }
+          test -n "${GITHUB_SHA:-}" || {
+            echo "RETURN_TAIL_ANALYSIS_SHA_MISSING" >&2
+            exit 1
+          }
+          echo "Bound analysis snapshot: ${GITHUB_SHA}"
+          echo "Current main may advance while this immutable research snapshot runs; evidence remains bound to GITHUB_SHA."
 
       - uses: actions/setup-python@v7
         with:
