@@ -19,6 +19,7 @@ ALLOWED = {
     "btc_research_readiness.yml": 3600,
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
+    "btc_return_distribution_tail_oos.yml": 21600,
     "btc_experience_policy_oos.yml": 21600,
     "btc_selective_prediction_oos.yml": 43200,
     "btc_uncertainty_layer_oos.yml": 21600,
@@ -138,6 +139,47 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
     if not hold or not blockers:
         return False, []
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
+
+
+def _return_tail_research_status(root: Path) -> list[str]:
+    """Return research-only triggers for the conditional return/tail lane."""
+    path = root / "data" / "historical_research" / "return_distribution_tail_oos.json"
+    if not path.is_file():
+        return ["return_distribution_tail_evidence_missing"]
+
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return ["return_distribution_tail_evidence_invalid"]
+
+    if obj.get("research_only") is not True or obj.get("production_changed") is not False:
+        return ["return_distribution_tail_boundary_invalid"]
+
+    generated = obj.get("generated_at_utc")
+    parsed = None
+    if generated:
+        try:
+            from datetime import datetime, timezone
+            parsed = datetime.fromisoformat(str(generated).replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            return ["return_distribution_tail_generated_at_invalid"]
+
+    if parsed is None:
+        return ["return_distribution_tail_generated_at_missing"]
+
+    from datetime import datetime, timezone
+    age = (datetime.now(timezone.utc) - parsed).total_seconds()
+    if age < 0:
+        return ["return_distribution_tail_generated_in_future"]
+
+    # A DEFERRED result is expected while live-primary mature rows accumulate;
+    # once the artifact is stale, rerun rather than treating DEFERRED as success.
+    threshold = 21600
+    if age >= threshold:
+        status = str(obj.get("horizons", {}).get("5m", {}).get("status", "UNKNOWN"))
+        status10 = str(obj.get("horizons", {}).get("10m", {}).get("status", "UNKNOWN"))
+        return [f"return_distribution_tail_stale:{int(age)}s;5m={status};10m={status10}"]
+    return []
 
 
 def _uncertainty_drift_signals(root: Path) -> list[str]:
@@ -303,6 +345,16 @@ def choose(root: Path) -> dict[str, Any]:
             90,
             "PROMOTION_HOLD_RESEARCH",
             promotion_signals,
+        ))
+
+    return_tail_signals = _return_tail_research_status(root)
+    if return_tail_signals:
+        routes.append(_decision(
+            "btc_return_distribution_tail_oos.yml",
+            "conditional_return_distribution_and_tail_evidence_is_missing_or_stale",
+            88,
+            "RETURN_DISTRIBUTION_TAIL_RESEARCH",
+            return_tail_signals,
         ))
 
     if uncertainty_signals:
