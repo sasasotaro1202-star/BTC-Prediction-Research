@@ -2720,3 +2720,8 @@ Long-running research lanes are immutable-analysis jobs, not moving-main jobs. A
 
 Repeated failure/cancellation/timeout must not cause an unbounded 5-minute dispatch loop. The Continuous Supervisor and Workflow Watchdog maintain a failure streak and use bounded exponential recovery cooldown, starting at 5 minutes and capped at 80 minutes. The stale-run janitor remains cancellation-only so recovery dispatch has a single coordinated policy across the Supervisor, Watchdog, and Production Sentinel. This changes recovery timing only; it never converts failure into success and never changes Production safety gates.
 
+
+
+82. WORKFLOW CONTRACT VALIDATION LANE
+
+The automation control plane uses a lightweight dedicated workflow-contract lane for `.github/workflows/*` changes. The full unit suite remains focused on source/tests/scripts/dependency changes, while workflow edits receive compile and recovery-contract validation. This reduces avoidable queue churn without weakening validation of Supervisor, Watchdog, immutable research recovery, or stale-run controls.
