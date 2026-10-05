@@ -75,6 +75,108 @@ class TestPerformanceChange(unittest.TestCase):
             self.assertAlmostEqual(changed[("10m", "final_logloss")], -0.03)
             self.assertTrue(payload["changed"])
 
+    def test_strict_pit_can_be_restricted_to_registered_model_generation(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "predictions.db"
+            with sqlite3.connect(db) as con:
+                con.execute(
+                    """
+                    CREATE TABLE model_registry (
+                        horizon TEXT PRIMARY KEY,
+                        production_version TEXT
+                    )
+                    """
+                )
+                con.execute(
+                    "INSERT INTO model_registry VALUES (?, ?)",
+                    ("5m", "current.v2"),
+                )
+                con.execute(
+                    """
+                    CREATE TABLE predictions (
+                        created_at_utc TEXT,
+                        target_5m TEXT,
+                        actual_direction_5m TEXT,
+                        p_up_5m REAL,
+                        p_down_5m REAL,
+                        p_flat_5m REAL,
+                        model_version TEXT,
+                        scenario_json TEXT
+                    )
+                    """
+                )
+
+                def scenario(ts):
+                    sources = {
+                        name: {
+                            "status": "ok",
+                            "available_at": ts,
+                            "retrieved_at": ts,
+                            "prediction_cutoff": ts,
+                        }
+                        for name in (
+                            "binance_futures",
+                            "binance_depth",
+                            "binance_taker",
+                            "binance_premium",
+                        )
+                    }
+                    return json.dumps(
+                        {
+                            "decision_time_utc": ts,
+                            "production_mode": "binance_primary",
+                            "provenance": {
+                                "available_at": ts,
+                                "retrieved_at": ts,
+                                "prediction_cutoff": ts,
+                                "sources": sources,
+                            },
+                        }
+                    )
+
+                con.executemany(
+                    "INSERT INTO predictions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            "2026-10-05T00:00:00+00:00",
+                            "2026-10-05T00:05:00+00:00",
+                            "UP",
+                            0.8,
+                            0.1,
+                            0.1,
+                            "5m:old.v1|10m:shared",
+                            scenario("2026-10-05T00:00:00+00:00"),
+                        ),
+                        (
+                            "2026-10-05T01:00:00+00:00",
+                            "2026-10-05T01:05:00+00:00",
+                            "DOWN",
+                            0.1,
+                            0.8,
+                            0.1,
+                            "10m:shared|5m:current.v2",
+                            scenario("2026-10-05T01:00:00+00:00"),
+                        ),
+                    ],
+                )
+
+            self.assertEqual(
+                performance_change._current_production_model_version("5m", db),
+                "current.v2",
+            )
+            overall = performance_change._strict_pit_scores("5m", db)
+            current = performance_change._strict_pit_scores(
+                "5m",
+                db,
+                required_model_version="current.v2",
+            )
+            self.assertEqual(overall["n"], 2)
+            self.assertEqual(current["n"], 1)
+            self.assertEqual(current["required_model_version"], "current.v2")
+            self.assertAlmostEqual(current["accuracy"], 1.0)
+
     def test_sample_count_change_alone_is_not_score_change(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
