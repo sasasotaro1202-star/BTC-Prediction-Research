@@ -2730,3 +2730,7 @@ The automation control plane uses a lightweight dedicated workflow-contract lane
 83. SHARED RECOVERY FAILURE STREAK
 
 The Supervisor and Watchdog use the shared `scripts/ci_failure_streak.sh` helper for consecutive failure/cancellation counting. This removes duplicated inline recovery logic and makes the recovery state calculation directly testable. The helper counts only the terminal non-success streak since the latest explicit success; neutral/unknown terminal conclusions stop the streak. Ops Preflight syntax-checks the helper.
+
+84. RESEARCH PR AUTO-MERGE EVENT RECOVERY
+
+The research-only PR auto-merge controller wakes on BTC Unit Tests, BTC Workflow Contract Tests, BTC Research Readiness Audit, and BTC Ops Preflight completion, in addition to its periodic schedule and pull-request events. An explicit ready_for_review event is treated as the authoritative readiness wake so a transient stale draft-state read during that state transition cannot strand an otherwise eligible research PR. All other wake paths retain the live current-state draft firewall. The sensitive workflow, Production/data/registry/holdout, marker, same-repository, branch-prefix, current-head checks, commit-status, and expected-SHA merge gates remain mandatory.
