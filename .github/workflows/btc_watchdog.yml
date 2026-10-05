@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
       - name: Retry recent eligible interrupted BTC workflows
         env:
           GH_TOKEN: ${{ github.token }}
