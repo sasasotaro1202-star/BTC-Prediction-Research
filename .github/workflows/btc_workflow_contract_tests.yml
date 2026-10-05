@@ -1,0 +1,50 @@
+name: BTC Workflow Contract Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'tests/test_*workflow*.py'
+      - 'tests/test_recovery_backoff_contract.py'
+      - 'tests/test_automation_stability_contract.py'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'tests/test_*workflow*.py'
+      - 'tests/test_recovery_backoff_contract.py'
+      - 'tests/test_automation_stability_contract.py'
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: btc-workflow-contract-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile workflow contract tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: python -m compileall -q src tests
+      - name: Run workflow contract tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+        run: >-
+          python -m pytest -q
+          tests/test_workflow_recovery_contract.py
+          tests/test_recovery_backoff_contract.py
+          tests/test_automation_stability_contract.py
