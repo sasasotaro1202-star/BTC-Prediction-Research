@@ -201,3 +201,7 @@ Long-running research workflows must remain valid when `main` advances while the
 ## Automation recovery backoff
 The Continuous Supervisor and Workflow Watchdog apply bounded exponential backoff to repeated non-success generations. The base cooldown is 5 minutes and is capped at 80 minutes. This prevents deterministic failures from creating an unbounded GitHub Actions dispatch storm while preserving automatic recovery. The stale-run janitor is cancellation-only for the production/research spine; recovery dispatch is centralized in the Supervisor, Watchdog and Production Sentinel.
 
+
+
+## Workflow contract validation lane
+Full unit tests run on source, test, script, and dependency changes. GitHub Actions workflow changes are validated by a lightweight dedicated contract lane, including compile checks and recovery/automation contract tests. This avoids repeatedly queueing the full suite for orchestration-only edits while preserving fail-closed validation of the automation control plane.
