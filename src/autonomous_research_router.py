@@ -35,6 +35,8 @@ HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 MODEL_STALE_DAYS = 7.0
+RECENT_PERFORMANCE_GAP_TRIGGER = 0.10
+RECENT_PERFORMANCE_CEILING = 0.33
 
 
 def _parse_utc_timestamp(raw: object) -> datetime | None:
@@ -263,6 +265,56 @@ def _model_staleness_signals(root: Path) -> list[str]:
     return signals
 
 
+def _recent_performance_signals(root: Path) -> list[str]:
+    """Detect recent accuracy deterioration for research routing only.
+
+    This is a diagnostic trigger, not promotion evidence. It compares the
+    newest 100 settled cases with the preceding 300-case window and requires
+    complete, numeric sample sizes before emitting a route.
+    """
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+    if experience is None:
+        return []
+
+    if experience.get("status") not in (None, "OK"):
+        return []
+
+    horizons = experience.get("horizons")
+    if not isinstance(horizons, dict):
+        return []
+
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        h = horizons.get(horizon)
+        if not isinstance(h, dict):
+            continue
+        recent = h.get("recent")
+        if not isinstance(recent, dict):
+            continue
+        r100 = recent.get("100")
+        r300 = recent.get("300")
+        if not isinstance(r100, dict) or not isinstance(r300, dict):
+            continue
+        try:
+            n100 = int(r100.get("n", 0))
+            n300 = int(r300.get("n", 0))
+            acc100 = float(r100["accuracy"])
+            acc300 = float(r300["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if n100 < 100 or n300 < 300:
+            continue
+        if not (0.0 <= acc100 <= 1.0 and 0.0 <= acc300 <= 1.0):
+            continue
+        gap = acc300 - acc100
+        if acc100 <= RECENT_PERFORMANCE_CEILING and gap >= RECENT_PERFORMANCE_GAP_TRIGGER:
+            signals.append(
+                f"{horizon}:recent100_accuracy={acc100:.3f};recent300_accuracy={acc300:.3f};"
+                f"gap={gap:.3f};n100={n100};n300={n300}"
+            )
+    return signals
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -349,6 +401,8 @@ def choose(root: Path) -> dict[str, Any]:
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
     model_staleness_signals = _model_staleness_signals(root)
+    recent_performance_signals = _recent_performance_signals(root)
+    recency_signals = [*model_staleness_signals, *recent_performance_signals]
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -362,13 +416,13 @@ def choose(root: Path) -> dict[str, Any]:
             calibration_signals,
         ))
 
-    if model_staleness_signals:
+    if recency_signals:
         routes.append(_decision(
             "btc_recency_challenger.yml",
-            "production_champion_generation_is_stale_and_requires_recent_data_reassessment",
+            "production_recency_risk_requires_recent_data_reassessment",
             92,
-            "MODEL_STALENESS_RISK",
-            model_staleness_signals,
+            "RECENCY_RISK",
+            recency_signals,
         ))
 
     if promotion_blocked:
