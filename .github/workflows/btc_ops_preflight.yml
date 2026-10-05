@@ -201,8 +201,13 @@ jobs:
           print("No forbidden fail-open shell suppression found.")
           PY
 
-      - name: Compile BTC source and test modules
-        run: python -m compileall -q src tests scripts
+      - name: Compile BTC source, test modules, and recovery helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests scripts
+          test -f scripts/ci_failure_streak.sh
+          bash -n scripts/ci_failure_streak.sh
 
       - name: Validate autonomous research router output
         shell: bash
