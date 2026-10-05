@@ -14,3 +14,10 @@ def test_collector_active_grace_matches_full_capture_window():
     assert "timeout-minutes: 55" in collector
     assert "recover_if_stale btc_binance_ws_collector.yml 3000 300 300" in workflow
     assert "recover_if_stale btc_binance_ws_collector.yml 3900 300 300" not in workflow
+
+
+def test_stale_janitor_collapses_existing_collector_duplicates():
+    janitor = Path('.github/workflows/btc_stale_run_janitor.yml').read_text(encoding='utf-8')
+    assert 'collector_runs=' in janitor
+    assert 'collapsing to newest active generation' in janitor
+    assert '.[1:][]?.id' in janitor
