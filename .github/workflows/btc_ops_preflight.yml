@@ -90,6 +90,11 @@ jobs:
 
           if "actions: write" not in watchdog:
               raise SystemExit("watchdog must retain Actions write permission for recovery")
+          if "      - uses: actions/checkout@v7" not in watchdog:
+              raise SystemExit("watchdog must checkout repository before using versioned recovery helpers")
+          if "scripts/ci_failure_streak.sh" not in watchdog:
+              raise SystemExit("watchdog recovery helper dependency missing")
+          print("watchdog repository checkout + helper dependency: VERIFIED")
           print(f"watchdog inventory verified: {len(names)} recovery workflows")
 
           supervisor = (root / "btc_continuous_supervisor.yml").read_text(encoding="utf-8")
