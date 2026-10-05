@@ -78,7 +78,28 @@ jobs:
               echo "WARN: unable to inspect queued research ${workflow}; continue."
               return 0
             }
-            while IFS=          # Collector generations are state-only cache infrastructure. Keep only the
+            while read -r run_id status head_sha run_number; do
+              [ -n "${run_id}" ] || continue
+              case "${status}" in
+                queued|pending) ;;
+                *) continue ;;
+              esac
+              [ "${run_id}" -ne "${GITHUB_RUN_ID}" ] || continue
+              echo "${workflow}: cancelling queued/pending research run ${run_id} run_number=${run_number} while Production is active"
+              cancel_response="$(gh api --method POST "/repos/${REPO}/actions/runs/${run_id}/cancel" 2>&1)" || cancel_rc=$?
+              cancel_rc="${cancel_rc:-0}"
+              if [ "${cancel_rc}" -eq 0 ]; then
+                echo "${workflow}: queued research run ${run_id} cancelled for production backpressure"
+              elif grep -qiE '404|Not Found' <<<"${cancel_response}"; then
+                echo "WARN: queued research run ${workflow} run=${run_id} disappeared before cancellation."
+              else
+                echo "WARN: failed to cancel queued research ${workflow} run=${run_id} rc=${cancel_rc} response=${cancel_response}" >&2
+              fi
+              cancel_rc=0
+            done < <(jq -r '.workflow_runs[]? | [.id,.status,.head_sha,.run_number] | @tsv' <<<"${response}")
+          }
+
+          # Collector generations are state-only cache infrastructure. Keep only the
           # newest active generation so legacy per-SHA concurrency cannot strand runners.
           collector_response="$(gh api "/repos/${REPO}/actions/workflows/btc_binance_ws_collector.yml/runs?per_page=30")"
           collector_runs="$(jq -c "[.workflow_runs[]? | select(.status==\"queued\" or .status==\"pending\" or .status==\"in_progress\") | {id,run_number,status,created_at}] | sort_by(.created_at) | reverse" <<<"${collector_response}")"
