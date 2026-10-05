@@ -187,7 +187,7 @@ def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
 
 
 def test_supervisor_initializes_route_candidate_count_before_production_backpressure():
-    text = _read_workflow()
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     init = text.index("route_candidate_count=0")
     gate = text.index('if [ "${production_active}" -eq 0 ]; then', init)
     status = text.index('"route_candidate_count": ${route_candidate_count}', gate)
