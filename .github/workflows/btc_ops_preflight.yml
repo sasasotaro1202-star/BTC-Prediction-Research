@@ -124,7 +124,23 @@ jobs:
           if "return 10" in supervisor or "return 20" in supervisor:
               raise SystemExit("continuous supervisor must not leak dispatch state through helper exit codes")
           print("continuous supervisor dispatch enablement + creation verification: VERIFIED")
-          if "production_active=0" not in supervisor:
+
+
+          watchdog_24h = (root / "btc_24h_watchdog.yml").read_text(encoding="utf-8")
+          required_24h_dispatch_contracts = {
+              'ci_gh workflow enable btc_24h_autonomous_research.yml --repo "$REPO"',
+              "24H marathon workflow enable check completed.",
+              "BTC 24H marathon dispatch verified:",
+          }
+          missing_24h = sorted(
+              marker for marker in required_24h_dispatch_contracts if marker not in watchdog_24h
+          )
+          if missing_24h:
+              raise SystemExit(
+                  "24H watchdog recovery enablement/verification contract missing: "
+                  + ", ".join(missing_24h)
+              )
+          print("24H watchdog target enablement + dispatch verification: VERIFIED")          if "production_active=0" not in supervisor:
               raise SystemExit("continuous supervisor production-capacity guard missing")
           if 'production_response="$(ci_gh_api_get' not in supervisor:
               raise SystemExit("continuous supervisor production-state inspection missing")
