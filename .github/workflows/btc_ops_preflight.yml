@@ -290,7 +290,7 @@ jobs:
           if obj.get("production_impact") is not False:
               raise SystemExit("router production_impact must be false")
           candidates = obj.get("candidates")
-          if not isinstance(candidates, list) or not (1 <= len(candidates) <= 8):
+          if not isinstance(candidates, list) or not (1 <= len(candidates) <= len(allowed)):
               raise SystemExit("router candidates missing or out of bounds")
           expected_thresholds = {
               "btc_research_readiness.yml": 3600,
