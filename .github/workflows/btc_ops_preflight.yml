@@ -187,6 +187,8 @@ jobs:
           if "\"trigger_event\": \"${GITHUB_EVENT_NAME}\"" not in supervisor:
               raise SystemExit("continuous supervisor trigger observability missing")
           watchdog = (root / "btc_watchdog.yml").read_text(encoding="utf-8")
+          if "recover_if_stale btc_binance_ws_collector.yml 3000 3300 300" not in watchdog:
+              raise SystemExit("watchdog collector active grace must cover the full capture window")
           if "recover_if_stale btc_continuous_supervisor.yml 900 1800 900" not in watchdog:
               raise SystemExit("watchdog supervisor recovery threshold is not 15-minute bounded")
           print("continuous supervisor event-driven + bounded watchdog recovery coverage: VERIFIED")
