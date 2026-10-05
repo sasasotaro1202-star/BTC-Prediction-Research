@@ -12,7 +12,7 @@ def test_continuous_supervisor_retries_failed_generations_after_bounded_cooldown
     text = _workflow("btc_continuous_supervisor.yml")
     assert "latest_conclusion" in text
     assert "failure|cancelled|timed_out|action_required|stale" in text
-    assert 'if [ "${age}" -ge 300 ]; then failure_retry_due=true; fi' in text
+    assert 'if [ "${age}" -ge "${failure_cooldown}" ]; then failure_retry_due=true; fi' in text
     assert '[ "${failure_retry_due}" = true ]' in text
 
 
@@ -22,7 +22,7 @@ def test_watchdog_recovers_failed_generations_on_current_main():
     assert "latest_head_sha" in text
     assert "latest_attempt" in text
     assert "failure|cancelled|timed_out|action_required|stale" in text
-    assert 'if [ "$age" -ge 300 ]; then failure_retry_due=true; fi' in text
+    assert 'if [ "$age" -ge "$failure_cooldown" ]; then failure_retry_due=true; fi' in text
     assert '[ "$failure_retry_due" = true ]' in text
 
 
