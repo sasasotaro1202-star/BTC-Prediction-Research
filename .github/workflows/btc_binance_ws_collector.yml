@@ -14,11 +14,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Scheduled collectors deliberately get independent concurrency keys so two
-  # staggered windows can overlap and cover transient schedule jitter. Manual /
-  # recovery dispatches use the same non-schedule lane and never cancel an
-  # already-warm scheduled capture.
-  group: btc-binance-ws-cache-${{ github.event_name == 'schedule' && github.run_id || github.sha }}
+  # One shared concurrency slot prevents multiple manual/recovery generations
+  # from consuming runners concurrently. cancel-in-progress=false preserves the
+  # current 45m capture and lets the pending successor continue next.
+  group: btc-binance-ws-cache
   cancel-in-progress: false
 
 permissions:
