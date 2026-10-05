@@ -11,6 +11,7 @@ on:
   workflow_run:
     workflows:
       - "BTC Unit Tests"
+      - "BTC Workflow Contract Tests"
       - "BTC Research Readiness Audit"
       - "BTC Ops Preflight"
     types: [completed]
@@ -42,6 +43,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
           EVENT_PR: ${{ github.event.pull_request.number || '' }}
           EVENT_RUN_PR_JSON: ${{ toJson(github.event.workflow_run.pull_requests) }}
           INPUT_PR: ${{ inputs.pr_number || '' }}
@@ -101,9 +103,15 @@ jobs:
               add_audit "PR=$PR SKIP state=$state"
               continue
             fi
-            if [ "$draft" = "true" ]; then
+            # A ready_for_review event is itself the authoritative readiness wake.
+            # This avoids a transient stale draft-state read at the exact transition
+            # while preserving the normal current-state draft firewall for all other wakes.
+            if [ "$draft" = "true" ] && [ "$EVENT_ACTION" != "ready_for_review" ]; then
               add_audit "PR=$PR SKIP draft=true"
               continue
+            fi
+            if [ "$EVENT_ACTION" = "ready_for_review" ]; then
+              add_audit "PR=$PR READY_FOR_REVIEW_EVENT"
             fi
             if [ "$base_ref" != "main" ]; then
               add_audit "PR=$PR SKIP base=$base_ref"
