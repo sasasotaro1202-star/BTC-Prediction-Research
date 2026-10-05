@@ -105,6 +105,12 @@ jobs:
               raise SystemExit("continuous supervisor coverage missing: " + ", ".join(missing_supervisor))
           if "timeout-minutes: 8" not in supervisor:
               raise SystemExit("continuous supervisor timeout contract missing")
+          if "production_active=0" not in supervisor:
+              raise SystemExit("continuous supervisor production-capacity guard missing")
+          if 'production_response="$(ci_gh_api_get' not in supervisor:
+              raise SystemExit("continuous supervisor production-state inspection missing")
+          if 'suppressing avoidable research stale-dispatches' not in supervisor:
+              raise SystemExit("continuous supervisor production-first suppression path missing")
           if "cancel-in-progress: true" not in supervisor:
               raise SystemExit("continuous supervisor concurrency contract missing")
           if "gh workflow run btc_continuous_supervisor.yml" in supervisor:
