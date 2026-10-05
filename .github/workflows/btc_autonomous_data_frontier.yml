@@ -5,15 +5,7 @@ on:
     branches: [main]
     paths:
       - "src/btc_data_frontier_autoselect.py"
-  schedule:
-    - cron: "*/15 * * * *"
-  workflow_run:
-    workflows:
-      - "BTC Live Cycle"
-      - "BTC Binance WS Collector"
-      - "BTC Archive Refresh Research"
-      - "BTC PIT OOS Audit"
-    types: [completed]
+
 permissions:
   actions: write
   contents: write
