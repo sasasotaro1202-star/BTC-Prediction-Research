@@ -82,6 +82,10 @@ jobs:
               raise SystemExit("return-distribution research must remain research-only")
           if obj.get("production_changed") is not False:
               raise SystemExit("return-distribution research changed Production")
+          if obj.get("analysis_git_sha") != __import__("os").environ.get("GITHUB_SHA"):
+              raise SystemExit("return-distribution evidence analysis SHA mismatch")
+          if not obj.get("prediction_db_sha256"):
+              raise SystemExit("return-distribution evidence missing prediction DB snapshot hash")
           for h, result in obj.get("horizons", {}).items():
               if result.get("research_only") is not True:
                   raise SystemExit(f"{h}: research-only flag missing")
