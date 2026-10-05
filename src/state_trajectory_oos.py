@@ -251,7 +251,7 @@ def _evaluate_step(
             "train_pair_n": len(train_pairs),
             "state_fit_row_n": len(initial_state_rows),
             "state_fit_latest_created": (
-                initial_state_rows[-1]["created"].isoformat() if initial_state_rows else None
+                initial_state_rows[-1]["_created_dt"].isoformat() if initial_state_rows else None
             ),
             "state_fit_scope": "initial_training_window_only",
             "test_pair_first_created": test_pairs[0]["created"],
