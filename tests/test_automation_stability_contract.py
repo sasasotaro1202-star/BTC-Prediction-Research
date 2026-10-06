@@ -48,3 +48,12 @@ def test_collector_janitor_collapses_duplicate_active_generations():
 def test_stale_janitor_releases_obsolete_supervisor_generations_promptly():
     janitor = _read('btc_stale_run_janitor.yml')
     assert '[btc_continuous_supervisor.yml]=600' in janitor
+
+
+def test_pr_automerge_uses_reliable_draft_state():
+    text = _read('btc_research_pr_automerge.yml')
+    needle = 'gh pr view "$PR" --repo "$REPO" --json isDraft --jq ' + "'.isDraft'"
+    assert needle in text
+    assert '.draft // true' not in text
+    assert 'draft-state-unavailable' in text
+    assert 'draft-state-invalid=' in text
