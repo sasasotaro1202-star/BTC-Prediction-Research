@@ -160,6 +160,12 @@ jobs:
             echo "WARN: could not enable 24H marathon workflow; dispatch will still be attempted." >&2
           fi
 
+          # main can advance while stale generations are being cancelled. Refresh
+          # the authoritative SHA immediately before dispatch so the verification
+          # target cannot point at a superseded snapshot.
+          MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          echo "BTC 24H watchdog refreshed main SHA before dispatch: $MAIN_SHA"
+
           dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           for attempt in 1 2 3 4; do            if ! ci_gh workflow run btc_24h_autonomous_research.yml --repo "$REPO" --ref main; then
               echo "dispatch attempt $attempt failed; retrying" >&2
