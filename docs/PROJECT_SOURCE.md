@@ -2739,6 +2739,10 @@ Evidence must retain analysis Git SHA and the prediction-database snapshot hash.
 
 The Continuous Supervisor allowlist includes the return-distribution/tail lane. Its six-hour research freshness threshold is independent of the daily and multi-hour research schedules, and completed return-tail runs are included in the Supervisor workflow_run wakeup set. This is a research continuity mechanism only; failure or staleness never authorizes Production mutation.
 
+79A. RECENT PERFORMANCE DEGRADATION ROUTING
+
+The Continuous Supervisor also treats a material short-window Production accuracy deterioration as a research-prioritization signal. When the durable experience summary contains at least 100 settled cases in the recent-100 window and either recent accuracy is at or below 0.30 or the recent-vs-total accuracy gap is at least 0.08, the deterministic router may dispatch the existing btc_recency_challenger.yml. This lane remains research-only and compares a recency candidate against the current Champion on a protected holdout. The trigger never changes Production, calibration state, registry state, or promotion eligibility.
+
 80. IMMUTABLE RESEARCH SNAPSHOT RECOVERY
 
 Long-running research lanes are immutable-analysis jobs, not moving-main jobs. A queued or running job may legitimately start from a prior main commit while Live/settlement state continues advancing main. The job must preserve its `GITHUB_SHA` as the analysis provenance and its exact input/data snapshot; concurrent main movement must not force a false failure. Before publishing evidence, the workflow reconciles with the latest main and commits only the research artifact. This preserves reproducibility without allowing stale code or stale evidence to masquerade as current Production state. A failed analysis is determined by the actual research/validation result, not merely by main advancing.
