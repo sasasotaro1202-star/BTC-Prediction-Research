@@ -106,6 +106,21 @@ class PromotionGateTests(unittest.TestCase):
         self.assertEqual(result["production_safety_gate"], "HOLD")
         self.assertIn("robustness_evidence_invalid_or_incomplete", result["reason"])
 
+    def test_sub_effective_calibration_minimum_blocks_promotion(self):
+        cal = self._cal()
+        cal["5m"]["n_settled"] = 399
+        result = evaluate_promotion(
+            {"status": "PASS"},
+            self._robust(),
+            self._accepted_blends(),
+            self._pit(),
+            cal,
+            {"ok": True},
+        )
+        self.assertFalse(result["promotion_allowed"])
+        self.assertEqual(result["production_safety_gate"], "HOLD")
+        self.assertIn("calibration_evidence_invalid_or_missing", result["reason"])
+
     def test_zero_settled_calibration_blocks_promotion(self):
         cal = self._cal()
         cal["5m"]["n_settled"] = 0
