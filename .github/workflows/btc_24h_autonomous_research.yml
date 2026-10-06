@@ -19,8 +19,11 @@ permissions:
   contents: read
 
 concurrency:
+  # Latest-main snapshot wins. The dedicated watchdog also enforces this policy,
+  # while the workflow-level concurrency prevents a cancelled stale snapshot
+  # from leaving a newer recovery run pending behind it.
   group: btc-24h-autonomous-research-main
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   PYTHONUNBUFFERED: '1'
