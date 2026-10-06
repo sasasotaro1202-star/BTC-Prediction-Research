@@ -105,6 +105,22 @@ def build(rows, horizon):
     return np.asarray(X, float), np.asarray(y, dtype=object), np.asarray(ts, dtype=np.int64)
 
 
+def frequency_baseline(reference_y, n):
+    """Build a fixed class-frequency baseline from pre-holdout labels only."""
+    if n < 0:
+        raise ValueError("baseline_size_must_be_nonnegative")
+    reference = np.asarray(reference_y, dtype=object)
+    if len(reference) == 0:
+        raise ValueError("baseline_reference_must_not_be_empty")
+    counts = {c: int(np.sum(reference == c)) for c in CLASSES}
+    freq = np.asarray([counts[c] for c in CLASSES], dtype=float)
+    total = float(freq.sum())
+    if total <= 0.0:
+        raise ValueError("baseline_reference_has_no_known_classes")
+    freq /= total
+    return np.tile(freq, (n, 1))
+
+
 def bootstrap_ci_accuracy(y, cand_p, base_p, seed=42):
     yi = np.asarray([CLASSES.index(str(v)) for v in y], dtype=int)
     ch = (np.argmax(cand_p, axis=1) == yi).astype(float)
@@ -152,10 +168,12 @@ def evaluate(horizon, rows):
     champion = joblib.load(champion_path)
     champion_p = champion.predict_proba(X_hold)
 
-    counts = {c: int(np.sum(y_hold == c)) for c in CLASSES}
-    freq = np.asarray([counts[c] for c in CLASSES], dtype=float)
-    freq /= freq.sum()
-    freq_p = np.tile(freq, (len(y_hold), 1))
+    # The frequency baseline must be fixed before the frozen holdout.
+    # Holdout labels are retained only as descriptive class-count evidence.
+    train_class_counts = {c: int(np.sum(y_train == c)) for c in CLASSES}
+    freq_p = frequency_baseline(y_train, len(y_hold))
+
+    holdout_class_counts = {c: int(np.sum(y_hold == c)) for c in CLASSES}
 
     cm = metrics(y_hold, champion_p)
     rm = metrics(y_hold, cand_p)
@@ -188,7 +206,10 @@ def evaluate(horizon, rows):
             "logloss_relative_gain_vs_champion": rel_ll,
             "brier_relative_gain_vs_champion": rel_br,
             "accuracy_bootstrap_ci_vs_champion": ci,
-            "holdout_class_counts": counts,
+            "frequency_baseline_scope": "pre_holdout_training",
+            "frequency_baseline_reference_n": int(len(y_train)),
+            "frequency_baseline_class_counts": train_class_counts,
+            "holdout_class_counts": holdout_class_counts,
             "holdout_start_utc": datetime.fromtimestamp(int(t_hold[0]) / 1000, timezone.utc).isoformat(),
             "holdout_end_utc": datetime.fromtimestamp(int(t_hold[-1]) / 1000, timezone.utc).isoformat(),
         },
