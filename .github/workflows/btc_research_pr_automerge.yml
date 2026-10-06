@@ -90,7 +90,22 @@ jobs:
 
             pr_json="$(gh api "repos/$REPO/pulls/$PR")"
             state="$(jq -r '.state // ""' <<<"$pr_json")"
-            draft="$(jq -r '.draft // true' <<<"$pr_json")"
+            if ! draft="$(gh pr view "$PR" --repo "$REPO" --json isDraft --jq '.isDraft')"; then
+              add_audit "PR=$PR HOLD draft-state-unavailable"
+              continue
+            fi
+            case "$draft" in
+              true)
+                add_audit "PR=$PR SKIP draft=true"
+                continue
+                ;;
+              false)
+                ;;
+              *)
+                add_audit "PR=$PR HOLD draft-state-invalid=$draft"
+                continue
+                ;;
+            esac
             base_ref="$(jq -r '.base.ref // ""' <<<"$pr_json")"
             head_ref="$(jq -r '.head.ref // ""' <<<"$pr_json")"
             head_repo="$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")"
@@ -99,10 +114,6 @@ jobs:
 
             if [ "$state" != "open" ]; then
               add_audit "PR=$PR SKIP state=$state"
-              continue
-            fi
-            if [ "$draft" = "true" ]; then
-              add_audit "PR=$PR SKIP draft=true"
               continue
             fi
             if [ "$base_ref" != "main" ]; then
