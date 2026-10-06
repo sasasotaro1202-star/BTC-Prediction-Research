@@ -105,7 +105,7 @@ def test_live_cycle_does_not_cancel_overlapping_state_writers():
 def test_live_cycle_refuses_stale_workflow_state_publication():
     block = _commit_block()
     assert "assert_current_workflow_is_not_stale()" in block
-    assert 'git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml' in block
+    assert 'git rev-parse "$remote_sha:.github/workflows/btc_live_cycle.yml"' in block
     assert 'git hash-object .github/workflows/btc_live_cycle.yml' in block
     assert "stale BTC Live Cycle workflow detected" in block
     assert 'if [ "$assert_current_workflow_is_not_stale_rc" -eq 2 ]; then' in block
