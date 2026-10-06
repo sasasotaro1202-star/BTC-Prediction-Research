@@ -33,7 +33,7 @@ class PromotionGateTests(unittest.TestCase):
     def _cal(self):
         return {
             "5m": {"horizon": "5m", "temperature": 1.0, "model_version": "v5", "n_settled": 400, "fit_logloss": 0.5, "holdout_logloss": 0.5, "model_sha256": "a"*64, "_current_model_sha256": "a"*64},
-            "10m": {"horizon": "10m", "temperature": 1.0, "model_version": "v5", "n_settled": 300, "fit_logloss": 0.5, "holdout_logloss": 0.5, "model_sha256": "a"*64, "_current_model_sha256": "a"*64},
+            "10m": {"horizon": "10m", "temperature": 1.0, "model_version": "v5", "n_settled": 400, "fit_logloss": 0.5, "holdout_logloss": 0.5, "model_sha256": "a"*64, "_current_model_sha256": "a"*64},
         }
 
     def _accepted_blends(self):
