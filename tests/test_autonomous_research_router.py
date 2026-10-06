@@ -244,6 +244,66 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
 
 
+    def test_material_performance_regression_routes_experience_research(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": True,
+                    "comparison_available": True,
+                    "changes": [
+                        {
+                            "horizon": "10m",
+                            "metric": "experience_recent100_accuracy",
+                            "delta": -0.08,
+                        },
+                        {
+                            "horizon": "10m",
+                            "metric": "strict_pit_logloss",
+                            "delta": 0.03,
+                        },
+                    ],
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["evidence_state"], "PERFORMANCE_REGRESSION")
+            self.assertIn(
+                "10m:experience_recent100_accuracy:delta=-0.0800",
+                route["signals"],
+            )
+
+    def test_small_performance_change_does_not_route(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": True,
+                    "comparison_available": True,
+                    "changes": [
+                        {
+                            "horizon": "5m",
+                            "metric": "experience_recent100_accuracy",
+                            "delta": -0.01,
+                        },
+                        {
+                            "horizon": "5m",
+                            "metric": "strict_pit_logloss",
+                            "delta": 0.005,
+                        },
+                    ],
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
     def test_return_tail_lane_runs_when_evidence_is_missing(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
