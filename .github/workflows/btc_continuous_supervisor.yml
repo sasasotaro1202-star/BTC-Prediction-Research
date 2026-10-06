@@ -330,6 +330,9 @@ jobs:
           # The selected candidate remains observable and is reconsidered on a later heartbeat.
           route_dispatched=0
           route_deferred_by_production=0
+          # The status artifact is emitted on both sides of the production
+          # backpressure branch, so initialize this field before branching.
+          route_candidate_count=0
           if [ "${production_active}" -eq 0 ]; then
             # Try ordered candidates so a fresh high-priority lane does not starve other research.
             route_dispatched=0
