@@ -64,4 +64,3 @@ def test_pr_automerge_requires_current_main_base():
     assert 'git/ref/heads/main' in text
     assert 'base.sha' in text
     assert 'SKIP stale-base-sha=' in text
-}
