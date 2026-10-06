@@ -36,6 +36,7 @@ FAILURE_RISK_TRIGGER = 0.70
 PERFORMANCE_RECENT_ACCURACY_DROP_TRIGGER = -0.05
 PERFORMANCE_LOGLOSS_WORSEN_TRIGGER = 0.02
 PERFORMANCE_ECE_WORSEN_TRIGGER = 0.02
+PERFORMANCE_RECENT_ACCURACY_FLOOR = 0.30
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 
@@ -152,11 +153,33 @@ def _performance_regression_signals(root: Path) -> list[str]:
     if obj is None or obj.get("changed") is not True or obj.get("comparison_available") is not True:
         return []
 
+    signals: list[str] = []
+
+    # A severe recent absolute-accuracy collapse is independently actionable
+    # even when the previous snapshot is numerically identical. This avoids
+    # a blind spot where a persistently bad recent window produces
+    # changed=false and therefore suppresses recovery research.
+    scores = obj.get("scores")
+    if isinstance(scores, dict):
+        for horizon in HORIZONS:
+            current = scores.get(horizon)
+            if not isinstance(current, dict):
+                continue
+            try:
+                recent_n = int(current.get("experience_recent100_n", 0))
+                recent_accuracy = float(current.get("experience_recent100_accuracy"))
+            except (TypeError, ValueError):
+                continue
+            if recent_n >= 100 and recent_accuracy <= PERFORMANCE_RECENT_ACCURACY_FLOOR:
+                signals.append(
+                    f"{horizon}:experience_recent100_accuracy_floor="
+                    f"{recent_accuracy:.4f}<={PERFORMANCE_RECENT_ACCURACY_FLOOR:.2f}"
+                )
+
     changes = obj.get("changes")
     if not isinstance(changes, list):
-        return []
+        return sorted(set(signals))
 
-    signals: list[str] = []
     for item in changes:
         if not isinstance(item, dict):
             continue
