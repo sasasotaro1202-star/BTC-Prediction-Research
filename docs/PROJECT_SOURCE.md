@@ -1506,6 +1506,15 @@ Report formattingによる数値誤りもFailureとして扱う。
 
 67. PERFORMANCE CHANGE REPORT
 
+67.1 RECENT ACCURACY FLOOR RECOVERY TRIGGER
+
+primary horizonごとにsettled casesが100件以上あり、recent-100 Accuracy <= 0.30 の場合は、previous snapshotとの差分が無くても研究用degradation triggerとする。
+
+このtriggerはexperience-policy researchへrouteするためだけに使用し、Production model・registry・calibrationを直接変更してはならない。0.30は「重大な劣化を再調査する閾値」であり、採用基準ではない。
+
+⸻
+
+
 性能変更時は必ず:
 
 metric
