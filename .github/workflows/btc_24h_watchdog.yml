@@ -8,6 +8,12 @@ name: BTC 24H Research Watchdog
 # has been lost.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/btc_24h_watchdog.yml'
+      - '.github/workflows/btc_24h_autonomous_research.yml'
+      - 'scripts/ci_network_retry.sh'
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
