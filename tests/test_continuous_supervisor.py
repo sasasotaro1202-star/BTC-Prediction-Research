@@ -173,12 +173,13 @@ def test_supervisor_recovers_only_the_24h_watchdog_not_the_marathon():
 
 def test_supervisor_initializes_route_candidate_count_before_backpressure_branch():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
-    production_guard = '          if [ "${production_active}" -eq 0 ]; then'
+    production_backpressure_guard = '          if [ "${production_active}" -eq 0 ]; then\n            # Try ordered candidates'
     initialization = '          route_candidate_count=0'
     marker = '          route_dispatched=0'
     assert initialization in text
+    assert production_backpressure_guard in text
     assert text.index(initialization) > text.index(marker)
-    assert text.index(initialization) < text.index(production_guard)
+    assert text.index(initialization) < text.index(production_backpressure_guard)
 
 
 def test_supervisor_defers_routed_research_when_production_spine_is_active():
