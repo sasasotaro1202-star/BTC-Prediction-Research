@@ -33,6 +33,9 @@ HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 FAILURE_RISK_MIN_META_SAMPLES = 20
 FAILURE_RISK_TRIGGER = 0.70
+PERFORMANCE_RECENT_ACCURACY_DROP_TRIGGER = -0.05
+PERFORMANCE_LOGLOSS_WORSEN_TRIGGER = 0.02
+PERFORMANCE_ECE_WORSEN_TRIGGER = 0.02
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 
@@ -141,6 +144,45 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
     if not hold or not blockers:
         return False, []
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
+
+
+def _performance_regression_signals(root: Path) -> list[str]:
+    """Return research-only triggers for material post-outcome performance regression."""
+    obj = _load(root / "data" / "historical_research" / "performance_change.json")
+    if obj is None or obj.get("changed") is not True or obj.get("comparison_available") is not True:
+        return []
+
+    changes = obj.get("changes")
+    if not isinstance(changes, list):
+        return []
+
+    signals: list[str] = []
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        horizon = str(item.get("horizon", ""))
+        metric = str(item.get("metric", ""))
+        if horizon not in HORIZONS:
+            continue
+        try:
+            delta = float(item.get("delta"))
+        except (TypeError, ValueError):
+            continue
+
+        triggered = (
+            metric == "experience_recent100_accuracy"
+            and delta <= PERFORMANCE_RECENT_ACCURACY_DROP_TRIGGER
+        ) or (
+            metric in {"final_logloss", "strict_pit_logloss", "calibrated_logloss"}
+            and delta >= PERFORMANCE_LOGLOSS_WORSEN_TRIGGER
+        ) or (
+            metric in {"final_ece", "strict_pit_ece", "calibrated_ece"}
+            and delta >= PERFORMANCE_ECE_WORSEN_TRIGGER
+        )
+        if triggered:
+            signals.append(f"{horizon}:{metric}:delta={delta:.4f}")
+
+    return sorted(set(signals))
 
 
 def _return_tail_research_status(root: Path) -> list[str]:
@@ -379,7 +421,17 @@ def choose(root: Path) -> dict[str, Any]:
             promotion_signals,
         ))
 
+    performance_regression_signals = _performance_regression_signals(root)
     return_tail_signals = _return_tail_research_status(root)
+    if performance_regression_signals:
+        routes.append(_decision(
+            "btc_experience_policy_oos.yml",
+            "material_post_outcome_performance_regression_requires_reliability_research",
+            87,
+            "PERFORMANCE_REGRESSION",
+            performance_regression_signals,
+        ))
+
     if return_tail_signals:
         routes.append(_decision(
             "btc_return_distribution_tail_oos.yml",
