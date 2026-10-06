@@ -23,6 +23,7 @@ on:
       - "BTC Autonomous Data Frontier"
       - "BTC Uncertainty Layer OOS"
       - "BTC Return Distribution Tail OOS Research"
+      - "BTC Recency Challenger"
       - "BTC Ops Preflight"
       - "BTC 24H Autonomous Research"
       - "BTC 24H Research Watchdog"
@@ -109,6 +110,7 @@ jobs:
                   or .workflow == "btc_selective_prediction_oos.yml"
                 or .workflow == "btc_uncertainty_layer_oos.yml"
                 or .workflow == "btc_return_distribution_tail_oos.yml"
+                or .workflow == "btc_recency_challenger.yml"
                   or .workflow == "btc_rich_production_challenger.yml"
                   or .workflow == "btc_ultimate_final_v13_e2e.yml"
                 )
@@ -317,6 +319,7 @@ jobs:
             # independent concurrency guards, so stale dispatch does not alter production.
             dispatch_if_stale btc_uncertainty_layer_oos.yml 21600
             dispatch_if_stale btc_return_distribution_tail_oos.yml 21600
+            dispatch_if_stale btc_recency_challenger.yml 86400
             dispatch_if_stale btc_multiscale_frozen_replay.yml 21600
             dispatch_if_stale btc_time_regime_research.yml 28800
             dispatch_if_stale btc_selective_prediction_oos.yml 43200
