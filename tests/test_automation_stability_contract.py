@@ -48,3 +48,21 @@ def test_collector_janitor_collapses_duplicate_active_generations():
 def test_stale_janitor_releases_obsolete_supervisor_generations_promptly():
     janitor = _read('btc_stale_run_janitor.yml')
     assert '[btc_continuous_supervisor.yml]=600' in janitor
+
+
+def test_supervisor_initializes_route_candidate_count_before_production_gate():
+    text = _read('btc_continuous_supervisor.yml')
+    init = 'route_candidate_count=0'
+    gate = 'if [ "${production_active}" -eq 0 ]; then'
+    route_section = text[text.index('route_deferred_by_production=0'):]
+    assert init in route_section
+    assert route_section.index(init) < route_section.index(gate)
+
+def test_supervisor_exposes_binary_and_pattern_research_lanes():
+    text = _read('btc_continuous_supervisor.yml')
+    assert '"BTC Binary Target Research"' in text
+    assert '"BTC Pattern Matrix Research"' in text
+    assert 'btc_binary_target_research.yml' in text
+    assert 'btc_pattern_matrix_research.yml' in text
+    assert 'length >= 1 and length <= 11' in text
+

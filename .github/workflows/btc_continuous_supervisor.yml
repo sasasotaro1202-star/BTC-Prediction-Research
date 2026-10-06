@@ -26,6 +26,8 @@ on:
       - "BTC Ops Preflight"
       - "BTC 24H Autonomous Research"
       - "BTC 24H Research Watchdog"
+      - "BTC Binary Target Research"
+      - "BTC Pattern Matrix Research"
     types: [completed]
 
 concurrency:
@@ -90,6 +92,8 @@ jobs:
                 or .workflow == "btc_return_distribution_tail_oos.yml"
                 or .workflow == "btc_rich_production_challenger.yml"
                 or .workflow == "btc_ultimate_final_v13_e2e.yml"
+                or .workflow == "btc_binary_target_research.yml"
+                or .workflow == "btc_pattern_matrix_research.yml"
               )
               and (.threshold_seconds | type == "number")
               and (.threshold_seconds > 0)
@@ -98,7 +102,7 @@ jobs:
               and (.reason | type == "string" and length > 0)
               and (.evidence_state | type == "string" and length > 0)
               and (.signals | type == "array")
-              and (.candidates | type == "array" and length >= 1 and length <= 9)
+              and (.candidates | type == "array" and length >= 1 and length <= 11)
               and all(.candidates[];
                 .production_impact == false
                 and (
@@ -111,6 +115,8 @@ jobs:
                 or .workflow == "btc_return_distribution_tail_oos.yml"
                   or .workflow == "btc_rich_production_challenger.yml"
                   or .workflow == "btc_ultimate_final_v13_e2e.yml"
+                or .workflow == "btc_binary_target_research.yml"
+                or .workflow == "btc_pattern_matrix_research.yml"
                 )
                 and (.threshold_seconds | type == "number")
                 and (.threshold_seconds > 0)
@@ -330,6 +336,9 @@ jobs:
           # The selected candidate remains observable and is reconsidered on a later heartbeat.
           route_dispatched=0
           route_deferred_by_production=0
+          # Initialize before the Production backpressure branch so the
+          # final status artifact is always valid under bash set -u.
+          route_candidate_count=0
           if [ "${production_active}" -eq 0 ]; then
             # Try ordered candidates so a fresh high-priority lane does not starve other research.
             route_dispatched=0
