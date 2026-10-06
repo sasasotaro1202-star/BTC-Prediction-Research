@@ -80,6 +80,16 @@ jobs:
 
           mapfile -t PRS < <(discover_prs | awk 'NF' | sort -nu)
 
+          current_main_sha="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')" || {
+            add_audit "HOLD current-main-sha-unavailable"
+            exit 1
+          }
+          if ! [[ "$current_main_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            add_audit "HOLD current-main-sha-invalid=$current_main_sha"
+            exit 1
+          fi
+          add_audit "CURRENT_MAIN_SHA=$current_main_sha"
+
           if [ "${#PRS[@]}" -eq 0 ]; then
             add_audit "NO_CANDIDATE_PR"
             exit 0
@@ -116,8 +126,13 @@ jobs:
               add_audit "PR=$PR SKIP state=$state"
               continue
             fi
+            base_sha="$(jq -r '.base.sha // ""' <<<"$pr_json")"
             if [ "$base_ref" != "main" ]; then
               add_audit "PR=$PR SKIP base=$base_ref"
+              continue
+            fi
+            if [ "$base_sha" != "$current_main_sha" ]; then
+              add_audit "PR=$PR SKIP stale-base-sha=$base_sha current-main=$current_main_sha"
               continue
             fi
             # Contract sentinel consumed by Ops Preflight; keep aligned with the runtime guard.
