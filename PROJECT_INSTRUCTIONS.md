@@ -176,6 +176,8 @@ Selective prediction and timing remain separate research axes. Valid actions inc
 
 ## GitHub-side autonomous research routing
 
+Binary-target and pattern-matrix research remain research-only lanes. Their evidence freshness may trigger reruns, but neither lane can directly alter Production selection, calibration, routing, registry state, or the Frozen Holdout.
+
 The BTC Continuous Supervisor invokes `src/autonomous_research_router.py` every 5-minute heartbeat and evaluates an ordered list of research-only candidates from an explicit allowlist. It dispatches at most one stale candidate per heartbeat. Durable PIT/health failures are hard stops; otherwise insufficient current-generation calibration evidence is prioritized, followed by robustness/holdout research, confidence-reliability research, material drift/model-disagreement uncertainty research, selective-prediction research, eligible data-frontier work, and finally bounded V13 refresh. The Supervisor must also be event-wakeable from completed Production/data/research workflows so GitHub Actions schedule delays do not become a single point of failure; duplicate wakeups are collapsed by the Supervisor concurrency guard.
 
 A higher-priority candidate being active or non-stale must not starve lower-priority research. The Supervisor therefore falls through the ordered candidate list and selects the first dispatchable lane. Router failure remains fail-closed to the read-only readiness audit, and that fallback is represented as a valid candidate in the route artifact.

@@ -18,6 +18,8 @@ HORIZONS = ("5m", "10m")
 ALLOWED = {
     "btc_research_readiness.yml": 3600,
     "btc_autonomous_data_frontier.yml": 900,
+    "btc_binary_target_research.yml": 86400,
+    "btc_pattern_matrix_research.yml": 86400,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_return_distribution_tail_oos.yml": 21600,
     "btc_experience_policy_oos.yml": 21600,
@@ -140,6 +142,65 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
         return False, []
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
 
+
+def _research_artifact_refresh_signal(
+    root: Path,
+    relative_path: str,
+    threshold_seconds: int,
+    required: dict[str, Any],
+    label: str,
+) -> list[str]:
+    """Return a research-only refresh trigger for a durable evidence artifact."""
+    path = root / relative_path
+    if not path.is_file():
+        return [f"{label}_evidence_missing"]
+    obj = _load(path)
+    if obj is None:
+        return [f"{label}_evidence_invalid"]
+    for key, expected in required.items():
+        if obj.get(key) != expected:
+            return [f"{label}_boundary_invalid:{key}"]
+    generated = obj.get("generated_at_utc")
+    if not generated:
+        return [f"{label}_generated_at_missing"]
+    from datetime import datetime, timezone
+    try:
+        parsed = datetime.fromisoformat(str(generated).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return [f"{label}_generated_at_invalid"]
+    age = (datetime.now(timezone.utc) - parsed).total_seconds()
+    if age < 0:
+        return [f"{label}_generated_in_future"]
+
+    status = obj.get("status")
+    if status is not None:
+        normalized_status = str(status).strip().upper()
+        if normalized_status in {"FAILED", "ERROR", "BLOCKED", "REJECTED", "INVALID"}:
+            return [f"{label}_status_unhealthy:{normalized_status}"]
+
+    if age >= threshold_seconds:
+        return [f"{label}_stale:{int(age)}s"]
+    return []
+
+
+def _binary_target_research_status(root: Path) -> list[str]:
+    return _research_artifact_refresh_signal(
+        root,
+        "data/historical_research/binary_target_oos.json",
+        86400,
+        {"research_only": True, "production_changed": False, "target_version": "binary_sign_v1"},
+        "binary_target",
+    )
+
+
+def _pattern_matrix_research_status(root: Path) -> list[str]:
+    return _research_artifact_refresh_signal(
+        root,
+        "data/historical_research/pattern_matrix_research.json",
+        86400,
+        {"research_only": True, "production_changed": False, "promotion_allowed": False},
+        "pattern_matrix",
+    )
 
 def _return_tail_research_status(root: Path) -> list[str]:
     """Return research-only triggers for the conditional return/tail lane."""
@@ -323,6 +384,8 @@ def choose(root: Path) -> dict[str, Any]:
     calibration_signals = _calibration_waiting(root)
     promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
     frontier_candidates = _frontier_candidates(root)
+    binary_target_signals = _binary_target_research_status(root)
+    pattern_matrix_signals = _pattern_matrix_research_status(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
@@ -388,6 +451,24 @@ def choose(root: Path) -> dict[str, Any]:
             70,
             "EXPERIENCE_MISSING",
             ["experience_summary_missing"],
+        ))
+
+    if binary_target_signals:
+        routes.append(_decision(
+            "btc_binary_target_research.yml",
+            "binary_sign_target_research_evidence_missing_or_stale",
+            79,
+            "BINARY_TARGET_RESEARCH",
+            binary_target_signals,
+        ))
+
+    if pattern_matrix_signals:
+        routes.append(_decision(
+            "btc_pattern_matrix_research.yml",
+            "pattern_matrix_research_evidence_missing_or_stale",
+            78,
+            "PATTERN_MATRIX_RESEARCH",
+            pattern_matrix_signals,
         ))
 
     if frontier_candidates > 0:
