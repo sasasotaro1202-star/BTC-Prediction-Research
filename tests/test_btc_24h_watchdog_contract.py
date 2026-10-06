@@ -41,3 +41,8 @@ def test_24h_watchdog_wakes_on_recovery_chain_changes():
     assert "  push:" in workflow
     assert "      - '.github/workflows/btc_24h_watchdog.yml'" in workflow
     assert "      - '.github/workflows/btc_24h_autonomous_research.yml'" in workflow
+
+def test_24h_watchdog_wakes_on_policy_source_changes():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "      - 'PROJECT_INSTRUCTIONS.md'" in workflow
+    assert "      - 'docs/PROJECT_SOURCE.md'" in workflow
