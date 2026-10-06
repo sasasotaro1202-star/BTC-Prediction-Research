@@ -13,13 +13,8 @@ on:
     - cron: '11,41 * * * *'
   workflow_dispatch:
 
-concurrency:
-  # Long-running collectors are serialized so later scheduled/manual runs queue
-  # instead of duplicating a 25-minute capture. They are never cancelled by main
-  # commits; pull-request validation remains independently supersedable.
-  group: btc-binance-flow-research-${{ github.event_name == 'pull_request' && github.head_ref || 'collector' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
+# Pull-request validation may supersede itself, but the shared flow cache
+# has a separate single-writer lock at the collector-job level below.
 permissions:
   contents: write
 
@@ -143,6 +138,9 @@ jobs:
 
   collector:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    concurrency:
+      group: btc-binance-flow-cache
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
