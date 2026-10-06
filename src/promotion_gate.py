@@ -13,7 +13,7 @@ from typing import Any
 
 HORIZONS = ("5m", "10m")
 POLICY = "no_production_change_without_explicit_all_horizon_candidate_acceptance_and_safety_evidence"
-MIN_CALIBRATION_ROWS = 300
+MIN_CALIBRATION_ROWS = 400
 
 
 def _valid_sha256(value: Any) -> bool:
