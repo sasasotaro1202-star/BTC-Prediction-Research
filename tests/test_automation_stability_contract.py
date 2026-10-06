@@ -57,3 +57,11 @@ def test_pr_automerge_uses_reliable_draft_state():
     assert '.draft // true' not in text
     assert 'draft-state-unavailable' in text
     assert 'draft-state-invalid=' in text
+
+def test_pr_automerge_requires_current_main_base():
+    text = _read('btc_research_pr_automerge.yml')
+    assert 'current_main_sha="$(gh api "repos/$REPO/git/ref/heads/main" --jq \' .object.sha\')"' not in text
+    assert 'git/ref/heads/main' in text
+    assert 'base.sha' in text
+    assert 'SKIP stale-base-sha=' in text
+}
