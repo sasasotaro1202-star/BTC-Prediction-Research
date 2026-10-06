@@ -31,6 +31,8 @@ MIN_STRICT_PIT_ROWS = 300
 MIN_CALIBRATION_ROWS = 400
 HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
+FAILURE_RISK_MIN_META_SAMPLES = 20
+FAILURE_RISK_TRIGGER = 0.70
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 
@@ -204,6 +206,35 @@ def _uncertainty_drift_signals(root: Path) -> list[str]:
     return signals
 
 
+def _future_failure_risk_signals(root: Path) -> list[str]:
+    """Return research-only triggers when learned future-failure risk is materially high."""
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        obj = _load(
+            root / "data" / "historical_research"
+            / f"innovative_control_{horizon}_future_failure_model.json"
+        )
+        if obj is None or obj.get("research_only") is not True:
+            continue
+        latest_risk = obj.get("latest_risk")
+        meta_samples = obj.get("meta_samples")
+        if not isinstance(latest_risk, dict) or not isinstance(meta_samples, dict):
+            continue
+        for model_name, risk_value in sorted(latest_risk.items()):
+            try:
+                risk = float(risk_value)
+                samples = int(meta_samples.get(model_name, 0))
+            except (TypeError, ValueError):
+                continue
+            if not (0.0 <= risk <= 1.0):
+                continue
+            if samples >= FAILURE_RISK_MIN_META_SAMPLES and risk >= FAILURE_RISK_TRIGGER:
+                signals.append(
+                    f"{horizon}:{model_name}:future_failure_risk={risk:.3f};n={samples}"
+                )
+    return signals
+
+
 def _high_confidence_overreach(root: Path) -> list[str]:
     """Research-only trigger for mature high-confidence overprediction."""
     experience = _load(root / "data" / "experience" / "experience_summary.json")
@@ -325,6 +356,7 @@ def choose(root: Path) -> dict[str, Any]:
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
+    future_failure_signals = _future_failure_risk_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
     routes: list[dict[str, Any]] = []
@@ -357,13 +389,25 @@ def choose(root: Path) -> dict[str, Any]:
             return_tail_signals,
         ))
 
-    if uncertainty_signals:
+    combined_uncertainty_signals = uncertainty_signals + future_failure_signals
+    if combined_uncertainty_signals:
+        failure_priority = 86 if future_failure_signals else 84
+        failure_reason = (
+            "future_failure_risk_or_material_drift_requires_uncertainty_research"
+            if future_failure_signals
+            else "material_drift_or_model_disagreement_requires_uncertainty_research"
+        )
+        failure_state = (
+            "FUTURE_FAILURE_RISK"
+            if future_failure_signals
+            else "DRIFT_UNCERTAINTY_RISK"
+        )
         routes.append(_decision(
             "btc_uncertainty_layer_oos.yml",
-            "material_drift_or_model_disagreement_requires_uncertainty_research",
-            84,
-            "DRIFT_UNCERTAINTY_RISK",
-            uncertainty_signals,
+            failure_reason,
+            failure_priority,
+            failure_state,
+            combined_uncertainty_signals,
         ))
 
     if overreach_signals:
