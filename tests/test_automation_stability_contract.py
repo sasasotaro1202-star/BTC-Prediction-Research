@@ -57,3 +57,12 @@ def test_supervisor_initializes_route_candidate_count_before_production_gate():
     route_section = text[text.index('route_deferred_by_production=0'):]
     assert init in route_section
     assert route_section.index(init) < route_section.index(gate)
+
+def test_supervisor_exposes_binary_and_pattern_research_lanes():
+    text = _read('btc_continuous_supervisor.yml')
+    assert '"BTC Binary Target Research"' in text
+    assert '"BTC Pattern Matrix Research"' in text
+    assert 'btc_binary_target_research.yml' in text
+    assert 'btc_pattern_matrix_research.yml' in text
+    assert 'length >= 1 and length <= 11' in text
+
