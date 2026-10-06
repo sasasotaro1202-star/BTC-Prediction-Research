@@ -120,6 +120,22 @@ def _factories():
             random_state=SEED,
             n_jobs=-1,
         ),
+        "extra_trees_leaf5": lambda: ExtraTreesClassifier(
+            n_estimators=300,
+            max_depth=8,
+            min_samples_leaf=5,
+            max_features="sqrt",
+            random_state=SEED,
+            n_jobs=-1,
+        ),
+        "extra_trees_leaf20": lambda: ExtraTreesClassifier(
+            n_estimators=300,
+            max_depth=8,
+            min_samples_leaf=20,
+            max_features="sqrt",
+            random_state=SEED,
+            n_jobs=-1,
+        ),
     }
 
 
