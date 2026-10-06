@@ -1760,13 +1760,21 @@ LOCAL PIT
 
 78. CURRENT EVIDENCE SNAPSHOT
 
-2026-10-04 current repository evidence:
+2026-10-06 current repository evidence:
 
-strict PIT admitted primary scope:
-5m strict primary settled = 397
-10m strict primary settled = 396
+main HEAD:
+9f64763c0487af247945f03345b275873aa456e9
+
+Strict PIT admitted primary scope:
+5m strict primary settled = 453
+10m strict primary settled = 452
 per-horizon minimum = 300
-active PIT violations = 0
+active current-scope PIT violations = 0
+
+Checked prediction rows:
+checked_predictions = 774
+verified_primary_predictions = 453
+verified_fallback_predictions = 152
 
 Legacy evidence remains quarantined:
 legacy_unverified = 169
@@ -1776,22 +1784,38 @@ Current Production models:
 5m = bootstrap.soft_ensemble.v5.4
 10m = bootstrap.bootstrap_rf
 
-Current strict PIT admitted primary evidence:
-5m strict primary settled = 402 / 300 minimum
-10m strict primary settled = 400 / 300 minimum
-active current-scope PIT violations = 0
-
 Current live Binance-primary robustness evidence is not yet promotion-ready:
-5m current-production-model cohort = 259 / 1000 minimum
-10m current-production-model cohort = 400 / 1000 minimum
+5m current-production-model cohort = 310 / 1000 minimum
+10m current-production-model cohort = 452 / 1000 minimum
+promotion_evidence_eligible = false for both horizons
 
-Therefore Robustness remains RESEARCH_ONLY / insufficient_data.
+Situation-metadata maturity:
+5m situation_meta_ready = 449; additional qualifying rows needed = 2,551
+10m situation_meta_ready = 448; additional qualifying rows needed = 2,552
+3,000-row maturity target remains unmet.
 
-Situation-metadata maturity still requires 2,602 additional qualifying 5m-cycle rows for the 5m primary cohort and 2,604 for the 10m primary cohort to reach the 3,000-row maturity target.
+Online-expert readiness:
+5m = 449
+10m = 448
+No additional online-expert row debt is reported under the current artifact contract.
 
-⸻
+Calibration evidence remains unverified:
+5m n_settled = 310; fit_logloss = missing; holdout_logloss = missing
+10m n_settled = 452; fit_logloss = 1.0505990758858512; holdout_logloss = 1.1082636171116929
 
-79. CURRENT PRODUCTION EVIDENCE ENVELOPE
+Current promotion gate:
+production_safety_gate = HOLD
+promotion_allowed = false
+promotion_status = HOLD
+
+Reason:
+robustness_evidence_invalid_or_incomplete;
+candidate_or_frozen_holdout_non_regression_not_verified;
+calibration_evidence_invalid_or_missing
+
+These current values are a synchronized repository snapshot only. They do not constitute superiority evidence and must be re-acquired on later runs.
+
+
 
 The current-production prediction workflow must emit an auditable evidence envelope containing:
 
