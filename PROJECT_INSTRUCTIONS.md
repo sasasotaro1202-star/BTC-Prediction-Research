@@ -14,17 +14,20 @@ Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to 
 Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
 
 ## Current evidence snapshot
-The latest verified evidence snapshot was generated from main at evidence-basis HEAD `9f64763c0487af247945f03345b275873aa456e9` (checked 2026-10-06T07:26Z). Later documentation-only commits do not alter the underlying production or research evidence; runtime checks must always resolve the actual current main HEAD before execution. The snapshot records strict PIT as PASS for the admitted primary scope: checked_predictions = 774, verified_primary_predictions = 453, with independent per-horizon gates of 5m = 453 and 10m = 452, each above the 300-row minimum; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41).
+The current runtime evidence is anchored to main HEAD `45b592d39afc20fd9ae0fa952dac7353d89a907c` (runtime state observed after Live Cycle #1680). The repository continues to treat immutable prediction/outcome/OOS/holdout/failure evidence as historical records; this snapshot is only a pointer to the latest verified state and must not be used to rewrite prior evidence.
 
-Robustness evidence remains insufficient for Production promotion: current live-Binance-primary robustness sample size is 310 for 5m and 452 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness is 449 rows for 5m and 448 for 10m, leaving 2,551 and 2,552 additional qualifying rows respectively to reach the 3,000-row maturity target. Online-expert readiness is currently 449/448 and has no additional row debt under the current artifact contract.
+The latest strict PIT artifact reports checked_predictions = 777, verified_predictions = 608, verified_primary_predictions = 455, verified_fallback_predictions = 153, and active current-scope PIT violations = 0. The independent primary horizon gates are 5m = 453 and 10m = 453, both ready above the 300-row minimum. Legacy observations remain quarantined: legacy_unverified_count = 169 and legacy_violation_count = 41.
 
-Calibration remains unverified: the 5m calibration artifact has n_settled = 310 but missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 452 with fit_logloss = 1.050599 and holdout_logloss = 1.108264, so calibration evidence is not verified. Accordingly the current promotion gate is `HOLD` with `promotion_allowed = false`.
+Robustness evidence remains insufficient for Production promotion: live-Binance-primary robustness sample size is 312 for 5m and 454 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness is 449 rows for both 5m and 10m, leaving 2,551 qualifying rows to reach the 3,000-row maturity target.
 
-Current production artifact bindings recorded in the repository remain:
+Calibration remains unverified: the 5m calibration artifact has n_settled = 312 with missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 454 with fit_logloss = 1.050244 and holdout_logloss = 1.106659, so calibration evidence is not verified. Accordingly the current promotion gate remains `HOLD` with `promotion_allowed = false`.
+
+Current production artifact bindings remain:
 - 5m: `bootstrap.soft_ensemble.v5.4`
 - 10m: `bootstrap.bootstrap_rf`
 
-These are production artifact metadata, not automatic evidence of superiority. Runtime must verify registry ↔ metadata ↔ artifact ↔ feature schema before use.
+These are production artifact bindings, not evidence of superiority. Runtime must continue verifying registry ↔ metadata ↔ artifact ↔ feature schema before use.
+
 ## PIT / time
 Keep event/observation/publish/available/retrieved/processing/prediction/outcome/revision times separate. Historical feature availability must be proven with `source_available_time <= prediction_cutoff`. Retrieved-at alone is not PIT evidence. Unknown or unverifiable availability is UNKNOWN/DEFERRED/REJECTED, never PASS.
 
