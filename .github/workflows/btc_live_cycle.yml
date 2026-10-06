@@ -1226,6 +1226,12 @@ jobs:
       - name: Check repository diff before commit
         run: git diff --check
       - name: Commit BTC research state with conflict-safe merge retry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_GH_ATTEMPTS: '3'
+          CI_GH_TIMEOUT_SECONDS: '20'
+          CI_GH_BACKOFF_SECONDS: '2'
         shell: bash
         run: |
           set -euo pipefail
