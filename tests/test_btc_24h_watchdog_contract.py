@@ -24,6 +24,15 @@ def test_24h_watchdog_has_failure_circuit_breaker():
     assert 'print("ACTION=HOLD")' in workflow
     assert '[ "$action" = "HOLD" ]' in workflow
 
+def test_24h_watchdog_refreshes_main_sha_after_stale_recovery():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    enable_marker = '24H marathon workflow enable check completed.'
+    refresh_marker = 'MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\'")"'
+    assert enable_marker in workflow
+    assert refresh_marker in workflow
+    assert workflow.index(refresh_marker) > workflow.index(enable_marker)
+    assert workflow.index(refresh_marker) < workflow.index('dispatch_started_at=')
+
 def test_24h_watchdog_self_enables_marathon_before_dispatch():
     text = Path('.github/workflows/btc_24h_watchdog.yml').read_text(encoding='utf-8')
     assert 'ci_gh workflow enable btc_24h_autonomous_research.yml --repo "$REPO"' in text
