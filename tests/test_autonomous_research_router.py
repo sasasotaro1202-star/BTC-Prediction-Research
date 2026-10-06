@@ -141,6 +141,36 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["candidates"][1]["workflow"], "btc_selective_prediction_oos.yml")
             self.assertIn("5m:high_confidence_gap=0.420;n=52", route["signals"])
 
+    def test_recent_performance_degradation_routes_recency_challenger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "experience",
+                "experience_summary.json",
+                {
+                    "horizons": {
+                        "5m": {
+                            "total": {"n": 775, "accuracy": 0.43},
+                            "recent": {"100": {"n": 100, "accuracy": 0.45}},
+                        },
+                        "10m": {
+                            "total": {"n": 775, "accuracy": 0.403},
+                            "recent": {"100": {"n": 100, "accuracy": 0.29}},
+                        },
+                    }
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_recency_challenger.yml")
+            self.assertEqual(route["priority"], 87)
+            self.assertIn(
+                "10m:recent100_accuracy=0.290;total_accuracy=0.403;drop=0.113;n=100",
+                route["signals"],
+            )
+            self.assertEqual(route["candidates"][1]["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
+
     def test_material_drift_routes_uncertainty_research(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
