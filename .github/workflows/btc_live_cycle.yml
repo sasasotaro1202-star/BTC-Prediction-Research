@@ -1226,6 +1226,12 @@ jobs:
       - name: Check repository diff before commit
         run: git diff --check
       - name: Commit BTC research state with conflict-safe merge retry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_GH_ATTEMPTS: '3'
+          CI_GH_TIMEOUT_SECONDS: '20'
+          CI_GH_BACKOFF_SECONDS: '2'
         shell: bash
         run: |
           set -euo pipefail
@@ -1385,14 +1391,28 @@ jobs:
           }
 
           assert_current_workflow_is_not_stale() {
-            ci_git_fetch --prune origin main || return 1
             local remote_sha
-            remote_sha="$(git rev-parse origin/main)" || return 1
             local remote_workflow_sha
             local local_workflow_sha
-            remote_workflow_sha="$(git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml | awk '{print $3}')" || return 1
+
+            # Prefer git. If the git transport is temporarily unavailable,
+            # verify the exact current main/workflow blob through the already
+            # authorized GitHub API instead of failing before state publication.
+            if ci_git_fetch --prune origin main; then
+              remote_sha="$(git rev-parse origin/main)" || return 1
+              remote_workflow_sha="$(git rev-parse "$remote_sha:.github/workflows/btc_live_cycle.yml")" || return 1
+            else
+              echo "WARN: git fetch unavailable; falling back to GitHub API freshness verification." >&2
+              remote_sha="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq '.object.sha')" || return 1
+              remote_workflow_sha="$(ci_gh_api_get "repos/$REPO/contents/.github/workflows/btc_live_cycle.yml?ref=$remote_sha" --jq '.sha')" || return 1
+            fi
+
             local_workflow_sha="$(git hash-object .github/workflows/btc_live_cycle.yml)" || return 1
-            if [ -z "$remote_workflow_sha" ] || [ "$remote_workflow_sha" != "$local_workflow_sha" ]; then
+            if [ -z "$remote_sha" ] || [ -z "$remote_workflow_sha" ]; then
+              echo "ERROR: freshness verification returned an empty SHA; refusing to publish." >&2
+              return 1
+            fi
+            if [ "$remote_workflow_sha" != "$local_workflow_sha" ]; then
               echo "SKIP: stale BTC Live Cycle workflow detected; refusing to publish state from an older workflow revision." >&2
               return 2
             fi
