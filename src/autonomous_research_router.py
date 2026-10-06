@@ -23,6 +23,7 @@ ALLOWED = {
     "btc_experience_policy_oos.yml": 21600,
     "btc_selective_prediction_oos.yml": 43200,
     "btc_uncertainty_layer_oos.yml": 21600,
+    "btc_recency_challenger.yml": 86400,
     "btc_rich_production_challenger.yml": 86400,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
@@ -33,6 +34,9 @@ HIGH_CONFIDENCE_MIN_ROWS = 50
 HIGH_CONFIDENCE_GAP_TRIGGER = 0.15
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
+RECENT_ACCURACY_MIN_ROWS = 100
+RECENT_ACCURACY_DROP_TRIGGER = 0.08
+RECENT_ACCURACY_FLOOR_TRIGGER = 0.30
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -204,6 +208,40 @@ def _uncertainty_drift_signals(root: Path) -> list[str]:
     return signals
 
 
+def _recent_performance_degradation(root: Path) -> list[str]:
+    """Research-only trigger for material short-window Production degradation."""
+    experience = _load(root / "data" / "experience" / "experience_summary.json")
+    if experience is None:
+        return []
+    signals: list[str] = []
+    horizons = experience.get("horizons")
+    if not isinstance(horizons, dict):
+        return signals
+    for horizon in HORIZONS:
+        h = horizons.get(horizon)
+        if not isinstance(h, dict):
+            continue
+        recent = h.get("recent", {}).get("100", {})
+        total = h.get("total", {})
+        if not isinstance(recent, dict) or not isinstance(total, dict):
+            continue
+        try:
+            n = int(recent.get("n", 0))
+            recent_accuracy = float(recent["accuracy"])
+            total_n = int(total.get("n", 0))
+            total_accuracy = float(total["accuracy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if n < RECENT_ACCURACY_MIN_ROWS or total_n < RECENT_ACCURACY_MIN_ROWS:
+            continue
+        drop = total_accuracy - recent_accuracy
+        if recent_accuracy <= RECENT_ACCURACY_FLOOR_TRIGGER or drop >= RECENT_ACCURACY_DROP_TRIGGER:
+            signals.append(
+                f"{horizon}:recent100_accuracy={recent_accuracy:.3f};total_accuracy={total_accuracy:.3f};"
+                f"drop={drop:.3f};n={n}"
+            )
+    return signals
+
 def _high_confidence_overreach(root: Path) -> list[str]:
     """Research-only trigger for mature high-confidence overprediction."""
     experience = _load(root / "data" / "experience" / "experience_summary.json")
@@ -324,6 +362,7 @@ def choose(root: Path) -> dict[str, Any]:
     promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
+    recent_degradation_signals = _recent_performance_degradation(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
     experience = _load(root / "data" / "experience" / "experience_summary.json")
 
@@ -355,6 +394,15 @@ def choose(root: Path) -> dict[str, Any]:
             88,
             "RETURN_DISTRIBUTION_TAIL_RESEARCH",
             return_tail_signals,
+        ))
+
+    if recent_degradation_signals:
+        routes.append(_decision(
+            "btc_recency_challenger.yml",
+            "recent_production_performance_degradation_requires_recency_research",
+            87,
+            "RECENT_PERFORMANCE_DEGRADATION",
+            recent_degradation_signals,
         ))
 
     if uncertainty_signals:
