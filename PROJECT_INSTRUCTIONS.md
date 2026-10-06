@@ -14,13 +14,17 @@ Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to 
 Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
 
 ## Current evidence snapshot
-The current recorded strict PIT audit is PASS for the admitted primary scope: 5m strict primary settled = 402 and 10m strict primary settled = 400, each independently above the 300-row per-horizon gate; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41). Robustness evidence is still sample-limited: current Production model evidence is 261 rows for 5m and 404 rows for 10m versus the 1,000-row robustness minimum, so both remain research-only. The situation-metadata cohort still needs 2,602 additional qualifying 5m-cycle rows for 5m and 2,604 for 10m to reach the 3,000-row maturity target. The innovative prediction-control v2 line remains HOLD/research-only and must not affect Production until longer independent live-primary evidence is accumulated and verified.
-Current production artifact bindings recorded in the repository are:
+The latest verified repository state on main (HEAD `9f64763c0487af247945f03345b275873aa456e9`, checked 2026-10-06T07:26Z) records strict PIT as PASS for the admitted primary scope: checked_predictions = 774, verified_primary_predictions = 453, with independent per-horizon gates of 5m = 453 and 10m = 452, each above the 300-row minimum; active current-scope PIT violations = 0. Legacy observations remain quarantined rather than silently counted as valid evidence (legacy_unverified = 169, legacy_violation = 41).
+
+Robustness evidence remains insufficient for Production promotion: current live-Binance-primary robustness sample size is 310 for 5m and 452 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness is 449 rows for 5m and 448 for 10m, leaving 2,551 and 2,552 additional qualifying rows respectively to reach the 3,000-row maturity target. Online-expert readiness is currently 449/448 and has no additional row debt under the current artifact contract.
+
+Calibration remains unverified: the 5m calibration artifact has n_settled = 310 but missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 452 with fit_logloss = 1.050599 and holdout_logloss = 1.108264, so calibration evidence is not verified. Accordingly the current promotion gate is `HOLD` with `promotion_allowed = false`.
+
+Current production artifact bindings recorded in the repository remain:
 - 5m: `bootstrap.soft_ensemble.v5.4`
 - 10m: `bootstrap.bootstrap_rf`
 
 These are production artifact metadata, not automatic evidence of superiority. Runtime must verify registry ↔ metadata ↔ artifact ↔ feature schema before use.
-
 ## PIT / time
 Keep event/observation/publish/available/retrieved/processing/prediction/outcome/revision times separate. Historical feature availability must be proven with `source_available_time <= prediction_cutoff`. Retrieved-at alone is not PIT evidence. Unknown or unverifiable availability is UNKNOWN/DEFERRED/REJECTED, never PASS.
 
