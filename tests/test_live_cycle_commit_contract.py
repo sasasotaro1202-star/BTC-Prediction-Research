@@ -105,8 +105,17 @@ def test_live_cycle_does_not_cancel_overlapping_state_writers():
 def test_live_cycle_refuses_stale_workflow_state_publication():
     block = _commit_block()
     assert "assert_current_workflow_is_not_stale()" in block
-    assert 'git ls-tree -r "$remote_sha" -- .github/workflows/btc_live_cycle.yml' in block
+    assert 'git rev-parse "$remote_sha:.github/workflows/btc_live_cycle.yml"' in block
     assert 'git hash-object .github/workflows/btc_live_cycle.yml' in block
     assert "stale BTC Live Cycle workflow detected" in block
     assert 'if [ "$assert_current_workflow_is_not_stale_rc" -eq 2 ]; then' in block
 
+
+
+def test_live_cycle_freshness_check_has_github_api_fallback():
+    block = _commit_block()
+    assert "GitHub API freshness verification" in block
+    assert 'ci_gh_api_get "repos/$REPO/git/ref/heads/main"' in block
+    assert "contents/.github/workflows/btc_live_cycle.yml?ref=$remote_sha" in block
+    assert 'GH_TOKEN: ${{ github.token }}' in block
+    assert "refusing to publish" in block

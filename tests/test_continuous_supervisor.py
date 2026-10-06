@@ -195,3 +195,9 @@ def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
     assert 'length >= 1 and length <= 9' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight
+
+
+def test_supervisor_knows_recency_research_lane():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'btc_recency_challenger.yml' in text
+    assert 'BTC Recency Challenger' in text
