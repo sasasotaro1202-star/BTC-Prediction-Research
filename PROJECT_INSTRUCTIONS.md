@@ -67,6 +67,9 @@ Use bounded retry/backoff, concurrency control, watchdog/heartbeat, stale-run de
 ## Cost / security
 Prefer verified free, OSS, local and cached sources. Unknown-cost or billing-risk services are not automatic dependencies. Protect secrets, pin actions where appropriate, verify artifact integrity and reject production candidates with unresolved security uncertainty.
 
+## Recent-performance recovery trigger
+A primary-horizon recent window with at least 100 settled cases and Accuracy <= 0.30 is a research-only degradation trigger even when the previous performance snapshot reports changed=false. The trigger routes to experience-policy research; it must never directly alter Production, and 30% is a severe-recovery threshold rather than an adoption criterion.
+
 ## Production state
 Production is a bundle, not a model file: model artifact, feature schema, source registry version, PIT policy, target definition, calibration, router, fallback, output schema, monitoring, rollback target and manifest must remain consistent.
 
