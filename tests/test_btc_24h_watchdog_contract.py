@@ -29,3 +29,9 @@ def test_24h_watchdog_self_enables_marathon_before_dispatch():
     assert 'ci_gh workflow enable btc_24h_autonomous_research.yml --repo "$REPO"' in text
     assert '24H marathon workflow enable check completed.' in text
     assert 'BTC 24H marathon dispatch verified:' in text
+
+def test_24h_watchdog_cancels_obsolete_main_sha_runs_immediately():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'if r.get("head_sha") != main_sha:' in workflow
+    assert 'stale_active.append((r, age_minutes, "obsolete_main_sha"))' in workflow
+    assert 'ACTION=RECOVER_STALE' in workflow
