@@ -141,6 +141,52 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["candidates"][1]["workflow"], "btc_selective_prediction_oos.yml")
             self.assertIn("5m:high_confidence_gap=0.420;n=52", route["signals"])
 
+    def test_future_failure_risk_routes_uncertainty_research(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "innovative_control_5m_future_failure_model.json",
+                {
+                    "horizon": "5m",
+                    "research_only": True,
+                    "latest_risk": {
+                        "extra_trees": 0.81,
+                        "logreg": 0.41,
+                    },
+                    "meta_samples": {
+                        "extra_trees": 22,
+                        "logreg": 22,
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_uncertainty_layer_oos.yml")
+            self.assertEqual(route["priority"], 86)
+            self.assertEqual(route["evidence_state"], "FUTURE_FAILURE_RISK")
+            self.assertIn(
+                "5m:extra_trees:future_failure_risk=0.810;n=22",
+                route["signals"],
+            )
+
+    def test_immature_future_failure_risk_does_not_route(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "innovative_control_5m_future_failure_model.json",
+                {
+                    "horizon": "5m",
+                    "research_only": True,
+                    "latest_risk": {"extra_trees": 0.99},
+                    "meta_samples": {"extra_trees": 19},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
     def test_material_drift_routes_uncertainty_research(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
