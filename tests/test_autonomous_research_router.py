@@ -277,6 +277,38 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 route["signals"],
             )
 
+    def test_persistent_recent_accuracy_floor_routes_even_without_score_delta(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": False,
+                    "comparison_available": True,
+                    "changes": [],
+                    "scores": {
+                        "5m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.44,
+                        },
+                        "10m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.27,
+                        },
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["evidence_state"], "PERFORMANCE_REGRESSION")
+            self.assertIn(
+                "10m:experience_recent100_accuracy_floor=0.2700<=0.30",
+                route["signals"],
+            )
+
     def test_small_performance_change_does_not_route(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
