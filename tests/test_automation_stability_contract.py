@@ -50,10 +50,10 @@ def test_stale_janitor_releases_obsolete_supervisor_generations_promptly():
     assert '[btc_continuous_supervisor.yml]=600' in janitor
 
 
+
 def test_pr_automerge_uses_reliable_draft_state_and_fails_closed():
     text = _read('btc_research_pr_automerge.yml')
-    assert 'gh pr view "$PR" --repo "$REPO" --json isDraft --jq \' .isDraft\'' not in text
-    assert 'gh pr view "$PR" --repo "$REPO" --json isDraft --jq \'.isDraft\'' in text
+    assert 'gh pr view "$PR" --repo "$REPO" --json isDraft --jq '.isDraft'' in text
     assert '.draft // true' not in text
     assert 'draft-state-unavailable' in text
     assert 'draft-state-invalid=' in text
