@@ -2759,3 +2759,8 @@ The automation control plane uses a lightweight dedicated workflow-contract lane
 83. SHARED RECOVERY FAILURE STREAK
 
 The Supervisor and Watchdog use the shared `scripts/ci_failure_streak.sh` helper for consecutive failure/cancellation counting. This removes duplicated inline recovery logic and makes the recovery state calculation directly testable. The helper counts only the terminal non-success streak since the latest explicit success; neutral/unknown terminal conclusions stop the streak. Ops Preflight syntax-checks the helper.
+
+
+84. AUTONOMOUS RESEARCH FRONTIER ROUTING
+
+The Continuous Supervisor may route two additional research-only lanes when their durable evidence is missing or older than 24 hours: `btc_binary_target_research.yml` for the separately defined `binary_sign_v1` target and `btc_pattern_matrix_research.yml` for broad chronological pattern screening. Both remain outside Production selection and promotion. Missing, invalid, or stale evidence is a trigger to rerun the lane, not evidence of success. Existing PIT/OOS/WFO/calibration/robustness/frozen-holdout/shadow/promotion gates remain mandatory, and the router continues to dispatch at most one candidate per heartbeat.
