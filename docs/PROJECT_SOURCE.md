@@ -1765,8 +1765,7 @@ Evidence snapshot checked on 2026-10-06:
 evidence_basis_head:
 9f64763c0487af247945f03345b275873aa456e9
 
-current main HEAD after documentation synchronization:
-ea760c2d1ea5d9dc03258fc41e48e0daa965e762
+Subsequent main commits that only synchronize or repair documentation do not alter the evidence basis above. Runtime checks must always resolve the actual current main HEAD before execution.
 
 Strict PIT admitted primary scope:
 5m strict primary settled = 453
