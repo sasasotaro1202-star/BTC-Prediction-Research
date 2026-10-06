@@ -389,3 +389,18 @@ class AutonomousResearchRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_recent_performance_degradation_routes_recency_challenger():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        self._healthy_base(root)
+        self._write(root / "data" / "experience", "experience_summary.json", {
+            "horizons": {
+                "5m": {"total": {"n": 775, "accuracy": 0.43}, "recent": {"100": {"n": 100, "accuracy": 0.45}}},
+                "10m": {"total": {"n": 775, "accuracy": 0.403}, "recent": {"100": {"n": 100, "accuracy": 0.29}}},
+            }
+        })
+        route = validate(choose(root))
+        self.assertEqual(route["workflow"], "btc_recency_challenger.yml")
+        self.assertEqual(route["priority"], 87)
