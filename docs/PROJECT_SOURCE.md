@@ -2744,6 +2744,8 @@ The Continuous Supervisor allowlist includes the return-distribution/tail lane. 
 
 Long-running research lanes are immutable-analysis jobs, not moving-main jobs. A queued or running job may legitimately start from a prior main commit while Live/settlement state continues advancing main. The job must preserve its `GITHUB_SHA` as the analysis provenance and its exact input/data snapshot; concurrent main movement must not force a false failure. Before publishing evidence, the workflow reconciles with the latest main and commits only the research artifact. This preserves reproducibility without allowing stale code or stale evidence to masquerade as current Production state. A failed analysis is determined by the actual research/validation result, not merely by main advancing.
 
+24H autonomous marathon exception: the dedicated `btc_24h_watchdog.yml` treats an active 24H run whose `head_sha` differs from current `main` as an obsolete execution generation. It cancels that run and starts a new current-`main` generation, with dispatch-creation verification. The 24H workflow additionally uses latest-generation concurrency so an obsolete marathon cannot remain ahead of a newer recovery generation. This does not alter the immutable-evidence rule: cancelled/obsolete runs are not success evidence and their artifacts are never silently promoted into current research state.
+
 
 81. AUTONOMOUS RECOVERY BACKOFF
 
