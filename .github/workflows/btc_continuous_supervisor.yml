@@ -330,6 +330,9 @@ jobs:
           # The selected candidate remains observable and is reconsidered on a later heartbeat.
           route_dispatched=0
           route_deferred_by_production=0
+          # Initialize before the Production backpressure branch so the
+          # final status artifact is always valid under bash set -u.
+          route_candidate_count=0
           if [ "${production_active}" -eq 0 ]; then
             # Try ordered candidates so a fresh high-priority lane does not starve other research.
             route_dispatched=0
