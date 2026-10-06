@@ -56,6 +56,29 @@ class AutonomousResearchRouterTests(unittest.TestCase):
 
         self._write(
             root / "data" / "historical_research",
+            "binary_target_oos.json",
+            {
+                "research_only": True,
+                "production_changed": False,
+                "target_version": "binary_sign_v1",
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                "horizons": {"5m": {"status": "OK"}, "10m": {"status": "OK"}},
+            },
+        )
+        self._write(
+            root / "data" / "historical_research",
+            "pattern_matrix_research.json",
+            {
+                "research_only": True,
+                "production_changed": False,
+                "promotion_allowed": False,
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                "horizons": {"5m": {"status": "OK"}, "10m": {"status": "OK"}},
+            },
+        )
+
+        self._write(
+            root / "data" / "historical_research",
             "return_distribution_tail_oos.json",
             {
                 "schema_version": 1,
@@ -230,6 +253,81 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_return_distribution_tail_oos.yml")
             self.assertIn("return_distribution_tail_stale:", route["signals"][0])
+
+    def test_fresh_failed_binary_artifact_routes_for_research_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "binary_target_oos.json",
+                {
+                    "research_only": True,
+                    "production_changed": False,
+                    "target_version": "binary_sign_v1",
+                    "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "status": "FAILED",
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_binary_target_research.yml")
+            self.assertIn("binary_target_status_unhealthy:FAILED", route["signals"])
+
+    def test_binary_target_lane_runs_when_evidence_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            (root / "data" / "historical_research" / "binary_target_oos.json").unlink()
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_binary_target_research.yml")
+            self.assertEqual(route["priority"], 79)
+            self.assertIn("binary_target_evidence_missing", route["signals"])
+
+    def test_binary_target_lane_runs_when_evidence_is_stale(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "binary_target_oos.json",
+                {
+                    "research_only": True,
+                    "production_changed": False,
+                    "target_version": "binary_sign_v1",
+                    "generated_at_utc": "2020-01-01T00:00:00Z",
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_binary_target_research.yml")
+            self.assertIn("binary_target_stale:", route["signals"][0])
+
+    def test_pattern_matrix_lane_runs_when_evidence_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            (root / "data" / "historical_research" / "pattern_matrix_research.json").unlink()
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_pattern_matrix_research.yml")
+            self.assertEqual(route["priority"], 78)
+            self.assertIn("pattern_matrix_evidence_missing", route["signals"])
+
+    def test_pattern_matrix_lane_runs_when_evidence_is_stale(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "pattern_matrix_research.json",
+                {
+                    "research_only": True,
+                    "production_changed": False,
+                    "promotion_allowed": False,
+                    "generated_at_utc": "2020-01-01T00:00:00Z",
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_pattern_matrix_research.yml")
+            self.assertIn("pattern_matrix_stale:", route["signals"][0])
 
     def test_healthy_state_routes_to_bounded_routine_v13(self):
         with tempfile.TemporaryDirectory() as td:
