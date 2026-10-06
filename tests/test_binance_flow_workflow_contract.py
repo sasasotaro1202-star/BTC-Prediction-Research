@@ -47,3 +47,12 @@ def test_final_flow_cache_publish_refuses_stale_local_overwrite():
     assert 'git show origin/binance-flow-cache:data/binance_flow_5s.json' in final_region
     assert 'Final flow cache is not newer than dedicated branch' in final_region
     assert 'Final flow cache became older than remote after conflict' in final_region
+
+
+
+def test_flow_collector_accepts_intentional_publisher_shutdown():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    capture_region = text.split("      - name: Capture rolling flow/liquidation window with resumable checkpoints", 1)[1]
+    assert 'wait "$publisher_pid" || publisher_status=$?' in capture_region
+    assert 'publisher_status" -ne 143' in capture_region
+    assert 'publisher loop exited unexpectedly' in capture_region
