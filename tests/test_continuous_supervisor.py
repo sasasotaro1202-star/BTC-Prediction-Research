@@ -171,6 +171,16 @@ def test_supervisor_recovers_only_the_24h_watchdog_not_the_marathon():
     assert 'dispatch_if_stale btc_24h_autonomous_research.yml' not in text
     assert '24H marathon remains exclusively owned by its dedicated watchdog.' in text
 
+def test_supervisor_initializes_route_candidate_count_before_backpressure_branch():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    production_guard = '          if [ "${production_active}" -eq 0 ]; then'
+    initialization = '          route_candidate_count=0'
+    marker = '          route_dispatched=0'
+    assert initialization in text
+    assert text.index(initialization) > text.index(marker)
+    assert text.index(initialization) < text.index(production_guard)
+
+
 def test_supervisor_defers_routed_research_when_production_spine_is_active():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     assert 'route_deferred_by_production=0' in text
