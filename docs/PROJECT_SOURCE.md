@@ -1760,10 +1760,13 @@ LOCAL PIT
 
 78. CURRENT EVIDENCE SNAPSHOT
 
-2026-10-06 current repository evidence:
+Evidence snapshot checked on 2026-10-06:
 
-main HEAD:
+evidence_basis_head:
 9f64763c0487af247945f03345b275873aa456e9
+
+current main HEAD after documentation synchronization:
+ea760c2d1ea5d9dc03258fc41e48e0daa965e762
 
 Strict PIT admitted primary scope:
 5m strict primary settled = 453
@@ -1813,11 +1816,13 @@ robustness_evidence_invalid_or_incomplete;
 candidate_or_frozen_holdout_non_regression_not_verified;
 calibration_evidence_invalid_or_missing
 
-These current values are a synchronized repository snapshot only. They do not constitute superiority evidence and must be re-acquired on later runs.
+These values are a synchronized evidence snapshot. The documentation commit itself does not change Production state or research evidence. Later runs must re-acquire current evidence rather than treating this snapshot as permanently current.
+
+⸻
+
+79. CURRENT PRODUCTION EVIDENCE ENVELOPE
 
 
-
-The current-production prediction workflow must emit an auditable evidence envelope containing:
 
 prediction probabilities
 target timestamps
