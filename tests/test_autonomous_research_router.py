@@ -168,7 +168,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 "10m:recent100_accuracy=0.290;total_accuracy=0.403;drop=0.113;n=100",
                 route["signals"],
             )
-            self.assertEqual(route["candidates"][1]["workflow"], "btc_return_distribution_tail_oos.yml")
+            self.assertEqual(route["candidates"][1]["workflow"], "btc_ultimate_final_v13_e2e.yml")
 
 
     def test_material_drift_routes_uncertainty_research(self):
