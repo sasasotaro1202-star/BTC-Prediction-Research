@@ -237,7 +237,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/predictions.db.gz data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
+          git add data/predictions.db.gz models/*.json models/*.joblib
           if git ls-files --error-unmatch data/predictions.db >/dev/null 2>&1; then
             git rm --cached data/predictions.db
           fi
@@ -288,7 +288,7 @@ jobs:
             mkdir -p models
             cp -a /tmp/btc_research_models/. models/
             if [ -f /tmp/btc_research_artifact_audit.json ]; then cp /tmp/btc_research_artifact_audit.json data/historical_research/production_artifact_audit.json; fi
-            git add data/predictions.db.gz data/historical_research/production_artifact_audit.json models/*.json models/*.joblib
+            git add data/predictions.db.gz models/*.json models/*.joblib
             if git ls-files --error-unmatch data/predictions.db >/dev/null 2>&1; then
             git rm --cached data/predictions.db
           fi
