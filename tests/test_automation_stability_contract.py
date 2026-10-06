@@ -54,5 +54,6 @@ def test_supervisor_initializes_route_candidate_count_before_production_gate():
     text = _read('btc_continuous_supervisor.yml')
     init = 'route_candidate_count=0'
     gate = 'if [ "${production_active}" -eq 0 ]; then'
-    assert init in text
-    assert text.index(init) < text.index(gate)
+    route_section = text[text.index('route_deferred_by_production=0'):]
+    assert init in route_section
+    assert route_section.index(init) < route_section.index(gate)
