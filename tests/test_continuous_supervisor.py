@@ -16,7 +16,8 @@ def test_supervisor_degrades_explicitly_on_dispatch_failure():
 def test_supervisor_monitors_case_adaptation_research_lanes():
     text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     for workflow in (
-        'btc_uncertainty_layer_oos.yml',
+        'btc_recency_challenger.yml',
+        'btc_uncertainty_layer_oos.yml',        'btc_uncertainty_layer_oos.yml',
         'btc_multiscale_frozen_replay.yml',
         'btc_time_regime_research.yml',
         'btc_selective_prediction_oos.yml',
