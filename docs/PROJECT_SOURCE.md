@@ -2463,6 +2463,7 @@ future rolling windows
 regime-conditioned windows
 
 Window selection must be prequential. The scored outer block cannot influence the selected window. A recent-window gain is not sufficient when newest block, worst block, calibration, robustness or failure concentration degrades.
+For the research-only recency challenger, any class-frequency baseline used in eligibility must be estimated strictly from labels available before the frozen holdout. Frozen-holdout class counts are descriptive evidence only and must not define the comparator or eligibility threshold.
 
 ⸻
 
