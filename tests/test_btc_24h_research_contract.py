@@ -134,3 +134,9 @@ def test_actions_cleanup_preserves_active_24h_research_snapshot_runs_against_mai
     assert 'if [ "${workflow}" = "btc_24h_autonomous_research.yml" ]; then' in cleanup
     assert '[ "${age}" -ge 90000 ]' in cleanup
     assert '[ "${head}" != "${main_sha}" ]' in cleanup
+
+def test_24h_latest_main_snapshot_wins_concurrency():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "group: btc-24h-autonomous-research-main" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "Latest-main snapshot wins." in workflow
