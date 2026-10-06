@@ -11,6 +11,8 @@ on:
       - 'tests/test_ci_failure_streak.py'
       - 'tests/test_watchdog_collector_overlap_contract.py'
       - 'tests/test_continuous_supervisor.py'
+      - 'tests/test_autonomous_research_router.py'
+      - 'src/autonomous_research_router.py'
       - 'tests/test_btc_24h_watchdog_contract.py'
       - 'tests/test_btc_24h_research_contract.py'
       - 'scripts/ci_failure_streak.sh'
@@ -20,6 +22,7 @@ on:
       - 'tests/test_*workflow*.py'
       - 'tests/test_continuous_supervisor.py'
       - 'tests/test_autonomous_research_router.py'
+      - 'src/autonomous_research_router.py'
       - 'tests/test_recovery_backoff_contract.py'
       - 'tests/test_automation_stability_contract.py'
       - 'tests/test_ci_failure_streak.py'
@@ -64,6 +67,7 @@ jobs:
           tests/test_recovery_backoff_contract.py
           tests/test_automation_stability_contract.py
           tests/test_continuous_supervisor.py
+          tests/test_autonomous_research_router.py
           tests/test_btc_24h_watchdog_contract.py
           tests/test_btc_24h_research_contract.py
           tests/test_ci_failure_streak.py
