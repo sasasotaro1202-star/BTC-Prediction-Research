@@ -2751,6 +2751,16 @@ Repeated failure/cancellation/timeout must not cause an unbounded 5-minute dispa
 
 
 
+
+79A. RECENT PERFORMANCE DEGRADATION ROUTING
+
+The Continuous Supervisor treats a material short-window Production accuracy deterioration as a research-prioritization signal. With at least 100 recent settled cases, recent accuracy <= 0.30 or a recent-vs-total accuracy gap >= 0.08 may dispatch the existing btc_recency_challenger.yml. This lane remains research-only; the trigger never changes Production, calibration, registry, holdout, or promotion eligibility.
+
+
+81A. INTENTIONAL CHECKPOINT-PROCESS TERMINATION
+
+Long-running collector workflows may intentionally terminate a background publisher after the primary capture process exits. The publisher's resulting SIGTERM exit code 143 is an expected shutdown condition and must not be promoted to a workflow failure. Unexpected non-zero publisher termination remains fail-closed. This rule preserves checkpoint/recovery behavior without masking actual collector failures.
+
 82. WORKFLOW CONTRACT VALIDATION LANE
 
 The automation control plane uses a lightweight dedicated workflow-contract lane for `.github/workflows/*` changes. The full unit suite remains focused on source/tests/scripts/dependency changes, while workflow edits receive compile and recovery-contract validation. This reduces avoidable queue churn without weakening validation of Supervisor, Watchdog, immutable research recovery, or stale-run controls.
