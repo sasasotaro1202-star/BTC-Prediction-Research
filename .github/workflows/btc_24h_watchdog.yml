@@ -60,7 +60,15 @@ jobs:
                   continue
               dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
               age_minutes = (now - dt).total_seconds() / 60.0
-              if status in {"queued", "pending"} and age_minutes >= 30:
+
+              # A long-running research snapshot is bound to its starting main SHA.
+              # Once main advances, the old run is no longer an eligible continuation:
+              # cancel it and dispatch a fresh snapshot instead of waiting for its
+              # remaining runtime. This prevents an obsolete marathon from stranding
+              # the autonomous research chain.
+              if r.get("head_sha") != main_sha:
+                  stale_active.append((r, age_minutes, "obsolete_main_sha"))
+              elif status in {"queued", "pending"} and age_minutes >= 30:
                   stale_active.append((r, age_minutes, "queue"))
               elif status == "in_progress" and age_minutes >= 1500:
                   stale_active.append((r, age_minutes, "active"))
