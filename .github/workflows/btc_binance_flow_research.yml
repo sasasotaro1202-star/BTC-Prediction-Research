@@ -291,7 +291,12 @@ jobs:
                 exit 1
               fi
             fi
-            wait "$publisher_pid"
+            publisher_status=0
+            wait "$publisher_pid" || publisher_status=$?
+            if [ "$publisher_status" -ne 0 ] && [ "$publisher_status" -ne 143 ]; then
+              echo "ERROR: publisher loop exited unexpectedly with status $publisher_status." >&2
+              exit "$publisher_status"
+            fi
           fi
 
           cat /tmp/btc_flow_collector.log
