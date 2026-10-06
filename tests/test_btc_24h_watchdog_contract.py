@@ -35,3 +35,9 @@ def test_24h_watchdog_cancels_obsolete_main_sha_runs_immediately():
     assert 'if r.get("head_sha") != main_sha:' in workflow
     assert 'stale_active.append((r, age_minutes, "obsolete_main_sha"))' in workflow
     assert 'ACTION=RECOVER_STALE' in workflow
+
+def test_24h_watchdog_wakes_on_recovery_chain_changes():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "  push:" in workflow
+    assert "      - '.github/workflows/btc_24h_watchdog.yml'" in workflow
+    assert "      - '.github/workflows/btc_24h_autonomous_research.yml'" in workflow
