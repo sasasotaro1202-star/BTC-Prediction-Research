@@ -20,6 +20,7 @@ def test_supervisor_monitors_case_adaptation_research_lanes():
         'btc_multiscale_frozen_replay.yml',
         'btc_time_regime_research.yml',
         'btc_selective_prediction_oos.yml',
+        'btc_recency_challenger.yml',
         'btc_uncertainty_layer_oos.yml',
     ):
         assert f'dispatch_if_stale {workflow}' in text
@@ -129,6 +130,7 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Adaptive Calibration Replay Research',
         'BTC Experience Policy OOS Learning',
         'BTC Selective Prediction OOS',
+        'BTC Recency Challenger',
         'BTC Rich Production Challenger',
         'BTC Ultimate Final V13 — Maximum Future-Generalization E2E',
         'BTC Autonomous Data Frontier',
