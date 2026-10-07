@@ -176,6 +176,11 @@ def _performance_regression_signals(root: Path) -> list[str]:
                     f"{recent_accuracy:.4f}<={PERFORMANCE_RECENT_ACCURACY_FLOOR:.2f}"
                 )
 
+    # Delta-based regression triggers still require a true snapshot change.
+    # This keeps the absolute floor as the only signal that can fire on changed=false.
+    if obj.get("changed") is not True:
+        return sorted(set(signals))
+
     changes = obj.get("changes")
     if not isinstance(changes, list):
         return sorted(set(signals))
