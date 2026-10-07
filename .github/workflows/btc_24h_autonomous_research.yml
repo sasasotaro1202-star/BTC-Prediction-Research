@@ -116,6 +116,7 @@ jobs:
           set -euo pipefail
           timeout --signal=TERM --kill-after=60 330m python src/maximum_future_generalization_v6.py
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
+      - name: Revalidate latest main after expensive research
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
