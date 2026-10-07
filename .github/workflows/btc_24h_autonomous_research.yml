@@ -141,7 +141,7 @@ jobs:
           if [ -s /tmp/btc24_before.json ]; then
             cp /tmp/btc24_before.json data/historical_research/24h_stage1_before.json
           else
-            RUN_SHA="${{ github.sha }}" python -c 'import json, os; from pathlib import Path; Path("data/historical_research/24h_stage1_before.json").write_text(json.dumps({"schema_version": 1, "status": "NOT_CREATED_STAGE1_GUARD_FAILED", "run_sha": os.environ["RUN_SHA"]}, sort_keys=True) + "\\n", encoding="utf-8")'
+            RUN_SHA="${{ github.sha }}" python -c 'import json, os; from pathlib import Path; Path("data/historical_research/24h_stage1_before.json").write_text(json.dumps({"schema_version": 1, "status": "NOT_CREATED_STAGE1_GUARD_FAILED", "run_sha": os.environ["RUN_SHA"]}, sort_keys=True) + chr(10), encoding="utf-8")'
           fi
       - name: Write success-only stage 1 checkpoint
         if: success()
