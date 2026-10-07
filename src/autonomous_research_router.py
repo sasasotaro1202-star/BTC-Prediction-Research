@@ -39,6 +39,7 @@ PERFORMANCE_ECE_WORSEN_TRIGGER = 0.02
 PERFORMANCE_RECENT_ACCURACY_FLOOR = 0.30
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
+MAX_PIT_AUDIT_AGE_SECONDS = 3600
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -346,6 +347,38 @@ def choose(root: Path) -> dict[str, Any]:
 
     pit = _load(evidence / "pit_oos_audit.json")
     health = _load(evidence / "research_health.json")
+
+    pit_freshness_signals: list[str] = []
+    if pit is not None:
+        generated_at = pit.get("generated_at_utc")
+        if not generated_at:
+            pit_freshness_signals.append("pit_audit_generated_at_missing")
+        else:
+            try:
+                from datetime import datetime, timezone
+                parsed_generated_at = datetime.fromisoformat(
+                    str(generated_at).replace("Z", "+00:00")
+                ).astimezone(timezone.utc)
+                age = (datetime.now(timezone.utc) - parsed_generated_at).total_seconds()
+                if age < 0:
+                    pit_freshness_signals.append("pit_audit_generated_at_in_future")
+                elif age > MAX_PIT_AUDIT_AGE_SECONDS:
+                    pit_freshness_signals.append(
+                        f"pit_audit_stale:{int(age)}s>{MAX_PIT_AUDIT_AGE_SECONDS}s"
+                    )
+            except (TypeError, ValueError, OverflowError):
+                pit_freshness_signals.append("pit_audit_generated_at_invalid")
+
+    if pit_freshness_signals:
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "strict_pit_audit_stale_or_timing_metadata_invalid",
+                101,
+                "PIT_AUDIT_STALE",
+                pit_freshness_signals,
+            )
+        ])
 
     # Durable safety evidence is a hard gate. Do not continue to lower-priority
     # research lanes when readiness itself is uncertain.
