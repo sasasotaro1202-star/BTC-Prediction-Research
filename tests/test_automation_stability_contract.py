@@ -48,3 +48,15 @@ def test_collector_janitor_collapses_duplicate_active_generations():
 def test_stale_janitor_releases_obsolete_supervisor_generations_promptly():
     janitor = _read('btc_stale_run_janitor.yml')
     assert '[btc_continuous_supervisor.yml]=600' in janitor
+
+def test_research_pr_automerge_wakes_on_workflow_contract_tests():
+    text = _read('btc_research_pr_automerge.yml')
+    assert '- "BTC Workflow Contract Tests"' in text
+
+
+def test_research_pr_automerge_treats_ready_for_review_event_as_authoritative_wake():
+    text = _read('btc_research_pr_automerge.yml')
+    assert 'EVENT_ACTION:' in text
+    assert 'ready_for_review' in text
+    assert 'draft=true' in text
+    assert 'EVENT_ACTION' in text
