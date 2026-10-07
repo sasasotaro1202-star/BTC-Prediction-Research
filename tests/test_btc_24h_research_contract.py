@@ -165,3 +165,15 @@ def test_24h_stage1_revalidates_main_after_expensive_research():
     assert 'ci_git_fetch --no-tags --depth=1 origin main' in workflow
     assert 'STALE_MAIN_AFTER_RESEARCH expected=' in workflow
     assert 'stage1_main_guard_after.json' in workflow
+
+def test_24h_main_state_only_drift_does_not_invalidate_immutable_research_snapshot():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'data/*|models/*.json|models/*.joblib)' in workflow
+    assert 'SAFE_STATE_DRIFT' in workflow
+    assert 'UNSAFE_MAIN_RUN expected=' in workflow
+
+def test_24h_post_research_state_only_drift_is_accepted_but_unsafe_drift_fails_closed():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'Revalidate main lineage after expensive research' in workflow
+    assert 'UNSAFE_MAIN_DRIFT_AFTER_RESEARCH expected=' in workflow
+    assert 'stage1_main_guard_after.json' in workflow
