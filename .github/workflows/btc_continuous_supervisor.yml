@@ -298,6 +298,14 @@ jobs:
           # The Supervisor only keeps that watchdog heartbeat alive, so a lost
           # watchdog schedule cannot strand the long-running research chain.
           dispatch_if_stale btc_24h_watchdog.yml 900
+          # Strict PIT evidence is a control-plane dependency. Recover its
+          # scheduled audit explicitly so a silent schedule miss cannot leave
+          # the router consuming stale PIT state indefinitely.
+          dispatch_if_stale btc_pit_oos_audit.yml 900
+          # Research readiness republishes the independent safety snapshot.
+          # Keep it on a bounded recovery cadence rather than relying solely on
+          # its daily cron trigger.
+          dispatch_if_stale btc_research_readiness.yml 21600
           # Never add avoidable research load while the production/data spine is
           # already queued or running. The next heartbeat/event will retry research.
           production_active=0
