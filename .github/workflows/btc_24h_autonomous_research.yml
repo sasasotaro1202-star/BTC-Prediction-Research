@@ -43,7 +43,6 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           export BTC24_REMOTE_SHA="$remote_sha"
           python - <<'PY'
@@ -117,6 +116,18 @@ jobs:
           set -euo pipefail
           timeout --signal=TERM --kill-after=60 330m python src/maximum_future_generalization_v6.py
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
+        run: |
+          set -euo pipefail
+          . scripts/ci_network_retry.sh
+          ci_git_fetch --no-tags --depth=1 origin main
+          post_main_sha="$(git rev-parse origin/main)"
+          RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$post_main_sha" python -c 'import json, os; from pathlib import Path; run_sha=os.environ["RUN_SHA"]; main_sha=os.environ["POST_MAIN_SHA"]; Path("data/historical_research/stage1_main_guard_after.json").write_text(json.dumps({"schema_version": 1, "run_sha": run_sha, "current_main_sha": main_sha, "status": "LATEST_MAIN" if main_sha == run_sha else "STALE_MAIN_AFTER_RESEARCH"}, sort_keys=True) + chr(10), encoding="utf-8")'
+          if [ "$post_main_sha" != "${GITHUB_SHA}" ]; then
+            rm -f data/historical_research/maximum_future_generalization_v6_registry.json
+            echo "STALE_MAIN_AFTER_RESEARCH expected=${post_main_sha} actual=${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          echo "LATEST_MAIN_SHA_AFTER_RESEARCH=${GITHUB_SHA}"
       - name: Verify research-only boundary
         run: |
           set -euo pipefail
@@ -176,6 +187,7 @@ jobs:
             data/historical_research/maximum_future_generalization_v6_registry.json
             data/historical_research/24h_stage1_before.json
             data/historical_research/stage1_main_guard.json
+            data/historical_research/stage1_main_guard_after.json
             data/historical_research/stage1_success_checkpoint.json
           if-no-files-found: warn
           retention-days: 14
