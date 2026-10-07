@@ -140,3 +140,16 @@ def test_24h_latest_main_snapshot_wins_concurrency():
     assert "group: btc-24h-autonomous-research-main" in workflow
     assert "cancel-in-progress: true" in workflow
     assert "Latest-main snapshot wins." in workflow
+
+def test_24h_stops_expensive_downstream_stages_after_upstream_failure():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "if: needs.stage1_maximum.result == 'success'" in workflow
+    assert "if: needs.stage2_historical.result == 'success'" in workflow
+    assert "if: needs.stage1_maximum.result == 'success' && needs.stage2_historical.result == 'success' && needs.stage3_challenger.result == 'success'" in workflow
+
+
+def test_24h_stage1_guard_failure_is_preserved_without_failing_artifact_upload():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "stage1_main_guard.json" in workflow
+    assert "NOT_CREATED_STAGE1_GUARD_FAILED" in workflow
+    assert "if [ -s /tmp/btc24_before.json ]; then" in workflow
