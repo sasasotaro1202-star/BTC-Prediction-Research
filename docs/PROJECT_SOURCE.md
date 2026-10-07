@@ -1772,9 +1772,9 @@ LOCAL PIT
 Evidence snapshot checked on 2026-10-07:
 
 evidence_basis_head:
-c9b887ad2631e7db1af7ce1423cfe96d58828a5a
+8bef5a556d53c3f4a5d81b8781c98fc2bce0621b
 
-This section is a mutable pointer to the latest verified evidence basis. Immutable prediction/outcome/OOS/holdout/failure records must not be rewritten. Runtime execution must always resolve the actual current main HEAD before use.
+This section is a mutable pointer to the latest verified evidence basis. Subsequent safe code, documentation, and acquisition-only commits do not rewrite immutable prediction/outcome/OOS/holdout/failure records. Runtime execution must always resolve the actual current main HEAD before use.
 
 Strict PIT admitted primary scope:
 5m strict primary settled = 465
@@ -1798,7 +1798,7 @@ Current Production models:
 
 Current live Binance-primary robustness evidence is not yet promotion-ready:
 5m current-production-model cohort = 322 / 1000 minimum
-10m current-production-model cohort = 465 / 1000 minimum
+10m current-production-model cohort = 466 / 1000 minimum
 promotion_evidence_eligible = false for both horizons
 
 Situation-metadata maturity:
@@ -1811,9 +1811,12 @@ Online-expert readiness:
 10m = 460
 No additional online-expert row debt is reported under the current artifact contract.
 
+Current performance trigger:
+10m recent-100 Accuracy = 0.27 with n = 100. This is below the research-only recovery threshold of 0.30 and must route to experience-policy research; it does not alter Production by itself.
+
 Calibration evidence remains unverified:
 5m n_settled = 322; fit_logloss = missing; holdout_logloss = missing
-10m n_settled = 465; fit_logloss = 1.0511788569; holdout_logloss = 1.1058983274
+10m n_settled = 466; full calibration gate remains unverified
 
 Current promotion gate:
 production_safety_gate = HOLD
