@@ -153,3 +153,8 @@ def test_24h_stage1_guard_failure_is_preserved_without_failing_artifact_upload()
     assert "stage1_main_guard.json" in workflow
     assert "NOT_CREATED_STAGE1_GUARD_FAILED" in workflow
     assert "if [ -s /tmp/btc24_before.json ]; then" in workflow
+
+def test_24h_stage1_snapshot_fallback_avoids_multiline_heredoc():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'RUN_SHA="${{ github.sha }}" python -c' in workflow
+    assert " + chr(10)" in workflow
