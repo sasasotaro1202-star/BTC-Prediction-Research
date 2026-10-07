@@ -20,7 +20,7 @@ The latest strict PIT artifact reports checked_predictions = 795, verified_predi
 
 Robustness evidence remains insufficient for Production promotion: live-Binance-primary robustness sample size is 322 for 5m and 466 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness remains 461 rows for 5m and 460 for 10m, leaving 2,539 and 2,540 qualifying rows respectively to reach the 3,000-row maturity target.
 
-Calibration remains unverified: the 5m calibration artifact has n_settled = 322 with missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 466 with the latest evidence still insufficient for the full calibration gate, so calibration evidence is not verified. Accordingly the current promotion gate remains `HOLD` with `promotion_allowed = false`.
+Calibration remains unverified: the 5m calibration artifact has n_settled = 322 with missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 466 with fit_logloss = 1.0506329309 and holdout_logloss = 1.1072863776, so calibration evidence is not verified. Accordingly the current promotion gate remains `HOLD` with `promotion_allowed = false`.
 
 Current production artifact bindings remain:
 - 5m: `bootstrap.soft_ensemble.v5.4`
