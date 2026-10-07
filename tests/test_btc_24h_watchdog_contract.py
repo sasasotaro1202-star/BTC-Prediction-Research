@@ -28,10 +28,19 @@ def test_24h_watchdog_refreshes_main_sha_after_stale_recovery():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     enable_marker = '24H marathon workflow enable check completed.'
     refresh_marker = 'MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\')"'
+    refresh_positions = []
+    cursor = 0
+    while True:
+        pos = workflow.find(refresh_marker, cursor)
+        if pos < 0:
+            break
+        refresh_positions.append(pos)
+        cursor = pos + len(refresh_marker)
+    assert len(refresh_positions) >= 2
+    refresh_pos = refresh_positions[-1]
     assert enable_marker in workflow
-    assert refresh_marker in workflow
-    assert workflow.index(refresh_marker) > workflow.index(enable_marker)
-    assert workflow.index(refresh_marker) < workflow.index('dispatch_started_at=')
+    assert refresh_pos > workflow.index(enable_marker)
+    assert refresh_pos < workflow.index('dispatch_started_at=')
 
 def test_24h_watchdog_self_enables_marathon_before_dispatch():
     text = Path('.github/workflows/btc_24h_watchdog.yml').read_text(encoding='utf-8')
