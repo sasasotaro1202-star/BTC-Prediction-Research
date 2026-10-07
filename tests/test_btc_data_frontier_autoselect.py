@@ -792,6 +792,38 @@ class TestBTCDataFrontierAutoSelect(TestCase):
         self.assertEqual(useful["status"],"DISCOVERED_UNVERIFIED")
 
 
+    def test_hyperliquid_history_retries_empty_snapshot_before_failing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            fake_payload=[
+                {"t":1700000000000,"T":1700000299999,"o":"100","h":"101","l":"99","c":"100.5","v":"12","n":42}
+            ]
+            requested_end_times=[]
+            def fake_get(url,method="GET",body=None,token=None):
+                requested_end_times.append(body["req"]["endTime"])
+                if len(requested_end_times) == 1:
+                    return []
+                return fake_payload
+            with patch.object(
+                mod,"ROOT",root
+            ), patch.object(
+                mod,"ACQUISITION_DIR",root/"data/historical_research/frontier_acquisitions"
+            ), patch.object(
+                mod,"_get",side_effect=fake_get
+            ):
+                result=mod.acquire_hyperliquid_history(
+                    end_ms=1700000600000
+                )
+            self.assertEqual(result["status"],"OK")
+            self.assertFalse(result["production_eligible"])
+            self.assertEqual(len(requested_end_times),2)
+            self.assertEqual(
+                requested_end_times[1],
+                requested_end_times[0] - (5 * 60 * 1000),
+            )
+            self.assertEqual(result["history_empty_result_retries"],1)
+            self.assertEqual(result["history_requested_end_ms_initial"],1700000600000)
+
     def test_hyperliquid_history_retries_rate_limit_without_promoting_data(self):
         from urllib.error import HTTPError
         with tempfile.TemporaryDirectory() as td:
