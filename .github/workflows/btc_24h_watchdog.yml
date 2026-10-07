@@ -139,14 +139,61 @@ jobs:
           cat /tmp/btc24_decision
           action="$(awk -F= '/^ACTION=/{print $2}' /tmp/btc24_decision | tail -1)"
 
+          # Main may advance through evidence/state-only commits while the 24H
+          # research snapshot is running. Those commits do not invalidate the
+          # immutable research code snapshot. Only executable/policy changes do.
+          safe_stale=0
+          unsafe_stale=0
+          while IFS='|' read -r tag run_id kind age sha_field; do
+            [ "$tag" = "STALE" ] || continue
+            run_sha="${sha_field#sha=}"
+            changed="$(ci_gh_api_get "repos/$REPO/compare/${run_sha}...${MAIN_SHA}" --jq '.files[]?.filename')"
+            unsafe_files=""
+            while IFS= read -r changed_file; do
+              [ -n "$changed_file" ] || continue
+              case "$changed_file" in
+                data/*|models/*.json|models/*.joblib) ;;
+                *)
+                  unsafe_files="${unsafe_files}${unsafe_files:+$'\n'}$changed_file"
+                  ;;
+              esac
+            done <<< "$changed"
+            if [ -n "$unsafe_files" ]; then
+              unsafe_stale=$((unsafe_stale + 1))
+              echo "UNSAFE_STALE_RUN|$run_id|$kind|$age|$run_sha"
+              printf "%s\n" "$unsafe_files" | sed "s/^/  unsafe=/"
+            else
+              safe_stale=$((safe_stale + 1))
+              echo "SAFE_STATE_DRIFT_RUN|$run_id|$kind|$age|$run_sha"
+            fi
+          done < /tmp/btc24_decision
+          if [ "$unsafe_stale" -eq 0 ] && [ "$safe_stale" -gt 0 ]; then
+            echo "ACTION=WAIT_SAFE_STATE_DRIFT"
+            exit 0
+          fi
+
           if [ "$action" = "WAIT" ] || [ "$action" = "HOLD" ]; then
             exit 0
           fi
 
           if [ "$action" = "RECOVER_STALE" ]; then
-            while IFS='|' read -r tag run_id kind age; do
+            while IFS='|' read -r tag run_id kind age sha_field; do
               [ "$tag" = "STALE" ] || continue
-              echo "Cancelling stale BTC 24H run: id=$run_id kind=$kind age_minutes=$age"
+              run_sha="${sha_field#sha=}"
+              changed="$(ci_gh_api_get "repos/$REPO/compare/${run_sha}...${MAIN_SHA}" --jq '.files[]?.filename')"
+              unsafe=false
+              while IFS= read -r changed_file; do
+                [ -n "$changed_file" ] || continue
+                case "$changed_file" in
+                  data/*|models/*.json|models/*.joblib) ;;
+                  *) unsafe=true; break ;;
+                esac
+              done <<< "$changed"
+              if [ "$unsafe" != true ]; then
+                echo "Retaining active 24H run $run_id because main drift is state-only."
+                continue
+              fi
+              echo "Cancelling stale BTC 24H run: id=$run_id kind=$kind age=$age"
               ci_gh run cancel "$run_id" --repo "$REPO"
             done < /tmp/btc24_decision
           fi
