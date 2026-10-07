@@ -379,6 +379,40 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertFalse(route["production_impact"])
             self.assertEqual(route["reason"], "routine_future_generalization_evidence_refresh")
 
+    def test_stale_pit_audit_fails_closed_to_readiness(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "pit_oos_audit.json",
+                {
+                    "ok": True,
+                    "pit_verified": True,
+                    "generated_at_utc": "2020-01-01T00:00:00Z",
+                    "primary_horizon_gate": {
+                        "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                        "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["priority"], 101)
+            self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
+            self.assertIn("pit_audit_stale:", route["signals"][0])
+
+    def test_missing_pit_generation_timestamp_fails_closed_to_readiness(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            payload = json.loads((root / "data" / "historical_research" / "pit_oos_audit.json").read_text())
+            payload.pop("generated_at_utc", None)
+            self._write(root / "data" / "historical_research", "pit_oos_audit.json", payload)
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertIn("pit_audit_generated_at_missing", route["signals"])
+
     def test_pit_gate_structure_is_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
