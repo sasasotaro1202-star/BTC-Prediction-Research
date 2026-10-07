@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          ci_git_fetch --no-tags --depth=1 origin main
+          ci_git_fetch origin main --depth=1
           main_sha="$(git rev-parse origin/main)"
           if [ "$GITHUB_SHA" != "$main_sha" ]; then
             echo "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha"
@@ -115,6 +115,12 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
+          ci_git_fetch --no-tags --depth=1 origin main
+          fetched_main_sha="$(git rev-parse origin/main)"
+          if [ "$fetched_main_sha" != "$remote_sha" ]; then
+            echo "MAIN_FETCH_API_MISMATCH expected=$remote_sha actual=$fetched_main_sha" >&2
+            exit 1
+          fi
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
           changed_files="$(ci_gh_api_get "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}" --jq '.files[]?.filename')"
           state_only=true
