@@ -14,13 +14,13 @@ Never rewrite mature predictions, outcomes, OOS, holdout or failure evidence to 
 Re-check the latest GitHub HEAD/default branch, code/config, dependencies, tests, workflows, Actions, artifacts, registries, production/champion/challenger state, current research/OOS/holdout evidence, failures, coverage debt and frontier. Prefer REUSE → REPAIR → INTEGRATE → TEST → VERIFY.
 
 ## Current evidence snapshot
-The current runtime evidence is anchored to main HEAD `c9b887ad2631e7db1af7ce1423cfe96d58828a5a` (latest verified research-state commit at 2026-10-07T06:38:27Z). The repository continues to treat immutable prediction/outcome/OOS/holdout/failure evidence as historical records; this snapshot is only a pointer to the latest verified state and must not be used to rewrite prior evidence.
+The latest verified evidence basis is main HEAD `8bef5a556d53c3f4a5d81b8781c98fc2bce0621b` (latest verified research-state commit at 2026-10-07T07:31:37Z). Subsequent commits may contain safe code, documentation, or acquisition-only updates; this snapshot remains a pointer to the evidence basis and must not be used to rewrite immutable evidence.
 
 The latest strict PIT artifact reports checked_predictions = 795, verified_predictions = 626, verified_primary_predictions = 466, verified_fallback_predictions = 160, and active current-scope PIT violations = 0. The independent primary horizon gates are 5m = 465 and 10m = 464, both ready above the 300-row minimum. Legacy observations remain quarantined: legacy_unverified_count = 169 and legacy_violation_count = 41.
 
-Robustness evidence remains insufficient for Production promotion: live-Binance-primary robustness sample size is 322 for 5m and 465 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness is 461 rows for 5m and 460 for 10m, leaving 2,539 and 2,540 qualifying rows respectively to reach the 3,000-row maturity target.
+Robustness evidence remains insufficient for Production promotion: live-Binance-primary robustness sample size is 322 for 5m and 466 for 10m versus the 1,000-row minimum; promotion_evidence_eligible = false for both horizons. Situation-metadata readiness remains 461 rows for 5m and 460 for 10m, leaving 2,539 and 2,540 qualifying rows respectively to reach the 3,000-row maturity target.
 
-Calibration remains unverified: the 5m calibration artifact has n_settled = 322 with missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 465 with fit_logloss = 1.0511788569 and holdout_logloss = 1.1058983274, so calibration evidence is not verified. Accordingly the current promotion gate remains `HOLD` with `promotion_allowed = false`.
+Calibration remains unverified: the 5m calibration artifact has n_settled = 322 with missing fit/holdout LogLoss evidence; the 10m artifact has n_settled = 466 with the latest evidence still insufficient for the full calibration gate, so calibration evidence is not verified. Accordingly the current promotion gate remains `HOLD` with `promotion_allowed = false`.
 
 Current production artifact bindings remain:
 - 5m: `bootstrap.soft_ensemble.v5.4`
