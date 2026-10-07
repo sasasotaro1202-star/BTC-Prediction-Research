@@ -195,3 +195,9 @@ def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
     assert 'length >= 1 and length <= 9' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight
+
+
+def test_supervisor_recovers_stale_pit_and_readiness_evidence():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'dispatch_if_stale btc_pit_oos_audit.yml 900' in text
+    assert 'dispatch_if_stale btc_research_readiness.yml 21600' in text
