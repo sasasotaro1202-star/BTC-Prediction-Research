@@ -1769,23 +1769,24 @@ LOCAL PIT
 
 78. CURRENT EVIDENCE SNAPSHOT
 
-Evidence snapshot checked on 2026-10-06:
+Evidence snapshot checked on 2026-10-07:
 
 evidence_basis_head:
-9f64763c0487af247945f03345b275873aa456e9
+c9b887ad2631e7db1af7ce1423cfe96d58828a5a
 
-Subsequent main commits that only synchronize or repair documentation do not alter the evidence basis above. Runtime checks must always resolve the actual current main HEAD before execution.
+This section is a mutable pointer to the latest verified evidence basis. Immutable prediction/outcome/OOS/holdout/failure records must not be rewritten. Runtime execution must always resolve the actual current main HEAD before use.
 
 Strict PIT admitted primary scope:
-5m strict primary settled = 453
-10m strict primary settled = 452
+5m strict primary settled = 465
+10m strict primary settled = 464
 per-horizon minimum = 300
 active current-scope PIT violations = 0
 
 Checked prediction rows:
-checked_predictions = 774
-verified_primary_predictions = 453
-verified_fallback_predictions = 152
+checked_predictions = 795
+verified_predictions = 626
+verified_primary_predictions = 466
+verified_fallback_predictions = 160
 
 Legacy evidence remains quarantined:
 legacy_unverified = 169
@@ -1796,23 +1797,23 @@ Current Production models:
 10m = bootstrap.bootstrap_rf
 
 Current live Binance-primary robustness evidence is not yet promotion-ready:
-5m current-production-model cohort = 310 / 1000 minimum
-10m current-production-model cohort = 452 / 1000 minimum
+5m current-production-model cohort = 322 / 1000 minimum
+10m current-production-model cohort = 465 / 1000 minimum
 promotion_evidence_eligible = false for both horizons
 
 Situation-metadata maturity:
-5m situation_meta_ready = 449; additional qualifying rows needed = 2,551
-10m situation_meta_ready = 448; additional qualifying rows needed = 2,552
+5m situation_meta_ready = 461; additional qualifying rows needed = 2,539
+10m situation_meta_ready = 460; additional qualifying rows needed = 2,540
 3,000-row maturity target remains unmet.
 
 Online-expert readiness:
-5m = 449
-10m = 448
+5m = 461
+10m = 460
 No additional online-expert row debt is reported under the current artifact contract.
 
 Calibration evidence remains unverified:
-5m n_settled = 310; fit_logloss = missing; holdout_logloss = missing
-10m n_settled = 452; fit_logloss = 1.0505990758858512; holdout_logloss = 1.1082636171116929
+5m n_settled = 322; fit_logloss = missing; holdout_logloss = missing
+10m n_settled = 465; fit_logloss = 1.0511788569; holdout_logloss = 1.1058983274
 
 Current promotion gate:
 production_safety_gate = HOLD
@@ -1823,10 +1824,6 @@ Reason:
 robustness_evidence_invalid_or_incomplete;
 candidate_or_frozen_holdout_non_regression_not_verified;
 calibration_evidence_invalid_or_missing
-
-These values are a synchronized evidence snapshot. The documentation commit itself does not change Production state or research evidence. Later runs must re-acquire current evidence rather than treating this snapshot as permanently current.
-
-⸻
 
 79. CURRENT PRODUCTION EVIDENCE ENVELOPE
 
