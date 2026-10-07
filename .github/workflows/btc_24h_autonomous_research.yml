@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v7
-      - name: Fail closed if run is not latest main
+      - name: Validate main lineage before expensive research
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -44,32 +44,24 @@ jobs:
           set -euo pipefail
           . scripts/ci_network_retry.sh
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          export BTC24_REMOTE_SHA="$remote_sha"
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          remote_sha = os.environ["BTC24_REMOTE_SHA"]
-          current_sha = os.environ["GITHUB_SHA"]
-          Path("data/historical_research/stage1_main_guard.json").write_text(
-              json.dumps({
-                  "schema_version": 1,
-                  "run_sha": current_sha,
-                  "current_main_sha": remote_sha,
-                  "status": "LATEST_MAIN" if remote_sha == current_sha else "STALE_MAIN",
-              }, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          changed_files="$(ci_gh_api_get "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}" --jq '.files[]?.filename')"
+          state_only=true
+          while IFS= read -r changed; do
+            [ -n "$changed" ] || continue
+            case "$changed" in
+              data/*|models/*.json|models/*.joblib) ;;
+              *)
+                state_only=false
+                echo "UNSAFE_MAIN_DRIFT_FILE=$changed" >&2
+                ;;
+            esac
+          done <<< "$changed_files"
+          RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$remote_sha" CHANGED_FILES="$changed_files" STATE_ONLY="$state_only" python -c 'import json, os; from pathlib import Path; files=[x for x in os.environ.get("CHANGED_FILES","").splitlines() if x]; status="LATEST_MAIN" if os.environ["POST_MAIN_SHA"]==os.environ["RUN_SHA"] else ("SAFE_STATE_DRIFT" if os.environ["STATE_ONLY"]=="true" else "UNSAFE_MAIN_DRIFT"); Path("data/historical_research/stage1_main_guard.json").write_text(json.dumps({"schema_version":1,"run_sha":os.environ["RUN_SHA"],"current_main_sha":os.environ["POST_MAIN_SHA"],"status":status,"changed_files":files},sort_keys=True)+chr(10),encoding="utf-8")'
+          if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
+            echo "UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
-          }
-          echo "LATEST_MAIN_SHA=${GITHUB_SHA}"
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements.txt
+          fi
+          echo "MAIN_LINEAGE_OK run=${GITHUB_SHA} main=${remote_sha} state_only_drift=${state_only}"
       - name: Install
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
       - name: Verify workflow SHA is current main before expensive research
@@ -116,19 +108,32 @@ jobs:
           set -euo pipefail
           timeout --signal=TERM --kill-after=60 330m python src/maximum_future_generalization_v6.py
           test -s data/historical_research/maximum_future_generalization_v6_registry.json
-      - name: Revalidate latest main after expensive research
+      - name: Revalidate main lineage after expensive research
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          ci_git_fetch --no-tags --depth=1 origin main
-          post_main_sha="$(git rev-parse origin/main)"
-          RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$post_main_sha" python -c 'import json, os; from pathlib import Path; run_sha=os.environ["RUN_SHA"]; main_sha=os.environ["POST_MAIN_SHA"]; Path("data/historical_research/stage1_main_guard_after.json").write_text(json.dumps({"schema_version": 1, "run_sha": run_sha, "current_main_sha": main_sha, "status": "LATEST_MAIN" if main_sha == run_sha else "STALE_MAIN_AFTER_RESEARCH"}, sort_keys=True) + chr(10), encoding="utf-8")'
-          if [ "$post_main_sha" != "${GITHUB_SHA}" ]; then
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          changed_files="$(ci_gh_api_get "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}" --jq '.files[]?.filename')"
+          state_only=true
+          while IFS= read -r changed; do
+            [ -n "$changed" ] || continue
+            case "$changed" in
+              data/*|models/*.json|models/*.joblib) ;;
+              *)
+                state_only=false
+                echo "UNSAFE_MAIN_DRIFT_FILE_AFTER_RESEARCH=$changed" >&2
+                ;;
+            esac
+          done <<< "$changed_files"
+          RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$remote_sha" CHANGED_FILES="$changed_files" STATE_ONLY="$state_only" python -c 'import json, os; from pathlib import Path; files=[x for x in os.environ.get("CHANGED_FILES","").splitlines() if x]; status="LATEST_MAIN" if os.environ["POST_MAIN_SHA"]==os.environ["RUN_SHA"] else ("SAFE_STATE_DRIFT" if os.environ["STATE_ONLY"]=="true" else "UNSAFE_MAIN_DRIFT"); Path("data/historical_research/stage1_main_guard_after.json").write_text(json.dumps({"schema_version":1,"run_sha":os.environ["RUN_SHA"],"current_main_sha":os.environ["POST_MAIN_SHA"],"status":status,"changed_files":files},sort_keys=True)+chr(10),encoding="utf-8")'
+          if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
             rm -f data/historical_research/maximum_future_generalization_v6_registry.json
-            echo "STALE_MAIN_AFTER_RESEARCH expected=${post_main_sha} actual=${GITHUB_SHA}" >&2
+            echo "UNSAFE_MAIN_DRIFT_AFTER_RESEARCH expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
           fi
-          echo "LATEST_MAIN_SHA_AFTER_RESEARCH=${GITHUB_SHA}"
+          echo "MAIN_LINEAGE_OK_AFTER_RESEARCH run=${GITHUB_SHA} main=${remote_sha} state_only_drift=${state_only}"
       - name: Verify research-only boundary
         run: |
           set -euo pipefail
