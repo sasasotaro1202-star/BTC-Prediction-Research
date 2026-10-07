@@ -158,3 +158,10 @@ def test_24h_stage1_snapshot_fallback_avoids_multiline_heredoc():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert 'RUN_SHA="${{ github.sha }}" python -c' in workflow
     assert " + chr(10)" in workflow
+
+def test_24h_stage1_revalidates_main_after_expensive_research():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "Revalidate latest main after expensive research" in workflow
+    assert 'ci_git_fetch --no-tags --depth=1 origin main' in workflow
+    assert 'STALE_MAIN_AFTER_RESEARCH expected=' in workflow
+    assert 'stage1_main_guard_after.json' in workflow
