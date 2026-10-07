@@ -150,7 +150,7 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
 def _performance_regression_signals(root: Path) -> list[str]:
     """Return research-only triggers for material post-outcome performance regression."""
     obj = _load(root / "data" / "historical_research" / "performance_change.json")
-    if obj is None or obj.get("changed") is not True or obj.get("comparison_available") is not True:
+    if obj is None or obj.get("comparison_available") is not True:
         return []
 
     signals: list[str] = []
