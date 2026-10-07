@@ -1,6 +1,6 @@
 from pathlib import Path
 
-WORKFLOW = Path(".github/workflows/btc_historical_research.yml")
+WORKFLOW = Path(".github/workflows/btc_research.yml")
 
 
 def test_conflict_retry_preserves_all_research_json_artifacts():
