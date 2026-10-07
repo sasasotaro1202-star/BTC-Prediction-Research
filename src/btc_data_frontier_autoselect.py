@@ -711,49 +711,63 @@ def acquire_hyperliquid_history(end_ms=None,interval="5m"):
  retrieved=now_utc()
  end_ms=int(end_ms or time.time()*1000)
  interval_ms={"1m":60_000,"3m":180_000,"5m":300_000,"15m":900_000}.get(interval,300_000)
+ requested_end_ms=end_ms
  batch_candles=HYPERLIQUID_HISTORY_BATCH_CANDLES
  url="https://api.hyperliquid.xyz/info"
  try:
-  for _ in range(3):
-   start_ms=end_ms-(interval_ms*batch_candles)
-   body={"type":"candleSnapshot","req":{"coin":"BTC","interval":interval,"startTime":start_ms,"endTime":end_ms}}
-   try:
-    payload=_get_hyperliquid_history_payload(body)
+  empty_result_retries=2
+  for empty_attempt in range(empty_result_retries + 1):
+   for _ in range(3):
+    start_ms=end_ms-(interval_ms*batch_candles)
+    body={"type":"candleSnapshot","req":{"coin":"BTC","interval":interval,"startTime":start_ms,"endTime":end_ms}}
+    try:
+     payload=_get_hyperliquid_history_payload(body)
+     break
+    except RuntimeError as exc:
+     if str(exc)!="response_too_large" or batch_candles<=25:
+      raise
+     batch_candles=max(25,batch_candles//2)
+   else:
+    raise RuntimeError("hyperliquid_history_payload_unavailable")
+   if not isinstance(payload,list):
+    raise RuntimeError("hyperliquid_history_invalid_payload")
+   retrieved_ms=int(time.time()*1000)
+   normalized=[]
+   for row in payload:
+    if not isinstance(row,dict):
+     continue
+    try:
+     event_ms=int(row.get("t",0))
+     close_ms=int(row.get("T",event_ms+interval_ms))
+     if event_ms<=0 or close_ms>retrieved_ms:
+      continue
+     values=[float(row[k]) for k in ("o","h","l","c","v")]
+     if not all(math.isfinite(v) for v in values):
+      continue
+     normalized.append({
+      "event_time":datetime.fromtimestamp(event_ms/1000,timezone.utc).isoformat(),
+      "close_time":datetime.fromtimestamp(close_ms/1000,timezone.utc).isoformat(),
+      "open":values[0],"high":values[1],"low":values[2],"close":values[3],
+      "volume":values[4],"trade_count":int(row.get("n",0) or 0),
+     })
+    except (TypeError,ValueError,OverflowError):
+     continue
+   if normalized:
     break
-   except RuntimeError as exc:
-    if str(exc)!="response_too_large" or batch_candles<=25:
-     raise
-    batch_candles=max(25,batch_candles//2)
-  else:
-   raise RuntimeError("hyperliquid_history_payload_unavailable")
-  if not isinstance(payload,list):
-   raise RuntimeError("hyperliquid_history_invalid_payload")
-  retrieved_ms=int(time.time()*1000)
-  normalized=[]
-  for row in payload:
-   if not isinstance(row,dict):
-    continue
-   try:
-    event_ms=int(row.get("t",0))
-    close_ms=int(row.get("T",event_ms+interval_ms))
-    if event_ms<=0 or close_ms>retrieved_ms:
-     continue
-    values=[float(row[k]) for k in ("o","h","l","c","v")]
-    if not all(math.isfinite(v) for v in values):
-     continue
-    normalized.append({
-     "event_time":datetime.fromtimestamp(event_ms/1000,timezone.utc).isoformat(),
-     "close_time":datetime.fromtimestamp(close_ms/1000,timezone.utc).isoformat(),
-     "open":values[0],"high":values[1],"low":values[2],"close":values[3],
-     "volume":values[4],"trade_count":int(row.get("n",0) or 0),
-    })
-   except (TypeError,ValueError,OverflowError):
-    continue
+   if empty_attempt >= empty_result_retries:
+    break
+   # A provider can return an empty snapshot around the current candle boundary.
+   # Move the requested end backward by one interval and retry, while keeping
+   # the failure visible if all bounded attempts remain unusable.
+   end_ms=max(0,end_ms-interval_ms)
+   batch_candles=max(25,min(batch_candles,HYPERLIQUID_HISTORY_BATCH_CANDLES))
   result=_persist_candle_batch(
    "hyperliquid_ws",url,normalized,"rest_historical_candles","source_event_time",retrieved
   )
   result["history_window_start_ms"]=start_ms
   result["history_window_end_ms"]=end_ms
+  result["history_requested_end_ms_initial"]=requested_end_ms
+  result["history_empty_result_retries"]=empty_attempt
   result["history_requested_candles"]=batch_candles
   result["retrieved_at"]=retrieved
   return result
