@@ -58,6 +58,7 @@ jobs:
           done <<< "$changed_files"
           RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$remote_sha" CHANGED_FILES="$changed_files" STATE_ONLY="$state_only" python -c 'import json, os; from pathlib import Path; files=[x for x in os.environ.get("CHANGED_FILES","").splitlines() if x]; status="LATEST_MAIN" if os.environ["POST_MAIN_SHA"]==os.environ["RUN_SHA"] else ("SAFE_STATE_DRIFT" if os.environ["STATE_ONLY"]=="true" else "UNSAFE_MAIN_DRIFT"); Path("data/historical_research/stage1_main_guard.json").write_text(json.dumps({"schema_version":1,"run_sha":os.environ["RUN_SHA"],"current_main_sha":os.environ["POST_MAIN_SHA"],"status":status,"changed_files":files},sort_keys=True)+chr(10),encoding="utf-8")'
           if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
+            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             echo "UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
           fi
@@ -69,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          ci_git_fetch origin main --depth=1
+          ci_git_fetch --no-tags --depth=1 origin main
           main_sha="$(git rev-parse origin/main)"
           if [ "$GITHUB_SHA" != "$main_sha" ]; then
             echo "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha"
@@ -130,6 +131,7 @@ jobs:
           RUN_SHA="${{ github.sha }}" POST_MAIN_SHA="$remote_sha" CHANGED_FILES="$changed_files" STATE_ONLY="$state_only" python -c 'import json, os; from pathlib import Path; files=[x for x in os.environ.get("CHANGED_FILES","").splitlines() if x]; status="LATEST_MAIN" if os.environ["POST_MAIN_SHA"]==os.environ["RUN_SHA"] else ("SAFE_STATE_DRIFT" if os.environ["STATE_ONLY"]=="true" else "UNSAFE_MAIN_DRIFT"); Path("data/historical_research/stage1_main_guard_after.json").write_text(json.dumps({"schema_version":1,"run_sha":os.environ["RUN_SHA"],"current_main_sha":os.environ["POST_MAIN_SHA"],"status":status,"changed_files":files},sort_keys=True)+chr(10),encoding="utf-8")'
           if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
             rm -f data/historical_research/maximum_future_generalization_v6_registry.json
+            echo "STALE_MAIN_AFTER_RESEARCH expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             echo "UNSAFE_MAIN_DRIFT_AFTER_RESEARCH expected=${remote_sha} actual=${GITHUB_SHA}" >&2
             exit 1
           fi
