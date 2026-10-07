@@ -27,7 +27,7 @@ def test_24h_watchdog_has_failure_circuit_breaker():
 def test_24h_watchdog_refreshes_main_sha_after_stale_recovery():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     enable_marker = '24H marathon workflow enable check completed.'
-    refresh_marker = 'MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\'")"'
+    refresh_marker = 'MAIN_SHA="$(ci_gh_api_get "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\')"'
     assert enable_marker in workflow
     assert refresh_marker in workflow
     assert workflow.index(refresh_marker) > workflow.index(enable_marker)
