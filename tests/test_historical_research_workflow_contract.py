@@ -23,3 +23,9 @@ def test_conflict_retry_stages_all_research_json_artifacts():
         "data/historical_research/oos_*.csv"
     )
     assert expected in workflow
+
+
+def test_runtime_only_production_artifact_audit_is_not_staged_for_git_persistence():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    staging_block = workflow.split("git add data/predictions.db.gz", 1)[1].split("if git ls-files", 1)[0]
+    assert "production_artifact_audit.json" not in staging_block
