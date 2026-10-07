@@ -1772,21 +1772,21 @@ LOCAL PIT
 Evidence snapshot checked on 2026-10-07:
 
 evidence_basis_head:
-8bef5a556d53c3f4a5d81b8781c98fc2bce0621b
+5e0e2572489cf3e86c237da9a56d88dada8b18ba
 
 This section is a mutable pointer to the latest verified evidence basis. Subsequent safe code, documentation, and acquisition-only commits do not rewrite immutable prediction/outcome/OOS/holdout/failure records. Runtime execution must always resolve the actual current main HEAD before use.
 
 Strict PIT admitted primary scope:
-5m strict primary settled = 465
-10m strict primary settled = 464
+5m strict primary settled = 466
+10m strict primary settled = 467
 per-horizon minimum = 300
 active current-scope PIT violations = 0
 
 Checked prediction rows:
-checked_predictions = 795
-verified_predictions = 626
-verified_primary_predictions = 466
-verified_fallback_predictions = 160
+checked_predictions = 798
+verified_predictions = 629
+verified_primary_predictions = 468
+verified_fallback_predictions = 161
 
 Legacy evidence remains quarantined:
 legacy_unverified = 169
@@ -1797,26 +1797,26 @@ Current Production models:
 10m = bootstrap.bootstrap_rf
 
 Current live Binance-primary robustness evidence is not yet promotion-ready:
-5m current-production-model cohort = 322 / 1000 minimum
-10m current-production-model cohort = 466 / 1000 minimum
+5m current-production-model cohort = 323 / 1000 minimum
+10m current-production-model cohort = 467 / 1000 minimum
 promotion_evidence_eligible = false for both horizons
 
 Situation-metadata maturity:
-5m situation_meta_ready = 461; additional qualifying rows needed = 2,539
-10m situation_meta_ready = 460; additional qualifying rows needed = 2,540
+5m situation_meta_ready = 462; additional qualifying rows needed = 2,538
+10m situation_meta_ready = 463; additional qualifying rows needed = 2,537
 3,000-row maturity target remains unmet.
 
 Online-expert readiness:
-5m = 461
-10m = 460
+5m = 462
+10m = 463
 No additional online-expert row debt is reported under the current artifact contract.
 
 Current performance trigger:
-10m recent-100 Accuracy = 0.27 with n = 100. This is below the research-only recovery threshold of 0.30 and must route to experience-policy research; it does not alter Production by itself.
+10m recent-100 Accuracy = 0.28 with n = 100. This is below the research-only recovery threshold of 0.30 and must route to experience-policy research; it does not alter Production by itself.
 
 Calibration evidence remains unverified:
-5m n_settled = 322; fit_logloss = missing; holdout_logloss = missing
-10m n_settled = 466; full calibration gate remains unverified
+5m n_settled = 323; fit_logloss = missing; holdout_logloss = missing
+10m n_settled = 467; fit_logloss = 1.0503374652; holdout_logloss = 1.1046019962; full calibration gate remains unverified
 
 Current promotion gate:
 production_safety_gate = HOLD
@@ -1827,6 +1827,30 @@ Reason:
 robustness_evidence_invalid_or_incomplete;
 candidate_or_frozen_holdout_non_regression_not_verified;
 calibration_evidence_invalid_or_missing
+
+
+⸻
+
+78A. 24H RESEARCH MAIN-LINEAGE / AUTONOMY CONTRACT
+
+The 24H research marathon uses an immutable research snapshot bound to its starting Git SHA.
+
+Main may advance while the marathon is running because the autonomous system publishes evidence/state updates. This does not invalidate the research snapshot when all changed paths are limited to:
+
+* data/**
+* models/*.json
+* models/*.joblib
+
+Such drift is recorded as SAFE_STATE_DRIFT and the active marathon continues using its original immutable workspace.
+
+Any drift touching source code, workflow files, tests, dependencies, configuration, PROJECT_INSTRUCTIONS, PROJECT_SOURCE, or other execution/policy files is UNSAFE_MAIN_DRIFT and must fail-closed and recover through the watchdog.
+
+The watchdog must therefore distinguish:
+
+SAFE_STATE_DRIFT → retain active immutable research snapshot
+UNSAFE_MAIN_DRIFT → cancel obsolete run → dispatch fresh current-main snapshot
+
+This is operational lineage control only. It never relaxes PIT/OOS/calibration/robustness/holdout/promotion gates and never permits a research snapshot to mutate Production state.
 
 79. CURRENT PRODUCTION EVIDENCE ENVELOPE
 
