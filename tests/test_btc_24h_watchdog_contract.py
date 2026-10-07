@@ -64,3 +64,10 @@ def test_24h_watchdog_wakes_on_policy_source_changes():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "      - 'PROJECT_INSTRUCTIONS.md'" in workflow
     assert "      - 'docs/PROJECT_SOURCE.md'" in workflow
+
+def test_24h_watchdog_distinguishes_safe_state_drift_from_unsafe_code_drift():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'SAFE_STATE_DRIFT_RUN' in workflow
+    assert 'UNSAFE_STALE_RUN' in workflow
+    assert 'Retaining active 24H run' in workflow
+    assert 'data/*|models/*.json|models/*.joblib)' in workflow
