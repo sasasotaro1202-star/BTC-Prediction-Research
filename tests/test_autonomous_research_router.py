@@ -21,6 +21,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             {
                 "ok": True,
                 "pit_verified": True,
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                 "primary_horizon_gate": {
                     "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
                     "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
