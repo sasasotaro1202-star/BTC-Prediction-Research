@@ -657,7 +657,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
             self.assertIn("pit_audit_generated_at_missing", route["signals"])
 
-def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
+    def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
