@@ -226,7 +226,10 @@ def settle_records(records: list[dict[str, Any]]) -> bool:
             actual = float(target_rows[-1][4])
             record[f"actual_price_{horizon}"] = actual
             record[f"actual_direction_{horizon}"] = direction_from_prices(base, actual)
-            record[f"outcome_retrieved_at_{horizon}"] = iso(utcnow())
+            outcome_retrieved = utcnow()
+            record[f"outcome_available_at_{horizon}"] = iso(outcome_retrieved)
+            record[f"outcome_retrieved_at_{horizon}"] = iso(outcome_retrieved)
+            record[f"outcome_availability_basis_{horizon}"] = "conservative_retrieval_time"
             record[f"outcome_source_{horizon}"] = "binance_futures_rest"
             changed = True
     return changed
@@ -248,6 +251,8 @@ def predict_once() -> dict[str, Any]:
 
     rows, retrieved_at = fetch_closed_binance(5000)
     prediction_cutoff = utcnow()
+    latest_event_ms = int(rows[-1][0]) + 60_000 - 1
+    latest_event = datetime.fromtimestamp(latest_event_ms / 1000, timezone.utc)
     frames = {minutes: aggregate(rows, minutes) for minutes in (5, 10)}
 
     tokenizer = KronosTokenizer.from_pretrained(TOKENIZER_ID, revision=tokenizer_revision, local_files_only=False)
@@ -269,8 +274,10 @@ def predict_once() -> dict[str, Any]:
         "tokenizer_revision": tokenizer_revision,
         "prediction_cutoff_utc": iso(prediction_cutoff),
         "source": "binance_futures_rest",
-        "available_at_utc": iso(prediction_cutoff),
+        "available_at_utc": iso(retrieved_at),
         "retrieved_at_utc": iso(retrieved_at),
+        "latest_input_event_time_utc": iso(latest_event),
+        "availability_basis": "conservative_retrieval_time",
         "research_only": True,
         "production_changed": False,
         "promotion_allowed": False,
