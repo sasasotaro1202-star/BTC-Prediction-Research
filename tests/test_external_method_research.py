@@ -138,3 +138,63 @@ class ExternalMethodResearchTests(unittest.TestCase):
                 result["source_verification"]["source_commit_sha"],
                 "abc123",
             )
+
+
+    def test_unknown_license_fails_closed(self):
+        payloads = {
+            "/repos/model/second": {
+                "archived": False,
+                "default_branch": "main",
+                "html_url": "https://github.com/model/second",
+                "license": None,
+            }
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "data" / "external_research_method_queue.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(self._queue()), encoding="utf-8")
+            result = process_one(
+                root,
+                FakeGitHubClient(payloads),
+                analysis_sha="TEST_SHA",
+                run_id="3",
+            )
+            self.assertEqual(result["status"], "HOLD")
+            self.assertEqual(
+                result["source_verification"]["hold_reason"],
+                "LICENSE_UNVERIFIED",
+            )
+
+    def test_exhausted_queue_remains_research_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "data" / "external_research_method_queue.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(self._queue()), encoding="utf-8")
+            runtime = {
+                "results": {
+                    "model/second": {"status": "SOURCE_VERIFIED"},
+                    "agent/first": {"status": "HOLD"},
+                }
+            }
+            (root / "data" / "external_research_runtime.json").write_text(
+                json.dumps(runtime),
+                encoding="utf-8",
+            )
+            result = process_one(
+                root,
+                FakeGitHubClient({}),
+                analysis_sha="TEST_SHA",
+                run_id="4",
+            )
+            self.assertEqual(result["status"], "EXHAUSTED")
+            self.assertTrue(result["research_only"])
+            self.assertFalse(result["production_changed"])
+            saved = json.loads(
+                (root / "data" / "external_research_runtime.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertTrue(saved["queue_exhausted"])
+
