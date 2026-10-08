@@ -1,0 +1,115 @@
+name: BTC External Method Research
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-external-method-research
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  advance_one_candidate:
+    name: "Advance one external-method candidate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Execute exactly one research-only candidate
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          python src/external_method_research.py
+
+      - name: Verify research-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          runtime = Path("data/external_research_runtime.json")
+          if not runtime.is_file():
+              raise SystemExit("external research runtime state missing")
+          obj = json.loads(runtime.read_text(encoding="utf-8"))
+          if obj.get("research_only") is not True:
+              raise SystemExit("external research state is not research_only")
+          if obj.get("production_changed") is not False:
+              raise SystemExit("external research state reports production_changed=true")
+          print("external method research boundary: VERIFIED")
+          PY
+
+      - name: Fail closed if main advanced during execution
+        env:
+          EXPECTED_SHA: \${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          actual="$(git rev-parse HEAD)"
+          remote="$(git rev-parse origin/main)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "CHECKOUT_SHA_MISMATCH expected=$EXPECTED_SHA actual=$actual" >&2
+            exit 1
+          fi
+          if [ "$remote" != "$EXPECTED_SHA" ]; then
+            echo "MAIN_ADVANCED_DURING_EXTERNAL_RESEARCH expected=$EXPECTED_SHA remote=$remote" >&2
+            echo "State is preserved as workflow artifacts; next supervisor heartbeat must retry on latest main." >&2
+            exit 1
+          fi
+
+      - name: Commit only external-research state
+        run: |
+          set -euo pipefail
+          unexpected="$(git status --porcelain=v1 | awk '$2 !~ /^data\/external_research_(runtime\.json|results\/)/ {print $2}')"
+          if [ -n "$unexpected" ]; then
+            echo "UNEXPECTED_WORKTREE_CHANGES" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          git add data/external_research_runtime.json data/external_research_results
+          if git diff --cached --quiet; then
+            echo "No external research state change to commit."
+            exit 0
+          fi
+
+          candidate="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("data/external_research_runtime.json")
+          obj=json.loads(p.read_text(encoding="utf-8"))
+          records=obj.get("results", {})
+          latest=sorted(records.values(), key=lambda x: x.get("processed_at_utc",""))[-1] if records else {}
+          print(latest.get("repository","unknown"))
+          PY
+          )"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "research: advance external method queue (\${candidate})"
+          git push origin HEAD:main
+
+      - name: Upload external-method evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: btc-external-method-research-\${{ github.run_id }}
+          path: |
+            data/external_research_runtime.json
+            data/external_research_results/**
+          if-no-files-found: warn
+          retention-days: 14

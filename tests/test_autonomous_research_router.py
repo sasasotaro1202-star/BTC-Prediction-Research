@@ -593,3 +593,71 @@ class AutonomousResearchRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data",
+                "external_research_method_queue.json",
+                {
+                    "schema_version": 2,
+                    "candidates": [
+                        {
+                            "queue_rank": 1,
+                            "repository": "model/second",
+                            "next_gate": "MODEL_OOS_GATE",
+                        }
+                    ],
+                    "priority_gate": {
+                        "immediate_local_reproduction": [
+                            {
+                                "repository": "model/second",
+                                "gate": "MODEL_OOS_GATE",
+                            }
+                        ]
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_external_method_research.yml")
+            self.assertEqual(route["priority"], 55)
+            self.assertEqual(route["evidence_state"], "EXTERNAL_METHOD_RESEARCH_PENDING")
+
+    def test_external_method_queue_is_not_routed_after_terminal_processing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data",
+                "external_research_method_queue.json",
+                {
+                    "schema_version": 2,
+                    "candidates": [
+                        {
+                            "queue_rank": 1,
+                            "repository": "model/second",
+                            "next_gate": "MODEL_OOS_GATE",
+                        }
+                    ],
+                    "priority_gate": {
+                        "immediate_local_reproduction": [
+                            {"repository": "model/second", "gate": "MODEL_OOS_GATE"}
+                        ]
+                    },
+                },
+            )
+            self._write(
+                root / "data",
+                "external_research_runtime.json",
+                {
+                    "schema_version": 1,
+                    "research_only": True,
+                    "production_changed": False,
+                    "results": {"model/second": {"status": "SOURCE_VERIFIED"}},
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")

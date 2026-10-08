@@ -24,6 +24,7 @@ ALLOWED = {
     "btc_selective_prediction_oos.yml": 43200,
     "btc_uncertainty_layer_oos.yml": 21600,
     "btc_rich_production_challenger.yml": 86400,
+    "btc_external_method_research.yml": 900,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
 
@@ -374,6 +375,64 @@ def _high_confidence_overreach(root: Path) -> list[str]:
     return signals
 
 
+def _external_method_research_candidate(root: Path) -> tuple[bool, list[str]]:
+    queue = _load(root / "data" / "external_research_method_queue.json")
+    if not isinstance(queue, dict):
+        return False, ["external_method_queue_missing_or_invalid"]
+
+    runtime = _load(root / "data" / "external_research_runtime.json")
+    if runtime is None:
+        runtime = {}
+    if not isinstance(runtime, dict):
+        return False, ["external_method_runtime_missing_or_invalid"]
+
+    processed: set[str] = set()
+    results = runtime.get("results", {})
+    if isinstance(results, dict):
+        for repository, record in results.items():
+            if isinstance(record, dict) and record.get("status") in {"SOURCE_VERIFIED", "HOLD", "SKIPPED"}:
+                processed.add(str(repository))
+
+    order: list[str] = []
+    priority_gate = queue.get("priority_gate", {})
+    if isinstance(priority_gate, dict):
+        for group in (
+            "immediate_local_reproduction",
+            "predictive_method_second_wave",
+            "research_infrastructure_next",
+            "external_information_next",
+            "frontier_only",
+        ):
+            items = priority_gate.get(group, [])
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict):
+                    repository = str(item.get("repository", "")).strip()
+                    if repository and repository not in order:
+                        order.append(repository)
+
+    candidates = queue.get("candidates", [])
+    if isinstance(candidates, list):
+        ranked = [
+            item for item in candidates
+            if isinstance(item, dict) and str(item.get("repository", "")).strip()
+        ]
+        ranked.sort(key=lambda item: int(item.get("queue_rank", 10**9)))
+        for item in ranked:
+            repository = str(item["repository"]).strip()
+            if repository not in order:
+                order.append(repository)
+
+    for repository in order:
+        if repository in processed:
+            continue
+        return True, [f"external_method_pending={repository}"]
+
+    return False, ["external_method_queue_exhausted"]
+
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -572,6 +631,16 @@ def choose(root: Path) -> dict[str, Any]:
             80,
             "FRONTIER_WORK_AVAILABLE",
             [f"eligible_candidates={frontier_candidates}"],
+        ))
+
+    external_method_pending, external_method_signals = _external_method_research_candidate(root)
+    if external_method_pending:
+        routes.append(_decision(
+            "btc_external_method_research.yml",
+            "external_method_queue_has_unprocessed_research_candidate",
+            55,
+            "EXTERNAL_METHOD_RESEARCH_PENDING",
+            external_method_signals,
         ))
 
     routes.append(_decision(

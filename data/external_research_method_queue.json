@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "generated_at_utc": "2026-10-08T04:40:00Z",
-  "based_on_main_head": "ed4cac757e098f753c8b9eb5e42d1eaac66f4c75",
+  "based_on_main_head": "21aa2749da8c5a9e4538baaf7069090c85833c0f",
   "status": "RESEARCH_ONLY",
   "method_review_rule": "Mechanism abstraction is not adoption. Local implementation requires PIT→OOS/WFO→robustness→frozen holdout→shadow before promotion.",
   "candidates": [
@@ -244,6 +244,186 @@
       "external_performance_transfer_allowed": false,
       "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
       "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 21,
+      "repository": "sktime/sktime",
+      "mechanism": "TIME_SERIES_METHOD_GATE",
+      "method_abstract": "General time-series ML framework; evaluate only compatible PIT-safe components.",
+      "btc_relevance": "HIGH",
+      "next_gate": "TIME_SERIES_METHOD_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 22,
+      "repository": "unit8co/darts",
+      "mechanism": "TIME_SERIES_METHOD_GATE",
+      "method_abstract": "Forecasting framework with multiple statistical and neural models; use only as candidate implementations.",
+      "btc_relevance": "HIGH",
+      "next_gate": "TIME_SERIES_METHOD_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 23,
+      "repository": "Nixtla/statsforecast",
+      "mechanism": "TIME_SERIES_METHOD_GATE",
+      "method_abstract": "Fast statistical forecasting family; compare against BTC baselines under chronological OOS.",
+      "btc_relevance": "HIGH",
+      "next_gate": "TIME_SERIES_METHOD_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 24,
+      "repository": "Nixtla/neuralforecast",
+      "mechanism": "MODEL_OOS_GATE",
+      "method_abstract": "Neural forecasting family; candidate only after PIT-compatible BTC adaptation.",
+      "btc_relevance": "HIGH",
+      "next_gate": "MODEL_OOS_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 25,
+      "repository": "statsmodels/statsmodels",
+      "mechanism": "METHOD_REPRODUCTION_GATE",
+      "method_abstract": "Classical statistical models useful for benchmark and uncertainty baselines.",
+      "btc_relevance": "HIGH",
+      "next_gate": "METHOD_REPRODUCTION_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 26,
+      "repository": "online-ml/river",
+      "mechanism": "ONLINE_ADAPTATION_GATE",
+      "method_abstract": "Streaming/online learning mechanisms; must pass concept-drift and leakage controls.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "ONLINE_ADAPTATION_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 27,
+      "repository": "deepcharles/ruptures",
+      "mechanism": "REGIME_CHANGE_GATE",
+      "method_abstract": "Change-point detection mechanisms for regime and distribution-shift research.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "REGIME_CHANGE_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 28,
+      "repository": "optuna/optuna",
+      "mechanism": "SELECTION_CONTROL_GATE",
+      "method_abstract": "Hyperparameter search mechanism; only prequential or nested selection is admissible.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "SELECTION_CONTROL_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 29,
+      "repository": "mlflow/mlflow",
+      "mechanism": "RESEARCH_TRACKING_GATE",
+      "method_abstract": "Experiment lifecycle tracking mechanism; does not replace BTC evidence contracts.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "RESEARCH_TRACKING_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 30,
+      "repository": "feast-dev/feast",
+      "mechanism": "FEATURE_LINEAGE_GATE",
+      "method_abstract": "Feature-store lineage mechanism; evaluate only with explicit PIT availability semantics.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "FEATURE_LINEAGE_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 31,
+      "repository": "evidentlyai/evidently",
+      "mechanism": "MONITORING_GATE",
+      "method_abstract": "Drift/data/model monitoring mechanisms for research and monitoring coverage.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "MONITORING_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 32,
+      "repository": "iterative/dvc",
+      "mechanism": "DATA_VERSIONING_GATE",
+      "method_abstract": "Dataset/version lineage mechanism; preserve immutable research evidence.",
+      "btc_relevance": "MEDIUM",
+      "next_gate": "DATA_VERSIONING_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 33,
+      "repository": "pymc-devs/pymc",
+      "mechanism": "PROBABILISTIC_MODEL_GATE",
+      "method_abstract": "Bayesian uncertainty and calibration research candidate.",
+      "btc_relevance": "HIGH",
+      "next_gate": "PROBABILISTIC_MODEL_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 34,
+      "repository": "pyro-ppl/pyro",
+      "mechanism": "PROBABILISTIC_MODEL_GATE",
+      "method_abstract": "Probabilistic programming candidate for uncertainty and latent-state research.",
+      "btc_relevance": "HIGH",
+      "next_gate": "PROBABILISTIC_MODEL_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+    },
+    {
+      "queue_rank": 35,
+      "repository": "pytorch-forecasting/pytorch_forecasting",
+      "mechanism": "MODEL_OOS_GATE",
+      "method_abstract": "Neural time-series model family; research-only until PIT/OOS compatibility is demonstrated.",
+      "btc_relevance": "HIGH",
+      "next_gate": "MODEL_OOS_GATE",
+      "production_eligible": false,
+      "external_performance_transfer_allowed": false,
+      "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
     }
   ],
   "next_research_order": [
@@ -392,6 +572,104 @@
       "ray-project/ray",
       "vllm-project/vllm",
       "unslothai/unsloth"
+    ],
+    "predictive_method_second_wave": [
+      {
+        "repository": "sktime/sktime",
+        "gate": "TIME_SERIES_METHOD_GATE",
+        "rationale": "General time-series ML framework; evaluate only compatible PIT-safe components.",
+        "production": false
+      },
+      {
+        "repository": "unit8co/darts",
+        "gate": "TIME_SERIES_METHOD_GATE",
+        "rationale": "Forecasting framework with multiple statistical and neural models; use only as candidate implementations.",
+        "production": false
+      },
+      {
+        "repository": "Nixtla/statsforecast",
+        "gate": "TIME_SERIES_METHOD_GATE",
+        "rationale": "Fast statistical forecasting family; compare against BTC baselines under chronological OOS.",
+        "production": false
+      },
+      {
+        "repository": "Nixtla/neuralforecast",
+        "gate": "MODEL_OOS_GATE",
+        "rationale": "Neural forecasting family; candidate only after PIT-compatible BTC adaptation.",
+        "production": false
+      },
+      {
+        "repository": "statsmodels/statsmodels",
+        "gate": "METHOD_REPRODUCTION_GATE",
+        "rationale": "Classical statistical models useful for benchmark and uncertainty baselines.",
+        "production": false
+      },
+      {
+        "repository": "online-ml/river",
+        "gate": "ONLINE_ADAPTATION_GATE",
+        "rationale": "Streaming/online learning mechanisms; must pass concept-drift and leakage controls.",
+        "production": false
+      },
+      {
+        "repository": "deepcharles/ruptures",
+        "gate": "REGIME_CHANGE_GATE",
+        "rationale": "Change-point detection mechanisms for regime and distribution-shift research.",
+        "production": false
+      },
+      {
+        "repository": "optuna/optuna",
+        "gate": "SELECTION_CONTROL_GATE",
+        "rationale": "Hyperparameter search mechanism; only prequential or nested selection is admissible.",
+        "production": false
+      },
+      {
+        "repository": "mlflow/mlflow",
+        "gate": "RESEARCH_TRACKING_GATE",
+        "rationale": "Experiment lifecycle tracking mechanism; does not replace BTC evidence contracts.",
+        "production": false
+      },
+      {
+        "repository": "feast-dev/feast",
+        "gate": "FEATURE_LINEAGE_GATE",
+        "rationale": "Feature-store lineage mechanism; evaluate only with explicit PIT availability semantics.",
+        "production": false
+      },
+      {
+        "repository": "evidentlyai/evidently",
+        "gate": "MONITORING_GATE",
+        "rationale": "Drift/data/model monitoring mechanisms for research and monitoring coverage.",
+        "production": false
+      },
+      {
+        "repository": "iterative/dvc",
+        "gate": "DATA_VERSIONING_GATE",
+        "rationale": "Dataset/version lineage mechanism; preserve immutable research evidence.",
+        "production": false
+      },
+      {
+        "repository": "pymc-devs/pymc",
+        "gate": "PROBABILISTIC_MODEL_GATE",
+        "rationale": "Bayesian uncertainty and calibration research candidate.",
+        "production": false
+      },
+      {
+        "repository": "pyro-ppl/pyro",
+        "gate": "PROBABILISTIC_MODEL_GATE",
+        "rationale": "Probabilistic programming candidate for uncertainty and latent-state research.",
+        "production": false
+      },
+      {
+        "repository": "pytorch-forecasting/pytorch_forecasting",
+        "gate": "MODEL_OOS_GATE",
+        "rationale": "Neural time-series model family; research-only until PIT/OOS compatibility is demonstrated.",
+        "production": false
+      }
     ]
-  }
+  },
+  "seed_scope": {
+    "source": "user_supplied_2026-10-08_prediction_system_top1000",
+    "treatment": "DISCOVERY_ONLY_UNVERIFIED",
+    "rule": "Only locally source-verified candidates can enter a later research gate; external popularity or benchmark claims are not BTC evidence."
+  },
+  "candidate_count": 35
 }
