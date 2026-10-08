@@ -147,6 +147,39 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
     return True, [f"promotion_gate:{token}_blocked" for token in blockers]
 
 
+def _robustness_maturation_status(root: Path) -> tuple[bool, list[str]]:
+    \"\"\"Detect a live Robustness cohort that is still below its evidence minimum.\"\"\"
+    obj = _load(root / "data" / "historical_research" / "robustness_oos_report.json")
+    if obj is None:
+        return False, []
+    if obj.get("research_only") is not True:
+        return False, []
+    if obj.get("policy") != "diagnostic_only_no_model_input_no_promotion_effect":
+        return False, []
+
+    horizons = obj.get("horizons")
+    if not isinstance(horizons, dict) or set(horizons) != set(HORIZONS):
+        return False, []
+
+    signals: list[str] = []
+    for horizon in HORIZONS:
+        item = horizons.get(horizon)
+        if not isinstance(item, dict):
+            return False, []
+        try:
+            n = int(item.get("n", 0))
+            minimum = int(item.get("minimum", 1000))
+        except (TypeError, ValueError):
+            return False, []
+        if item.get("status") != "insufficient_data" or n >= minimum:
+            return False, []
+        if item.get("data_source") != "live_binance_primary":
+            return False, []
+        signals.append(f"{horizon}:robustness_live_n={n}<{minimum}")
+
+    return True, signals
+
+
 def _performance_regression_signals(root: Path) -> list[str]:
     """Return research-only triggers for material post-outcome performance regression."""
     obj = _load(root / "data" / "historical_research" / "performance_change.json")
@@ -423,6 +456,7 @@ def choose(root: Path) -> dict[str, Any]:
 
     calibration_signals = _calibration_waiting(root)
     promotion_blocked, promotion_signals = _promotion_robustness_blocked(root)
+    robustness_maturing, robustness_maturation_signals = _robustness_maturation_status(root)
     frontier_candidates = _frontier_candidates(root)
     overreach_signals = _high_confidence_overreach(root)
     uncertainty_signals = _uncertainty_drift_signals(root)
@@ -440,7 +474,24 @@ def choose(root: Path) -> dict[str, Any]:
             calibration_signals,
         ))
 
-    if promotion_blocked:
+    if promotion_blocked and robustness_maturing:
+        if frontier_candidates > 0:
+            routes.append(_decision(
+                "btc_autonomous_data_frontier.yml",
+                "robustness_live_cohort_is_maturing; use spare research capacity on eligible frontier data",
+                89,
+                "ROBUSTNESS_MATURATION",
+                robustness_maturation_signals + [f"eligible_frontier_candidates={frontier_candidates}"],
+            ))
+        else:
+            routes.append(_decision(
+                "btc_ultimate_final_v13_e2e.yml",
+                "robustness_live_cohort_is_maturing; avoid redundant challenger refits until independent live evidence accumulates",
+                50,
+                "ROBUSTNESS_MATURATION_WAIT",
+                robustness_maturation_signals,
+            ))
+    elif promotion_blocked:
         routes.append(_decision(
             "btc_rich_production_challenger.yml",
             "promotion_gate_waits_on_robustness_or_holdout_evidence",
