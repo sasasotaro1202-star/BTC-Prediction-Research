@@ -58,13 +58,22 @@ jobs:
             exit 0
           fi
 
-          git fetch --no-tags --prune --depth=1 origin main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "${remote_sha}"; then
-            echo "STALE_MAIN_NON_ANCESTOR expected_ancestor=${GITHUB_SHA} actual_main=${remote_sha}" >&2
-            exit 1
-          fi
+          compare_json="$(gh api "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}")"
+          compare_status="$(jq -r ".status // \"unknown\"" <<<"${compare_json}")"
+          case "${compare_status}" in
+            identical)
+              echo "CURRENT_MAIN_RUN compare_status=identical"
+              exit 0
+              ;;
+            ahead)
+              ;;
+            *)
+              echo "STALE_MAIN_RUN incompatible_compare_status=${compare_status}" >&2
+              exit 1
+              ;;
+          esac
 
-          changed_files="$(git diff --name-only "${GITHUB_SHA}" "${remote_sha}")"
+          changed_files="$(jq -r ".files[]?.filename // empty" <<<"${compare_json}")"
           if [ -z "${changed_files}" ]; then
             echo "CURRENT_MAIN_RUN no_changes_between_snapshot_and_main"
             exit 0
