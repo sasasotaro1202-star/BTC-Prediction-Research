@@ -616,6 +616,29 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
             self.assertIn("pit_audit_stale:", route["signals"][0])
 
+    def test_timezone_less_pit_generation_timestamp_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "pit_oos_audit.json",
+                {
+                    "ok": True,
+                    "pit_verified": True,
+                    "generated_at_utc": "2026-10-08T05:34:26",
+                    "primary_horizon_gate": {
+                        "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                        "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["priority"], 101)
+            self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
+            self.assertIn("pit_audit_generated_at_timezone_missing", route["signals"])
+
     def test_missing_pit_generation_timestamp_fails_closed_to_readiness(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
