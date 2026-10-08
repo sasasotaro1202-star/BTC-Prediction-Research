@@ -271,7 +271,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
-            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["priority"], 94)
             self.assertEqual(route["evidence_state"], "PERFORMANCE_REGRESSION")
             self.assertIn(
                 "10m:experience_recent100_accuracy:delta=-0.0800",
@@ -303,7 +303,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
-            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["priority"], 94)
             self.assertEqual(route["evidence_state"], "PERFORMANCE_REGRESSION")
             self.assertIn(
                 "10m:experience_recent100_accuracy_floor=0.2700<=0.35",
@@ -337,7 +337,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
-            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["priority"], 94)
             self.assertEqual(
                 [x["workflow"] for x in route["candidates"][:3]],
                 [
@@ -376,6 +376,26 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
             self.assertIn("5m:experience_recent100_accuracy_floor=0.3500<=0.35", route["signals"])
             self.assertIn("10m:experience_recent100_accuracy_floor=0.3400<=0.35", route["signals"])
+
+    def test_performance_regression_prioritizes_recency_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": True,
+                    "comparison_available": True,
+                    "changes": [{"horizon": "5m", "metric": "experience_recent100_accuracy", "delta": -0.08}],
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["candidates"][0]["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["candidates"][0]["priority"], 94)
+            self.assertEqual(route["candidates"][1]["workflow"], "btc_recency_challenger.yml")
+            self.assertEqual(route["candidates"][1]["priority"], 93)
+            self.assertEqual(route["candidates"][-1]["workflow"], "btc_ultimate_final_v13_e2e.yml")
 
     def test_small_performance_change_does_not_route(self):
         with tempfile.TemporaryDirectory() as td:
