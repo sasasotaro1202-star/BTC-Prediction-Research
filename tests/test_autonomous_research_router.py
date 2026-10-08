@@ -857,3 +857,27 @@ class AutonomousResearchRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_recency_recovery_uses_bounded_recovery_threshold(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": False,
+                    "comparison_available": True,
+                    "changes": [],
+                    "scores": {
+                        "5m": {"experience_recent100_n": 100, "experience_recent100_accuracy": 0.35, "experience_total_accuracy": 0.426},
+                        "10m": {"experience_recent100_n": 100, "experience_recent100_accuracy": 0.33, "experience_total_accuracy": 0.404},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            recency = next(x for x in route["candidates"] if x["workflow"] == "btc_recency_challenger.yml")
+            self.assertEqual(recency["threshold_seconds"], 21600)
+            self.assertEqual(recency["priority"], 93)
+
