@@ -124,6 +124,13 @@ class ExternalMethodResearchTests(unittest.TestCase):
 
         queue = self._queue()
         queue["priority_gate"] = {}
+        runtime = {
+            "results": {
+                "agent/first": {
+                    "status": "LOCAL_GATE_READY",
+                }
+            }
+        }
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "data" / "external_research_method_queue.json"
