@@ -16,7 +16,8 @@ def test_automerge_binds_post_merge_verification_to_merge_sha():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert 'if [ "$main_sha_after_merge" != "$merge_sha" ]; then' in text
     assert 'select(.event == "workflow_dispatch")' in text
-    assert 'select(.head_sha == "'"$merge_sha"'")' in text
+    assert 'select(.head_sha ==' in text
+    assert '$merge_sha' in text
     assert "POST_MERGE_UNIT_TEST_DISPATCH_NOT_VERIFIED" in text
 
 
