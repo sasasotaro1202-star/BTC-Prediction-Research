@@ -1601,7 +1601,12 @@ ema_gap_10m
 This section is a mutable current-state pointer. It must be refreshed from the current GitHub artifacts before making any performance or Production claim. Immutable historical prediction/outcome/OOS/holdout/failure records are never rewritten.
 
 Current GitHub main HEAD:
+b52fc248a8c28f60a51ccf42aea365f8755d1110
+
+Latest fully validated execution/evidence basis before this documentation-only commit:
 fc7cfdde11eb980a5f7ff041ace76e979b42b016
+
+This commit changes only this Project Source document; it does not modify Production, prediction state, OOS data, calibration artifacts, robustness evidence, or frozen Holdout.
 
 Current strict PIT audit:
 checked_predictions = 813
@@ -1651,14 +1656,16 @@ Current external-method research state:
 Kronos is the highest-priority external predictive-method candidate, followed by TimesFM 2.5 and Qlib. All are research-only and external performance is never transferred.
 The previously executed external-method run on commit b26eeecc4ed1b5ff14721efc902452da8881fc6a failed closed with HTTP 401 during GitHub source verification because the workflow token expression had been incorrectly escaped. The current main fix is fc7cfdde11eb980a5f7ff041ace76e979b42b016. No post-fix external-method performance evidence is claimed here.
 
-Current Actions at this HEAD:
+Latest verified Actions on the preceding execution/evidence basis fc7cfdde11eb980a5f7ff041ace76e979b42b016:
 - BTC Unit Tests: SUCCESS
 - BTC Workflow Contract Tests: SUCCESS
 - BTC Ops Preflight: SUCCESS
 - BTC Continuous Supervisor: SUCCESS
 - BTC Live Cycle: SUCCESS
-- BTC 24H Autonomous Research: IN_PROGRESS
+- BTC 24H Autonomous Research: IN_PROGRESS at the latest status check
 - BTC 24H Research Watchdog: SUCCESS
+
+A documentation-only HEAD advance does not retroactively change those run identities.
 
 Workflow completion is not research success and is not Promotion evidence. The current Production Gate remains authoritative.
 
