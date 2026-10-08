@@ -33,3 +33,17 @@ def test_frequency_baseline_rejects_empty_reference():
         assert str(exc) == "baseline_reference_must_not_be_empty"
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_recency_report_has_explicit_promotion_firewall():
+    s=Path("src/recency_challenger.py").read_text(encoding="utf-8")
+    assert '"promotion_evidence_eligible": False' in s
+    assert '"promotion_allowed": False' in s
+    assert '"pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY"' in s
+    assert '"analysis_git_sha": os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED"' in s
+
+
+def test_recency_workflow_has_pre_expensive_main_lineage_guard():
+    s=Path(".github/workflows/btc_recency_challenger.yml").read_text(encoding="utf-8")
+    assert "Validate main lineage before expensive research" in s
+    assert 'UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}' in s
