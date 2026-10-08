@@ -87,6 +87,13 @@ class ExternalMethodResearchTests(unittest.TestCase):
         queue = self._queue()
         queue["candidates"][1]["repository"] = "missing/repo"
         queue["priority_gate"] = {}
+        runtime = {
+            "results": {
+                "agent/first": {
+                    "status": "LOCAL_GATE_READY",
+                }
+            }
+        }
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "data" / "external_research_method_queue.json"
@@ -122,6 +129,10 @@ class ExternalMethodResearchTests(unittest.TestCase):
             path = root / "data" / "external_research_method_queue.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(queue), encoding="utf-8")
+            (root / "data" / "external_research_runtime.json").write_text(
+                json.dumps(runtime),
+                encoding="utf-8",
+            )
             result = process_one(root, FailingClient(), "TEST_SHA", "4")
             self.assertEqual(result["status"], "DEFERRED")
             self.assertFalse(result["production_changed"])
@@ -138,6 +149,12 @@ class ExternalMethodResearchTests(unittest.TestCase):
 
     def test_deferred_candidate_does_not_starve_other_candidates(self):
         queue = self._queue()
+        queue["priority_gate"] = {
+            "immediate_local_reproduction": [
+                {"repository": "model/second"},
+                {"repository": "model/third"},
+            ]
+        }
         queue["candidates"].append(
             {"queue_rank": 3, "repository": "model/third", "next_gate": "LOCAL_ONLY"}
         )
