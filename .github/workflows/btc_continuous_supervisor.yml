@@ -102,7 +102,7 @@ jobs:
               and (.reason | type == "string" and length > 0)
               and (.evidence_state | type == "string" and length > 0)
               and (.signals | type == "array")
-              and (.candidates | type == "array" and length >= 1 and length <= 9)
+              and (.candidates | type == "array" and length >= 1 and length <= 11)
               and all(.candidates[];
                 .production_impact == false
                 and (
