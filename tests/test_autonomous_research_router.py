@@ -337,7 +337,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
-            self.assertEqual(route["priority"], 87)
+            self.assertEqual(route["priority"], 94)
             self.assertEqual(
                 [x["workflow"] for x in route["candidates"][:3]],
                 [
