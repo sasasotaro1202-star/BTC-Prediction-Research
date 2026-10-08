@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fail closed if scheduled run is stale
+      - name: Validate scheduled research snapshot against current main
         if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,10 +53,37 @@ jobs:
         run: |
           set -euo pipefail
           remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          if [ "${remote_sha}" = "${GITHUB_SHA}" ]; then
+            echo "CURRENT_MAIN_RUN sha=${GITHUB_SHA}"
+            exit 0
+          fi
+
+          git fetch --no-tags --prune --depth=1 origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "${remote_sha}"; then
+            echo "STALE_MAIN_NON_ANCESTOR expected_ancestor=${GITHUB_SHA} actual_main=${remote_sha}" >&2
             exit 1
-          }
+          fi
+
+          changed_files="$(git diff --name-only "${GITHUB_SHA}" "${remote_sha}")"
+          if [ -z "${changed_files}" ]; then
+            echo "CURRENT_MAIN_RUN no_changes_between_snapshot_and_main"
+            exit 0
+          fi
+
+          while IFS= read -r path; do
+            [ -z "${path}" ] && continue
+            case "${path}" in
+              data/*|models/*.json|models/*.joblib)
+                ;;
+              *)
+                echo "STALE_MAIN_RUN incompatible_change=${path}" >&2
+                exit 1
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          echo "STATE_ONLY_MAIN_DRIFT allowed_between_snapshot_and_main:"
+          printf '%s\n' "${changed_files}"
 
       - uses: actions/setup-python@v7
         with:
