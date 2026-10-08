@@ -73,6 +73,11 @@ jobs:
               ;;
           esac
 
+          changed_file_count="$(jq '.files | length' <<<"${compare_json}")"
+          if [ "${changed_file_count}" -ge 300 ]; then
+            echo "STALE_MAIN_RUN compare_file_limit_reached count=${changed_file_count}" >&2
+            exit 1
+          fi
           changed_files="$(jq -r ".files[]?.filename // empty" <<<"${compare_json}")"
           if [ -z "${changed_files}" ]; then
             echo "CURRENT_MAIN_RUN no_changes_between_snapshot_and_main"
