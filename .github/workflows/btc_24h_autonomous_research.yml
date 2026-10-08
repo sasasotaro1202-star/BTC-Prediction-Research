@@ -64,18 +64,38 @@ jobs:
           echo "MAIN_LINEAGE_OK run=${GITHUB_SHA} main=${remote_sha} state_only_drift=${state_only}"
       - name: Install
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
-      - name: Verify workflow SHA is current main before expensive research
+      - name: Verify workflow lineage is safe before expensive research
         shell: bash
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          ci_git_fetch origin main --depth=1
+          if ! git rev-parse origin/main >/dev/null 2>&1; then
+            ci_git_fetch origin main --depth=1
+          fi
           main_sha="$(git rev-parse origin/main)"
-          if [ "$GITHUB_SHA" != "$main_sha" ]; then
-            echo "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha"
+          if [ "$GITHUB_SHA" = "$main_sha" ]; then
+            echo "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA"
+            exit 0
+          fi
+          compare="$(ci_gh_api_get "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${main_sha}")"
+          changed_files="$(jq -r ".files[]?.filename" <<<"$compare")"
+          state_only=true
+          while IFS= read -r changed; do
+            [ -n "$changed" ] || continue
+            case "$changed" in
+              data/*|models/*.json|models/*.joblib) ;;
+              *)
+                state_only=false
+                echo "UNSAFE_MAIN_DRIFT_FILE=$changed" >&2
+                ;;
+            esac
+          done <<< "$changed_files"
+          RUN_SHA="${GITHUB_SHA}" POST_MAIN_SHA="$main_sha" CHANGED_FILES="$changed_files" STATE_ONLY="$state_only" python -c 'import json, os; from pathlib import Path; files=[x for x in os.environ.get("CHANGED_FILES","").splitlines() if x]; status="SAFE_STATE_DRIFT" if os.environ["STATE_ONLY"]=="true" else "UNSAFE_MAIN_DRIFT"; Path("data/historical_research/stage1_main_guard.json").write_text(json.dumps({"schema_version":1,"run_sha":os.environ["RUN_SHA"],"current_main_sha":os.environ["POST_MAIN_SHA"],"status":status,"changed_files":files},sort_keys=True)+chr(10),encoding="utf-8")'
+          if [ "$state_only" != true ]; then
+            echo "UNSAFE_MAIN_RUN expected=${main_sha} actual=${GITHUB_SHA}" >&2
             exit 1
           fi
-          echo "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA"
+          echo "MAIN_LINEAGE_OK run=${GITHUB_SHA} main=${main_sha} state_only_drift=true"
       - name: Restore prediction state
         shell: bash
         run: |
