@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
-  "generated_at_utc": "2026-10-08T04:31:00Z",
-  "based_on_main_head": "c8670b131004d65adb612f6fd505d84a873f0fc6",
+  "schema_version": 2,
+  "generated_at_utc": "2026-10-08T04:40:00Z",
+  "based_on_main_head": "ed4cac757e098f753c8b9eb5e42d1eaac66f4c75",
   "status": "RESEARCH_ONLY",
   "method_review_rule": "Mechanism abstraction is not adoption. Local implementation requires PIT→OOS/WFO→robustness→frozen holdout→shadow before promotion.",
   "candidates": [
@@ -248,11 +248,150 @@
   ],
   "next_research_order": [
     "Kronos — direct financial-model challenger",
-    "TimesFM — generic time-series challenger",
-    "OpenSpec — controlled research-change specification",
-    "ECC — research workflow/security/memory mechanisms",
-    "mattpocock/skills — reusable research skills",
-    "Agent-Reach / Firecrawl — PIT-safe external information acquisition",
-    "Graphify / Hindsight / claude-mem — research memory/knowledge lineage mechanisms"
-  ]
+    "TimesFM 2.5 — generic time-series challenger",
+    "Qlib — PIT/quant methodology reproduction",
+    "OpenSpec — research change contract",
+    "ECC — security/memory/verification mechanisms",
+    "autoresearch — bounded autonomous experiment mechanism",
+    "mattpocock/skills — reusable research skill mechanisms",
+    "Agent-Reach — PIT-safe external intelligence acquisition",
+    "Firecrawl — self-hosted source materialization",
+    "Graphify/Hindsight/claude-mem — research memory/lineage",
+    "MiroFish/browser-use — frontier-only after core lanes"
+  ],
+  "deep_review": {
+    "completed_for": [
+      "mattpocock/skills",
+      "obra/superpowers",
+      "openclaw/openclaw",
+      "deepseek-ai/deepseek-harness",
+      "NousResearch/hermes-agent",
+      "affaan-m/ECC",
+      "Panniantong/Agent-Reach",
+      "firecrawl/firecrawl",
+      "Graphify-Labs/graphify",
+      "theDotmack/claude-mem",
+      "karpathy/autoresearch",
+      "paperclipai/paperclip",
+      "Fission-AI/OpenSpec",
+      "browser-use/browser-use",
+      "microsoft/qlib",
+      "google-research/timesfm",
+      "shiyu-coder/Kronos",
+      "TauricResearch/TradingAgents",
+      "666ghj/MiroFish",
+      "freqtrade/freqtrade"
+    ],
+    "source_rule": "README/license/repository metadata only; no external performance claim is accepted as BTC evidence."
+  },
+  "priority_gate": {
+    "immediate_local_reproduction": [
+      {
+        "repository": "shiyu-coder/Kronos",
+        "gate": "MODEL_OOS_GATE",
+        "rationale": "Direct financial K-line foundation model with a 4.1M small model available; strong BTC-domain fit.",
+        "constraints": [
+          "strict PIT BTC OHLCV snapshot",
+          "5m/10m latency",
+          "LogLoss/Brier",
+          "regime/OOD robustness",
+          "compute budget"
+        ],
+        "production": false
+      },
+      {
+        "repository": "google-research/timesfm",
+        "gate": "MODEL_OOS_GATE",
+        "rationale": "Generic TS foundation model with covariate support; test version/weights line pinned to 2.5 for permissive licensing.",
+        "constraints": [
+          "5m/10m latency",
+          "direction mapping",
+          "calibration",
+          "OOD",
+          "no TimesFM 3.0 production weights"
+        ],
+        "production": false
+      },
+      {
+        "repository": "microsoft/qlib",
+        "gate": "METHOD_REPRODUCTION_GATE",
+        "rationale": "Quant research and PIT-oriented methodology; use components/mechanisms rather than replacing BTC pipeline.",
+        "constraints": [
+          "PIT compatibility",
+          "chronological OOS",
+          "dependency burden",
+          "incremental value"
+        ],
+        "production": false
+      }
+    ],
+    "research_infrastructure_next": [
+      {
+        "repository": "Fission-AI/OpenSpec",
+        "gate": "LOCAL_ONLY",
+        "rationale": "Spec-before-code artifact discipline maps cleanly to controlled research changes."
+      },
+      {
+        "repository": "affaan-m/ECC",
+        "gate": "LOCAL_SECURITY_REVIEW",
+        "rationale": "Security/memory/verification mechanism reference; no whole-harness import."
+      },
+      {
+        "repository": "mattpocock/skills",
+        "gate": "LOCAL_SECURITY_REVIEW",
+        "rationale": "Composable skills can encode PIT/OOS/review procedures; project already has substantial instructions, so only incremental mechanisms."
+      },
+      {
+        "repository": "karpathy/autoresearch",
+        "gate": "MECHANISM_ONLY",
+        "rationale": "Autonomous experiment keep/discard loop is highly relevant, but reference implementation is GPU-oriented and license metadata is not yet normalized."
+      }
+    ],
+    "external_information_next": [
+      {
+        "repository": "Panniantong/Agent-Reach",
+        "gate": "PIT_AND_COST_GATE",
+        "rationale": "Research information acquisition with free local paths, but provider/cookie/proxy semantics require source contracts."
+      },
+      {
+        "repository": "firecrawl/firecrawl",
+        "gate": "PIT_AND_COST_SECURITY_GATE",
+        "rationale": "Self-hosted web extraction candidate; AGPL and hosted-service cost risk require explicit boundary."
+      }
+    ],
+    "frontier_only": [
+      {
+        "repository": "666ghj/MiroFish",
+        "gate": "SCENARIO_RESEARCH_ONLY",
+        "rationale": "Multi-agent simulation/GraphRAG mechanism; cross-domain transfer and complexity are high."
+      },
+      {
+        "repository": "browser-use/browser-use",
+        "gate": "PIT_SECURITY_GATE",
+        "rationale": "Dynamic web retrieval fallback only; browser automation is too fragile for primary 5m/10m data path."
+      },
+      {
+        "repository": "Graphify-Labs/graphify",
+        "gate": "LOCAL_ONLY",
+        "rationale": "Knowledge graph/lineage mechanism; README indicates Claude Code dependency, so no automatic runtime dependency."
+      }
+    ],
+    "explicit_holds": [
+      "FlowiseAI/Flowise — archived repository",
+      "headroom-hq/headroom — seed path unresolved; canonical project appears to be headroomlabs-ai/headroom",
+      "Imbad0202/academic-research-skills — CC-BY-NC; not accepted as assumed production dependency",
+      "anthropics/skills — not treated as ordinary self-host OSS for automatic dependency purposes",
+      "TimesFM 3.0 pretrained weights — non-commercial/non-production license; excluded from production path"
+    ],
+    "redundant_or_low_incremental_value": [
+      "scikit-learn/scikit-learn — already a direct BTC dependency",
+      "pytorch/pytorch — generic foundational dependency, no immediate differentiated BTC mechanism",
+      "HuggingFace/transformers — infrastructure only unless a specific local candidate requires it",
+      "langchain-ai/langchain",
+      "langchain-ai/langgraph",
+      "ray-project/ray",
+      "vllm-project/vllm",
+      "unslothai/unsloth"
+    ]
+  }
 }
