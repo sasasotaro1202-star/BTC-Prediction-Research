@@ -27,3 +27,9 @@ def test_watchdog_recovers_recency_challenger():
     text = Path('.github/workflows/btc_watchdog.yml').read_text(encoding='utf-8')
     assert 'btc_recency_challenger.yml' in text
     assert 'recover_if_stale btc_recency_challenger.yml 86400 14400 900' in text
+
+
+def test_watchdog_recovers_pattern_matrix():
+    text = Path('.github/workflows/btc_watchdog.yml').read_text(encoding='utf-8')
+    assert 'btc_pattern_matrix_research.yml' in text
+    assert 'recover_if_stale btc_pattern_matrix_research.yml 86400 7200 300' in text
