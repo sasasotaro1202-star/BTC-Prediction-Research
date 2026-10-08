@@ -61,3 +61,12 @@ def test_watchdog_runs_immediately_when_its_recovery_workflow_changes():
     text = _workflow("btc_watchdog.yml")
     assert "  push:" in text
     assert "      - '.github/workflows/btc_watchdog.yml'" in text
+def test_experience_policy_allows_state_only_main_drift_but_rejects_code_drift():
+    text = _workflow("btc_experience_policy_oos.yml")
+    assert "Validate scheduled research snapshot against current main" in text
+    assert 'git merge-base --is-ancestor "${GITHUB_SHA}" "${remote_sha}"' in text
+    assert 'git diff --name-only "${GITHUB_SHA}" "${remote_sha}"' in text
+    assert "data/*|models/*.json|models/*.joblib)" in text
+    assert 'STALE_MAIN_RUN incompatible_change=' in text
+    assert "STATE_ONLY_MAIN_DRIFT allowed_between_snapshot_and_main:" in text
+    assert "git add" not in text
