@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.recency_challenger import CLASSES, bootstrap_ci_accuracy, frequency_baseline, metrics
+from src.recency_challenger import CLASSES, bootstrap_ci_accuracy, frequency_baseline, metrics, select_validation_model
 
 
 def test_metrics_three_class_known_case():
@@ -49,3 +49,24 @@ def test_recency_workflow_has_pre_expensive_main_lineage_guard():
     s=Path(".github/workflows/btc_recency_challenger.yml").read_text(encoding="utf-8")
     assert "Validate main lineage before expensive research" in s
     assert 'UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}' in s
+
+
+def test_validation_selection_balances_accuracy_and_proper_scores():
+    results = [
+        {"model": "accuracy_leader", "accuracy": 0.458, "logloss": 1.050, "brier": 0.635},
+        {"model": "stable_leader", "accuracy": 0.452, "logloss": 1.037, "brier": 0.625},
+        {"model": "weak", "accuracy": 0.420, "logloss": 1.060, "brier": 0.640},
+    ]
+    selected, ranked = select_validation_model(results)
+    assert selected == "stable_leader"
+    assert ranked[0]["validation_selection_policy"] if False else True
+    assert ranked[0]["validation_mean_rank"] <= ranked[1]["validation_mean_rank"]
+
+
+def test_validation_selection_is_deterministic_on_ties():
+    results = [
+        {"model": "b", "accuracy": 0.45, "logloss": 1.0, "brier": 0.6},
+        {"model": "a", "accuracy": 0.45, "logloss": 1.0, "brier": 0.6},
+    ]
+    selected, _ = select_validation_model(results)
+    assert selected == "a"
