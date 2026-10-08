@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fail closed if scheduled run is stale
+      - name: Validate scheduled research snapshot against current main
         if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,10 +53,51 @@ jobs:
         run: |
           set -euo pipefail
           remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
-          test "${remote_sha}" = "${GITHUB_SHA}" || {
-            echo "STALE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+          if [ "${remote_sha}" = "${GITHUB_SHA}" ]; then
+            echo "CURRENT_MAIN_RUN sha=${GITHUB_SHA}"
+            exit 0
+          fi
+
+          compare_json="$(gh api "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}")"
+          compare_status="$(jq -r ".status // \"unknown\"" <<<"${compare_json}")"
+          case "${compare_status}" in
+            identical)
+              echo "CURRENT_MAIN_RUN compare_status=identical"
+              exit 0
+              ;;
+            ahead)
+              ;;
+            *)
+              echo "STALE_MAIN_RUN incompatible_compare_status=${compare_status}" >&2
+              exit 1
+              ;;
+          esac
+
+          changed_file_count="$(jq '.files | length' <<<"${compare_json}")"
+          if [ "${changed_file_count}" -ge 300 ]; then
+            echo "STALE_MAIN_RUN compare_file_limit_reached count=${changed_file_count}" >&2
             exit 1
-          }
+          fi
+          changed_files="$(jq -r ".files[]?.filename // empty" <<<"${compare_json}")"
+          if [ -z "${changed_files}" ]; then
+            echo "CURRENT_MAIN_RUN no_changes_between_snapshot_and_main"
+            exit 0
+          fi
+
+          while IFS= read -r path; do
+            [ -z "${path}" ] && continue
+            case "${path}" in
+              data/*|models/*.json|models/*.joblib)
+                ;;
+              *)
+                echo "STALE_MAIN_RUN incompatible_change=${path}" >&2
+                exit 1
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          echo "STATE_ONLY_MAIN_DRIFT allowed_between_snapshot_and_main:"
+          printf '%s\n' "${changed_files}"
 
       - uses: actions/setup-python@v7
         with:
@@ -96,6 +137,27 @@ jobs:
           set -euo pipefail
           python src/experience_policy_oos.py
           test -s data/historical_research/experience_policy_oos.json
+
+      - name: Validate experience OOS snapshot provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          out = Path("data/historical_research/experience_policy_oos.json")
+          db = Path("data/predictions.db")
+          obj = json.loads(out.read_text(encoding="utf-8"))
+          expected_sha = os.environ.get("GITHUB_SHA") or "LOCAL_UNPINNED"
+          if obj.get("analysis_git_sha") != expected_sha:
+              raise SystemExit(f"experience OOS analysis SHA mismatch: artifact={obj.get('analysis_git_sha')} expected={expected_sha}")
+          digest = hashlib.sha256(db.read_bytes()).hexdigest()
+          if obj.get("prediction_db_sha256") != digest:
+              raise SystemExit("experience OOS prediction DB snapshot hash mismatch")
+          print(f"Experience OOS immutable snapshot provenance: VERIFIED git_sha={expected_sha} db_sha256={digest}")
+          PY
 
       - name: Run unweighted experience logistic OOS
         shell: bash
