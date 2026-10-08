@@ -3138,3 +3138,15 @@ Broad Pattern Matrix:
 - same-SHA checkpoints remain reusable only under the existing checkpoint contract
 
 These controls are liveness/reproducibility controls only. They do not change model selection, Production, or Frozen Holdout evidence.
+
+
+105. PERFORMANCE-REGRESSION ROUTING PRIORITY
+
+When durable post-outcome evidence shows material recent performance regression, the recovery lanes are intentionally prioritized below calibration-collection hard safety work but above routine robustness/holdout refresh, tail diagnostics, generic uncertainty research, and routine frontier work.
+
+Priority ordering for this condition:
+1. btc_adaptive_calibration_replay.yml = 95 when calibration evidence is incomplete
+2. btc_experience_policy_oos.yml = 94 when material performance regression is detected
+3. btc_recency_challenger.yml = 93 on the same trigger
+
+The higher priority only changes research scheduling. It does not select, promote, replace, or modify a Production model, registry, calibration artifact, router, or Frozen Holdout.
