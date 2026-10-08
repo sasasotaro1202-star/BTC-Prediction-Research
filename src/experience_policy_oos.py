@@ -7,8 +7,10 @@ policies, but this module never mutates production state.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +41,14 @@ DEFAULT_CONFIG = {
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _config(path: Path = CONFIG) -> dict[str, Any]:
@@ -519,6 +529,8 @@ def build(
     payload: dict[str, Any] = {
         "schema_version": 1,
         "generated_at_utc": now_utc(),
+        "analysis_git_sha": os.environ.get("GITHUB_SHA") or "LOCAL_UNPINNED",
+        "prediction_db_sha256": file_sha256(db_path),
         "research_only": True,
         "production_changed": False,
         "promotion_evidence_eligible": False,
