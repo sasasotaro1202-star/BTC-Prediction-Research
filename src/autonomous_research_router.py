@@ -44,6 +44,7 @@ PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER = -0.05
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 MAX_PIT_AUDIT_AGE_SECONDS = 3600
+RECENCY_RECOVERY_THRESHOLD_SECONDS = 21600
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -62,10 +63,11 @@ def _decision(
     priority: int,
     evidence_state: str,
     signals: list[str] | None = None,
+    threshold_seconds: int | None = None,
 ) -> dict[str, Any]:
     return {
         "workflow": workflow,
-        "threshold_seconds": ALLOWED[workflow],
+        "threshold_seconds": int(ALLOWED[workflow] if threshold_seconds is None else threshold_seconds),
         "reason": reason,
         "production_impact": False,
         "priority": int(priority),
@@ -694,6 +696,7 @@ def choose(root: Path) -> dict[str, Any]:
             93,
             "RECENCY_RECOVERY_RESEARCH",
             performance_regression_signals,
+            threshold_seconds=RECENCY_RECOVERY_THRESHOLD_SECONDS,
         ))
 
     if return_tail_signals:
