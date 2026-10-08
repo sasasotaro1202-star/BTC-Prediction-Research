@@ -176,7 +176,7 @@ class ExternalMethodResearchTests(unittest.TestCase):
         }
         self.assertEqual(
             choose_next_candidate(queue, runtime)["repository"],
-            "model/third",
+            "agent/first",
         )
 
     def test_deferred_candidate_becomes_retryable_after_deadline(self):
