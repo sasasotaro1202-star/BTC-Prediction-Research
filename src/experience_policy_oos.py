@@ -7,6 +7,11 @@ policies, but this module never mutates production state.
 """
 from __future__ import annotations
 
+try:
+    from experience_pit_scope import load_strict_primary_rows
+except ModuleNotFoundError:
+    from src.experience_pit_scope import load_strict_primary_rows
+
 import json
 import math
 import sqlite3
@@ -506,21 +511,19 @@ def build(
     output_path: Path = OUT,
 ) -> dict[str, Any]:
     cfg = _config(config_path)
-    with sqlite3.connect(db_path) as con:
-        con.row_factory = sqlite3.Row
-        rows_by_horizon: dict[str, list[Any]] = {"5m": [], "10m": []}
-        for row in con.execute(
-            """SELECT * FROM experience_ledger
-               WHERE horizon IN ('5m','10m')
-               ORDER BY settled_at_utc, experience_id"""
-        ).fetchall():
-            rows_by_horizon[str(row["horizon"])].append(row)
+    rows, pit_scope = load_strict_primary_rows(db_path)
+    rows_by_horizon: dict[str, list[Any]] = {"5m": [], "10m": []}
+    for row in rows:
+        rows_by_horizon[str(row["horizon"])].append(row)
+
 
     payload: dict[str, Any] = {
         "schema_version": 1,
         "generated_at_utc": now_utc(),
         "research_only": True,
         "production_changed": False,
+        "strict_pit_scope": True,
+        "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "experience_source": "experience_ledger",
         "learning_boundary": "each test case is scored using only prior_settled_experiences (earlier settled experiences); no current or future outcome is used",

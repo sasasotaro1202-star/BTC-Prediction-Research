@@ -6,6 +6,10 @@ boundary as the main experience learner and never changes production state.
 """
 from __future__ import annotations
 
+try:
+    from experience_pit_scope import load_strict_primary_rows
+except ModuleNotFoundError:
+    from src.experience_pit_scope import load_strict_primary_rows
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -59,21 +63,19 @@ def build(
 ) -> dict[str, Any]:
     cfg = load_config(config_path)
     horizons: dict[str, list[Any]] = {"5m": [], "10m": []}
-    with sqlite3.connect(db_path) as con:
-        con.row_factory = sqlite3.Row
-        rows = con.execute(
-            """SELECT * FROM experience_ledger
-               WHERE horizon IN ('5m','10m')
-               ORDER BY settled_at_utc, experience_id"""
-        ).fetchall()
+    rows, pit_scope = load_strict_primary_rows(db_path)
+    rows_by_horizon: dict[str, list[Any]] = {"5m": [], "10m": []}
     for row in rows:
-        horizons[str(row["horizon"])].append(row)
+        rows_by_horizon[str(row["horizon"])].append(row)
+
 
     payload: dict[str, Any] = {
         "schema_version": 1,
         "generated_at_utc": now_utc(),
         "research_only": True,
         "production_changed": False,
+        "strict_pit_scope": True,
+        "pit_scope": pit_scope,
         "promotion_evidence_eligible": False,
         "candidate": "unweighted_logistic_regression",
         "learning_boundary": (
