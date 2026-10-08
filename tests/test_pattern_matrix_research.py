@@ -148,3 +148,9 @@ def test_checkpoint_reuses_only_successful_candidates():
     assert 'if screen_ok:\n            completed_screen.add(c["fingerprint"])' in s
     assert "final_ok=False" in s
     assert 'if final_ok:\n            completed_final.add(c["fingerprint"])' in s
+
+
+def test_workflow_has_pre_expensive_main_lineage_guard():
+    s=Path(".github/workflows/btc_pattern_matrix_research.yml").read_text(encoding="utf-8")
+    assert "Validate main lineage before expensive research" in s
+    assert 'UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}' in s
