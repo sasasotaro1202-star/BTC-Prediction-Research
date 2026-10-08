@@ -511,10 +511,14 @@ def _pit_audit_freshness_signals(root: Path) -> list[str]:
 
     try:
         from datetime import datetime, timezone
-        parsed = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00")).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00"))
     except (TypeError, ValueError, OverflowError):
         return ["pit_audit_generated_at_invalid"]
 
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return ["pit_audit_generated_at_timezone_missing"]
+
+    parsed = parsed.astimezone(timezone.utc)
     age = (datetime.now(timezone.utc) - parsed).total_seconds()
     if age < 0:
         return ["pit_audit_generated_at_in_future"]
