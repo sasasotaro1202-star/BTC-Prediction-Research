@@ -188,7 +188,7 @@ def test_prequential_is_deterministic():
     assert a == b
 
 
-def test_build_is_research_only_and_does_not_mutate_production(tmp_path):
+def test_build_is_research_only_and_does_not_mutate_production(tmp_path, monkeypatch):
     db = tmp_path / "predictions.db"
     out = tmp_path / "experience_policy_oos.json"
     con = sqlite3.connect(db)
@@ -245,10 +245,14 @@ def test_build_is_research_only_and_does_not_mutate_production(tmp_path):
         }),
         encoding="utf-8",
     )
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
     report = mod.build(db, config_path=config, output_path=out)
     assert report["research_only"] is True
     assert report["production_changed"] is False
     assert report["promotion_evidence_eligible"] is False
+    assert report["analysis_git_sha"] == "LOCAL_UNPINNED"
+    assert len(report["prediction_db_sha256"]) == 64
+    int(report["prediction_db_sha256"], 16)
     assert set(report["horizons"]) == {"5m", "10m"}
     obj = json.loads(out.read_text(encoding="utf-8"))
     assert obj["horizons"]["5m"]["status"] == "OK"
