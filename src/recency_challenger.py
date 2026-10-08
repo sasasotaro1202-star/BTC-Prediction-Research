@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,6 +213,14 @@ def evaluate(horizon, rows):
             "holdout_end_utc": datetime.fromtimestamp(int(t_hold[-1]) / 1000, timezone.utc).isoformat(),
         },
         "eligibility": eligible,
+        "eligibility_scope": "EXPLORATORY_HISTORICAL_ONLY",
+        "pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY",
+        "pit_policy": (
+            "Historical archive rows are aligned by event time, but source publication/"
+            "availability time is not proven; this artifact is never promotion evidence."
+        ),
+        "promotion_evidence_eligible": False,
+        "promotion_allowed": False,
         "production_changed": False,
         "research_only": True,
     }
@@ -224,9 +233,13 @@ def main():
     report = {
         "schema_version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "analysis_git_sha": os.getenv("GITHUB_SHA") or "LOCAL_UNPINNED",
         "source": source,
         "history_rows": len(rows),
         "features": 15,
+        "pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY",
+        "promotion_evidence_eligible": False,
+        "promotion_allowed": False,
         "research_only": True,
         "production_changed": False,
         "horizons": {},
