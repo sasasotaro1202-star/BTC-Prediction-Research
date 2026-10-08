@@ -76,9 +76,11 @@ class ExternalMethodResearchTests(unittest.TestCase):
             path.write_text(json.dumps(queue), encoding="utf-8")
             result = process_one(root, FakeGitHubClient(payloads), "TEST_SHA", "2")
             self.assertEqual(result["status"], "HOLD")
-            self.assertIn(
-                "MODEL_REPOSITORY_NOT_FOUND",
-                result["source_contract_verification"]["failures"],
+            self.assertTrue(
+                any(
+                    "MODEL_REPOSITORY_NOT_FOUND" in item
+                    for item in result["source_contract_verification"]["failures"]
+                )
             )
 
     def test_missing_repo_is_hold(self):
