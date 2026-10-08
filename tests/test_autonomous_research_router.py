@@ -21,6 +21,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             {
                 "ok": True,
                 "pit_verified": True,
+                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
                 "primary_horizon_gate": {
                     "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
                     "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
@@ -591,9 +592,71 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
 
+
+    def test_stale_pit_audit_fails_closed_to_readiness(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "pit_oos_audit.json",
+                {
+                    "ok": True,
+                    "pit_verified": True,
+                    "generated_at_utc": "2020-01-01T00:00:00Z",
+                    "primary_horizon_gate": {
+                        "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                        "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["priority"], 101)
+            self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
+            self.assertIn("pit_audit_stale:", route["signals"][0])
+
+    def test_timezone_less_pit_generation_timestamp_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "pit_oos_audit.json",
+                {
+                    "ok": True,
+                    "pit_verified": True,
+                    "generated_at_utc": "2026-10-08T05:34:26",
+                    "primary_horizon_gate": {
+                        "5m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                        "10m": {"ready": True, "strict_primary_settled": 400, "minimum": 300},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["priority"], 101)
+            self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
+            self.assertIn("pit_audit_generated_at_timezone_missing", route["signals"])
+
+    def test_missing_pit_generation_timestamp_fails_closed_to_readiness(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            path = root / "data" / "historical_research" / "pit_oos_audit.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload.pop("generated_at_utc", None)
+            self._write(
+                root / "data" / "historical_research",
+                "pit_oos_audit.json",
+                payload,
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_research_readiness.yml")
+            self.assertEqual(route["priority"], 101)
+            self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
+            self.assertIn("pit_audit_generated_at_missing", route["signals"])
 
     def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
         with tempfile.TemporaryDirectory() as td:
@@ -704,3 +767,6 @@ if __name__ == "__main__":
             self.assertEqual(route["workflow"], "btc_external_method_shadow.yml")
             self.assertEqual(route["priority"], 56)
             self.assertEqual(route["evidence_state"], "EXTERNAL_METHOD_SHADOW_READY")
+
+if __name__ == "__main__":
+    unittest.main()
