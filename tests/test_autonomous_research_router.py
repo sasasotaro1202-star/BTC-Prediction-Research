@@ -878,5 +878,31 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(recency["threshold_seconds"], 21600)
             self.assertEqual(recency["priority"], 93)
 
+
+    def test_six_hour_threshold_is_reserved_for_recency_recovery(self):
+        with self.assertRaises(ValueError):
+            validate(
+                {
+                    "workflow": "btc_experience_policy_oos.yml",
+                    "threshold_seconds": 21600,
+                    "production_impact": False,
+                    "priority": 94,
+                    "reason": "x",
+                    "evidence_state": "PERFORMANCE_REGRESSION",
+                    "signals": [],
+                    "candidates": [
+                        {
+                            "workflow": "btc_experience_policy_oos.yml",
+                            "threshold_seconds": 21600,
+                            "production_impact": False,
+                            "priority": 94,
+                            "reason": "x",
+                            "evidence_state": "PERFORMANCE_REGRESSION",
+                            "signals": [],
+                        }
+                    ],
+                }
+            )
+
 if __name__ == "__main__":
     unittest.main()
