@@ -2828,6 +2828,54 @@ ABSTAIN
 
 ⸻
 
+97A. BROAD PATTERN MATRIX RESEARCH
+
+Pattern explorationはProductionを変更しないresearch-only matrixとして扱う。
+
+現在のmatrixは、
+
+10 feature sets × 8 deterministic model variants × 3 training-window policies = 240 configurations
+
+を5m / 10mの各primary horizonについて独立に評価する。
+
+Feature patterns:
+all_15
+returns_momentum
+volatility_regime
+candle_shape
+volume_flow
+trend
+compact_cross
+mean_reversion
+price_structure
+flow_trend
+
+Model patterns:
+logreg_c0.03
+logreg_c0.1
+logreg_c1.0
+logreg_c3.0
+extra_trees
+rf
+hgb
+soft_ensemble
+
+Window patterns:
+expanding
+recent_1500
+recent_3000
+
+Chronological development WFOを用い、purge/embargo、prequential calibration、dependence-aware robustness、worst/newest block、effective sample sizeを評価する。
+
+Frozen Holdoutはselection/tuning/gateに使用せず、descriptive evidenceとしてのみ扱う。
+
+Long-running matrix executionは、analysis_git_sha、data fingerprint、candidate manifestをcheckpoint identityとして保持し、同一identityの成功済みscreen/finalistのみ再利用する。失敗候補を成功済みとして再利用しない。
+
+Exploratory winnerはProduction evidenceではない。Promotionには独立したPIT → OOS/WFO → Calibration → Robustness → Frozen Holdout → Shadow → Promotionが必要である。
+
+
+⸻
+
 98. ULTIMATE LAWS
 
 1. Future generalization beats historical fit.
