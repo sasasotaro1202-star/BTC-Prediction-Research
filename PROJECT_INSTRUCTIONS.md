@@ -224,3 +224,24 @@ Full unit tests run on source, test, script, and dependency changes. GitHub Acti
 
 ## Shared recovery failure-streak helper
 Supervisor and Watchdog must source `scripts/ci_failure_streak.sh` for the failure-streak calculation. The helper counts only consecutive non-success terminal generations since the most recent explicit success and stops at the first neutral/unknown terminal conclusion. The helper is independently unit-tested and syntax-checked by Ops Preflight. Duplicate inline jq recovery logic is prohibited.
+
+
+104. CURRENT RESEARCH-WATCHDOG LIVENESS ADDENDUM
+
+The research control plane must not depend on a single dispatcher for degradation recovery. The independent Watchdog therefore tracks the research-only Recency Challenger and Broad Pattern Matrix lanes in its bounded recovery inventory.
+
+Recency Challenger:
+- stale threshold: 86400 seconds
+- active grace: 14400 seconds, aligned with its 240-minute workflow timeout
+- research_only=true
+- production_changed=false
+- no Promotion authority
+
+Broad Pattern Matrix:
+- stale threshold: 86400 seconds
+- active grace: 7200 seconds, aligned with its 120-minute workflow timeout
+- before expensive computation, the workflow compares its execution SHA with current main
+- only durable state-only drift is tolerated; code/config/workflow/policy drift is FAIL-CLOSED
+- same-SHA checkpoints remain reusable only under the existing checkpoint contract
+
+These controls are liveness/reproducibility controls only. They do not change model selection, Production, or Frozen Holdout evidence.
