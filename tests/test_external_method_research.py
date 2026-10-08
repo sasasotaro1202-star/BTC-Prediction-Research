@@ -105,6 +105,52 @@ class ExternalMethodResearchTests(unittest.TestCase):
             )
 
 
+
+
+    def test_transient_source_error_is_deferred_and_persisted(self):
+        class FailingClient(JsonClient):
+            def __init__(self):
+                pass
+
+            def get(self, url):
+                raise RuntimeError(f"http_401:{url}")
+
+        queue = self._queue()
+        queue["priority_gate"] = {}
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "data" / "external_research_method_queue.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(queue), encoding="utf-8")
+            result = process_one(root, FailingClient(), "TEST_SHA", "4")
+            self.assertEqual(result["status"], "DEFERRED")
+            self.assertFalse(result["production_changed"])
+            self.assertFalse(result["promotion_allowed"])
+            self.assertEqual(result["next_action"], "RETRY_SOURCE_VERIFICATION")
+            self.assertTrue(result["retry_after_utc"])
+            persisted = json.loads(
+                (root / "data" / "external_research_runtime.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                persisted["results"]["model/second"]["status"],
+                "DEFERRED",
+            )
+
+    def test_deferred_candidate_does_not_starve_other_candidates(self):
+        queue = self._queue()
+        runtime = {
+            "results": {
+                "agent/first": {
+                    "status": "LOCAL_GATE_READY",
+                },
+                "model/second": {
+                    "status": "DEFERRED",
+                    "retry_after_utc": "2999-01-01T00:00:00Z",
+                },
+            }
+        }
+        self.assertIsNone(choose_next_candidate(queue, runtime))
+
     def test_external_workflow_uses_live_github_expressions(self):
         workflow = Path('.github/workflows/btc_external_method_research.yml').read_text(encoding='utf-8')
         self.assertIn('GITHUB_TOKEN: ${{ github.token }}', workflow)
