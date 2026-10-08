@@ -266,3 +266,12 @@ The Recency Challenger is an exploratory historical model-comparison lane. Histo
 The workflow validates current-main lineage before expensive computation. Durable data/model state drift may be tolerated under the existing long-run policy; executable/config/workflow/policy drift is FAIL-CLOSED.
 
 A positive holdout result from this lane is a hypothesis/research signal only. It cannot become Production evidence without an independent strict-PIT implementation on the required current-generation observations.
+
+
+107. RECENCY RECOVERY CADENCE
+
+When a durable recent-performance regression trigger is active, the Recency Challenger uses a bounded recovery freshness threshold of 21600 seconds (6 hours), rather than its routine 86400-second daily cadence. This improves recovery latency without creating an unbounded dispatch loop because the workflow still uses its own concurrency, current-main verification, Watchdog recovery, and stale-generation checks.
+
+Routine Recency Challenger scheduling remains daily. The 6-hour threshold applies only to the evidence-driven recovery route.
+
+This is scheduling only. It does not alter candidate selection, PIT qualification, Frozen Holdout protection, Promotion gates, or Production.
