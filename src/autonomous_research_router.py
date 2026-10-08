@@ -20,7 +20,9 @@ ALLOWED = {
     "btc_autonomous_data_frontier.yml": 900,
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_return_distribution_tail_oos.yml": 21600,
-    # Keep the 6-hour freshness window reserved for evidence-driven Recency recovery.\n    # Experience-policy research runs on its independent routine cadence.\n    "btc_experience_policy_oos.yml": 28800,
+    # Keep the 6-hour freshness window reserved for evidence-driven Recency recovery.
+    # Experience-policy research runs on its independent routine cadence.
+    "btc_experience_policy_oos.yml": 28800,
     "btc_recency_challenger.yml": 86400,
     "btc_selective_prediction_oos.yml": 43200,
     "btc_uncertainty_layer_oos.yml": 21600,
