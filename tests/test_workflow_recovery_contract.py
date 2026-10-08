@@ -66,6 +66,8 @@ def test_experience_policy_allows_state_only_main_drift_but_rejects_code_drift()
     assert "Validate scheduled research snapshot against current main" in text
     assert 'compare/${GITHUB_SHA}...${remote_sha}' in text
     assert 'compare_status' in text
+    assert 'changed_file_count="$(jq '.files | length' <<<"${compare_json}")"' in text
+    assert 'compare_file_limit_reached' in text
     assert 'jq -r ".files[]?.filename // empty"' in text
     assert "data/*|models/*.json|models/*.joblib)" in text
     assert 'STALE_MAIN_RUN incompatible_change=' in text
