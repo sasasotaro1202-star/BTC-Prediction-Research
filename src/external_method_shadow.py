@@ -11,9 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
-import torch
-from model import Kronos, KronosPredictor, KronosTokenizer
 from src.label_policy import direction_from_prices
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,7 +121,9 @@ def fetch_closed_binance(limit: int = 5000) -> tuple[list[list[float]], datetime
     return rows[-limit:], utcnow()
 
 
-def aggregate(rows: list[list[float]], minutes: int) -> pd.DataFrame:
+def aggregate(rows: list[list[float]], minutes: int):
+    import pandas as pd
+
     df = pd.DataFrame(rows, columns=["open_ms", "open", "high", "low", "close", "volume"])
     df["timestamps"] = pd.to_datetime(df["open_ms"], unit="ms", utc=True)
     parts = []
@@ -234,6 +233,9 @@ def settle_records(records: list[dict[str, Any]]) -> bool:
 
 
 def predict_once() -> dict[str, Any]:
+    import torch
+    from model import Kronos, KronosPredictor, KronosTokenizer
+
     repository = active_candidate()
     if repository != "shiyu-coder/Kronos":
         raise RuntimeError(f"unsupported_shadow_adapter:{repository}")
