@@ -49,6 +49,30 @@ def metrics(y, p):
     return {"n": int(len(y)), "accuracy": float(hit.mean()), "logloss": float(ll), "brier": float(br)}
 
 
+def select_validation_model(results):
+    """Select by equal ranks across validation accuracy, logloss and brier."""
+    if not results:
+        raise ValueError("validation_results_must_not_be_empty")
+    def rank_map(items, key, reverse=False):
+        ordered = sorted(items, key=lambda r: (-(r[key]) if reverse else r[key], r["model"]))
+        return {r["model"]: rank + 1 for rank, r in enumerate(ordered)}
+    acc_rank = rank_map(results, "accuracy", reverse=True)
+    ll_rank = rank_map(results, "logloss")
+    br_rank = rank_map(results, "brier")
+    enriched = []
+    for r in results:
+        score = acc_rank[r["model"]] + ll_rank[r["model"]] + br_rank[r["model"]]
+        enriched.append({
+            **r,
+            "validation_rank_accuracy": acc_rank[r["model"]],
+            "validation_rank_logloss": ll_rank[r["model"]],
+            "validation_rank_brier": br_rank[r["model"]],
+            "validation_mean_rank": float(score / 3.0),
+        })
+    enriched.sort(key=lambda r: (r["validation_mean_rank"], -r["accuracy"], r["logloss"], r["brier"], r["model"]))
+    return enriched[0]["model"], enriched
+
+
 def factory(name):
     if name == "rf":
         return RandomForestClassifier(
@@ -157,8 +181,9 @@ def evaluate(horizon, rows):
         m.fit(X_train, y_train)
         p = m.predict_proba(X_val)
         dev.append({"model": name, **metrics(y_val, p)})
-    dev.sort(key=lambda z: (-z["accuracy"], z["logloss"], z["brier"]))
-    selected = dev[0]["model"]
+    accuracy_first_selected = sorted(dev, key=lambda z: (-z["accuracy"], z["logloss"], z["brier"], z["model"]))[0]["model"]
+    selected, dev_ranked = select_validation_model(dev)
+    dev = dev_ranked
 
     # Refit on all development rows only.
     cand = factory(selected)
@@ -195,6 +220,8 @@ def evaluate(horizon, rows):
     return {
         "n": n, "development_n": hold_start, "validation_n": VALIDATION,
         "frozen_holdout_n": HOLDOUT, "selected_model": selected,
+        "accuracy_first_selected_model": accuracy_first_selected,
+        "validation_selection_policy": "equal_rank_accuracy_logloss_brier",
         "validation_results": dev,
         "frozen_holdout": {
             "current_champion": cm,
