@@ -684,14 +684,14 @@ def choose(root: Path) -> dict[str, Any]:
         routes.append(_decision(
             "btc_experience_policy_oos.yml",
             "material_post_outcome_performance_regression_requires_reliability_research",
-            87,
+            94,
             "PERFORMANCE_REGRESSION",
             performance_regression_signals,
         ))
         routes.append(_decision(
             "btc_recency_challenger.yml",
             "recent_performance_regression_requires_recency_weighted_challenger_research",
-            86,
+            93,
             "RECENCY_RECOVERY_RESEARCH",
             performance_regression_signals,
         ))
