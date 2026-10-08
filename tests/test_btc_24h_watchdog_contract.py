@@ -71,3 +71,16 @@ def test_24h_watchdog_distinguishes_safe_state_drift_from_unsafe_code_drift():
     assert 'UNSAFE_STALE_RUN' in workflow
     assert 'Retaining active 24H run' in workflow
     assert 'data/*|models/*.json|models/*.joblib)' in workflow
+
+def test_24h_watchdog_wakes_on_executable_research_drift():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    for path in (
+        "      - 'src/**'",
+        "      - 'tests/**'",
+        "      - 'config/**'",
+        "      - 'requirements*.txt'",
+        "      - 'pyproject.toml'",
+    ):
+        assert path in workflow
+
+
