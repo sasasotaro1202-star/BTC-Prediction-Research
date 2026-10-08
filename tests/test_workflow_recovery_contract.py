@@ -93,7 +93,10 @@ def test_research_pr_automerge_does_not_cancel_inflight_merge_checks():
 def test_binance_flow_collector_143_requires_fresh_advancing_checkpoint():
     text = _workflow("btc_binance_flow_research.yml")
     assert 'capture_started_at_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"' in text
-    assert "initial_latest=\"$(python - <<'PY\"" in text
+    assert "initial_latest=" in text
+    assert "rows[-1].get('end_time_ms'" in text
+    assert "updated_at_utc" in text
     assert 'if [ "$collector_status" -eq 143 ]; then' in text
+    assert "latest > initial_latest" in text
     assert 'fresh advancing checkpoint' in text
     assert 'exited with 143 without a fresh advancing checkpoint' in text
