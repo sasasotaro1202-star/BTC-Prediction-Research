@@ -222,7 +222,7 @@ def _performance_regression_signals(root: Path) -> list[str]:
             ):
                 signals.append(
                     f"{horizon}:experience_recent100_vs_total_gap="
-                    f"{float(recent_accuracy) - float(total_accuracy):.4f}<=+"
+                    f"{float(recent_accuracy) - float(total_accuracy):.4f}<= "
                     f"{PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER:.2f}"
                 )
 
