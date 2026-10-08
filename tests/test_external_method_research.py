@@ -61,12 +61,12 @@ class ExternalMethodResearchTests(unittest.TestCase):
             {"kind": "huggingface_model", "id": "unknown/model"}
         ]
         payloads = {
-            "/repos/model/second": {
+            "https://api.github.com/repos/model/second": {
                 "archived": False,
                 "default_branch": "main",
                 "license": {"spdx_id": "MIT"},
             },
-            "/repos/model/second/commits/main": {"sha": "abc"},
+            "https://api.github.com/repos/model/second/commits/main": {"sha": "abc"},
             "https://huggingface.co/api/models/unknown/model": None,
         }
         with tempfile.TemporaryDirectory() as td:
