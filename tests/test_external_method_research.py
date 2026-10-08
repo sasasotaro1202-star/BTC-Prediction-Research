@@ -124,6 +124,13 @@ class ExternalMethodResearchTests(unittest.TestCase):
 
         queue = self._queue()
         queue["priority_gate"] = {}
+        runtime = {
+            "results": {
+                "agent/first": {
+                    "status": "LOCAL_GATE_READY",
+                }
+            }
+        }
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "data" / "external_research_method_queue.json"
@@ -169,7 +176,7 @@ class ExternalMethodResearchTests(unittest.TestCase):
         }
         self.assertEqual(
             choose_next_candidate(queue, runtime)["repository"],
-            "model/third",
+            "agent/first",
         )
 
     def test_deferred_candidate_becomes_retryable_after_deadline(self):
