@@ -76,3 +76,8 @@ def test_report_schema_has_top_level_safety_firewall():
     assert '"pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY"' in s
     assert '"promotion_evidence_eligible": False' in s
     assert '"promotion_allowed": False' in s
+
+
+def test_report_schema_has_top_level_validation_selection_policy():
+    s = Path("src/recency_challenger.py").read_text(encoding="utf-8")
+    assert '"validation_selection_policy": "equal_rank_accuracy_logloss_brier"' in s

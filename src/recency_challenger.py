@@ -269,6 +269,7 @@ def main():
         "source": source,
         "history_rows": len(rows),
         "features": 15,
+        "validation_selection_policy": "equal_rank_accuracy_logloss_brier",
         "pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY",
         "promotion_evidence_eligible": False,
         "promotion_allowed": False,
