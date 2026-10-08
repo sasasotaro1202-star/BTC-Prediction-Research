@@ -44,6 +44,8 @@ PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER = -0.05
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 MAX_PIT_AUDIT_AGE_SECONDS = 3600
+RECENCY_RECOVERY_THRESHOLD_SECONDS = 21600
+RECENCY_RECOVERY_EVIDENCE_STATE = "RECENCY_RECOVERY_RESEARCH"
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -62,10 +64,11 @@ def _decision(
     priority: int,
     evidence_state: str,
     signals: list[str] | None = None,
+    threshold_seconds: int | None = None,
 ) -> dict[str, Any]:
     return {
         "workflow": workflow,
-        "threshold_seconds": ALLOWED[workflow],
+        "threshold_seconds": int(ALLOWED[workflow] if threshold_seconds is None else threshold_seconds),
         "reason": reason,
         "production_impact": False,
         "priority": int(priority),
@@ -73,6 +76,17 @@ def _decision(
         "signals": list(signals or []),
     }
 
+
+
+def _threshold_allowed(workflow: str, threshold: int, evidence_state: str) -> bool:
+    """Allow only declared defaults plus the explicit Recency recovery override."""
+    if threshold == ALLOWED[workflow]:
+        return True
+    return bool(
+        workflow == "btc_recency_challenger.yml"
+        and threshold == RECENCY_RECOVERY_THRESHOLD_SECONDS
+        and evidence_state == RECENCY_RECOVERY_EVIDENCE_STATE
+    )
 
 def _ordered(decisions: list[dict[str, Any]]) -> dict[str, Any]:
     if not decisions:
@@ -694,6 +708,7 @@ def choose(root: Path) -> dict[str, Any]:
             93,
             "RECENCY_RECOVERY_RESEARCH",
             performance_regression_signals,
+            threshold_seconds=RECENCY_RECOVERY_THRESHOLD_SECONDS,
         ))
 
     if return_tail_signals:
@@ -801,13 +816,13 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise ValueError("router_numeric_contract_invalid") from exc
 
-    if threshold != ALLOWED[workflow]:
+    evidence_state = str(route.get("evidence_state", "")).strip()
+    if not _threshold_allowed(workflow, threshold, evidence_state):
         raise ValueError("router_threshold_mismatch")
     if route.get("production_impact") is not False:
         raise ValueError("router_production_impact_must_be_false")
 
     reason = str(route.get("reason", "")).strip()
-    evidence_state = str(route.get("evidence_state", "")).strip()
     if not reason:
         raise ValueError("router_reason_missing")
     if not evidence_state:
@@ -835,7 +850,8 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
         seen.add(candidate_workflow)
 
         candidate_threshold = int(candidate.get("threshold_seconds", 0))
-        if candidate_threshold != ALLOWED[candidate_workflow]:
+        candidate_state = str(candidate.get("evidence_state", "")).strip()
+        if not _threshold_allowed(candidate_workflow, candidate_threshold, candidate_state):
             raise ValueError("router_candidate_threshold_mismatch")
         if candidate.get("production_impact") is not False:
             raise ValueError("router_candidate_production_impact_must_be_false")
@@ -846,7 +862,6 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
         previous_priority = candidate_priority
 
         candidate_reason = str(candidate.get("reason", "")).strip()
-        candidate_state = str(candidate.get("evidence_state", "")).strip()
         candidate_signals = candidate.get("signals", [])
         if not candidate_reason:
             raise ValueError("router_candidate_reason_missing")
