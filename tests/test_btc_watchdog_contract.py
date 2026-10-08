@@ -21,3 +21,9 @@ def test_watchdog_does_not_cancel_itself_on_next_five_minute_tick():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "group: btc-workflow-watchdog" in workflow
     assert "cancel-in-progress: false" in workflow
+
+
+def test_watchdog_recovers_recency_challenger():
+    text = Path('.github/workflows/btc_watchdog.yml').read_text(encoding='utf-8')
+    assert 'btc_recency_challenger.yml' in text
+    assert 'recover_if_stale btc_recency_challenger.yml 86400 900 900' in text
