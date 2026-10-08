@@ -14,6 +14,8 @@ QUEUE_PATH = Path("data/external_research_method_queue.json")
 RUNTIME_PATH = Path("data/external_research_runtime.json")
 RESULTS_DIR = Path("data/external_research_results")
 TERMINAL_STATUSES = {"LOCAL_GATE_READY", "HOLD", "SKIPPED", "SHADOW_MATURED", "REJECTED", "FAILED"}
+TRANSIENT_STATUSES = {"DEFERRED"}
+RETRY_DELAY_SECONDS = 15 * 60
 _PRIORITY_GROUPS = (
     "immediate_local_reproduction",
     "predictive_method_second_wave",
@@ -122,17 +124,35 @@ def _runtime_results(runtime: dict[str, Any]) -> dict[str, dict[str, Any]]:
     } if isinstance(raw, dict) else {}
 
 
+def _retry_ready(record: dict[str, Any], now_epoch: float | None = None) -> bool:
+    retry_after = str(record.get("retry_after_utc", "")).strip()
+    if not retry_after:
+        return True
+    try:
+        retry_epoch = time.mktime(time.strptime(retry_after, "%Y-%m-%dT%H:%M:%SZ"))
+    except (ValueError, OverflowError):
+        return True
+    now_epoch = time.time() if now_epoch is None else now_epoch
+    return now_epoch >= retry_epoch
+
+
 def choose_next_candidate(queue: dict[str, Any], runtime: dict[str, Any] | None = None) -> dict[str, Any] | None:
     runtime = runtime or {}
-    processed = {
-        repo
-        for repo, record in _runtime_results(runtime).items()
-        if record.get("status") in TERMINAL_STATUSES
-    }
+    results = _runtime_results(runtime)
     candidates = _candidate_map(queue)
+    now_epoch = time.time()
     for repo in candidate_order(queue):
-        if repo not in processed and repo in candidates:
+        if repo not in candidates:
+            continue
+        record = results.get(repo)
+        if not isinstance(record, dict):
             return candidates[repo]
+        status = record.get("status")
+        if status in TERMINAL_STATUSES:
+            continue
+        if status in TRANSIENT_STATUSES and not _retry_ready(record, now_epoch):
+            continue
+        return candidates[repo]
     return None
 
 
@@ -244,6 +264,10 @@ def verify_source_contracts(candidate: dict[str, Any], client: JsonClient) -> di
     return {"checked": checked, "all_verified": not failures, "failures": failures}
 
 
+def _retry_after_utc(seconds: int = RETRY_DELAY_SECONDS) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds))
+
+
 def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) -> dict[str, Any]:
     queue = load_json(root / QUEUE_PATH)
     runtime = load_json(root / RUNTIME_PATH, default={})
@@ -264,20 +288,38 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         return {"status": "EXHAUSTED", "research_only": True, "production_changed": False, "queue_exhausted": True}
 
     repository = str(candidate["repository"]).strip()
-    primary = verify_github_repo(repository, client)
-    if primary.get("status") != "SOURCE_VERIFIED":
-        status = "HOLD"
-        contracts = {"checked": [], "all_verified": False, "failures": [str(primary.get("hold_reason", "SOURCE_UNVERIFIED"))]}
-    else:
-        contracts = verify_source_contracts(candidate, client)
-        status = "LOCAL_GATE_READY" if contracts["all_verified"] else "HOLD"
+    transient_error: str | None = None
+    try:
+        primary = verify_github_repo(repository, client)
+        if primary.get("status") != "SOURCE_VERIFIED":
+            status = "HOLD"
+            contracts = {"checked": [], "all_verified": False, "failures": [str(primary.get("hold_reason", "SOURCE_UNVERIFIED"))]}
+        else:
+            contracts = verify_source_contracts(candidate, client)
+            status = "LOCAL_GATE_READY" if contracts["all_verified"] else "HOLD"
+    except RuntimeError as exc:
+        transient_error = str(exc)
+        status = "DEFERRED"
+        primary = {
+            "repository": repository,
+            "status": "DEFERRED",
+            "source_verified": False,
+            "hold_reason": "SOURCE_ACCESS_OR_AUTH_FAILURE",
+        }
+        contracts = {
+            "checked": [],
+            "all_verified": False,
+            "failures": [transient_error],
+        }
 
     processed_at = _utc_now()
-    next_action = (
-        "DISPATCH_CANDIDATE_SPECIFIC_NEXT_GATE"
-        if status == "LOCAL_GATE_READY"
-        else "HOLD_UNTIL_SOURCE_RISK_RESOLVED"
-    )
+    retry_after = _retry_after_utc() if status in TRANSIENT_STATUSES else None
+    if status == "LOCAL_GATE_READY":
+        next_action = "DISPATCH_CANDIDATE_SPECIFIC_NEXT_GATE"
+    elif status == "DEFERRED":
+        next_action = "RETRY_SOURCE_VERIFICATION"
+    else:
+        next_action = "HOLD_UNTIL_SOURCE_RISK_RESOLVED"
     result = {
         "schema_version": 3,
         "research_only": True,
@@ -297,6 +339,8 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         "primary_source_verification": primary,
         "source_contract_verification": contracts,
         "next_action": next_action,
+        "retry_after_utc": retry_after,
+        "transient_error": transient_error,
     }
 
     results = _runtime_results(runtime)
@@ -312,6 +356,8 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         "license_spdx": primary.get("license_spdx", ""),
         "source_contracts": contracts,
         "next_action": next_action,
+        "retry_after_utc": retry_after,
+        "transient_error": transient_error,
     }
     runtime.update({
         "schema_version": 3,
