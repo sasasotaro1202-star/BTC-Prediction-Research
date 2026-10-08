@@ -150,7 +150,7 @@ def _promotion_robustness_blocked(root: Path) -> tuple[bool, list[str]]:
 
 
 def _robustness_maturation_status(root: Path) -> tuple[bool, list[str]]:
-    \"\"\"Detect a live Robustness cohort that is still below its evidence minimum.\"\"\"
+    """Detect a live Robustness cohort that is still below its evidence minimum."""
     obj = _load(root / "data" / "historical_research" / "robustness_oos_report.json")
     if obj is None:
         return False, []
