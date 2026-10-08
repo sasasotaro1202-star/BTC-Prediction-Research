@@ -16,7 +16,8 @@ RUNTIME_PATH = Path("data/external_research_runtime.json")
 RESULTS_DIR = Path("data/external_research_results")
 TERMINAL_STATUSES = {"LOCAL_GATE_READY", "HOLD", "SKIPPED", "SHADOW_MATURED", "REJECTED", "FAILED"}
 TRANSIENT_STATUSES = {"DEFERRED"}
-RETRY_DELAY_SECONDS = 15 * 60
+RETRY_BASE_DELAY_SECONDS = 15 * 60
+RETRY_MAX_DELAY_SECONDS = 80 * 60
 _PRIORITY_GROUPS = (
     "immediate_local_reproduction",
     "predictive_method_second_wave",
@@ -265,8 +266,22 @@ def verify_source_contracts(candidate: dict[str, Any], client: JsonClient) -> di
     return {"checked": checked, "all_verified": not failures, "failures": failures}
 
 
-def _retry_after_utc(seconds: int = RETRY_DELAY_SECONDS) -> str:
+def _retry_after_utc(seconds: int) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds))
+
+
+def _retry_backoff_seconds(runtime: dict[str, Any], repository: str) -> tuple[int, int]:
+    prior = _runtime_results(runtime).get(repository, {})
+    try:
+        retry_count = int(prior.get("retry_count", 0)) if isinstance(prior, dict) else 0
+    except (TypeError, ValueError):
+        retry_count = 0
+    retry_count = max(0, retry_count)
+    delay = min(
+        RETRY_BASE_DELAY_SECONDS * (2 ** min(retry_count, 4)),
+        RETRY_MAX_DELAY_SECONDS,
+    )
+    return retry_count + 1, delay
 
 
 def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) -> dict[str, Any]:
@@ -314,7 +329,11 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         }
 
     processed_at = _utc_now()
-    retry_after = _retry_after_utc() if status in TRANSIENT_STATUSES else None
+    retry_count = 0
+    retry_after = None
+    if status in TRANSIENT_STATUSES:
+        retry_count, retry_delay_seconds = _retry_backoff_seconds(runtime, repository)
+        retry_after = _retry_after_utc(retry_delay_seconds)
     if status == "LOCAL_GATE_READY":
         next_action = "DISPATCH_CANDIDATE_SPECIFIC_NEXT_GATE"
     elif status == "DEFERRED":
@@ -342,6 +361,7 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         "next_action": next_action,
         "retry_after_utc": retry_after,
         "transient_error": transient_error,
+        "retry_count": retry_count,
     }
 
     results = _runtime_results(runtime)
@@ -359,6 +379,7 @@ def process_one(root: Path, client: JsonClient, analysis_sha: str, run_id: str) 
         "next_action": next_action,
         "retry_after_utc": retry_after,
         "transient_error": transient_error,
+        "retry_count": retry_count,
     }
     runtime.update({
         "schema_version": 3,
