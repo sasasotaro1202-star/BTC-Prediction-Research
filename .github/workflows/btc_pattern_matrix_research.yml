@@ -32,6 +32,31 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
+      - name: Validate main lineage before expensive research
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/ci_network_retry.sh
+          remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          changed_files="$(ci_gh_api_get "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}" --jq '.files[]?.filename')"
+          state_only=true
+          while IFS= read -r changed; do
+            [ -n "$changed" ] || continue
+            case "$changed" in
+              data/*|models/*.json|models/*.joblib) ;;
+              *)
+                state_only=false
+                echo "UNSAFE_MAIN_DRIFT_FILE=$changed" >&2
+                ;;
+            esac
+          done <<< "$changed_files"
+          if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
+            echo "UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          echo "MAIN_LINEAGE_OK run=${GITHUB_SHA} main=${remote_sha} state_only_drift=${state_only}"
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
