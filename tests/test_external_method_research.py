@@ -3,15 +3,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.external_method_research import GitHubClient, choose_next_candidate, process_one
+from src.external_method_research import JsonClient, choose_next_candidate, process_one
 
 
-class FakeGitHubClient(GitHubClient):
+class FakeGitHubClient(JsonClient):
     def __init__(self, payloads):
         self.payloads = payloads
 
-    def get(self, path):
-        return self.payloads.get(path)
+    def get(self, url):
+        return self.payloads.get(url)
 
 
 class ExternalMethodResearchTests(unittest.TestCase):
@@ -35,14 +35,14 @@ class ExternalMethodResearchTests(unittest.TestCase):
 
     def test_source_verification_becomes_local_gate_ready(self):
         payloads = {
-            "/repos/model/second": {
+            "https://api.github.com/repos/model/second": {
                 "archived": False,
                 "default_branch": "main",
                 "html_url": "https://github.com/model/second",
                 "license": {"spdx_id": "MIT"},
                 "stargazers_count": 1,
             },
-            "/repos/model/second/commits/main": {"sha": "abc123"},
+            "https://api.github.com/repos/model/second/commits/main": {"sha": "abc123"},
         }
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -92,7 +92,7 @@ class ExternalMethodResearchTests(unittest.TestCase):
             path.write_text(json.dumps(queue), encoding="utf-8")
             result = process_one(
                 root,
-                FakeGitHubClient({"/repos/missing/repo": None}),
+                FakeGitHubClient({"https://api.github.com/repos/missing/repo": None}),
                 "TEST_SHA",
                 "3",
             )
@@ -101,3 +101,12 @@ class ExternalMethodResearchTests(unittest.TestCase):
                 result["primary_source_verification"]["hold_reason"],
                 "REPOSITORY_NOT_FOUND",
             )
+
+
+    def test_external_workflow_uses_live_github_expressions(self):
+        workflow = Path('.github/workflows/btc_external_method_research.yml').read_text(encoding='utf-8')
+        self.assertIn('GITHUB_TOKEN: ${{ github.token }}', workflow)
+        self.assertIn('EXPECTED_SHA: ${{ github.sha }}', workflow)
+        self.assertIn('btc-external-method-research-${{ github.run_id }}', workflow)
+        self.assertIn('research: advance external method queue (${candidate})', workflow)
+        self.assertNotIn('\\${{', workflow)
