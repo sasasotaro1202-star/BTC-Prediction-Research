@@ -310,6 +310,73 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                 route["signals"],
             )
 
+    def test_recent_performance_gap_routes_recency_challenger_even_without_score_delta(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": False,
+                    "comparison_available": True,
+                    "changes": [],
+                    "scores": {
+                        "5m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.350,
+                            "experience_total_accuracy": 0.425,
+                        },
+                        "10m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.340,
+                            "experience_total_accuracy": 0.404,
+                        },
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertEqual(route["priority"], 87)
+            self.assertEqual(
+                [x["workflow"] for x in route["candidates"][:3]],
+                [
+                    "btc_experience_policy_oos.yml",
+                    "btc_recency_challenger.yml",
+                    "btc_ultimate_final_v13_e2e.yml",
+                ],
+            )
+            self.assertIn("5m:experience_recent100_vs_total_gap=-0.0750<=+-0.05", route["signals"])
+            self.assertIn("10m:experience_recent100_vs_total_gap=-0.0640<=+-0.05", route["signals"])
+
+    def test_recent_floor_is_now_moderate_recovery_trigger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "performance_change.json",
+                {
+                    "changed": False,
+                    "comparison_available": True,
+                    "changes": [],
+                    "scores": {
+                        "5m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.35,
+                        },
+                        "10m": {
+                            "experience_recent100_n": 100,
+                            "experience_recent100_accuracy": 0.34,
+                        },
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_experience_policy_oos.yml")
+            self.assertIn("5m:experience_recent100_accuracy_floor=0.3500<=0.35", route["signals"])
+            self.assertIn("10m:experience_recent100_accuracy_floor=0.3400<=0.35", route["signals"])
+
     def test_small_performance_change_does_not_route(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
