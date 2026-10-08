@@ -3117,3 +3117,24 @@ The historical 401 external-method failure remains a failure record and is not c
 Production remains HOLD until independent PIT, OOS/WFO, calibration, robustness, frozen-holdout and shadow requirements are satisfied. Passing CI, a healthy runtime model, or a research candidate with promising development metrics is not sufficient.
 
 This addendum is implementation state, not a replacement for immutable historical evidence.
+
+
+104. CURRENT RESEARCH-WATCHDOG LIVENESS ADDENDUM
+
+The research control plane must not depend on a single dispatcher for degradation recovery. The independent Watchdog therefore tracks the research-only Recency Challenger and Broad Pattern Matrix lanes in its bounded recovery inventory.
+
+Recency Challenger:
+- stale threshold: 86400 seconds
+- active grace: 14400 seconds, aligned with its 240-minute workflow timeout
+- research_only=true
+- production_changed=false
+- no Promotion authority
+
+Broad Pattern Matrix:
+- stale threshold: 86400 seconds
+- active grace: 7200 seconds, aligned with its 120-minute workflow timeout
+- before expensive computation, the workflow compares its execution SHA with current main
+- only durable state-only drift is tolerated; code/config/workflow/policy drift is FAIL-CLOSED
+- same-SHA checkpoints remain reusable only under the existing checkpoint contract
+
+These controls are liveness/reproducibility controls only. They do not change model selection, Production, or Frozen Holdout evidence.
