@@ -21,6 +21,7 @@ ALLOWED = {
     "btc_adaptive_calibration_replay.yml": 28800,
     "btc_return_distribution_tail_oos.yml": 21600,
     "btc_experience_policy_oos.yml": 21600,
+    "btc_recency_challenger.yml": 86400,
     "btc_selective_prediction_oos.yml": 43200,
     "btc_uncertainty_layer_oos.yml": 21600,
     "btc_rich_production_challenger.yml": 86400,
@@ -38,7 +39,8 @@ FAILURE_RISK_TRIGGER = 0.70
 PERFORMANCE_RECENT_ACCURACY_DROP_TRIGGER = -0.05
 PERFORMANCE_LOGLOSS_WORSEN_TRIGGER = 0.02
 PERFORMANCE_ECE_WORSEN_TRIGGER = 0.02
-PERFORMANCE_RECENT_ACCURACY_FLOOR = 0.30
+PERFORMANCE_RECENT_ACCURACY_FLOOR = 0.35
+PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER = -0.05
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
 MAX_PIT_AUDIT_AGE_SECONDS = 3600
@@ -210,6 +212,18 @@ def _performance_regression_signals(root: Path) -> list[str]:
                 signals.append(
                     f"{horizon}:experience_recent100_accuracy_floor="
                     f"{recent_accuracy:.4f}<={PERFORMANCE_RECENT_ACCURACY_FLOOR:.2f}"
+                )
+
+            total_accuracy = current.get("experience_total_accuracy")
+            if (
+                recent_n >= 100
+                and total_accuracy is not None
+                and float(recent_accuracy) - float(total_accuracy) <= PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER
+            ):
+                signals.append(
+                    f"{horizon}:experience_recent100_vs_total_gap="
+                    f"{float(recent_accuracy) - float(total_accuracy):.4f}<= "
+                    f"{PERFORMANCE_RECENT_TOTAL_GAP_TRIGGER:.2f}"
                 )
 
     # Delta-based regression triggers still require a true snapshot change.
@@ -672,6 +686,13 @@ def choose(root: Path) -> dict[str, Any]:
             "material_post_outcome_performance_regression_requires_reliability_research",
             87,
             "PERFORMANCE_REGRESSION",
+            performance_regression_signals,
+        ))
+        routes.append(_decision(
+            "btc_recency_challenger.yml",
+            "recent_performance_regression_requires_recency_weighted_challenger_research",
+            86,
+            "RECENCY_RECOVERY_RESEARCH",
             performance_regression_signals,
         ))
 
