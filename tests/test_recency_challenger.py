@@ -69,3 +69,10 @@ def test_validation_selection_is_deterministic_on_ties():
     ]
     selected, _ = select_validation_model(results)
     assert selected == "a"
+
+
+def test_report_schema_has_top_level_safety_firewall():
+    s=Path("src/recency_challenger.py").read_text(encoding="utf-8")
+    assert '"pit_status": "UNVERIFIABLE_HISTORICAL_AVAILABILITY"' in s
+    assert '"promotion_evidence_eligible": False' in s
+    assert '"promotion_allowed": False' in s
