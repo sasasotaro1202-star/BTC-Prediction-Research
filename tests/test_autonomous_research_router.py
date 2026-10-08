@@ -346,8 +346,8 @@ class AutonomousResearchRouterTests(unittest.TestCase):
                     "btc_ultimate_final_v13_e2e.yml",
                 ],
             )
-            self.assertIn("5m:experience_recent100_vs_total_gap=-0.0750<=+-0.05", route["signals"])
-            self.assertIn("10m:experience_recent100_vs_total_gap=-0.0640<=+-0.05", route["signals"])
+            self.assertIn("5m:experience_recent100_vs_total_gap=-0.0750<= -0.05", route["signals"])
+            self.assertIn("10m:experience_recent100_vs_total_gap=-0.0640<= -0.05", route["signals"])
 
     def test_recent_floor_is_now_moderate_recovery_trigger(self):
         with tempfile.TemporaryDirectory() as td:
