@@ -22,6 +22,30 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
+      - name: Validate main lineage before expensive research
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha')"
+          changed_files="$(gh api "repos/${{ github.repository }}/compare/${GITHUB_SHA}...${remote_sha}" --jq '.files[]?.filename')"
+          state_only=true
+          while IFS= read -r changed; do
+            [ -n "$changed" ] || continue
+            case "$changed" in
+              data/*|models/*.json|models/*.joblib) ;;
+              *)
+                state_only=false
+                echo "UNSAFE_MAIN_DRIFT_FILE=$changed" >&2
+                ;;
+            esac
+          done <<< "$changed_files"
+          if [ "$remote_sha" != "${GITHUB_SHA}" ] && [ "$state_only" != true ]; then
+            echo "UNSAFE_MAIN_RUN expected=${remote_sha} actual=${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          echo "MAIN_LINEAGE_OK run=${GITHUB_SHA} main=${remote_sha} state_only_drift=${state_only}"
 
       - uses: actions/setup-python@v7
         with:
@@ -64,6 +88,10 @@ jobs:
           assert o["schema_version"] == 1
           assert o["research_only"] is True
           assert o["production_changed"] is False
+          assert o["promotion_evidence_eligible"] is False
+          assert o["promotion_allowed"] is False
+          assert o["pit_status"] == "UNVERIFIABLE_HISTORICAL_AVAILABILITY"
+          assert o["analysis_git_sha"] and o["analysis_git_sha"] != "LOCAL_UNPINNED"
           assert set(o["horizons"]) == {"5m", "10m"}
           for h, r in o["horizons"].items():
               assert r["frozen_holdout_n"] == 5000
