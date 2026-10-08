@@ -1,6 +1,12 @@
 name: BTC Recency Challenger
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/recency_challenger.py'
+      - '.github/workflows/btc_recency_challenger.yml'
+      - 'tests/test_recency_challenger.py'
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -91,6 +97,10 @@ jobs:
           assert o["promotion_evidence_eligible"] is False
           assert o["promotion_allowed"] is False
           assert o["pit_status"] == "UNVERIFIABLE_HISTORICAL_AVAILABILITY"
+          assert o["validation_selection_policy"] == "equal_rank_accuracy_logloss_brier"
+          for h, r in o["horizons"].items():
+              assert r["selected_model"]
+              assert r["accuracy_first_selected_model"]
           assert o["analysis_git_sha"] and o["analysis_git_sha"] != "LOCAL_UNPINNED"
           assert set(o["horizons"]) == {"5m", "10m"}
           for h, r in o["horizons"].items():
