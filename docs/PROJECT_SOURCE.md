@@ -3059,6 +3059,35 @@ Selection rules:
 - Equivalent candidates are fingerprinted and deduplicated.
 - Exploratory winner ≠ performance verification ≠ promotion approval.
 
+
+
+Canonical feature/model/window identities retained for the matrix contract include:
+all_15
+returns_momentum
+volatility_regime
+candle_shape
+volume_flow
+trend
+compact_cross
+mean_reversion
+price_structure
+flow_trend
+
+Model variants include:
+logreg_c0.03
+logreg_c0.1
+logreg_c1.0
+logreg_c3.0
+extra_trees
+rf
+hgb
+soft_ensemble
+
+Training-window policies include:
+expanding
+recent_1500
+recent_3000
+
 Each matrix result must declare:
 research_only=true
 production_changed=false
