@@ -266,3 +266,14 @@ The Recency Challenger is an exploratory historical model-comparison lane. Histo
 The workflow validates current-main lineage before expensive computation. Durable data/model state drift may be tolerated under the existing long-run policy; executable/config/workflow/policy drift is FAIL-CLOSED.
 
 A positive holdout result from this lane is a hypothesis/research signal only. It cannot become Production evidence without an independent strict-PIT implementation on the required current-generation observations.
+
+
+108. RECENCY VALIDATION SELECTION ABLATION
+
+The Recency Challenger no longer relies on validation accuracy alone for selecting its one candidate. The exploratory selection policy uses equal ranks across Accuracy, LogLoss, and Brier on the same chronological validation slice. This is a validation-only selection rule; Frozen Holdout remains descriptive and cannot tune the rule.
+
+The previous accuracy-first selection remains recorded as `accuracy_first_selected_model` so the effect of the new selection policy is auditable.
+
+The workflow also triggers on pushes that modify the challenger source, workflow, or tests. Data-only main-state commits do not trigger the expensive challenger.
+
+This change is research-only and has no Production, registry, calibration, router, or Frozen Holdout promotion effect.
