@@ -115,7 +115,8 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci_network_retry.sh
-          main_ref_path="git/ref/heads/main"
+          main_ref_prefix="git/ref/heads/"
+          main_ref_path="${main_ref_prefix}main"
           remote_sha="$(ci_gh_api_get "repos/${{ github.repository }}/$main_ref_path" --jq '.object.sha')"
           ci_git_fetch --no-tags --depth=1 origin main
           fetched_main_sha="$(git rev-parse origin/main)"
