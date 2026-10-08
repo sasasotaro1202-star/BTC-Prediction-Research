@@ -1,0 +1,56 @@
+{
+  "archive": {
+    "audited_commit": "aa0897fd249dbeb2078f56f6a528adf1ed99f066",
+    "binding": "checkout_sha",
+    "path": "data/historical_research/production_artifact_audit_by_sha/aa0897fd249dbeb2078f56f6a528adf1ed99f066.json",
+    "schema_version": 1
+  },
+  "artifacts": [
+    {
+      "evaluation_milestone": null,
+      "horizon": "5m",
+      "metadata_bytes": 2831,
+      "metadata_sha256": "06f6defe613f1b088622baa6a09e24d0cfe7d7d1d8ad76ff33013764a3fd6d27",
+      "model_bytes": 6547608,
+      "model_sha256": "933b027fad7784dd0e2d5e4f8947283e7e09785ecef0a92d5afbe3cf375bf52b",
+      "model_version": "bootstrap.soft_ensemble.v5.4",
+      "runtime_classes": [
+        "DOWN",
+        "FLAT",
+        "UP"
+      ],
+      "runtime_feature_count": 15,
+      "runtime_model_reload_ok": true
+    },
+    {
+      "evaluation_milestone": null,
+      "horizon": "10m",
+      "metadata_bytes": 870,
+      "metadata_sha256": "b72090566064b0a11230d336d74da7317d07dde20a9a556ab9b7b8425982c22f",
+      "model_bytes": 6535761,
+      "model_sha256": "7071f8edabc2c610d093b8f26958a5da8485e9373b15b10d77f98ea06216e086",
+      "model_version": "bootstrap.bootstrap_rf",
+      "runtime_classes": [
+        "DOWN",
+        "FLAT",
+        "UP"
+      ],
+      "runtime_feature_count": 15,
+      "runtime_model_reload_ok": true
+    }
+  ],
+  "policy": "sha256_plus_runtime_reload_contract_plus_exact_feature_schema_plus_policy_provenance_plus_workspace_sha_binding",
+  "provenance": {
+    "checkout_sha": "aa0897fd249dbeb2078f56f6a528adf1ed99f066",
+    "git_sha": "aa0897fd249dbeb2078f56f6a528adf1ed99f066",
+    "policy_files": {
+      "PROJECT_INSTRUCTIONS.md": "b4eaa519b11faa9963b7f4c70dcd80ca133e9e5a95437592494495867ed4127c",
+      "docs/PROJECT_SOURCE.md": "8f33b554674f1c4924d9ad84352395e40610f6e4547a2cea9ebde6809fe56b8d",
+      "requirements.txt": "8b45c906d3a67130418b134a20335e9c3b3b5cd08223e2ef7ea66bee8e93d41b"
+    },
+    "ref": "main",
+    "workspace_derived_from_checkout_sha": true,
+    "workspace_sha": "07b0507452c27e0edbf301765f6f4f715c5267e5"
+  },
+  "updated_at_utc": "2026-10-08T05:54:08.120138+00:00"
+}
