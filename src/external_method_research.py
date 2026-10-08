@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import calendar
 from pathlib import Path
 from typing import Any
 
@@ -129,7 +130,7 @@ def _retry_ready(record: dict[str, Any], now_epoch: float | None = None) -> bool
     if not retry_after:
         return True
     try:
-        retry_epoch = time.mktime(time.strptime(retry_after, "%Y-%m-%dT%H:%M:%SZ"))
+        retry_epoch = calendar.timegm(time.strptime(retry_after, "%Y-%m-%dT%H:%M:%SZ"))
     except (ValueError, OverflowError):
         return True
     now_epoch = time.time() if now_epoch is None else now_epoch
