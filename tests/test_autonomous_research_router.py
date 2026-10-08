@@ -657,11 +657,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["evidence_state"], "PIT_AUDIT_STALE")
             self.assertIn("pit_audit_generated_at_missing", route["signals"])
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-    def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
+def test_external_method_queue_routes_when_higher_priority_issues_are_clear(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._healthy_base(root)
@@ -770,3 +766,6 @@ if __name__ == "__main__":
             self.assertEqual(route["workflow"], "btc_external_method_shadow.yml")
             self.assertEqual(route["priority"], 56)
             self.assertEqual(route["evidence_state"], "EXTERNAL_METHOD_SHADOW_READY")
+
+if __name__ == "__main__":
+    unittest.main()
