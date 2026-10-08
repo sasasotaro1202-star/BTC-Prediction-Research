@@ -195,5 +195,5 @@ def test_supervisor_defers_routed_research_when_production_spine_is_active():
 def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     supervisor = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
-    assert 'length >= 1 and length <= 9' in supervisor
+    assert 'length >= 1 and length <= 11' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight

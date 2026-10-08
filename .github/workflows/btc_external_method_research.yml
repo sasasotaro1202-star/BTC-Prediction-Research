@@ -30,7 +30,7 @@ jobs:
 
       - name: Execute exactly one research-only candidate
         env:
-          GITHUB_TOKEN: \${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python src/external_method_research.py
@@ -55,7 +55,7 @@ jobs:
 
       - name: Fail closed if main advanced during execution
         env:
-          EXPECTED_SHA: \${{ github.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           git fetch origin main --depth=1
@@ -100,14 +100,14 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "research: advance external method queue (\${candidate})"
+          git commit -m "research: advance external method queue (${candidate})"
           git push origin HEAD:main
 
       - name: Upload external-method evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: btc-external-method-research-\${{ github.run_id }}
+          name: btc-external-method-research-${{ github.run_id }}
           path: |
             data/external_research_runtime.json
             data/external_research_results/**

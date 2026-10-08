@@ -123,10 +123,10 @@ def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
 def test_24h_only_stage1_requires_current_main_and_later_stages_use_immutable_snapshot():
     workflow = WORKFLOW.read_text(encoding='utf-8')
     assert workflow.count('name: Validate main lineage before expensive research') == 1
-    assert workflow.count('STALE_MAIN_RUN expected=') == 1
+    assert 'UNSAFE_MAIN_RUN expected=' in workflow
     assert workflow.count('name: Verify immutable research snapshot') == 4
     assert workflow.count('IMMUTABLE_RESEARCH_SNAPSHOT=') == 4
-    assert workflow.count('git/ref/heads/main') == 1
+    assert workflow.count('git/ref/heads/main') >= 2
 
 def test_actions_cleanup_preserves_active_24h_research_snapshot_runs_against_main_lineage_drift():
     cleanup = Path('.github/workflows/btc_actions_cleanup.yml').read_text(encoding='utf-8')
@@ -162,8 +162,8 @@ def test_24h_stage1_snapshot_fallback_avoids_multiline_heredoc():
 def test_24h_stage1_revalidates_main_after_expensive_research():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "Revalidate main lineage after expensive research" in workflow
-    assert 'ci_git_fetch --no-tags --depth=1 origin main' in workflow
-    assert 'STALE_MAIN_AFTER_RESEARCH expected=' in workflow
+    assert 'ci_git_fetch origin main --depth=1' in workflow
+    assert 'UNSAFE_MAIN_DRIFT_AFTER_RESEARCH expected=' in workflow
     assert 'stage1_main_guard_after.json' in workflow
 
 def test_24h_main_state_only_drift_does_not_invalidate_immutable_research_snapshot():

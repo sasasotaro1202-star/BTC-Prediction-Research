@@ -48,7 +48,7 @@ def write_json(path: Path, payload: Any) -> None:
 
 class JsonClient:
     def __init__(self, token: str | None = None) -> None:
-        self.token = token or os.environ.get("GITHUB_TOKEN", "")
+        self.token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
 
     def get(self, url: str) -> dict[str, Any] | None:
         headers = {
@@ -187,7 +187,7 @@ def verify_github_repo(repository: str, client: JsonClient) -> dict[str, Any]:
 def verify_hf_model(model_id: str, client: JsonClient) -> dict[str, Any]:
     obj = client.get(
         "https://huggingface.co/api/models/"
-        + urllib.parse.quote(model_id, safe="")
+        + urllib.parse.quote(model_id, safe="/")
     )
     if obj is None:
         return {
