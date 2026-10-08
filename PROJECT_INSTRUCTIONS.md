@@ -275,3 +275,14 @@ The PIT OOS Audit is a production-safety prerequisite rather than optional resea
 Operational rule: `dispatch_if_stale btc_pit_oos_audit.yml 900` runs before the `production_active` backpressure branch. This keeps the PIT audit freshness gate current without dispatching model-research lanes during an active Live Cycle.
 
 The independent Watchdog already retains a separate bounded PIT audit recovery path. This is redundancy for audit liveness, not an authorization to modify Production.
+
+
+108. RECENCY VALIDATION SELECTION ABLATION
+
+The Recency Challenger candidate is selected using equal ranks across validation Accuracy, LogLoss, and Brier on the same chronological validation slice. This is validation-only selection; Frozen Holdout remains descriptive-only and cannot tune the selection rule.
+
+The previous Accuracy-first selection is preserved as `accuracy_first_selected_model` for an auditable ablation.
+
+The challenger also triggers on pushes that change its source, workflow, or tests; data-only main-state commits do not trigger the expensive research job.
+
+This remains research-only and cannot change Production, calibration, registry, prediction ledger, or Frozen Holdout state.
