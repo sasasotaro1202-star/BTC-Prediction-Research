@@ -230,11 +230,13 @@ jobs:
 
               verified_run=""
               for attempt in 1 2 3 4 5 6 7 8; do
-                verified_run="$(gh api "repos/$REPO/actions/workflows/btc_unit_tests.yml/runs?per_page=30"                   --jq '[.workflow_runs[]
+                verified_run="$(gh api "repos/$REPO/actions/workflows/btc_unit_tests.yml/runs?per_page=30"                   --jq '[
+                    .workflow_runs[]
                     | select(.event == "workflow_dispatch")
-                    | select(.head_sha == "'"$merge_sha"'")
-                    | select(.created_at >= "'"$dispatch_started_at"'")]
-                    | sort_by(.created_at) | reverse | .[0].id // empty')"
+                    | select(.head_sha == $merge_sha)
+                    | select(.created_at >= $dispatch_started_at)
+                  ]
+                  | sort_by(.created_at) | reverse | .[0].id // empty'                   --arg merge_sha "$merge_sha"                   --arg dispatch_started_at "$dispatch_started_at")"
                 if [ -n "$verified_run" ]; then
                   add_audit "PR=$PR POST_MERGE_UNIT_TEST_DISPATCH_VERIFIED run_id=$verified_run sha=$merge_sha"
                   break
