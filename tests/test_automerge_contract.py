@@ -8,7 +8,7 @@ def test_automerge_can_dispatch_post_merge_unit_tests():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions: write" in text
     assert "gh workflow run btc_unit_tests.yml --repo \"$REPO\" --ref main" in text
-    assert 'main_sha_after_merge="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"' in text
+    assert "main_sha_after_merge=\"$(gh api \"repos/$REPO/git/ref/heads/main\" --jq '.object.sha')\"" in text
     assert "POST_MERGE_UNIT_TEST_DISPATCH_VERIFIED" in text
 
 
