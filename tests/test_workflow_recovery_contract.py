@@ -61,3 +61,13 @@ def test_watchdog_runs_immediately_when_its_recovery_workflow_changes():
     text = _workflow("btc_watchdog.yml")
     assert "  push:" in text
     assert "      - '.github/workflows/btc_watchdog.yml'" in text
+
+def test_research_workflow_keeps_runtime_production_audit_out_of_git_state():
+    text = _workflow("btc_research.yml")
+    assert "data/historical_research/production_artifact_audit.json" in text
+    assert "actions/upload-artifact@v6" in text
+    assert "git add -f data/historical_research/production_artifact_audit.json" not in text
+    for line in text.splitlines():
+        if line.strip().startswith("git add "):
+            assert "production_artifact_audit.json" not in line
+    assert "/tmp/btc_research_artifact_audit.json" not in text
