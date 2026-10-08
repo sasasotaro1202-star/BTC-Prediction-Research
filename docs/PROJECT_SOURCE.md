@@ -1601,12 +1601,12 @@ ema_gap_10m
 This section is a mutable current-state pointer. It must be refreshed from the current GitHub artifacts before making any performance or Production claim. Immutable historical prediction/outcome/OOS/holdout/failure records are never rewritten.
 
 Current GitHub main HEAD:
-b52fc248a8c28f60a51ccf42aea365f8755d1110
+90bd3a315f99ee14361019ba634df79efe462d44
 
-Latest fully validated execution/evidence basis before this documentation-only commit:
+Latest fully validated execution/evidence basis before the current documentation synchronization:
 fc7cfdde11eb980a5f7ff041ace76e979b42b016
 
-This commit changes only this Project Source document; it does not modify Production, prediction state, OOS data, calibration artifacts, robustness evidence, or frozen Holdout.
+This documentation synchronization follows research/test commits and does not modify Production, prediction state, OOS data, calibration artifacts, robustness evidence, or frozen Holdout. it does not modify Production, prediction state, OOS data, calibration artifacts, robustness evidence, or frozen Holdout.
 
 Current strict PIT audit:
 checked_predictions = 813
@@ -3023,6 +3023,49 @@ NO SAFE FALLBACK, NO SAFE AUTONOMY.
 そして、
 
 ADDITIONよりINTEGRATION。
+⸻
+
+102A. BROAD PATTERN MATRIX CONTRACT
+
+Broad experimentation is research-only and must be budgeted, reproducible and prequential.
+
+Canonical search size:
+10 feature sets × 8 deterministic model variants × 3 training-window policies
+= 240 configurations per horizon.
+
+The matrix must retain:
+candidate_count
+screened_count
+finalist_count
+experiment_fingerprint
+analysis_git_sha
+source/data snapshot
+feature set
+model family / parameters
+training window
+calibration
+fold boundaries
+n
+effective sample size
+worst block
+newest block
+same-block baseline
+incumbent comparison
+
+Selection rules:
+- Model, feature, window, calibration and routing choices are made only from data strictly earlier than the scored outer block.
+- Frozen Holdout is descriptive only and is excluded from candidate selection and gate tuning.
+- Candidate errors and insufficient-evidence candidates remain visible as FAILURE / DEFERRED / HOLD states rather than being dropped.
+- Equivalent candidates are fingerprinted and deduplicated.
+- Exploratory winner ≠ performance verification ≠ promotion approval.
+
+Each matrix result must declare:
+research_only=true
+production_changed=false
+promotion_allowed=false
+
+A matrix result cannot change Production or model_registry. Promotion remains subject to the independent canonical gates.
+
 
 ⸻
 
