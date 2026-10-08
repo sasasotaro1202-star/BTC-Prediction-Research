@@ -649,7 +649,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             validate(
                 {
                     "workflow": "btc_experience_policy_oos.yml",
-                    "threshold_seconds": 21600,
+                    "threshold_seconds": 10800,
                     "production_impact": False,
                     "priority": 85,
                     "reason": "a",
@@ -884,7 +884,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             validate(
                 {
                     "workflow": "btc_experience_policy_oos.yml",
-                    "threshold_seconds": 21600,
+                    "threshold_seconds": 10800,
                     "production_impact": False,
                     "priority": 94,
                     "reason": "x",
