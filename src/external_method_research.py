@@ -137,26 +137,51 @@ def _retry_ready(record: dict[str, Any], now_epoch: float | None = None) -> bool
     return now_epoch >= retry_epoch
 
 
+def _deferred_queue_floor(queue: dict[str, Any], runtime: dict[str, Any]) -> int | None:
+    """Return the highest queue rank already bypassed by an unretryable deferred run."""
+    candidates = _candidate_map(queue)
+    results = _runtime_results(runtime)
+    ranks: list[int] = []
+    for repo, record in results.items():
+        if not isinstance(record, dict) or record.get("status") not in TRANSIENT_STATUSES:
+            continue
+        candidate = candidates.get(repo)
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            ranks.append(int(candidate.get("queue_rank", 10**9)))
+        except (TypeError, ValueError):
+            continue
+    return max(ranks) if ranks else None
+
+
 def choose_next_candidate(queue: dict[str, Any], runtime: dict[str, Any] | None = None) -> dict[str, Any] | None:
     runtime = runtime or {}
     results = _runtime_results(runtime)
     candidates = _candidate_map(queue)
     now_epoch = time.time()
+    deferred_floor = _deferred_queue_floor(queue, runtime)
     for repo in candidate_order(queue):
         if repo not in candidates:
             continue
         record = results.get(repo)
         if not isinstance(record, dict):
+            try:
+                rank = int(candidates[repo].get("queue_rank", 10**9))
+            except (TypeError, ValueError):
+                rank = 10**9
+            if deferred_floor is not None and rank <= deferred_floor:
+                continue
             return candidates[repo]
         status = record.get("status")
         if status in TERMINAL_STATUSES:
             continue
-        if status in TRANSIENT_STATUSES and not _retry_ready(record, now_epoch):
+        if status in TRANSIENT_STATUSES:
+            if _retry_ready(record, now_epoch):
+                return candidates[repo]
             continue
         return candidates[repo]
     return None
-
-
 def _license_state(obj: Any) -> tuple[str, str]:
     if not isinstance(obj, dict):
         return "UNKNOWN", ""
