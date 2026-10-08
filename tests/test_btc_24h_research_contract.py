@@ -113,11 +113,12 @@ def test_24h_stage4_directly_depends_on_every_upstream_stage_it_checks():
         assert result_var in stage4_block
 
 
-def test_24h_stage1_rejects_superseded_workflow_sha_before_expensive_research():
+def test_24h_stage1_accepts_same_sha_or_safe_state_only_drift_before_expensive_research():
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    assert "Verify workflow SHA is current main before expensive research" in workflow
-    assert "ci_git_fetch origin main --depth=1" in workflow
-    assert "STALE_WORKFLOW_SHA current_run=$GITHUB_SHA current_main=$main_sha" in workflow
+    assert "Verify workflow lineage is safe before expensive research" in workflow
+    assert "SAFE_STATE_DRIFT" in workflow
+    assert "UNSAFE_MAIN_RUN expected=${main_sha} actual=${GITHUB_SHA}" in workflow
+    assert "UNSAFE_MAIN_DRIFT_FILE=$changed" in workflow
     assert "WORKFLOW_SHA_CURRENT_MAIN=$GITHUB_SHA" in workflow
 
 def test_24h_only_stage1_requires_current_main_and_later_stages_use_immutable_snapshot():
