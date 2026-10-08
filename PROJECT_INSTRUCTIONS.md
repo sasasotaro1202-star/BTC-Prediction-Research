@@ -275,3 +275,21 @@ The PIT OOS Audit is a production-safety prerequisite rather than optional resea
 Operational rule: `dispatch_if_stale btc_pit_oos_audit.yml 900` runs before the `production_active` backpressure branch. This keeps the PIT audit freshness gate current without dispatching model-research lanes during an active Live Cycle.
 
 The independent Watchdog already retains a separate bounded PIT audit recovery path. This is redundancy for audit liveness, not an authorization to modify Production.
+
+
+107. RECENCY RECOVERY CADENCE
+
+When durable recent-performance regression is active, the routed Recency Challenger uses a bounded 6-hour freshness threshold instead of its routine 24-hour threshold. This reduces recovery latency while retaining the existing concurrency, current-main, Watchdog, and fail-closed controls.
+
+The 6-hour threshold applies only to evidence-driven recovery routing. Routine scheduled Recency Challenger execution remains daily.
+
+No Production, registry, calibration, ledger, Frozen Holdout, or promotion authority is changed.
+
+
+108. RECENCY VALIDATION SELECTION ABLATION
+
+The Recency Challenger exploratory candidate is selected by equal rank across validation Accuracy, LogLoss, and Brier on the same chronological validation slice. The prior Accuracy-first selection is retained for auditability so the selection effect can be compared directly.
+
+Frozen Holdout remains descriptive-only and cannot tune the selection rule. The challenger also runs automatically when its research source/workflow/tests change, while ordinary data-state updates do not trigger the expensive lane.
+
+This is an evidence-generation change only. A positive result is not Production evidence without independent strict-PIT, OOS/WFO, robustness, calibration, Frozen Holdout, and shadow validation.
