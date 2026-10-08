@@ -306,7 +306,7 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertEqual(route["priority"], 87)
             self.assertEqual(route["evidence_state"], "PERFORMANCE_REGRESSION")
             self.assertIn(
-                "10m:experience_recent100_accuracy_floor=0.2700<=0.30",
+                "10m:experience_recent100_accuracy_floor=0.2700<=0.35",
                 route["signals"],
             )
 
