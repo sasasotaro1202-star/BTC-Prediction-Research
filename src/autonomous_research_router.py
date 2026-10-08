@@ -494,14 +494,6 @@ def _external_method_order_for_router(queue: dict[str, Any]) -> list[str]:
 
 
 
-def choose(root: Path) -> dict[str, Any]:
-    evidence = root / "data" / "historical_research"
-
-    pit = _load(evidence / "pit_oos_audit.json")
-    health = _load(evidence / "research_health.json")
-
-    pit_freshness_signals = _pit_audit_freshness_signals(root)
-
 def _pit_audit_freshness_signals(root: Path) -> list[str]:
     """Return fail-closed signals when the published PIT audit timing metadata is unusable or stale."""
     pit_path = root / "data" / "historical_research" / "pit_oos_audit.json"
@@ -535,7 +527,13 @@ def _pit_audit_freshness_signals(root: Path) -> list[str]:
 
     return []
 
+def choose(root: Path) -> dict[str, Any]:
+    evidence = root / "data" / "historical_research"
 
+    pit = _load(evidence / "pit_oos_audit.json")
+    health = _load(evidence / "research_health.json")
+
+    pit_freshness_signals = _pit_audit_freshness_signals(root)
     if pit_freshness_signals:
         return _ordered([
             _decision(
