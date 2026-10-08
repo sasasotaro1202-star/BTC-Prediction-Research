@@ -379,6 +379,72 @@ class AutonomousResearchRouterTests(unittest.TestCase):
             self.assertFalse(route["production_impact"])
             self.assertEqual(route["reason"], "routine_future_generalization_evidence_refresh")
 
+    def test_insufficient_live_robustness_routes_frontier_instead_of_repeated_rich_refit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "promotion_gate.json",
+                {
+                    "production_safety_gate": "HOLD",
+                    "promotion_allowed": False,
+                    "reason": "robustness_evidence_invalid_or_incomplete;candidate_or_frozen_holdout_non_regression_not_verified",
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "robustness_oos_report.json",
+                {
+                    "research_only": True,
+                    "policy": "diagnostic_only_no_model_input_no_promotion_effect",
+                    "horizons": {
+                        "5m": {"status": "insufficient_data", "n": 473, "minimum": 1000, "data_source": "live_binance_primary"},
+                        "10m": {"status": "insufficient_data", "n": 473, "minimum": 1000, "data_source": "live_binance_primary"},
+                    },
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "data_frontier.json",
+                {"candidates": {"candidate:demo": {"lifecycle": {"research_selection_eligible": True}}}},
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_autonomous_data_frontier.yml")
+            self.assertEqual(route["priority"], 89)
+            self.assertEqual(route["evidence_state"], "ROBUSTNESS_MATURATION")
+            self.assertNotEqual(route["workflow"], "btc_rich_production_challenger.yml")
+            self.assertIn("5m:robustness_live_n=473<1000", route["signals"])
+
+    def test_insufficient_live_robustness_without_frontier_waits_on_routine_lane(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data" / "historical_research",
+                "promotion_gate.json",
+                {
+                    "production_safety_gate": "HOLD",
+                    "promotion_allowed": False,
+                    "reason": "robustness_evidence_invalid_or_incomplete;candidate_or_frozen_holdout_non_regression_not_verified",
+                },
+            )
+            self._write(
+                root / "data" / "historical_research",
+                "robustness_oos_report.json",
+                {
+                    "research_only": True,
+                    "policy": "diagnostic_only_no_model_input_no_promotion_effect",
+                    "horizons": {
+                        "5m": {"status": "insufficient_data", "n": 473, "minimum": 1000, "data_source": "live_binance_primary"},
+                        "10m": {"status": "insufficient_data", "n": 473, "minimum": 1000, "data_source": "live_binance_primary"},
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+            self.assertEqual(route["evidence_state"], "ROBUSTNESS_MATURATION_WAIT")
+
     def test_pit_gate_structure_is_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
