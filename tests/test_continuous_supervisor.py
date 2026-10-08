@@ -37,6 +37,7 @@ def test_supervisor_routes_one_additional_evidence_driven_lane():
         'btc_experience_policy_oos.yml',
         'btc_rich_production_challenger.yml',
         'btc_external_method_research.yml',
+        'btc_external_method_shadow.yml',
         'btc_ultimate_final_v13_e2e.yml',
     ):
         assert workflow in text

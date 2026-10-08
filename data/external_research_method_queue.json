@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generated_at_utc": "2026-10-08T04:40:00Z",
   "based_on_main_head": "21aa2749da8c5a9e4538baaf7069090c85833c0f",
   "status": "RESEARCH_ONLY",
@@ -207,7 +207,15 @@
       "production_eligible": false,
       "external_performance_transfer_allowed": false,
       "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
-      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED",
+      "source_contracts": [
+        {
+          "kind": "github",
+          "id": "microsoft/qlib",
+          "role": "source"
+        }
+      ],
+      "shadow_adapter": null
     },
     {
       "queue_rank": 18,
@@ -231,7 +239,20 @@
       "production_eligible": false,
       "external_performance_transfer_allowed": false,
       "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
-      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED",
+      "source_contracts": [
+        {
+          "kind": "github",
+          "id": "google-research/timesfm",
+          "role": "source"
+        },
+        {
+          "kind": "huggingface_model",
+          "id": "google/timesfm-2.5-200m-pytorch",
+          "role": "model_weights"
+        }
+      ],
+      "shadow_adapter": null
     },
     {
       "queue_rank": 20,
@@ -243,7 +264,37 @@
       "production_eligible": false,
       "external_performance_transfer_allowed": false,
       "security_status": "PENDING_LOCAL_SECURITY_AUDIT",
-      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED"
+      "cost_status": "NO_PAID_DEPENDENCY_ASSUMED",
+      "source_contracts": [
+        {
+          "kind": "github",
+          "id": "shiyu-coder/Kronos",
+          "role": "source"
+        },
+        {
+          "kind": "huggingface_model",
+          "id": "NeoQuasar/Kronos-mini",
+          "role": "model_weights"
+        },
+        {
+          "kind": "huggingface_model",
+          "id": "NeoQuasar/Kronos-Tokenizer-2k",
+          "role": "tokenizer_weights"
+        }
+      ],
+      "shadow_adapter": "kronos",
+      "shadow_requirements": {
+        "5m": {
+          "lookback_bars": 400,
+          "bar_minutes": 5
+        },
+        "10m": {
+          "lookback_bars": 400,
+          "bar_minutes": 10
+        },
+        "sample_paths": 8,
+        "device": "cpu"
+      }
     },
     {
       "queue_rank": 21,
@@ -671,5 +722,6 @@
     "treatment": "DISCOVERY_ONLY_UNVERIFIED",
     "rule": "Only locally source-verified candidates can enter a later research gate; external popularity or benchmark claims are not BTC evidence."
   },
-  "candidate_count": 35
+  "candidate_count": 35,
+  "updated_at_utc": "2026-10-08T05:00:00Z"
 }

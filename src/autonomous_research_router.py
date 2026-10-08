@@ -25,6 +25,7 @@ ALLOWED = {
     "btc_uncertainty_layer_oos.yml": 21600,
     "btc_rich_production_challenger.yml": 86400,
     "btc_external_method_research.yml": 900,
+    "btc_external_method_shadow.yml": 900,
     "btc_ultimate_final_v13_e2e.yml": 86400,
 }
 
@@ -433,6 +434,65 @@ def _external_method_research_candidate(root: Path) -> tuple[bool, list[str]]:
 
 
 
+
+def _external_method_shadow_candidate(root: Path) -> tuple[bool, list[str]]:
+    runtime = _load(root / "data" / "external_research_runtime.json")
+    if not isinstance(runtime, dict):
+        return False, ["external_method_runtime_missing_or_invalid"]
+    results = runtime.get("results", {})
+    if not isinstance(results, dict):
+        return False, ["external_method_runtime_results_missing_or_invalid"]
+    queue = _load(root / "data" / "external_research_method_queue.json")
+    if not isinstance(queue, dict):
+        return False, ["external_method_queue_missing_or_invalid"]
+    candidates = _candidate_map_for_router(queue)
+    order = _external_method_order_for_router(queue)
+    for repository in order:
+        record = results.get(repository)
+        if not isinstance(record, dict):
+            continue
+        if record.get("status") == "LOCAL_GATE_READY":
+            candidate = candidates.get(repository, {})
+            gate = str(candidate.get("next_gate", "")).strip()
+            return True, [f"external_method_shadow_ready={repository}", f"gate={gate or 'UNKNOWN'}"]
+    return False, ["no_external_method_shadow_candidate"]
+
+
+def _candidate_map_for_router(queue: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    items = queue.get("candidates", [])
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                repo = str(item.get("repository", "")).strip()
+                if repo:
+                    out[repo] = item
+    return out
+
+
+def _external_method_order_for_router(queue: dict[str, Any]) -> list[str]:
+    ordered: list[str] = []
+    gate = queue.get("priority_gate", {})
+    if isinstance(gate, dict):
+        for group in (
+            "immediate_local_reproduction",
+            "predictive_method_second_wave",
+            "research_infrastructure_next",
+            "external_information_next",
+            "frontier_only",
+        ):
+            items = gate.get(group, [])
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict):
+                    repo = str(item.get("repository", "")).strip()
+                    if repo and repo not in ordered:
+                        ordered.append(repo)
+    return ordered
+
+
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
@@ -631,6 +691,16 @@ def choose(root: Path) -> dict[str, Any]:
             80,
             "FRONTIER_WORK_AVAILABLE",
             [f"eligible_candidates={frontier_candidates}"],
+        ))
+
+    external_shadow_ready, external_shadow_signals = _external_method_shadow_candidate(root)
+    if external_shadow_ready:
+        routes.append(_decision(
+            "btc_external_method_shadow.yml",
+            "external_method_candidate_is_source_verified_and_ready_for_candidate_specific_shadow",
+            56,
+            "EXTERNAL_METHOD_SHADOW_READY",
+            external_shadow_signals,
         ))
 
     external_method_pending, external_method_signals = _external_method_research_candidate(root)

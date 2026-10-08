@@ -661,3 +661,46 @@ if __name__ == "__main__":
             )
             route = validate(choose(root))
             self.assertEqual(route["workflow"], "btc_ultimate_final_v13_e2e.yml")
+
+
+    def test_external_method_shadow_lane_precedes_queue_advance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._healthy_base(root)
+            self._write(
+                root / "data",
+                "external_research_method_queue.json",
+                {
+                    "schema_version": 2,
+                    "candidates": [
+                        {
+                            "queue_rank": 1,
+                            "repository": "model/second",
+                            "next_gate": "MODEL_OOS_GATE",
+                        }
+                    ],
+                    "priority_gate": {
+                        "immediate_local_reproduction": [
+                            {"repository": "model/second", "gate": "MODEL_OOS_GATE"}
+                        ]
+                    },
+                },
+            )
+            self._write(
+                root / "data",
+                "external_research_runtime.json",
+                {
+                    "schema_version": 2,
+                    "research_only": True,
+                    "production_changed": False,
+                    "results": {
+                        "model/second": {
+                            "status": "LOCAL_GATE_READY"
+                        }
+                    },
+                },
+            )
+            route = validate(choose(root))
+            self.assertEqual(route["workflow"], "btc_external_method_shadow.yml")
+            self.assertEqual(route["priority"], 56)
+            self.assertEqual(route["evidence_state"], "EXTERNAL_METHOD_SHADOW_READY")

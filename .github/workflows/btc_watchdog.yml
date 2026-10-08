@@ -55,6 +55,7 @@ jobs:
             btc_rolling_challenger.yml
             btc_return_distribution_tail_oos.yml
             btc_external_method_research.yml
+            btc_external_method_shadow.yml
             btc_unit_tests.yml
           )
           if ! main_sha="$(gh api "/repos/${REPO}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)"; then
