@@ -39,6 +39,7 @@ def test_supervisor_routes_one_additional_evidence_driven_lane():
         'btc_external_method_research.yml',
         'btc_external_method_shadow.yml',
         'btc_ultimate_final_v13_e2e.yml',
+        'btc_recency_challenger.yml',
     ):
         assert workflow in text
 
@@ -137,6 +138,7 @@ def test_supervisor_has_event_driven_recovery_triggers():
         'BTC Ops Preflight',
         'BTC 24H Autonomous Research',
         'BTC 24H Research Watchdog',
+        'BTC Recency Challenger',
     ):
         assert f'- "{workflow}"' in text
     assert 'types: [completed]' in text
@@ -195,5 +197,5 @@ def test_supervisor_defers_routed_research_when_production_spine_is_active():
 def test_supervisor_and_preflight_accept_all_allowlisted_router_candidates():
     supervisor = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
     preflight = Path('.github/workflows/btc_ops_preflight.yml').read_text(encoding='utf-8')
-    assert 'length >= 1 and length <= 11' in supervisor
+    assert 'length >= 1 and length <= 12' in supervisor
     assert '1 <= len(candidates) <= len(allowed)' in preflight
