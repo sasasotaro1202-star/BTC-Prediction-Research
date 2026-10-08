@@ -823,7 +823,6 @@ def validate(route: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("router_production_impact_must_be_false")
 
     reason = str(route.get("reason", "")).strip()
-    evidence_state = str(route.get("evidence_state", "")).strip()
     if not reason:
         raise ValueError("router_reason_missing")
     if not evidence_state:
