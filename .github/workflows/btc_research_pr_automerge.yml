@@ -31,6 +31,7 @@ permissions:
   contents: write
   pull-requests: write
   checks: read
+  actions: write
 
 jobs:
   merge:
@@ -203,6 +204,47 @@ jobs:
             if jq -e '.merged == true' >/dev/null <<<"$merge_json"; then
               merge_sha="$(jq -r '.sha // ""' <<<"$merge_json")"
               add_audit "PR=$PR MERGED sha=$merge_sha"
+
+              # GITHUB_TOKEN-authored merges do not reliably emit a follow-up push
+              # trigger for repository workflows. Explicitly dispatch the full unit
+              # suite on the exact post-merge main SHA and verify run creation.
+              main_sha_after_merge="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+              if [ "$main_sha_after_merge" != "$merge_sha" ]; then
+                add_audit "PR=$PR POST_MERGE_VERIFY HOLD main-sha=$main_sha_after_merge merge-sha=$merge_sha"
+                exit 1
+              fi
+              dispatch_started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+              dispatch_ok=0
+              for attempt in 1 2 3 4 5; do
+                if gh workflow run btc_unit_tests.yml --repo "$REPO" --ref main >/dev/null 2>&1; then
+                  dispatch_ok=1
+                  break
+                fi
+                add_audit "PR=$PR POST_MERGE_UNIT_TEST_DISPATCH_RETRY=$attempt"
+                sleep "$attempt"
+              done
+              if [ "$dispatch_ok" -ne 1 ]; then
+                add_audit "PR=$PR POST_MERGE_UNIT_TEST_DISPATCH_FAILED"
+                exit 1
+              fi
+
+              verified_run=""
+              for attempt in 1 2 3 4 5 6 7 8; do
+                verified_run="$(gh api "repos/$REPO/actions/workflows/btc_unit_tests.yml/runs?per_page=30"                   --jq '[.workflow_runs[]
+                    | select(.event == "workflow_dispatch")
+                    | select(.head_sha == "'"$merge_sha"'")
+                    | select(.created_at >= "'"$dispatch_started_at"'")]
+                    | sort_by(.created_at) | reverse | .[0].id // empty')"
+                if [ -n "$verified_run" ]; then
+                  add_audit "PR=$PR POST_MERGE_UNIT_TEST_DISPATCH_VERIFIED run_id=$verified_run sha=$merge_sha"
+                  break
+                fi
+                sleep "$attempt"
+              done
+              if [ -z "$verified_run" ]; then
+                add_audit "PR=$PR POST_MERGE_UNIT_TEST_DISPATCH_NOT_VERIFIED"
+                exit 1
+              fi
             else
               message="$(jq -r '.message // "merge_not_performed"' <<<"$merge_json")"
               add_audit "PR=$PR HOLD merge-rejected=$message"
