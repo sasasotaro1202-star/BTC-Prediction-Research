@@ -138,18 +138,36 @@ class ExternalMethodResearchTests(unittest.TestCase):
 
     def test_deferred_candidate_does_not_starve_other_candidates(self):
         queue = self._queue()
+        queue["candidates"].append(
+            {"queue_rank": 3, "repository": "model/third", "next_gate": "LOCAL_ONLY"}
+        )
         runtime = {
             "results": {
-                "agent/first": {
-                    "status": "LOCAL_GATE_READY",
-                },
                 "model/second": {
                     "status": "DEFERRED",
                     "retry_after_utc": "2999-01-01T00:00:00Z",
                 },
             }
         }
-        self.assertIsNone(choose_next_candidate(queue, runtime))
+        self.assertEqual(
+            choose_next_candidate(queue, runtime)["repository"],
+            "model/third",
+        )
+
+    def test_deferred_candidate_becomes_retryable_after_deadline(self):
+        queue = self._queue()
+        runtime = {
+            "results": {
+                "model/second": {
+                    "status": "DEFERRED",
+                    "retry_after_utc": "2000-01-01T00:00:00Z",
+                },
+            }
+        }
+        self.assertEqual(
+            choose_next_candidate(queue, runtime)["repository"],
+            "model/second",
+        )
 
     def test_external_workflow_uses_live_github_expressions(self):
         workflow = Path('.github/workflows/btc_external_method_research.yml').read_text(encoding='utf-8')
