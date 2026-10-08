@@ -3150,3 +3150,12 @@ Priority ordering for this condition:
 3. btc_recency_challenger.yml = 93 on the same trigger
 
 The higher priority only changes research scheduling. It does not select, promote, replace, or modify a Production model, registry, calibration artifact, router, or Frozen Holdout.
+
+
+106. RECENCY CHALLENGER PIT / PROMOTION BOUNDARY
+
+The Recency Challenger is an exploratory historical model-comparison lane. Historical candle rows are event-time aligned, but source publication/availability time is not proven from the archive loader. Therefore its artifacts must declare `pit_status=UNVERIFIABLE_HISTORICAL_AVAILABILITY`, `promotion_evidence_eligible=false`, and `promotion_allowed=false`.
+
+The workflow validates current-main lineage before expensive computation. Durable data/model state drift may be tolerated under the existing long-run policy; executable/config/workflow/policy drift is FAIL-CLOSED.
+
+A positive holdout result from this lane is a hypothesis/research signal only. It cannot become Production evidence without an independent strict-PIT implementation on the required current-generation observations.
