@@ -266,3 +266,12 @@ The Recency Challenger is an exploratory historical model-comparison lane. Histo
 The workflow validates current-main lineage before expensive computation. Durable data/model state drift may be tolerated under the existing long-run policy; executable/config/workflow/policy drift is FAIL-CLOSED.
 
 A positive holdout result from this lane is a hypothesis/research signal only. It cannot become Production evidence without an independent strict-PIT implementation on the required current-generation observations.
+
+
+107. PIT AUDIT SAFETY PRIORITY UNDER PRODUCTION BACKPRESSURE
+
+The PIT OOS Audit is a production-safety prerequisite rather than optional research. The Continuous Supervisor must recover it independently before applying Production-first suppression to discretionary research lanes.
+
+Operational rule: `dispatch_if_stale btc_pit_oos_audit.yml 900` runs before the `production_active` backpressure branch. This keeps the PIT audit freshness gate current without dispatching model-research lanes during an active Live Cycle.
+
+The independent Watchdog already retains a separate bounded PIT audit recovery path. This is redundancy for audit liveness, not an authorization to modify Production.

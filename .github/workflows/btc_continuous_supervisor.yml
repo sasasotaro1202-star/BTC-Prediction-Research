@@ -303,6 +303,10 @@ jobs:
           # Production freshness is the fastest recovery path.
           dispatch_if_stale btc_live_cycle.yml 300
           dispatch_if_stale btc_binance_ws_collector.yml 900
+          # PIT OOS Audit is a production-safety prerequisite, not optional research.
+          # Keep it recoverable even while the Live Cycle is active so the router's
+          # one-hour freshness gate does not become a permanent backpressure loop.
+          dispatch_if_stale btc_pit_oos_audit.yml 900
           # The 24H marathon remains exclusively owned by its dedicated watchdog.
           # The Supervisor only keeps that watchdog heartbeat alive, so a lost
           # watchdog schedule cannot strand the long-running research chain.
