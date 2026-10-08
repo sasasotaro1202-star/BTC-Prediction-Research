@@ -41,6 +41,7 @@ PERFORMANCE_ECE_WORSEN_TRIGGER = 0.02
 PERFORMANCE_RECENT_ACCURACY_FLOOR = 0.30
 DRIFT_SCORE_TRIGGER = 0.10
 MODEL_DISAGREEMENT_DRIFT_TRIGGER = 0.10
+MAX_PIT_AUDIT_AGE_SECONDS = 3600
 
 
 def _load(path: Path) -> dict[str, Any] | None:
@@ -493,11 +494,51 @@ def _external_method_order_for_router(queue: dict[str, Any]) -> list[str]:
 
 
 
+
+def _pit_audit_freshness_signals(root: Path) -> list[str]:
+    """Return fail-closed signals when the published PIT audit timing metadata is unusable or stale."""
+    pit_path = root / "data" / "historical_research" / "pit_oos_audit.json"
+    if not pit_path.is_file():
+        return ["pit_audit_evidence_missing"]
+
+    pit = _load(pit_path)
+    if pit is None:
+        return ["pit_audit_evidence_invalid"]
+
+    generated_at = pit.get("generated_at_utc")
+    if not generated_at:
+        return ["pit_audit_generated_at_missing"]
+
+    try:
+        from datetime import datetime, timezone
+        parsed = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return ["pit_audit_generated_at_invalid"]
+
+    age = (datetime.now(timezone.utc) - parsed).total_seconds()
+    if age < 0:
+        return ["pit_audit_generated_at_in_future"]
+    if age > MAX_PIT_AUDIT_AGE_SECONDS:
+        return [f"pit_audit_stale:{int(age)}s>{MAX_PIT_AUDIT_AGE_SECONDS}s"]
+    return []
+
 def choose(root: Path) -> dict[str, Any]:
     evidence = root / "data" / "historical_research"
 
     pit = _load(evidence / "pit_oos_audit.json")
     health = _load(evidence / "research_health.json")
+
+    pit_freshness_signals = _pit_audit_freshness_signals(root)
+    if pit_freshness_signals:
+        return _ordered([
+            _decision(
+                "btc_research_readiness.yml",
+                "strict_pit_audit_stale_or_timing_metadata_invalid",
+                101,
+                "PIT_AUDIT_STALE",
+                pit_freshness_signals,
+            )
+        ])
 
     # Durable safety evidence is a hard gate. Do not continue to lower-priority
     # research lanes when readiness itself is uncertain.
