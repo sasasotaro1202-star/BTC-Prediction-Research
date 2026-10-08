@@ -59,7 +59,6 @@ def test_validation_selection_balances_accuracy_and_proper_scores():
     ]
     selected, ranked = select_validation_model(results)
     assert selected == "stable_leader"
-    assert ranked[0]["validation_selection_policy"] if False else True
     assert ranked[0]["validation_mean_rank"] <= ranked[1]["validation_mean_rank"]
 
 
