@@ -139,6 +139,7 @@ class ExternalMethodResearchTests(unittest.TestCase):
             self.assertFalse(result["promotion_allowed"])
             self.assertEqual(result["next_action"], "RETRY_SOURCE_VERIFICATION")
             self.assertTrue(result["retry_after_utc"])
+            self.assertEqual(result["retry_count"], 1)
             persisted = json.loads(
                 (root / "data" / "external_research_runtime.json").read_text(encoding="utf-8")
             )
