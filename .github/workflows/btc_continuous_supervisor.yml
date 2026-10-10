@@ -271,11 +271,13 @@ jobs:
 
               # An accepted dispatch request is not sufficient evidence that a
               # workflow run was actually created. Verify creation on current main
-              # with a short bounded poll; the independent Watchdog remains the
-              # fallback when this verification cannot be completed.
+              # with a bounded 60-second poll; GitHub Actions API/event propagation can lag
+              # after an accepted dispatch, so a short false-negative window would
+              # incorrectly mark a healthy recovery as degraded. The independent
+              # Watchdog remains the fallback when this verification cannot be completed.
               if [ "${dispatch_sent}" = true ]; then
                 dispatch_verified=false
-                for check in 1 2 3 4; do
+                for check in 1 2 3 4 5 6 7 8 9 10 11 12; do
                   sleep 5
                   verify_response="$(ci_gh_api_get "/repos/${REPO}/actions/workflows/${workflow}/runs?branch=main&per_page=30" 2>/dev/null)" || verify_response=''
                   if [ -n "${verify_response}" ] && jq -e \
