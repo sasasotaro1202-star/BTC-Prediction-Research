@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-11T11:04:34.079734+00:00",
+  "generated_at_utc": "2026-10-11T13:04:47.465248+00:00",
   "horizons": {
     "10m": {
       "cases": {
@@ -467,9 +467,9 @@
       "cases": {
         "confidence_bucket": {
           "0.33-0.40": {
-            "accuracy": 0.43283582089552236,
-            "avg_confidence": 0.3544095366907997,
-            "n": 268
+            "accuracy": 0.43478260869565216,
+            "avg_confidence": 0.3543575840409571,
+            "n": 276
           }
         },
         "hour_jst": {
@@ -489,9 +489,9 @@
             "n": 11
           },
           "15": {
-            "accuracy": 0.5384615384615384,
-            "avg_confidence": 0.3517840624769767,
-            "n": 13
+            "accuracy": 0.5625,
+            "avg_confidence": 0.35077426430159675,
+            "n": 16
           },
           "16": {
             "accuracy": 0.4444444444444444,
@@ -532,89 +532,94 @@
             "accuracy": 0.375,
             "avg_confidence": 0.35225295463571793,
             "n": 16
+          },
+          "9": {
+            "accuracy": 0.1,
+            "avg_confidence": 0.35794725509972514,
+            "n": 10
           }
         },
         "model_version": {
           "5m:bootstrap.soft_ensemble.v5.4|10m:bootstrap.bootstrap_rf": {
-            "accuracy": 0.42920353982300885,
-            "avg_confidence": 0.3540134099986811,
-            "n": 226
+            "accuracy": 0.42857142857142855,
+            "avg_confidence": 0.3539998402223638,
+            "n": 231
           },
           "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1": {
-            "accuracy": 0.4523809523809524,
-            "avg_confidence": 0.3565410755579145,
-            "n": 42
+            "accuracy": 0.4666666666666667,
+            "avg_confidence": 0.35619400230973597,
+            "n": 45
           }
         },
         "predicted_direction": {
           "DOWN": {
-            "accuracy": 0.4396551724137931,
-            "avg_confidence": 0.3558339028158817,
-            "n": 116
+            "accuracy": 0.42857142857142855,
+            "avg_confidence": 0.35580503555133314,
+            "n": 119
           },
           "UP": {
-            "accuracy": 0.4421768707482993,
-            "avg_confidence": 0.3539087311978039,
-            "n": 147
+            "accuracy": 0.45695364238410596,
+            "avg_confidence": 0.35393265522495093,
+            "n": 151
           }
         },
         "production_mode": {
           "binance_primary": {
-            "accuracy": 0.42920353982300885,
-            "avg_confidence": 0.3540134099986811,
-            "n": 226
+            "accuracy": 0.42857142857142855,
+            "avg_confidence": 0.3539998402223638,
+            "n": 231
           },
           "coinbase_fallback": {
-            "accuracy": 0.4523809523809524,
-            "avg_confidence": 0.3565410755579145,
-            "n": 42
+            "accuracy": 0.4666666666666667,
+            "avg_confidence": 0.35619400230973597,
+            "n": 45
           }
         },
         "regime": {
           "RANGE": {
-            "accuracy": 0.4666666666666667,
-            "avg_confidence": 0.35234239421246244,
-            "n": 210
+            "accuracy": 0.46543778801843316,
+            "avg_confidence": 0.3523223505736243,
+            "n": 217
           },
           "TREND": {
-            "accuracy": 0.3103448275862069,
-            "avg_confidence": 0.3618940180778832,
-            "n": 58
+            "accuracy": 0.3220338983050847,
+            "avg_confidence": 0.36184310374284206,
+            "n": 59
           }
         },
         "warning": {
           "NONE": {
-            "accuracy": 0.3983739837398374,
-            "avg_confidence": 0.353741300880159,
-            "n": 123
+            "accuracy": 0.4,
+            "avg_confidence": 0.3537818440087536,
+            "n": 125
           },
           "[\"order-book imbalance\",\"taker-flow imbalance\"]": {
-            "accuracy": 0.5454545454545454,
-            "avg_confidence": 0.3529457840311608,
-            "n": 11
+            "accuracy": 0.5,
+            "avg_confidence": 0.35292085406734824,
+            "n": 12
           },
           "[\"order-book imbalance\"]": {
-            "accuracy": 0.4782608695652174,
-            "avg_confidence": 0.35441615399556287,
-            "n": 115
+            "accuracy": 0.48333333333333334,
+            "avg_confidence": 0.3542799829529958,
+            "n": 120
           }
         }
       },
       "recent": {
         "100": {
-          "accuracy": 0.41,
+          "accuracy": 0.42,
           "by_actual": {
             "DOWN": {
-              "hit_rate": 0.4716981132075472,
-              "n": 53
+              "hit_rate": 0.49019607843137253,
+              "n": 51
             },
             "FLAT": {
               "hit_rate": 0.0,
               "n": 5
             },
             "UP": {
-              "hit_rate": 0.38095238095238093,
-              "n": 42
+              "hit_rate": 0.38636363636363635,
+              "n": 44
             }
           },
           "by_predicted": {
@@ -623,18 +628,18 @@
               "n": 53
             },
             "FLAT": {
-              "accuracy": null,
-              "n": 0
+              "accuracy": 0.0,
+              "n": 1
             },
             "UP": {
-              "accuracy": 0.3404255319148936,
-              "n": 47
+              "accuracy": 0.3695652173913043,
+              "n": 46
             }
           },
           "n": 100
         },
         "1000": {
-          "accuracy": 0.43283582089552236,
+          "accuracy": 0.43478260869565216,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4112903225806452,
@@ -646,27 +651,27 @@
             },
             "UP": {
               "hit_rate": 0.5,
-              "n": 130
+              "n": 138
             }
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.4396551724137931,
-              "n": 116
+              "accuracy": 0.42857142857142855,
+              "n": 119
             },
             "FLAT": {
               "accuracy": 0.0,
-              "n": 5
+              "n": 6
             },
             "UP": {
-              "accuracy": 0.4421768707482993,
-              "n": 147
+              "accuracy": 0.45695364238410596,
+              "n": 151
             }
           },
-          "n": 268
+          "n": 276
         },
         "300": {
-          "accuracy": 0.43283582089552236,
+          "accuracy": 0.43478260869565216,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4112903225806452,
@@ -678,27 +683,27 @@
             },
             "UP": {
               "hit_rate": 0.5,
-              "n": 130
+              "n": 138
             }
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.4396551724137931,
-              "n": 116
+              "accuracy": 0.42857142857142855,
+              "n": 119
             },
             "FLAT": {
               "accuracy": 0.0,
-              "n": 5
+              "n": 6
             },
             "UP": {
-              "accuracy": 0.4421768707482993,
-              "n": 147
+              "accuracy": 0.45695364238410596,
+              "n": 151
             }
           },
-          "n": 268
+          "n": 276
         },
         "5000": {
-          "accuracy": 0.43283582089552236,
+          "accuracy": 0.43478260869565216,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4112903225806452,
@@ -710,28 +715,28 @@
             },
             "UP": {
               "hit_rate": 0.5,
-              "n": 130
+              "n": 138
             }
           },
           "by_predicted": {
             "DOWN": {
-              "accuracy": 0.4396551724137931,
-              "n": 116
+              "accuracy": 0.42857142857142855,
+              "n": 119
             },
             "FLAT": {
               "accuracy": 0.0,
-              "n": 5
+              "n": 6
             },
             "UP": {
-              "accuracy": 0.4421768707482993,
-              "n": 147
+              "accuracy": 0.45695364238410596,
+              "n": 151
             }
           },
-          "n": 268
+          "n": 276
         }
       },
       "total": {
-        "accuracy": 0.43283582089552236,
+        "accuracy": 0.43478260869565216,
         "by_actual": {
           "DOWN": {
             "hit_rate": 0.4112903225806452,
@@ -743,31 +748,31 @@
           },
           "UP": {
             "hit_rate": 0.5,
-            "n": 130
+            "n": 138
           }
         },
         "by_predicted": {
           "DOWN": {
-            "accuracy": 0.4396551724137931,
-            "n": 116
+            "accuracy": 0.42857142857142855,
+            "n": 119
           },
           "FLAT": {
             "accuracy": 0.0,
-            "n": 5
+            "n": 6
           },
           "UP": {
-            "accuracy": 0.4421768707482993,
-            "n": 147
+            "accuracy": 0.45695364238410596,
+            "n": 151
           }
         },
-        "n": 268
+        "n": 276
       },
       "weak_cases_for_research": [
         {
-          "accuracy": 0.3103448275862069,
+          "accuracy": 0.3220338983050847,
           "case": "TREND",
           "dimension": "regime",
-          "n": 58
+          "n": 59
         }
       ]
     },
@@ -2856,9 +2861,9 @@
       "cases": {
         "confidence_bucket": {
           "0.33-0.40": {
-            "accuracy": 0.4981684981684982,
-            "avg_confidence": 0.3616556894614972,
-            "n": 273
+            "accuracy": 0.5,
+            "avg_confidence": 0.3615389746329917,
+            "n": 276
           }
         },
         "hour_jst": {
@@ -2878,9 +2883,9 @@
             "n": 11
           },
           "15": {
-            "accuracy": 0.5384615384615384,
-            "avg_confidence": 0.3581431019908136,
-            "n": 13
+            "accuracy": 0.5625,
+            "avg_confidence": 0.3567883813498479,
+            "n": 16
           },
           "16": {
             "accuracy": 0.4444444444444444,
@@ -2930,14 +2935,14 @@
         },
         "model_version": {
           "5m:bootstrap.soft_ensemble.v5.4|10m:bootstrap.bootstrap_rf": {
-            "accuracy": 0.48695652173913045,
-            "avg_confidence": 0.36109958952204413,
-            "n": 230
+            "accuracy": 0.48917748917748916,
+            "avg_confidence": 0.3610375603199737,
+            "n": 231
           },
           "5m:coinbase_fallback.rf.v1|10m:coinbase_fallback.rf.v1": {
-            "accuracy": 0.5581395348837209,
-            "avg_confidence": 0.36463017750973414,
-            "n": 43
+            "accuracy": 0.5555555555555556,
+            "avg_confidence": 0.3641129014398176,
+            "n": 45
           }
         },
         "predicted_direction": {
@@ -2946,29 +2951,34 @@
             "avg_confidence": 0.36392712195880367,
             "n": 117
           },
+          "FLAT": {
+            "accuracy": 0.2,
+            "avg_confidence": 0.33813237195242973,
+            "n": 10
+          },
           "UP": {
-            "accuracy": 0.6870748299319728,
-            "avg_confidence": 0.3613033193123822,
-            "n": 147
+            "accuracy": 0.6912751677852349,
+            "avg_confidence": 0.36123463093960667,
+            "n": 149
           }
         },
         "production_mode": {
           "binance_primary": {
-            "accuracy": 0.48695652173913045,
-            "avg_confidence": 0.36109958952204413,
-            "n": 230
+            "accuracy": 0.48917748917748916,
+            "avg_confidence": 0.3610375603199737,
+            "n": 231
           },
           "coinbase_fallback": {
-            "accuracy": 0.5581395348837209,
-            "avg_confidence": 0.36463017750973414,
-            "n": 43
+            "accuracy": 0.5555555555555556,
+            "avg_confidence": 0.3641129014398176,
+            "n": 45
           }
         },
         "regime": {
           "RANGE": {
-            "accuracy": 0.5233644859813084,
-            "avg_confidence": 0.35883970506967283,
-            "n": 214
+            "accuracy": 0.5253456221198156,
+            "avg_confidence": 0.3587301873761612,
+            "n": 217
           },
           "TREND": {
             "accuracy": 0.4067796610169492,
@@ -2988,15 +2998,15 @@
             "n": 12
           },
           "[\"order-book imbalance\"]": {
-            "accuracy": 0.5555555555555556,
-            "avg_confidence": 0.3617022240015282,
-            "n": 117
+            "accuracy": 0.5583333333333333,
+            "avg_confidence": 0.3614326165324649,
+            "n": 120
           }
         }
       },
       "recent": {
         "100": {
-          "accuracy": 0.48,
+          "accuracy": 0.47,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.5531914893617021,
@@ -3007,7 +3017,7 @@
               "n": 8
             },
             "UP": {
-              "hit_rate": 0.4888888888888889,
+              "hit_rate": 0.4666666666666667,
               "n": 45
             }
           },
@@ -3018,17 +3028,17 @@
             },
             "FLAT": {
               "accuracy": 0.0,
-              "n": 1
+              "n": 2
             },
             "UP": {
-              "accuracy": 0.46808510638297873,
-              "n": 47
+              "accuracy": 0.45652173913043476,
+              "n": 46
             }
           },
           "n": 100
         },
         "1000": {
-          "accuracy": 0.4981684981684982,
+          "accuracy": 0.5,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4647887323943662,
@@ -3039,8 +3049,8 @@
               "n": 17
             },
             "UP": {
-              "hit_rate": 0.5459459459459459,
-              "n": 185
+              "hit_rate": 0.5478723404255319,
+              "n": 188
             }
           },
           "by_predicted": {
@@ -3049,18 +3059,18 @@
               "n": 117
             },
             "FLAT": {
-              "accuracy": 0.2222222222222222,
-              "n": 9
+              "accuracy": 0.2,
+              "n": 10
             },
             "UP": {
-              "accuracy": 0.6870748299319728,
-              "n": 147
+              "accuracy": 0.6912751677852349,
+              "n": 149
             }
           },
-          "n": 273
+          "n": 276
         },
         "300": {
-          "accuracy": 0.4981684981684982,
+          "accuracy": 0.5,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4647887323943662,
@@ -3071,8 +3081,8 @@
               "n": 17
             },
             "UP": {
-              "hit_rate": 0.5459459459459459,
-              "n": 185
+              "hit_rate": 0.5478723404255319,
+              "n": 188
             }
           },
           "by_predicted": {
@@ -3081,18 +3091,18 @@
               "n": 117
             },
             "FLAT": {
-              "accuracy": 0.2222222222222222,
-              "n": 9
+              "accuracy": 0.2,
+              "n": 10
             },
             "UP": {
-              "accuracy": 0.6870748299319728,
-              "n": 147
+              "accuracy": 0.6912751677852349,
+              "n": 149
             }
           },
-          "n": 273
+          "n": 276
         },
         "5000": {
-          "accuracy": 0.4981684981684982,
+          "accuracy": 0.5,
           "by_actual": {
             "DOWN": {
               "hit_rate": 0.4647887323943662,
@@ -3103,8 +3113,8 @@
               "n": 17
             },
             "UP": {
-              "hit_rate": 0.5459459459459459,
-              "n": 185
+              "hit_rate": 0.5478723404255319,
+              "n": 188
             }
           },
           "by_predicted": {
@@ -3113,19 +3123,19 @@
               "n": 117
             },
             "FLAT": {
-              "accuracy": 0.2222222222222222,
-              "n": 9
+              "accuracy": 0.2,
+              "n": 10
             },
             "UP": {
-              "accuracy": 0.6870748299319728,
-              "n": 147
+              "accuracy": 0.6912751677852349,
+              "n": 149
             }
           },
-          "n": 273
+          "n": 276
         }
       },
       "total": {
-        "accuracy": 0.4981684981684982,
+        "accuracy": 0.5,
         "by_actual": {
           "DOWN": {
             "hit_rate": 0.4647887323943662,
@@ -3136,8 +3146,8 @@
             "n": 17
           },
           "UP": {
-            "hit_rate": 0.5459459459459459,
-            "n": 185
+            "hit_rate": 0.5478723404255319,
+            "n": 188
           }
         },
         "by_predicted": {
@@ -3146,15 +3156,15 @@
             "n": 117
           },
           "FLAT": {
-            "accuracy": 0.2222222222222222,
-            "n": 9
+            "accuracy": 0.2,
+            "n": 10
           },
           "UP": {
-            "accuracy": 0.6870748299319728,
-            "n": 147
+            "accuracy": 0.6912751677852349,
+            "n": 149
           }
         },
-        "n": 273
+        "n": 276
       },
       "weak_cases_for_research": [
         {
@@ -3166,7 +3176,7 @@
       ]
     }
   },
-  "inserted_since_last_run": 0,
+  "inserted_since_last_run": 11,
   "invalid_row_policy": "fail_closed_exclude_invalid_settlements_continue",
   "parse_errors": 0,
   "production_changed": false,
@@ -3174,5 +3184,5 @@
   "schema_version": 1,
   "source": "post_settlement_predictions",
   "status": "OK",
-  "total_experiences": 3620
+  "total_experiences": 3631
 }
