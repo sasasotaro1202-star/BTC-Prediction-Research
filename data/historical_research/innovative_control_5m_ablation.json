@@ -1,87 +1,87 @@
 {
   "deltas_vs_soft": {
-    "accuracy": 0.0,
-    "brier": -2.474179725653336e-05,
-    "ece": -0.0005359309109196075,
-    "logloss": -3.1325670955206775e-05
+    "accuracy": 0.0007142857142856673,
+    "brier": 3.4184325090613754e-06,
+    "ece": 5.9876339970052483e-05,
+    "logloss": -9.730217235937033e-06
   },
   "horizon": "5m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.4275,
+      "accuracy": 0.4185714285714286,
       "blocks": 28,
-      "brier": 0.6369541245154596,
-      "ece": 0.10068716434839611,
-      "logloss": 1.0484306522473916,
+      "brier": 0.6415121654197355,
+      "ece": 0.10149617016753916,
+      "logloss": 1.0575424678614505,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.4275,
+      "accuracy": 0.41892857142857143,
       "blocks": 28,
-      "brier": 0.6369936355622188,
-      "ece": 0.10078088321218757,
-      "logloss": 1.0484879988699705,
+      "brier": 0.6416003875203262,
+      "ece": 0.1015694948355658,
+      "logloss": 1.0576660575116084,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.4275,
+      "accuracy": 0.4185714285714286,
       "blocks": 28,
-      "brier": 0.6369608132979191,
-      "ece": 0.10106051756757606,
-      "logloss": 1.0484402032705507,
+      "brier": 0.6415222637448283,
+      "ece": 0.1018010918796429,
+      "logloss": 1.0575572890148064,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.4278571428571429,
+      "accuracy": 0.41928571428571426,
       "blocks": 28,
-      "brier": 0.6371115173283016,
-      "ece": 0.09989023308534087,
-      "logloss": 1.048660296456115,
+      "brier": 0.6417641311365814,
+      "ece": 0.1033531480581924,
+      "logloss": 1.057889920453703,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.425,
+      "accuracy": 0.41785714285714287,
       "blocks": 28,
-      "brier": 0.6374165272785741,
-      "ece": 0.09785920177362771,
-      "logloss": 1.04903686466949,
+      "brier": 0.6415519291910062,
+      "ece": 0.09992091713754706,
+      "logloss": 1.0575871309600524,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.4278571428571429,
+      "accuracy": 0.41928571428571426,
       "blocks": 28,
-      "brier": 0.6370299135103095,
-      "ece": 0.10049718655406557,
-      "logloss": 1.0485405426619683,
+      "brier": 0.6416109299015614,
+      "ece": 0.1022562619006489,
+      "logloss": 1.0576862312119704,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.4278571428571429,
+      "accuracy": 0.4185714285714286,
       "blocks": 28,
-      "brier": 0.6371362591255582,
-      "ece": 0.10042616399626048,
-      "logloss": 1.0486916221270701,
+      "brier": 0.6417607127040723,
+      "ece": 0.10329327171822235,
+      "logloss": 1.0578996506709388,
       "n": 2800
     }
   },
   "period_breakdown": {
     "early": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": -0.00011662958158800387,
-      "full_vs_soft_logloss_delta": -0.00016495543446197006
+      "full_vs_soft_accuracy_delta": 0.002222222222222218,
+      "full_vs_soft_brier_delta": -8.586770268576633e-05,
+      "full_vs_soft_logloss_delta": -0.00011917129881225088
     },
     "middle": {
       "blocks": 9,
       "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": 3.0332484228888666e-05,
-      "full_vs_soft_logloss_delta": 8.432837650630533e-06
+      "full_vs_soft_brier_delta": -5.68494878614804e-05,
+      "full_vs_soft_logloss_delta": -7.371506460828058e-05
     },
     "recent": {
       "blocks": 10,
       "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": 8.390355304643826e-06,
-      "full_vs_soft_logloss_delta": 5.31584584560374e-05
+      "full_vs_soft_brier_delta": 0.00013801708251793833,
+      "full_vs_soft_logloss_delta": 0.00014635311881786573
     }
   },
   "research_only": true,
