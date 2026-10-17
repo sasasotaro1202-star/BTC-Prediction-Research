@@ -468,7 +468,9 @@ def publish(horizon, result):
     Bootstrap training may discover a seed candidate, but Production updates
     require the full independent OOS/WFO -> calibration -> robustness ->
     holdout -> shadow -> promotion sequence. Therefore this function never
-    writes a Production model or model_registry entry.
+    writes a Production model or model_registry entry. In particular, this
+    bootstrap research function never writes a Production model or
+    model_registry entry.
     """
     name = result["model_name"]
     if not result["promotion_allowed"]:
