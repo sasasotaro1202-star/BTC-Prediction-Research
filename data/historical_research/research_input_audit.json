@@ -1,19 +1,51 @@
 {
-  "checked_at_utc": "2026-10-18T13:24:26.804195+00:00",
+  "checked_at_utc": "2026-10-18T13:38:26.950378+00:00",
   "failure_reasons": [],
   "horizons": {
     "10m": {
       "chronology_violation_count": 0,
       "chronology_violations_sample": [],
       "class_counts": {
-        "DOWN": 377,
+        "DOWN": 378,
         "FLAT": 253,
         "UP": 373
       },
       "duplicate_exact_key_row_excess": 0,
       "excluded_rows": 0,
       "invalid_timestamp_rows": 0,
-      "majority_accuracy": 0.37587238285144564,
+      "majority_accuracy": 0.37649402390438247,
+      "malformed_identity_rows": 0,
+      "quarantine_reasons": {
+        "legacy_coinbase_precontract_missing_cutoff": 37,
+        "legacy_coinbase_v1_incomplete_feature_snapshot": 27
+      },
+      "quarantined_identity_rows": 64,
+      "settled_duplicate_exact_key_row_excess": 0,
+      "settled_rows": 1004,
+      "strict_pit_excluded_rows": 169,
+      "strict_pit_failure_reasons": {
+        "legacy_coinbase_precontract_quarantined": 37,
+        "legacy_coinbase_v1_quarantined": 27,
+        "provenance_missing_or_not_object": 105
+      },
+      "strict_pit_rows": 839,
+      "strict_pit_settled_excluded_rows": 169,
+      "strict_pit_settled_rows": 835,
+      "total_rows": 1008,
+      "valid_rows": 1008
+    },
+    "5m": {
+      "chronology_violation_count": 0,
+      "chronology_violations_sample": [],
+      "class_counts": {
+        "DOWN": 298,
+        "FLAT": 395,
+        "UP": 310
+      },
+      "duplicate_exact_key_row_excess": 0,
+      "excluded_rows": 0,
+      "invalid_timestamp_rows": 0,
+      "majority_accuracy": 0.3938185443668993,
       "malformed_identity_rows": 0,
       "quarantine_reasons": {
         "legacy_coinbase_precontract_missing_cutoff": 37,
@@ -28,43 +60,11 @@
         "legacy_coinbase_v1_quarantined": 27,
         "provenance_missing_or_not_object": 105
       },
-      "strict_pit_rows": 838,
+      "strict_pit_rows": 839,
       "strict_pit_settled_excluded_rows": 169,
       "strict_pit_settled_rows": 834,
-      "total_rows": 1007,
-      "valid_rows": 1007
-    },
-    "5m": {
-      "chronology_violation_count": 0,
-      "chronology_violations_sample": [],
-      "class_counts": {
-        "DOWN": 298,
-        "FLAT": 395,
-        "UP": 309
-      },
-      "duplicate_exact_key_row_excess": 0,
-      "excluded_rows": 0,
-      "invalid_timestamp_rows": 0,
-      "majority_accuracy": 0.39421157684630737,
-      "malformed_identity_rows": 0,
-      "quarantine_reasons": {
-        "legacy_coinbase_precontract_missing_cutoff": 37,
-        "legacy_coinbase_v1_incomplete_feature_snapshot": 27
-      },
-      "quarantined_identity_rows": 64,
-      "settled_duplicate_exact_key_row_excess": 0,
-      "settled_rows": 1002,
-      "strict_pit_excluded_rows": 169,
-      "strict_pit_failure_reasons": {
-        "legacy_coinbase_precontract_quarantined": 37,
-        "legacy_coinbase_v1_quarantined": 27,
-        "provenance_missing_or_not_object": 105
-      },
-      "strict_pit_rows": 838,
-      "strict_pit_settled_excluded_rows": 169,
-      "strict_pit_settled_rows": 833,
-      "total_rows": 1007,
-      "valid_rows": 1007
+      "total_rows": 1008,
+      "valid_rows": 1008
     }
   },
   "ok": true,
