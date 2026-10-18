@@ -1,0 +1,163 @@
+{
+  "checked_predictions": 1016,
+  "coverage": {
+    "10m": {
+      "estimated_5m_cycles_lower_bound": 2392,
+      "estimated_days_lower_bound": 8.305555555555555,
+      "online_expert_ready": 608,
+      "online_expert_rows_needed": 0,
+      "settled_predictions": 1011,
+      "situation_meta_ready": 608,
+      "situation_meta_rows_needed": 2392,
+      "strict_primary_settled": 612
+    },
+    "12h": {
+      "online_expert_ready": 0,
+      "settled_predictions": 426,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 338
+    },
+    "15m": {
+      "online_expert_ready": 0,
+      "settled_predictions": 432,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 339
+    },
+    "1h": {
+      "online_expert_ready": 0,
+      "settled_predictions": 435,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 342
+    },
+    "24h": {
+      "online_expert_ready": 0,
+      "settled_predictions": 414,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 330
+    },
+    "30m": {
+      "online_expert_ready": 0,
+      "settled_predictions": 433,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 340
+    },
+    "3h": {
+      "online_expert_ready": 0,
+      "settled_predictions": 436,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 343
+    },
+    "5m": {
+      "estimated_5m_cycles_lower_bound": 2394,
+      "estimated_days_lower_bound": 8.3125,
+      "online_expert_ready": 606,
+      "online_expert_rows_needed": 0,
+      "settled_predictions": 1009,
+      "situation_meta_ready": 606,
+      "situation_meta_rows_needed": 2394,
+      "strict_primary_settled": 610
+    },
+    "6h": {
+      "online_expert_ready": 0,
+      "settled_predictions": 431,
+      "situation_meta_ready": 0,
+      "strict_primary_settled": 340
+    }
+  },
+  "coverage_policy": "strict_primary_settled requires actual outcome + valid primary PIT; situation_meta_ready additionally requires persisted situation, microstructure, and components; estimated_days is a lower bound assuming one qualifying prediction every 5 minutes",
+  "extended_horizon_audit": {
+    "horizons": [
+      "15m",
+      "30m",
+      "1h",
+      "3h",
+      "6h",
+      "12h",
+      "24h"
+    ],
+    "promotion_effect": "none",
+    "research_only": true
+  },
+  "generated_at_utc": "2026-10-18T21:33:32.235046+00:00",
+  "history": {
+    "bucket_start_utc": "2026-10-18T21:30:00+00:00",
+    "recorded_at_utc": "2026-10-18T21:33:32.235226+00:00",
+    "runtime": {
+      "github_job": "live",
+      "github_ref": "refs/heads/main",
+      "github_run_id": "39168280903",
+      "github_run_number": "2381",
+      "github_sha": "56b704ebef67fb6d51b1895d3a9e1ae527270686",
+      "github_workflow": "BTC Live Cycle"
+    },
+    "schema_version": 1
+  },
+  "legacy_unverified_count": 169,
+  "legacy_violation_count": 41,
+  "legacy_violations": [
+    "96435:5m_target_not_after_decision",
+    "96435:source:coinbase_futures:missing_prediction_cutoff",
+    "96436:source:coinbase_futures:missing_prediction_cutoff",
+    "96437:source:coinbase_futures:missing_prediction_cutoff",
+    "96438:source:coinbase_futures:missing_prediction_cutoff",
+    "96439:source:coinbase_futures:missing_prediction_cutoff",
+    "96440:source:coinbase_futures:missing_prediction_cutoff",
+    "96441:5m_target_not_after_decision",
+    "96441:source:coinbase_futures:missing_prediction_cutoff",
+    "96442:source:coinbase_futures:missing_prediction_cutoff",
+    "96443:source:coinbase_futures:missing_prediction_cutoff",
+    "96444:source:coinbase_futures:missing_prediction_cutoff",
+    "96445:5m_target_not_after_decision",
+    "96445:source:coinbase_futures:missing_prediction_cutoff",
+    "96446:source:coinbase_futures:missing_prediction_cutoff",
+    "96447:source:coinbase_futures:missing_prediction_cutoff",
+    "96448:source:coinbase_futures:missing_prediction_cutoff",
+    "96449:source:coinbase_futures:missing_prediction_cutoff",
+    "96450:source:coinbase_futures:missing_prediction_cutoff",
+    "96451:source:coinbase_futures:missing_prediction_cutoff",
+    "96452:source:coinbase_futures:missing_prediction_cutoff",
+    "96453:source:coinbase_futures:missing_prediction_cutoff",
+    "96454:source:coinbase_futures:missing_prediction_cutoff",
+    "96455:source:coinbase_futures:missing_prediction_cutoff",
+    "96456:source:coinbase_futures:missing_prediction_cutoff",
+    "96457:source:coinbase_futures:missing_prediction_cutoff",
+    "96458:source:coinbase_futures:missing_prediction_cutoff",
+    "96459:source:coinbase_futures:missing_prediction_cutoff",
+    "96460:source:coinbase_futures:missing_prediction_cutoff",
+    "96461:source:coinbase_futures:missing_prediction_cutoff",
+    "96462:source:coinbase_futures:missing_prediction_cutoff",
+    "96463:5m_target_not_after_decision",
+    "96463:source:coinbase_futures:missing_prediction_cutoff",
+    "96464:source:coinbase_futures:missing_prediction_cutoff",
+    "96465:source:coinbase_futures:missing_prediction_cutoff",
+    "96466:source:coinbase_futures:missing_prediction_cutoff",
+    "96467:source:coinbase_futures:missing_prediction_cutoff",
+    "96468:source:coinbase_futures:missing_prediction_cutoff",
+    "96469:source:coinbase_futures:missing_prediction_cutoff",
+    "96470:source:coinbase_futures:missing_prediction_cutoff",
+    "96471:source:coinbase_futures:missing_prediction_cutoff"
+  ],
+  "min_strict_pit_rows": 300,
+  "ok": true,
+  "pit_verified": true,
+  "pit_verified_reason": "strict_binance_primary_scope_verified",
+  "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
+  "primary_horizon_gate": {
+    "10m": {
+      "minimum": 300,
+      "ready": true,
+      "strict_primary_settled": 612
+    },
+    "5m": {
+      "minimum": 300,
+      "ready": true,
+      "strict_primary_settled": 610
+    }
+  },
+  "status": "PASS",
+  "verified_fallback_predictions": 230,
+  "verified_predictions": 847,
+  "verified_primary_predictions": 617,
+  "violation_count": 0,
+  "violations": []
+}
