@@ -1,87 +1,87 @@
 {
   "deltas_vs_soft": {
-    "accuracy": 0.00035714285714283367,
-    "brier": -0.00014867900411807966,
-    "ece": -0.001063503081080483,
-    "logloss": -0.0002381422236685804
+    "accuracy": 0.0007142857142857229,
+    "brier": -0.0002709564007066234,
+    "ece": -0.0012044124622713342,
+    "logloss": -0.00028780018716667577
   },
   "horizon": "10m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.40964285714285714,
+      "accuracy": 0.3821428571428571,
       "blocks": 28,
-      "brier": 0.6310253304244977,
-      "ece": 0.09863753395531327,
-      "logloss": 1.0292492003058216,
+      "brier": 0.6440579658824991,
+      "ece": 0.11674175049558146,
+      "logloss": 1.0520275610931618,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.41,
+      "accuracy": 0.3817857142857143,
       "blocks": 28,
-      "brier": 0.6310903752916813,
-      "ece": 0.09799895195061845,
-      "logloss": 1.0293513423694793,
+      "brier": 0.6441732558113743,
+      "ece": 0.1180322444271744,
+      "logloss": 1.052190576916127,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.41,
+      "accuracy": 0.3817857142857143,
       "blocks": 28,
-      "brier": 0.6310283640749538,
-      "ece": 0.09900308365336011,
-      "logloss": 1.0292546300081207,
+      "brier": 0.6440697098331946,
+      "ece": 0.11712625247485822,
+      "logloss": 1.0520434410785047,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.40964285714285714,
+      "accuracy": 0.3817857142857143,
       "blocks": 28,
-      "brier": 0.6311563241876077,
-      "ece": 0.09689464684879807,
-      "logloss": 1.0294475408105226,
+      "brier": 0.6442261758283554,
+      "ece": 0.11674146945589137,
+      "logloss": 1.0523536442533727,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.4089285714285714,
+      "accuracy": 0.38285714285714284,
       "blocks": 28,
-      "brier": 0.6306864448107996,
-      "ece": 0.096242340883407,
-      "logloss": 1.0284023403632405,
+      "brier": 0.6439484128032931,
+      "ece": 0.11417376569042408,
+      "logloss": 1.0522925202378826,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.40964285714285714,
+      "accuracy": 0.3807142857142857,
       "blocks": 28,
-      "brier": 0.6311402400550136,
-      "ece": 0.09844865819764057,
-      "logloss": 1.0294255160201817,
+      "brier": 0.6442382337357017,
+      "ece": 0.11845363661289375,
+      "logloss": 1.052278836506769,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.4092857142857143,
+      "accuracy": 0.38107142857142856,
       "blocks": 28,
-      "brier": 0.6313050031917258,
-      "ece": 0.09795814992987856,
-      "logloss": 1.0296856830341912,
+      "brier": 0.644497132229062,
+      "ece": 0.1179458819181627,
+      "logloss": 1.0526414444405394,
       "n": 2800
     }
   },
   "period_breakdown": {
     "early": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": -0.00022742115311407622,
-      "full_vs_soft_logloss_delta": -0.0003785655019448288
+      "full_vs_soft_accuracy_delta": -0.001111111111111106,
+      "full_vs_soft_brier_delta": -0.00040042308381475306,
+      "full_vs_soft_logloss_delta": -0.0005412967166974233
     },
     "middle": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.0011111111111111122,
-      "full_vs_soft_brier_delta": -0.00017980227408393508,
-      "full_vs_soft_logloss_delta": -0.0002533128211135037
+      "full_vs_soft_accuracy_delta": 0.0,
+      "full_vs_soft_brier_delta": -5.271683045381269e-05,
+      "full_vs_soft_logloss_delta": -6.0478039836417726e-05
     },
     "recent": {
       "blocks": 10,
-      "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": -4.9800127052435085e-05,
-      "full_vs_soft_logloss_delta": -9.810773551938157e-05
+      "full_vs_soft_accuracy_delta": 0.0030000000000000027,
+      "full_vs_soft_brier_delta": -0.0003508519991369252,
+      "full_vs_soft_logloss_delta": -0.0002642432431860242
     }
   },
   "research_only": true,
