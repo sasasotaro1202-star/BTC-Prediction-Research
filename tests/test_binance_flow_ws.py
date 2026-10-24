@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 from src.binance_flow_features import derive_flow_features
 from src.binance_flow_ws import ingest_event, normalize_bins, parse_agg_trade_message, parse_force_order_message
@@ -91,3 +92,10 @@ def test_cache_roundtrip_is_valid_json(tmp_path):
     restored = load_cache(path)
     assert 0 in restored
     assert restored[0]["buy_notional"] == 100.0
+
+def test_flow_collector_has_periodic_long_run_heartbeat():
+    text = Path("src/binance_flow_ws.py").read_text(encoding="utf-8")
+    assert "FLOW_HEARTBEAT_SECONDS=60.0" in text
+    assert "async def heartbeat()" in text
+    assert 'print(\n                    "flow heartbeat "' in text
+    assert "heartbeat_task=asyncio.create_task(heartbeat())" in text
