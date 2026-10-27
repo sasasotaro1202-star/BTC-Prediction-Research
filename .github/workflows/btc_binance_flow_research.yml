@@ -281,8 +281,54 @@ jobs:
           publisher_loop > /tmp/btc_flow_publisher.log 2>&1 &
           publisher_pid="$!"
 
+          capture_started_at_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          initial_latest="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              obj=json.loads(Path('data/binance_flow_5s.json').read_text(encoding='utf-8'))
+              rows=obj.get('rows',[])
+              print(int(rows[-1].get('end_time_ms',0)) if rows else 0)
+          except Exception:
+              print(0)
+          PY
+          )"
+
           collector_status=0
           wait "$collector_pid" || collector_status=$?
+
+          if [ "$collector_status" -eq 143 ]; then
+            recovery_ok="$(python - "$capture_started_at_utc" "$initial_latest" <<'PY'
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def parse_dt(value):
+              return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+
+          started = parse_dt(sys.argv[1])
+          initial_latest = int(sys.argv[2])
+          path = Path("data/binance_flow_5s.json")
+          try:
+              obj = json.loads(path.read_text(encoding="utf-8"))
+              rows = obj.get("rows", [])
+              updated = parse_dt(obj.get("updated_at_utc"))
+              latest = int(rows[-1].get("end_time_ms", 0)) if rows else 0
+          except Exception:
+              print("0")
+              raise SystemExit(0)
+          progressed = bool(rows) and latest > initial_latest and updated >= started
+          print("1" if progressed else "0")
+          PY
+            )"
+            if [ "$recovery_ok" = "1" ]; then
+              echo "WARN: Binance flow collector exited with 143 after a fresh advancing checkpoint; continuing from durable cache."
+              collector_status=0
+            else
+              echo "ERROR: Binance flow collector exited with 143 without a fresh advancing checkpoint." >&2
+            fi
+          fi
 
           if kill -0 "$publisher_pid" 2>/dev/null; then
             if ! kill "$publisher_pid" 2>/dev/null; then
