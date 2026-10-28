@@ -2,67 +2,6 @@
   "history": [
     {
       "acquisition_statuses": [
-        "SKIPPED_COOLDOWN",
-        "SKIPPED_COOLDOWN",
-        "SKIPPED_CIRCUIT_BREAKER"
-      ],
-      "cycle": 1992055,
-      "failed_probes": 2,
-      "gap": {
-        "discovery_pending": 29,
-        "gap": 300,
-        "historical_bounds_invalid": [],
-        "legacy_unverified": 169,
-        "online_expert_ready_min": 0,
-        "online_expert_target": 140,
-        "pit_audit_age_sec": 8289.588,
-        "pit_audit_fresh": false,
-        "pit_audit_generated_at_utc": "2026-10-24T11:18:28.073241+00:00",
-        "pit_audit_status": "STALE",
-        "pit_verified": false,
-        "situation_meta_ready_min": 0,
-        "situation_meta_target": 3000,
-        "strict_primary": 0,
-        "target": 300
-      },
-      "new_discovered_candidates": 15,
-      "probed_source_ids": [
-        "bitget_public_ws",
-        "binance_options_public",
-        "deribit_public",
-        "us_treasury_yield_curve",
-        "mempool_space"
-      ],
-      "quarantined_discovery_noise": 0,
-      "reselected_after_acquisition": true,
-      "run_at": "2026-10-24T13:39:00+00:00",
-      "selected_discovered_source_ids": [
-        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py"
-      ],
-      "selected_source_ids": [
-        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py",
-        "bitget_public_ws",
-        "deribit_public",
-        "mempool_space",
-        "brk_bitview",
-        "cme_voi",
-        "farside_btc_etf",
-        "circle_usdc_transparency"
-      ],
-      "selected_source_ids_before_acquisition": [
-        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py",
-        "bitget_public_ws",
-        "deribit_public",
-        "mempool_space",
-        "brk_bitview",
-        "cme_voi",
-        "farside_btc_etf",
-        "circle_usdc_transparency"
-      ],
-      "successful_probes": 3
-    },
-    {
-      "acquisition_statuses": [
         "OK",
         "OK",
         "SKIPPED_CIRCUIT_BREAKER"
@@ -5631,6 +5570,67 @@
         "farside_btc_etf"
       ],
       "successful_probes": 4
+    },
+    {
+      "acquisition_statuses": [
+        "OK",
+        "OK",
+        "ERROR"
+      ],
+      "cycle": 1992418,
+      "failed_probes": 2,
+      "gap": {
+        "discovery_pending": 34,
+        "gap": 300,
+        "historical_bounds_invalid": [],
+        "legacy_unverified": 169,
+        "online_expert_ready_min": 0,
+        "online_expert_target": 140,
+        "pit_audit_age_sec": 4194.733,
+        "pit_audit_fresh": false,
+        "pit_audit_generated_at_utc": "2026-10-28T07:08:55.887631+00:00",
+        "pit_audit_status": "STALE",
+        "pit_verified": false,
+        "situation_meta_ready_min": 0,
+        "situation_meta_target": 3000,
+        "strict_primary": 0,
+        "target": 300
+      },
+      "new_discovered_candidates": 15,
+      "probed_source_ids": [
+        "hyperliquid_ws",
+        "bitget_public_ws",
+        "binance_options_public",
+        "deribit_public",
+        "us_treasury_yield_curve"
+      ],
+      "quarantined_discovery_noise": 0,
+      "reselected_after_acquisition": true,
+      "run_at": "2026-10-28T08:21:05+00:00",
+      "selected_discovered_source_ids": [
+        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py"
+      ],
+      "selected_source_ids": [
+        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py",
+        "bitget_public_ws",
+        "deribit_public",
+        "brk_bitview",
+        "mempool_space",
+        "cme_voi",
+        "farside_btc_etf",
+        "circle_usdc_transparency"
+      ],
+      "selected_source_ids_before_acquisition": [
+        "github-code:moondevonyt/Hyperliquid-Data-Layer-API:examples/29_btc_bulk_liquidations_csv.py",
+        "bitget_public_ws",
+        "deribit_public",
+        "brk_bitview",
+        "mempool_space",
+        "cme_voi",
+        "farside_btc_etf",
+        "circle_usdc_transparency"
+      ],
+      "successful_probes": 3
     }
   ],
   "policy": {
@@ -5641,12 +5641,12 @@
   "schema_version": 1,
   "source_state": {
     "binance_options_public": {
-      "consecutive_failures": 487,
+      "consecutive_failures": 488,
       "historical_acquisition_failures_total": 0,
-      "last_latency_sec": 0.191,
-      "last_probe_at": "2026-10-28T03:02:40+00:00",
+      "last_latency_sec": 0.222,
+      "last_probe_at": "2026-10-28T08:18:51+00:00",
       "last_status": "ERROR",
-      "probe_consecutive_failures": 487,
+      "probe_consecutive_failures": 488,
       "selected_for_next_cycle": false,
       "selection_count": 12,
       "selection_reason": "data_gap_and_source_diversity"
@@ -5659,24 +5659,24 @@
       "consecutive_failures": 0,
       "historical_acquisition_failures": 0,
       "historical_acquisition_failures_total": 0,
-      "historical_batches_acquired": 392,
-      "historical_earliest_event_time": "2025-12-31T14:35:00+00:00",
-      "historical_total_records_acquired": 78400,
-      "last_historical_acquisition_at": "2026-10-28T02:14:59+00:00",
-      "last_historical_cursor_ms": 1767191700000,
+      "historical_batches_acquired": 393,
+      "historical_earliest_event_time": "2025-12-30T21:50:00+00:00",
+      "historical_total_records_acquired": 78600,
+      "last_historical_acquisition_at": "2026-10-28T08:21:04+00:00",
+      "last_historical_cursor_ms": 1767131400000,
       "last_historical_event_time": "2026-09-30T11:50:00+00:00",
-      "last_historical_payload_sha256": "6157c03067990d082a542095521dfff40c5413b9265feaf421398377887347df",
+      "last_historical_payload_sha256": "c31be817a6f21dd721c14dcd061e54272930bf109d4c3ff74b62d28905b236fd",
       "last_historical_record_count": 200,
-      "last_latency_sec": 0.191,
-      "last_ok_at": "2026-10-28T03:02:40+00:00",
-      "last_probe_at": "2026-10-28T03:02:40+00:00",
-      "last_snapshot": "data/historical_research/source_snapshots/20261028T030241Z_bitget_public_ws.json",
-      "last_source_event_time": "2026-10-28T03:02:40.439000+00:00",
+      "last_latency_sec": 0.188,
+      "last_ok_at": "2026-10-28T08:18:50+00:00",
+      "last_probe_at": "2026-10-28T08:18:50+00:00",
+      "last_snapshot": "data/historical_research/source_snapshots/20261028T081851Z_bitget_public_ws.json",
+      "last_source_event_time": "2026-10-28T08:18:50.944000+00:00",
       "last_status": "OK",
-      "selected_for_next_cycle": false,
-      "selection_count": 567,
-      "selection_reason": "rotating_frontier_coverage",
-      "successful_probes": 488
+      "selected_for_next_cycle": true,
+      "selection_count": 568,
+      "selection_reason": "data_gap_and_source_diversity",
+      "successful_probes": 489
     },
     "blockchair": {
       "historical_acquisition_failures_total": 0,
@@ -5691,21 +5691,21 @@
       "last_snapshot": "data/historical_research/source_snapshots/20261028T072557Z_brk_bitview.json",
       "last_status": "OK",
       "selected_for_next_cycle": true,
-      "selection_count": 699,
-      "selection_reason": "rotating_frontier_coverage",
+      "selection_count": 700,
+      "selection_reason": "data_gap_and_source_diversity",
       "successful_probes": 496
     },
     "circle_usdc_transparency": {
       "historical_acquisition_failures_total": 0,
       "selected_for_next_cycle": true,
-      "selection_count": 699,
-      "selection_reason": "rotating_frontier_coverage"
+      "selection_count": 700,
+      "selection_reason": "data_gap_and_source_diversity"
     },
     "cme_voi": {
       "historical_acquisition_failures_total": 0,
       "selected_for_next_cycle": true,
-      "selection_count": 699,
-      "selection_reason": "rotating_frontier_coverage"
+      "selection_count": 700,
+      "selection_reason": "data_gap_and_source_diversity"
     },
     "coin_metrics_community": {
       "historical_acquisition_failures_total": 0,
@@ -5717,54 +5717,54 @@
       "consecutive_failures": 0,
       "historical_acquisition_failures": 0,
       "historical_acquisition_failures_total": 0,
-      "historical_batches_acquired": 391,
-      "historical_earliest_event_time": "2026-01-01T07:40:00+00:00",
-      "historical_total_records_acquired": 78590,
-      "last_historical_acquisition_at": "2026-10-28T02:14:59+00:00",
-      "last_historical_cursor_ms": 1767253200000,
+      "historical_batches_acquired": 392,
+      "historical_earliest_event_time": "2025-12-31T14:55:00+00:00",
+      "historical_total_records_acquired": 78791,
+      "last_historical_acquisition_at": "2026-10-28T08:21:04+00:00",
+      "last_historical_cursor_ms": 1767192900000,
       "last_historical_event_time": "2026-09-30T12:10:00+00:00",
-      "last_historical_payload_sha256": "c9e2f47ec44ec1524df24465a858570c0d32614d2fd3bea80dfe80b507a1b98e",
+      "last_historical_payload_sha256": "f2370e4073240f644d8a6abf1791c6cc602021032ec6a594495b176aefb87701",
       "last_historical_record_count": 201,
-      "last_latency_sec": 0.15,
-      "last_ok_at": "2026-10-28T07:25:53+00:00",
-      "last_probe_at": "2026-10-28T07:25:53+00:00",
-      "last_snapshot": "data/historical_research/source_snapshots/20261028T072557Z_deribit_public.json",
+      "last_latency_sec": 0.143,
+      "last_ok_at": "2026-10-28T08:18:51+00:00",
+      "last_probe_at": "2026-10-28T08:18:51+00:00",
+      "last_snapshot": "data/historical_research/source_snapshots/20261028T081851Z_deribit_public.json",
       "last_status": "OK",
       "selected_for_next_cycle": true,
-      "selection_count": 687,
-      "selection_reason": "rotating_frontier_coverage",
-      "successful_probes": 496
+      "selection_count": 688,
+      "selection_reason": "data_gap_and_source_diversity",
+      "successful_probes": 497
     },
     "farside_btc_etf": {
       "historical_acquisition_failures_total": 0,
       "selected_for_next_cycle": true,
-      "selection_count": 699,
-      "selection_reason": "rotating_frontier_coverage"
+      "selection_count": 700,
+      "selection_reason": "data_gap_and_source_diversity"
     },
     "hyperliquid_ws": {
       "consecutive_failures": 0,
-      "historical_acquisition_backoff_until": "2026-10-28T07:41:25.186103+00:00",
-      "historical_acquisition_failures": 133,
-      "historical_acquisition_failures_total": 133,
+      "historical_acquisition_backoff_until": "2026-10-28T14:21:05.428158+00:00",
+      "historical_acquisition_failures": 134,
+      "historical_acquisition_failures_total": 134,
       "historical_batches_acquired": 24,
       "historical_earliest_event_time": "2026-09-30T12:00:00+00:00",
       "historical_total_records_acquired": 4688,
       "last_historical_acquisition_at": "2026-10-02T08:32:23+00:00",
       "last_historical_acquisition_error": "RuntimeError:hyperliquid_ws_no_closed_rows",
-      "last_historical_acquisition_error_at": "2026-10-28T01:41:24+00:00",
+      "last_historical_acquisition_error_at": "2026-10-28T08:21:04+00:00",
       "last_historical_cursor_ms": 1789423200000,
       "last_historical_event_time": "2026-09-30T12:00:00+00:00",
       "last_historical_payload_sha256": "18d0618c61c55b66130a25d0e6ed2ea9f9854d0b3f6ec03f73b4b902d2202e15",
       "last_historical_record_count": 66,
-      "last_latency_sec": 1.025,
-      "last_ok_at": "2026-10-28T07:25:56+00:00",
-      "last_probe_at": "2026-10-28T07:25:56+00:00",
-      "last_snapshot": "data/historical_research/source_snapshots/20261028T072557Z_hyperliquid_ws.json",
+      "last_latency_sec": 0.209,
+      "last_ok_at": "2026-10-28T08:18:50+00:00",
+      "last_probe_at": "2026-10-28T08:18:50+00:00",
+      "last_snapshot": "data/historical_research/source_snapshots/20261028T081851Z_hyperliquid_ws.json",
       "last_status": "OK",
-      "selected_for_next_cycle": true,
+      "selected_for_next_cycle": false,
       "selection_count": 132,
       "selection_reason": "rotating_frontier_coverage",
-      "successful_probes": 502
+      "successful_probes": 503
     },
     "mempool_space": {
       "consecutive_failures": 0,
@@ -5775,19 +5775,19 @@
       "last_snapshot": "data/historical_research/source_snapshots/20261028T072557Z_mempool_space.json",
       "last_status": "OK",
       "selected_for_next_cycle": true,
-      "selection_count": 699,
-      "selection_reason": "rotating_frontier_coverage",
+      "selection_count": 700,
+      "selection_reason": "data_gap_and_source_diversity",
       "successful_probes": 504
     },
     "us_treasury_yield_curve": {
-      "consecutive_failures": 511,
+      "consecutive_failures": 512,
       "historical_acquisition_failures_total": 0,
-      "last_latency_sec": 2.21,
-      "last_probe_at": "2026-10-28T07:25:53+00:00",
+      "last_latency_sec": 0.529,
+      "last_probe_at": "2026-10-28T08:18:51+00:00",
       "last_status": "ERROR",
-      "probe_consecutive_failures": 511,
+      "probe_consecutive_failures": 512,
       "selected_for_next_cycle": false
     }
   },
-  "updated_at": "2026-10-28T07:26:44+00:00"
+  "updated_at": "2026-10-28T08:21:05+00:00"
 }
