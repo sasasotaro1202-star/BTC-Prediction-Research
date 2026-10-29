@@ -293,3 +293,18 @@ The Recency Challenger exploratory candidate is selected by equal rank across va
 Frozen Holdout remains descriptive-only and cannot tune the selection rule. The challenger also runs automatically when its research source/workflow/tests change, while ordinary data-state updates do not trigger the expensive lane.
 
 This is an evidence-generation change only. A positive result is not Production evidence without independent strict-PIT, OOS/WFO, robustness, calibration, Frozen Holdout, and shadow validation.
+
+
+109. DEFERRED PIT AUDIT REFRESH CONTRACT
+
+A safely deferred Live Cycle does not create a new market prediction, but settlement of previously created predictions can still advance while the cycle is deferred. Therefore a deferred cycle must not permanently suppress the PIT/OOS audit.
+
+During a deferred cycle:
+- if the persisted PIT/OOS audit is fresh, the cycle may skip a redundant re-audit;
+- if the audit is missing, malformed, future-dated, or older than 900 seconds, the cycle reruns the read-only PIT/OOS audit against the existing immutable prediction ledger;
+- no market snapshot, prediction, or Production change is fabricated by the refresh;
+- an unknown refresh-policy result is FAIL-CLOSED.
+
+This policy exists to keep the Continuous Supervisor's PIT freshness hard-stop synchronized with the actual prediction/settlement ledger while avoiding a new PIT-state commit every five minutes when no new audit is needed.
+
+The refresh decision is implemented by `src/pit_deferred_audit_policy.py` and covered by unit tests. The policy changes audit liveness only; it does not relax PIT validity, OOS/WFO, calibration, robustness, holdout, shadow, or promotion requirements.
