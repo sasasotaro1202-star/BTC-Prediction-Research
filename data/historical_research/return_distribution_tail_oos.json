@@ -1,22 +1,22 @@
 {
-  "analysis_git_sha": "f25eaf73808dccae8a987ad8aee92f16c530e2a5",
+  "analysis_git_sha": "27e78a80e55db6c432452cd0c0a0f452cc685a71",
   "horizons": {
     "10m": {
       "aggregate": {
-        "baseline_pinball_mean": 0.00029288495052733825,
-        "candidate_pinball_mean": 0.0002971842630059848,
-        "coverage_abs_error": 0.19500000000000006,
+        "baseline_pinball_mean": 0.00029696419504256206,
+        "candidate_pinball_mean": 0.00030180636549198407,
+        "coverage_abs_error": 0.2088888888888889,
         "coverage_target": 0.8,
-        "improved_block_ratio": 0.5,
-        "mean_interval_coverage": 0.605,
-        "mean_interval_width": 0.0016330232333355349,
-        "newest_block_coverage": 0.56,
-        "newest_block_n": 50,
-        "newest_block_pinball_delta": -1.1415326397070259e-05,
-        "non_worse_block_ratio": 0.5,
-        "relative_pinball_improvement": -0.014679185362394574
+        "improved_block_ratio": 0.4444444444444444,
+        "mean_interval_coverage": 0.5911111111111111,
+        "mean_interval_width": 0.0016659348828412886,
+        "newest_block_coverage": 0.48,
+        "newest_block_n": 25,
+        "newest_block_pinball_delta": 9.185034215625871e-06,
+        "non_worse_block_ratio": 0.4444444444444444,
+        "relative_pinball_improvement": -0.016305569931513168
       },
-      "analysis_git_sha": "f25eaf73808dccae8a987ad8aee92f16c530e2a5",
+      "analysis_git_sha": "27e78a80e55db6c432452cd0c0a0f452cc685a71",
       "blocks": [
         {
           "baseline": {
@@ -297,6 +297,41 @@
           "test_end": "2026-10-26T17:50:00+00:00",
           "test_start": "2026-10-24T05:59:20.375430+00:00",
           "train_end": "2026-10-19T15:01:39.199467+00:00"
+        },
+        {
+          "baseline": {
+            "interval_coverage": 0.68,
+            "interval_width_mean": 0.0021758307987827185,
+            "pinball_mean": 0.00032959815116435264,
+            "q10_pinball": 0.0001986463289995668,
+            "q50_pinball": 0.0005200606897894067,
+            "q90_pinball": 0.00027008743470408443
+          },
+          "candidate": {
+            "interval_coverage": 0.48,
+            "interval_width_mean": 0.0019292280788873177,
+            "lower_tail_breach_rate": 0.32,
+            "median_sign_accuracy": 0.6,
+            "pinball_mean": 0.0003387831853799785,
+            "predicted_q10_mean": -0.0010141711017548232,
+            "predicted_q50_mean": 3.463071994521076e-05,
+            "predicted_q90_mean": 0.0009150569771324945,
+            "q10_pinball": 0.00027238893019153093,
+            "q50_pinball": 0.0005334879909809401,
+            "q90_pinball": 0.00021047263496746436,
+            "realized_lower_tail_mean": -0.0013966466003353661,
+            "realized_upper_tail_mean": 0.001639855910233079,
+            "upper_tail_breach_rate": 0.2
+          },
+          "delta": {
+            "coverage": -0.20000000000000007,
+            "pinball_mean": 9.185034215625871e-06,
+            "width": -0.00024660271989540073
+          },
+          "n": 25,
+          "test_end": "2026-10-29T01:30:00+00:00",
+          "test_start": "2026-10-26T19:57:17.901566+00:00",
+          "train_end": "2026-10-23T00:38:07.974772+00:00"
         }
       ],
       "decision": "RESEARCH_ONLY_NO_PRODUCTION_EFFECT",
@@ -353,43 +388,43 @@
         "test_start": "2026-10-03T13:24:53.314155+00:00",
         "train_end": "2026-10-03T06:35:10.888445+00:00"
       },
-      "generated_at_utc": "2026-10-28T22:41:28.493515+00:00",
+      "generated_at_utc": "2026-10-29T05:57:55.511964+00:00",
       "horizon": "10m",
-      "n": 772,
+      "n": 775,
       "newest_block": {
         "baseline": {
-          "interval_coverage": 0.64,
-          "interval_width_mean": 0.0021066195565113575,
-          "pinball_mean": 0.00042998921295963835,
-          "q10_pinball": 0.00038963856685232223,
-          "q50_pinball": 0.0005642844163301685,
-          "q90_pinball": 0.0003360446556964242
+          "interval_coverage": 0.68,
+          "interval_width_mean": 0.0021758307987827185,
+          "pinball_mean": 0.00032959815116435264,
+          "q10_pinball": 0.0001986463289995668,
+          "q50_pinball": 0.0005200606897894067,
+          "q90_pinball": 0.00027008743470408443
         },
         "candidate": {
-          "interval_coverage": 0.56,
-          "interval_width_mean": 0.001830787470339341,
-          "lower_tail_breach_rate": 0.28,
-          "median_sign_accuracy": 0.5,
-          "pinball_mean": 0.0004185738865625681,
-          "predicted_q10_mean": -0.0009594947838836279,
-          "predicted_q50_mean": 3.887411149461994e-05,
-          "predicted_q90_mean": 0.0008712926864557131,
-          "q10_pinball": 0.0003998974518426048,
-          "q50_pinball": 0.0005609452530590294,
-          "q90_pinball": 0.00029487895478606997,
-          "realized_lower_tail_mean": -0.0020920749268074318,
-          "realized_upper_tail_mean": 0.002269349141154925,
-          "upper_tail_breach_rate": 0.16
+          "interval_coverage": 0.48,
+          "interval_width_mean": 0.0019292280788873177,
+          "lower_tail_breach_rate": 0.32,
+          "median_sign_accuracy": 0.6,
+          "pinball_mean": 0.0003387831853799785,
+          "predicted_q10_mean": -0.0010141711017548232,
+          "predicted_q50_mean": 3.463071994521076e-05,
+          "predicted_q90_mean": 0.0009150569771324945,
+          "q10_pinball": 0.00027238893019153093,
+          "q50_pinball": 0.0005334879909809401,
+          "q90_pinball": 0.00021047263496746436,
+          "realized_lower_tail_mean": -0.0013966466003353661,
+          "realized_upper_tail_mean": 0.001639855910233079,
+          "upper_tail_breach_rate": 0.2
         },
         "delta": {
-          "coverage": -0.07999999999999996,
-          "pinball_mean": -1.1415326397070259e-05,
-          "width": -0.0002758320861720165
+          "coverage": -0.20000000000000007,
+          "pinball_mean": 9.185034215625871e-06,
+          "width": -0.00024660271989540073
         },
-        "n": 50,
-        "test_end": "2026-10-26T17:50:00+00:00",
-        "test_start": "2026-10-24T05:59:20.375430+00:00",
-        "train_end": "2026-10-19T15:01:39.199467+00:00"
+        "n": 25,
+        "test_end": "2026-10-29T01:30:00+00:00",
+        "test_start": "2026-10-26T19:57:17.901566+00:00",
+        "train_end": "2026-10-23T00:38:07.974772+00:00"
       },
       "pit_scope": "strict_binance_primary_prediction_provenance",
       "production_changed": false,
@@ -398,40 +433,40 @@
       "schema_version": 1,
       "status": "OK",
       "tail_summary": {
-        "mean_lower_tail_breach": 0.21,
-        "mean_upper_tail_breach": 0.185,
-        "newest_lower_tail_breach": 0.28,
-        "newest_upper_tail_breach": 0.16,
+        "mean_lower_tail_breach": 0.2222222222222222,
+        "mean_upper_tail_breach": 0.18666666666666665,
+        "newest_lower_tail_breach": 0.32,
+        "newest_upper_tail_breach": 0.2,
         "note": "This endpoint-return lane does not claim intrahorizon maximum drawdown because path data is not part of this research contract.",
         "target_lower_tail_breach": 0.1,
         "target_upper_tail_breach": 0.1
       },
       "target_definition": "settled_endpoint_return=(actual_price/base_price)-1",
       "walk_forward": {
-        "blocks": 8,
+        "blocks": 9,
         "embargo_bars": 60,
         "min_train": 250,
         "purge_bars": 10,
-        "samples": 400,
+        "samples": 425,
         "test_block": 50
       }
     },
     "5m": {
       "aggregate": {
-        "baseline_pinball_mean": 0.00020023143694116108,
-        "candidate_pinball_mean": 0.00020153938191337962,
-        "coverage_abs_error": 0.13750000000000007,
+        "baseline_pinball_mean": 0.0002008168075703637,
+        "candidate_pinball_mean": 0.0002038880928609352,
+        "coverage_abs_error": 0.14700854700854715,
         "coverage_target": 0.8,
-        "improved_block_ratio": 0.25,
-        "mean_interval_coverage": 0.6625,
-        "mean_interval_width": 0.0011391663820739153,
-        "newest_block_coverage": 0.62,
-        "newest_block_n": 50,
-        "newest_block_pinball_delta": 5.483067415510811e-06,
-        "non_worse_block_ratio": 0.25,
-        "relative_pinball_improvement": -0.006532165938572785
+        "improved_block_ratio": 0.2222222222222222,
+        "mean_interval_coverage": 0.6529914529914529,
+        "mean_interval_width": 0.001148729566709183,
+        "newest_block_coverage": 0.5769230769230769,
+        "newest_block_n": 26,
+        "newest_block_pinball_delta": 1.71780078373953e-05,
+        "non_worse_block_ratio": 0.2222222222222222,
+        "relative_pinball_improvement": -0.015293965319587866
       },
-      "analysis_git_sha": "f25eaf73808dccae8a987ad8aee92f16c530e2a5",
+      "analysis_git_sha": "27e78a80e55db6c432452cd0c0a0f452cc685a71",
       "blocks": [
         {
           "baseline": {
@@ -712,6 +747,41 @@
           "test_end": "2026-10-26T17:45:00+00:00",
           "test_start": "2026-10-24T05:59:20.375430+00:00",
           "train_end": "2026-10-19T22:29:19.813129+00:00"
+        },
+        {
+          "baseline": {
+            "interval_coverage": 0.7307692307692307,
+            "interval_width_mean": 0.0014737652384247514,
+            "pinball_mean": 0.00020549977260398444,
+            "q10_pinball": 0.00015364871072628774,
+            "q50_pinball": 0.0003093524707608106,
+            "q90_pinball": 0.00015349813632485498
+          },
+          "candidate": {
+            "interval_coverage": 0.5769230769230769,
+            "interval_width_mean": 0.0012252350437913248,
+            "lower_tail_breach_rate": 0.2692307692307692,
+            "median_sign_accuracy": 0.38461538461538464,
+            "pinball_mean": 0.00022267778044137974,
+            "predicted_q10_mean": -0.0006408472255814055,
+            "predicted_q50_mean": 6.69497447472748e-05,
+            "predicted_q90_mean": 0.0005843878182099192,
+            "q10_pinball": 0.00019229580288317752,
+            "q50_pinball": 0.00034037264384706786,
+            "q90_pinball": 0.00013536489459389388,
+            "realized_lower_tail_mean": -0.0009860883533660944,
+            "realized_upper_tail_mean": 0.0008732292303377243,
+            "upper_tail_breach_rate": 0.15384615384615385
+          },
+          "delta": {
+            "coverage": -0.15384615384615385,
+            "pinball_mean": 1.71780078373953e-05,
+            "width": -0.0002485301946334266
+          },
+          "n": 26,
+          "test_end": "2026-10-29T01:25:00+00:00",
+          "test_start": "2026-10-26T19:57:17.901566+00:00",
+          "train_end": "2026-10-23T09:55:49.816414+00:00"
         }
       ],
       "decision": "RESEARCH_ONLY_NO_PRODUCTION_EFFECT",
@@ -768,43 +838,43 @@
         "test_start": "2026-10-03T13:24:53.314155+00:00",
         "train_end": "2026-10-03T06:58:30.352842+00:00"
       },
-      "generated_at_utc": "2026-10-28T22:41:19.346697+00:00",
+      "generated_at_utc": "2026-10-29T05:57:50.866057+00:00",
       "horizon": "5m",
-      "n": 773,
+      "n": 776,
       "newest_block": {
         "baseline": {
-          "interval_coverage": 0.62,
-          "interval_width_mean": 0.001404349017298889,
-          "pinball_mean": 0.00030647496301515134,
-          "q10_pinball": 0.00029819386691235964,
-          "q50_pinball": 0.0003994669758201197,
-          "q90_pinball": 0.00022176404631297467
+          "interval_coverage": 0.7307692307692307,
+          "interval_width_mean": 0.0014737652384247514,
+          "pinball_mean": 0.00020549977260398444,
+          "q10_pinball": 0.00015364871072628774,
+          "q50_pinball": 0.0003093524707608106,
+          "q90_pinball": 0.00015349813632485498
         },
         "candidate": {
-          "interval_coverage": 0.62,
-          "interval_width_mean": 0.001263223620538097,
-          "lower_tail_breach_rate": 0.24,
-          "median_sign_accuracy": 0.42,
-          "pinball_mean": 0.00031195803043066215,
-          "predicted_q10_mean": -0.0005866131309876384,
-          "predicted_q50_mean": 2.948513466472637e-05,
-          "predicted_q90_mean": 0.0006766104895504588,
-          "q10_pinball": 0.0003077020593241632,
-          "q50_pinball": 0.00040259889752357824,
-          "q90_pinball": 0.00022557313444424495,
-          "realized_lower_tail_mean": -0.0017242106687640573,
-          "realized_upper_tail_mean": 0.00162567202058485,
-          "upper_tail_breach_rate": 0.14
+          "interval_coverage": 0.5769230769230769,
+          "interval_width_mean": 0.0012252350437913248,
+          "lower_tail_breach_rate": 0.2692307692307692,
+          "median_sign_accuracy": 0.38461538461538464,
+          "pinball_mean": 0.00022267778044137974,
+          "predicted_q10_mean": -0.0006408472255814055,
+          "predicted_q50_mean": 6.69497447472748e-05,
+          "predicted_q90_mean": 0.0005843878182099192,
+          "q10_pinball": 0.00019229580288317752,
+          "q50_pinball": 0.00034037264384706786,
+          "q90_pinball": 0.00013536489459389388,
+          "realized_lower_tail_mean": -0.0009860883533660944,
+          "realized_upper_tail_mean": 0.0008732292303377243,
+          "upper_tail_breach_rate": 0.15384615384615385
         },
         "delta": {
-          "coverage": 0.0,
-          "pinball_mean": 5.483067415510811e-06,
-          "width": -0.00014112539676079195
+          "coverage": -0.15384615384615385,
+          "pinball_mean": 1.71780078373953e-05,
+          "width": -0.0002485301946334266
         },
-        "n": 50,
-        "test_end": "2026-10-26T17:45:00+00:00",
-        "test_start": "2026-10-24T05:59:20.375430+00:00",
-        "train_end": "2026-10-19T22:29:19.813129+00:00"
+        "n": 26,
+        "test_end": "2026-10-29T01:25:00+00:00",
+        "test_start": "2026-10-26T19:57:17.901566+00:00",
+        "train_end": "2026-10-23T09:55:49.816414+00:00"
       },
       "pit_scope": "strict_binance_primary_prediction_provenance",
       "production_changed": false,
@@ -813,26 +883,26 @@
       "schema_version": 1,
       "status": "OK",
       "tail_summary": {
-        "mean_lower_tail_breach": 0.175,
-        "mean_upper_tail_breach": 0.1625,
-        "newest_lower_tail_breach": 0.24,
-        "newest_upper_tail_breach": 0.14,
+        "mean_lower_tail_breach": 0.18547008547008545,
+        "mean_upper_tail_breach": 0.16153846153846155,
+        "newest_lower_tail_breach": 0.2692307692307692,
+        "newest_upper_tail_breach": 0.15384615384615385,
         "note": "This endpoint-return lane does not claim intrahorizon maximum drawdown because path data is not part of this research contract.",
         "target_lower_tail_breach": 0.1,
         "target_upper_tail_breach": 0.1
       },
       "target_definition": "settled_endpoint_return=(actual_price/base_price)-1",
       "walk_forward": {
-        "blocks": 8,
+        "blocks": 9,
         "embargo_bars": 60,
         "min_train": 250,
         "purge_bars": 5,
-        "samples": 400,
+        "samples": 426,
         "test_block": 50
       }
     }
   },
-  "prediction_db_sha256": "0f2e7f2228ba7364041a7071f56cf61355af7fcff1420984860b958949354c1f",
+  "prediction_db_sha256": "2d8a3e64d0523f4ee10fb7afa7f681258f492d92de522e6225d052cff038fbe9",
   "production_changed": false,
   "research_only": true,
   "schema_version": 1,
