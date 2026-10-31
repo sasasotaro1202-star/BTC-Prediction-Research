@@ -3,25 +3,35 @@
   "status": "PASS",
   "pit_verified": true,
   "pit_verified_reason": "strict_binance_primary_scope_verified",
-  "checked_predictions": 1304,
-  "verified_predictions": 1135,
-  "verified_primary_predictions": 806,
+  "checked_predictions": 1305,
+  "verified_predictions": 1136,
+  "verified_primary_predictions": 807,
   "verified_fallback_predictions": 329,
   "min_strict_pit_rows": 300,
   "primary_horizon_gate": {
     "5m": {
-      "strict_primary_settled": 803,
+      "strict_primary_settled": 804,
       "minimum": 300,
       "ready": true
     },
     "10m": {
-      "strict_primary_settled": 802,
+      "strict_primary_settled": 803,
       "minimum": 300,
       "ready": true
     }
   },
   "coverage": {
     "5m": {
+      "settled_predictions": 1302,
+      "strict_primary_settled": 804,
+      "situation_meta_ready": 800,
+      "online_expert_ready": 800,
+      "situation_meta_rows_needed": 2200,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2200,
+      "estimated_days_lower_bound": 7.638888888888889
+    },
+    "10m": {
       "settled_predictions": 1301,
       "strict_primary_settled": 803,
       "situation_meta_ready": 799,
@@ -31,19 +41,9 @@
       "estimated_5m_cycles_lower_bound": 2201,
       "estimated_days_lower_bound": 7.642361111111111
     },
-    "10m": {
-      "settled_predictions": 1300,
-      "strict_primary_settled": 802,
-      "situation_meta_ready": 798,
-      "online_expert_ready": 798,
-      "situation_meta_rows_needed": 2202,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2202,
-      "estimated_days_lower_bound": 7.645833333333333
-    },
     "15m": {
-      "settled_predictions": 720,
-      "strict_primary_settled": 528,
+      "settled_predictions": 722,
+      "strict_primary_settled": 530,
       "situation_meta_ready": 0,
       "online_expert_ready": 0
     },
@@ -146,13 +146,15 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-10-31T15:13:09.763501+00:00",
+  "generated_at_utc": "2026-10-31T15:23:43.066397+00:00",
   "history": {
-    "status": "SKIPPED_EXISTING_BUCKET",
-    "bucket_start_utc": "2026-10-31T15:00:00+00:00",
-    "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261031T1500Z.json",
+    "status": "RECORDED",
+    "bucket_start_utc": "2026-10-31T15:15:00+00:00",
+    "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261031T1515Z.json",
     "retention": 672,
     "history_count": 672,
-    "removed": []
+    "removed": [
+      "pit_20260926T2030Z.json"
+    ]
   }
 }
