@@ -206,3 +206,10 @@ def test_supervisor_keeps_pit_audit_fresh_during_production_backpressure():
     assert 'dispatch_if_stale btc_pit_oos_audit.yml 900' in text
     assert text.index('dispatch_if_stale btc_pit_oos_audit.yml 900') < text.index('production_active=0')
     assert 'PIT OOS Audit is a production-safety prerequisite' in text
+
+def test_supervisor_uses_bounded_60_second_dispatch_verification_window():
+    text = Path('.github/workflows/btc_continuous_supervisor.yml').read_text(encoding='utf-8')
+    assert 'for check in 1 2 3 4 5 6 7 8 9 10 11 12; do' in text
+    assert 'sleep 5' in text
+    assert 'bounded 60-second poll' in text
+
