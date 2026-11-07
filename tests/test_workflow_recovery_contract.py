@@ -61,3 +61,42 @@ def test_watchdog_runs_immediately_when_its_recovery_workflow_changes():
     text = _workflow("btc_watchdog.yml")
     assert "  push:" in text
     assert "      - '.github/workflows/btc_watchdog.yml'" in text
+def test_research_workflow_keeps_runtime_production_audit_out_of_git_state():
+    text = _workflow("btc_research.yml")
+    assert "data/historical_research/production_artifact_audit.json" in text
+    assert "actions/upload-artifact@v6" in text
+    assert "git add -f data/historical_research/production_artifact_audit.json" not in text
+    for line in text.splitlines():
+        if line.strip().startswith("git add "):
+            assert "production_artifact_audit.json" not in line
+    assert "/tmp/btc_research_artifact_audit.json" not in text
+def test_experience_policy_allows_state_only_main_drift_but_rejects_code_drift():
+    text = _workflow("btc_experience_policy_oos.yml")
+    assert "Validate scheduled research snapshot against current main" in text
+    assert 'compare/${GITHUB_SHA}...${remote_sha}' in text
+    assert 'compare_status' in text
+    assert "changed_file_count=\"$(jq '.files | length' <<<\"${compare_json}\")\"" in text
+    assert 'compare_file_limit_reached' in text
+    assert 'jq -r ".files[]?.filename // empty"' in text
+    assert "data/*|models/*.json|models/*.joblib)" in text
+    assert 'STALE_MAIN_RUN incompatible_change=' in text
+    assert "STATE_ONLY_MAIN_DRIFT allowed_between_snapshot_and_main:" in text
+    assert "git add" not in text
+
+
+def test_research_pr_automerge_does_not_cancel_inflight_merge_checks():
+    text = _workflow("btc_research_pr_automerge.yml")
+    assert "group: btc-research-pr-automerge" in text
+    assert "cancel-in-progress: false" in text
+
+
+def test_binance_flow_collector_143_requires_fresh_advancing_checkpoint():
+    text = _workflow("btc_binance_flow_research.yml")
+    assert 'capture_started_at_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"' in text
+    assert "initial_latest=" in text
+    assert "rows[-1].get('end_time_ms'" in text
+    assert "updated_at_utc" in text
+    assert 'if [ "$collector_status" -eq 143 ]; then' in text
+    assert "latest > initial_latest" in text
+    assert 'fresh advancing checkpoint' in text
+    assert 'exited with 143 without a fresh advancing checkpoint' in text
