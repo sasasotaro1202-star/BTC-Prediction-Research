@@ -903,8 +903,20 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${BTC_LIVE_DEFERRED:-0}" = "1" ]; then
-            echo "PIT/OOS audit skipped because live prediction was safely DEFERRED; no PIT snapshot is fabricated."
-            exit 0
+            pit_action="$(python src/pit_deferred_audit_policy.py data/historical_research/pit_oos_audit.json --max-age-seconds 900)"
+            case "${pit_action}" in
+              REFRESH)
+                echo "Live prediction is safely DEFERRED, but the PIT/OOS audit is missing, malformed, future-dated, or older than 15 minutes; refreshing the audit of the existing immutable prediction ledger."
+                ;;
+              SKIP)
+                echo "PIT/OOS audit is fresh enough during safely DEFERRED live cycle; no new prediction was fabricated."
+                exit 0
+                ;;
+              *)
+                echo "ERROR: unknown deferred PIT refresh policy result: ${pit_action}" >&2
+                exit 1
+                ;;
+            esac
           fi
           python src/pit_oos_audit.py
           test -s data/historical_research/pit_oos_audit.json
