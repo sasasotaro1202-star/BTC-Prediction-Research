@@ -283,11 +283,32 @@ async def _stream(url:str, parser, timeout_seconds:float, on_event:Callable[[dic
     return count
 
 
+FLOW_HEARTBEAT_SECONDS=60.0
+
+
 async def collect_flow_window(timeout_seconds:float, initial_bins:dict[int,dict[str,Any]]|None=None, checkpoint_seconds:float=30.0, on_checkpoint=None)->dict[int,dict[str,Any]]:
     bins=dict(initial_bins or {})
     latest_event=max((int(v.get("last_event_time_ms",0)) for v in bins.values()),default=0)
     lock=asyncio.Lock()
     last_checkpoint=time.monotonic()
+    deadline=time.monotonic()+float(timeout_seconds)
+
+    async def heartbeat() -> None:
+        started=time.monotonic()
+        while time.monotonic() < deadline:
+            sleep_seconds=min(FLOW_HEARTBEAT_SECONDS, max(0.1, deadline-time.monotonic()))
+            await asyncio.sleep(sleep_seconds)
+            if time.monotonic() >= deadline:
+                return
+            async with lock:
+                elapsed=time.monotonic()-started
+                print(
+                    "flow heartbeat "
+                    f"elapsed_seconds={elapsed:.1f} "
+                    f"finalized_bins={len(normalize_bins(bins))} "
+                    f"latest_event_time_ms={latest_event}",
+                    flush=True,
+                )
 
     async def handle(event:dict[str,Any])->None:
         nonlocal latest_event,last_checkpoint
@@ -304,10 +325,18 @@ async def collect_flow_window(timeout_seconds:float, initial_bins:dict[int,dict[
             if asyncio.iscoroutine(result):
                 await result
 
-    await asyncio.gather(
-        _stream(AGGTRADE_URL,parse_agg_trade_message,float(timeout_seconds),handle),
-        _stream(FORCE_ORDER_URL,parse_force_order_message,float(timeout_seconds),handle),
-    )
+    heartbeat_task=asyncio.create_task(heartbeat())
+    try:
+        await asyncio.gather(
+            _stream(AGGTRADE_URL,parse_agg_trade_message,float(timeout_seconds),handle),
+            _stream(FORCE_ORDER_URL,parse_force_order_message,float(timeout_seconds),handle),
+        )
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
     async with lock:
         finalize_bins(bins,latest_event,int(time.time()*1000))
         final=dict(bins)
