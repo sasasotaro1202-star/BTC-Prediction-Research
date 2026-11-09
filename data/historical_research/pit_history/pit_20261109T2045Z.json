@@ -1,67 +1,67 @@
 {
-  "checked_predictions": 650,
+  "checked_predictions": 1464,
   "coverage": {
     "10m": {
-      "estimated_5m_cycles_lower_bound": 2669,
-      "estimated_days_lower_bound": 9.26736111111111,
-      "online_expert_ready": 331,
+      "estimated_5m_cycles_lower_bound": 2093,
+      "estimated_days_lower_bound": 7.267361111111111,
+      "online_expert_ready": 907,
       "online_expert_rows_needed": 0,
-      "settled_predictions": 648,
-      "situation_meta_ready": 331,
-      "situation_meta_rows_needed": 2669,
-      "strict_primary_settled": 335
+      "settled_predictions": 1458,
+      "situation_meta_ready": 907,
+      "situation_meta_rows_needed": 2093,
+      "strict_primary_settled": 911
     },
     "12h": {
       "online_expert_ready": 0,
-      "settled_predictions": 67,
+      "settled_predictions": 882,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 60
+      "strict_primary_settled": 641
     },
     "15m": {
       "online_expert_ready": 0,
-      "settled_predictions": 69,
+      "settled_predictions": 881,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 62
+      "strict_primary_settled": 640
     },
     "1h": {
       "online_expert_ready": 0,
-      "settled_predictions": 67,
+      "settled_predictions": 883,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 60
+      "strict_primary_settled": 642
     },
     "24h": {
       "online_expert_ready": 0,
-      "settled_predictions": 0,
+      "settled_predictions": 869,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 0
+      "strict_primary_settled": 631
     },
     "30m": {
       "online_expert_ready": 0,
-      "settled_predictions": 65,
+      "settled_predictions": 883,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 58
+      "strict_primary_settled": 642
     },
     "3h": {
       "online_expert_ready": 0,
-      "settled_predictions": 67,
+      "settled_predictions": 882,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 60
+      "strict_primary_settled": 641
     },
     "5m": {
-      "estimated_5m_cycles_lower_bound": 2668,
-      "estimated_days_lower_bound": 9.26388888888889,
-      "online_expert_ready": 332,
+      "estimated_5m_cycles_lower_bound": 2093,
+      "estimated_days_lower_bound": 7.267361111111111,
+      "online_expert_ready": 907,
       "online_expert_rows_needed": 0,
-      "settled_predictions": 649,
-      "situation_meta_ready": 332,
-      "situation_meta_rows_needed": 2668,
-      "strict_primary_settled": 336
+      "settled_predictions": 1458,
+      "situation_meta_ready": 907,
+      "situation_meta_rows_needed": 2093,
+      "strict_primary_settled": 911
     },
     "6h": {
       "online_expert_ready": 0,
-      "settled_predictions": 67,
+      "settled_predictions": 880,
       "situation_meta_ready": 0,
-      "strict_primary_settled": 60
+      "strict_primary_settled": 639
     }
   },
   "coverage_policy": "strict_primary_settled requires actual outcome + valid primary PIT; situation_meta_ready additionally requires persisted situation, microstructure, and components; estimated_days is a lower bound assuming one qualifying prediction every 5 minutes",
@@ -78,16 +78,16 @@
     "promotion_effect": "none",
     "research_only": true
   },
-  "generated_at_utc": "2026-10-03T12:17:02.609108+00:00",
+  "generated_at_utc": "2026-11-09T20:50:00.013620+00:00",
   "history": {
-    "bucket_start_utc": "2026-10-03T12:15:00+00:00",
-    "recorded_at_utc": "2026-10-03T12:17:02.609340+00:00",
+    "bucket_start_utc": "2026-11-09T20:45:00+00:00",
+    "recorded_at_utc": "2026-11-09T20:50:00.013861+00:00",
     "runtime": {
       "github_job": "live",
       "github_ref": "refs/heads/main",
-      "github_run_id": "37122304091",
-      "github_run_number": "1452",
-      "github_sha": "60d7c08f180f1ff45ec63d121516030c5cdd5a81",
+      "github_run_id": "42696504254",
+      "github_run_number": "3605",
+      "github_sha": "a4264d3f0257aaa57948326d9e6a474f8a001984",
       "github_workflow": "BTC Live Cycle"
     },
     "schema_version": 1
@@ -142,10 +142,22 @@
   "pit_verified": true,
   "pit_verified_reason": "strict_binance_primary_scope_verified",
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
+  "primary_horizon_gate": {
+    "10m": {
+      "minimum": 300,
+      "ready": true,
+      "strict_primary_settled": 911
+    },
+    "5m": {
+      "minimum": 300,
+      "ready": true,
+      "strict_primary_settled": 911
+    }
+  },
   "status": "PASS",
-  "verified_fallback_predictions": 144,
-  "verified_predictions": 481,
-  "verified_primary_predictions": 337,
+  "verified_fallback_predictions": 378,
+  "verified_predictions": 1295,
+  "verified_primary_predictions": 917,
   "violation_count": 0,
   "violations": []
 }
