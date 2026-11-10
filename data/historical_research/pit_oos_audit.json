@@ -3,25 +3,35 @@
   "status": "PASS",
   "pit_verified": true,
   "pit_verified_reason": "strict_binance_primary_scope_verified",
-  "checked_predictions": 1477,
-  "verified_predictions": 1308,
-  "verified_primary_predictions": 926,
+  "checked_predictions": 1478,
+  "verified_predictions": 1309,
+  "verified_primary_predictions": 927,
   "verified_fallback_predictions": 382,
   "min_strict_pit_rows": 300,
   "primary_horizon_gate": {
     "5m": {
-      "strict_primary_settled": 923,
+      "strict_primary_settled": 924,
       "minimum": 300,
       "ready": true
     },
     "10m": {
-      "strict_primary_settled": 922,
+      "strict_primary_settled": 923,
       "minimum": 300,
       "ready": true
     }
   },
   "coverage": {
     "5m": {
+      "settled_predictions": 1475,
+      "strict_primary_settled": 924,
+      "situation_meta_ready": 920,
+      "online_expert_ready": 920,
+      "situation_meta_rows_needed": 2080,
+      "online_expert_rows_needed": 0,
+      "estimated_5m_cycles_lower_bound": 2080,
+      "estimated_days_lower_bound": 7.222222222222222
+    },
+    "10m": {
       "settled_predictions": 1474,
       "strict_primary_settled": 923,
       "situation_meta_ready": 919,
@@ -31,31 +41,21 @@
       "estimated_5m_cycles_lower_bound": 2081,
       "estimated_days_lower_bound": 7.225694444444445
     },
-    "10m": {
-      "settled_predictions": 1473,
-      "strict_primary_settled": 922,
-      "situation_meta_ready": 918,
-      "online_expert_ready": 918,
-      "situation_meta_rows_needed": 2082,
-      "online_expert_rows_needed": 0,
-      "estimated_5m_cycles_lower_bound": 2082,
-      "estimated_days_lower_bound": 7.229166666666667
-    },
     "15m": {
-      "settled_predictions": 895,
-      "strict_primary_settled": 650,
+      "settled_predictions": 897,
+      "strict_primary_settled": 652,
       "situation_meta_ready": 0,
       "online_expert_ready": 0
     },
     "30m": {
-      "settled_predictions": 895,
-      "strict_primary_settled": 650,
+      "settled_predictions": 897,
+      "strict_primary_settled": 652,
       "situation_meta_ready": 0,
       "online_expert_ready": 0
     },
     "1h": {
-      "settled_predictions": 896,
-      "strict_primary_settled": 651,
+      "settled_predictions": 898,
+      "strict_primary_settled": 653,
       "situation_meta_ready": 0,
       "online_expert_ready": 0
     },
@@ -146,13 +146,15 @@
   "violations": [],
   "violation_count": 0,
   "policy": "strict_pit_scope_with_legacy_unverified_quarantine",
-  "generated_at_utc": "2026-11-10T19:59:05.810506+00:00",
+  "generated_at_utc": "2026-11-10T20:05:19.637476+00:00",
   "history": {
-    "status": "SKIPPED_EXISTING_BUCKET",
-    "bucket_start_utc": "2026-11-10T19:45:00+00:00",
-    "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261110T1945Z.json",
+    "status": "RECORDED",
+    "bucket_start_utc": "2026-11-10T20:00:00+00:00",
+    "path": "/home/runner/work/BTC-Prediction-Research/BTC-Prediction-Research/data/historical_research/pit_history/pit_20261110T2000Z.json",
     "retention": 672,
     "history_count": 672,
-    "removed": []
+    "removed": [
+      "pit_20261003T1515Z.json"
+    ]
   }
 }
