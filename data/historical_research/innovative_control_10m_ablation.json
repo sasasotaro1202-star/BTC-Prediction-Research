@@ -1,87 +1,87 @@
 {
   "deltas_vs_soft": {
-    "accuracy": 0.0007142857142857229,
-    "brier": -0.00023566899500127025,
-    "ece": 0.0005478676390607701,
-    "logloss": -0.00032908768263206767
+    "accuracy": 0.0,
+    "brier": -0.00012410128404183318,
+    "ece": -3.919912615071852e-06,
+    "logloss": -0.00019375518608777398
   },
   "horizon": "10m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.42928571428571427,
+      "accuracy": 0.4017857142857143,
       "blocks": 28,
-      "brier": 0.6239451942904144,
-      "ece": 0.09889446998729176,
-      "logloss": 1.0183479559981279,
+      "brier": 0.6386282742696067,
+      "ece": 0.10460830534541596,
+      "logloss": 1.0428038713989298,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.42928571428571427,
+      "accuracy": 0.40214285714285714,
       "blocks": 28,
-      "brier": 0.6240268539072188,
-      "ece": 0.09971026237037374,
-      "logloss": 1.0184712455767992,
+      "brier": 0.6387130544027878,
+      "ece": 0.10461672684571692,
+      "logloss": 1.042931574059035,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.42928571428571427,
+      "accuracy": 0.4017857142857143,
       "blocks": 28,
-      "brier": 0.6239612392131851,
-      "ece": 0.09891387582518912,
-      "logloss": 1.0183717343806244,
+      "brier": 0.638646616974427,
+      "ece": 0.10462660801665791,
+      "logloss": 1.0428313885273552,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.43,
+      "accuracy": 0.40214285714285714,
       "blocks": 28,
-      "brier": 0.6240621571209579,
-      "ece": 0.09919511732773786,
-      "logloss": 1.0185543192435056,
+      "brier": 0.6389098552554349,
+      "ece": 0.10402659479975458,
+      "logloss": 1.0432241483291793,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.42857142857142855,
+      "accuracy": 0.4007142857142857,
       "blocks": 28,
-      "brier": 0.623631060535646,
-      "ece": 0.1010448589845425,
-      "logloss": 1.018151083242671,
+      "brier": 0.6390546161036794,
+      "ece": 0.10864883077957803,
+      "logloss": 1.0433411121528051,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.42928571428571427,
+      "accuracy": 0.4014285714285714,
       "blocks": 28,
-      "brier": 0.6241074169964833,
-      "ece": 0.09922662825348748,
-      "logloss": 1.0185886501387313,
+      "brier": 0.6387962609985642,
+      "ece": 0.10515014502188168,
+      "logloss": 1.0430572617512646,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.42928571428571427,
+      "accuracy": 0.40214285714285714,
       "blocks": 28,
-      "brier": 0.6242978261159592,
-      "ece": 0.0986472496886771,
-      "logloss": 1.0188834069261377,
+      "brier": 0.6390339565394767,
+      "ece": 0.10403051471236965,
+      "logloss": 1.043417903515267,
       "n": 2800
     }
   },
   "period_breakdown": {
     "early": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.0011111111111111183,
-      "full_vs_soft_brier_delta": -0.00015730925463033587,
-      "full_vs_soft_logloss_delta": -0.0002529830961636787
+      "full_vs_soft_accuracy_delta": -0.0011111111111111122,
+      "full_vs_soft_brier_delta": -0.0003470754889967435,
+      "full_vs_soft_logloss_delta": -0.0005408332417582552
     },
     "middle": {
       "blocks": 9,
       "full_vs_soft_accuracy_delta": 0.0011111111111111122,
-      "full_vs_soft_brier_delta": -0.0002655805271265151,
-      "full_vs_soft_logloss_delta": -0.00037372060341512984
+      "full_vs_soft_brier_delta": -7.313067407630245e-05,
+      "full_vs_soft_logloss_delta": -0.00010115291379093123
     },
     "recent": {
       "blocks": 10,
-      "full_vs_soft_accuracy_delta": 5.551115123125783e-18,
-      "full_vs_soft_brier_delta": -0.000279272382422302,
-      "full_vs_soft_logloss_delta": -0.00035741218174860644
+      "full_vs_soft_accuracy_delta": 0.0,
+      "full_vs_soft_brier_delta": 3.070195144831978e-05,
+      "full_vs_soft_logloss_delta": 3.527301894813428e-05
     }
   },
   "research_only": true,
