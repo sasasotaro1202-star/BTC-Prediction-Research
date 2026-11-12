@@ -1,87 +1,87 @@
 {
   "deltas_vs_soft": {
-    "accuracy": 0.0007142857142857229,
-    "brier": -0.0001887625269125781,
-    "ece": -0.0005544968097840053,
-    "logloss": -0.00024867282482365916
+    "accuracy": -0.0003571428571428892,
+    "brier": -4.245676549641253e-05,
+    "ece": -0.0018933247584574514,
+    "logloss": -2.8861984649575234e-05
   },
   "horizon": "10m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.39785714285714285,
+      "accuracy": 0.4382142857142857,
       "blocks": 28,
-      "brier": 0.6332546772186795,
-      "ece": 0.08925797458747509,
-      "logloss": 1.024436415991396,
+      "brier": 0.6244293297851354,
+      "ece": 0.10173523129783003,
+      "logloss": 1.0179961581308725,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.3967857142857143,
+      "accuracy": 0.4382142857142857,
       "blocks": 28,
-      "brier": 0.6333779584116204,
-      "ece": 0.08939407175985034,
-      "logloss": 1.0246161564993446,
+      "brier": 0.6244631860625064,
+      "ece": 0.1022021051449267,
+      "logloss": 1.0180528997631006,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.39785714285714285,
+      "accuracy": 0.43785714285714283,
       "blocks": 28,
-      "brier": 0.6332839160946767,
-      "ece": 0.0896597956762274,
-      "logloss": 1.0244757209820923,
+      "brier": 0.6244369427475084,
+      "ece": 0.10139895923036998,
+      "logloss": 1.0180072288509754,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.3967857142857143,
+      "accuracy": 0.43857142857142856,
       "blocks": 28,
-      "brier": 0.6335865305067582,
-      "ece": 0.08937602277265456,
-      "logloss": 1.0249331538548183,
+      "brier": 0.624564274431415,
+      "ece": 0.1020132497755108,
+      "logloss": 1.018228302223842,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.39535714285714285,
+      "accuracy": 0.43892857142857145,
       "blocks": 28,
-      "brier": 0.633714946540649,
-      "ece": 0.09190448987601291,
-      "logloss": 1.0249139137731431,
+      "brier": 0.6243836157252338,
+      "ece": 0.10196712088765472,
+      "logloss": 1.0180376101063957,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.3960714285714286,
+      "accuracy": 0.4382142857142857,
       "blocks": 28,
-      "brier": 0.6334862842458328,
-      "ece": 0.0897067528962478,
-      "logloss": 1.0247647568514313,
+      "brier": 0.6244948576940476,
+      "ece": 0.10251797307220682,
+      "logloss": 1.0180926396346854,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.3960714285714286,
+      "accuracy": 0.43892857142857145,
       "blocks": 28,
-      "brier": 0.6337752930336708,
-      "ece": 0.08993051958243857,
-      "logloss": 1.025181826679642,
+      "brier": 0.6246067311969115,
+      "ece": 0.10390657453396825,
+      "logloss": 1.0182571642084917,
       "n": 2800
     }
   },
   "period_breakdown": {
     "early": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": 0.00333333333333333,
-      "full_vs_soft_brier_delta": -0.00041729908100406206,
-      "full_vs_soft_logloss_delta": -0.000518689228053093
+      "full_vs_soft_accuracy_delta": 0.0,
+      "full_vs_soft_brier_delta": -0.00017373241244842162,
+      "full_vs_soft_logloss_delta": -0.00021211985640445796
     },
     "middle": {
       "blocks": 9,
       "full_vs_soft_accuracy_delta": -0.0011111111111111122,
-      "full_vs_soft_brier_delta": -0.00020148104744511909,
-      "full_vs_soft_logloss_delta": -0.00029031005421717746
+      "full_vs_soft_brier_delta": -3.795767229224861e-05,
+      "full_vs_soft_logloss_delta": -9.635729229283562e-05
     },
     "recent": {
       "blocks": 10,
       "full_vs_soft_accuracy_delta": 0.0,
-      "full_vs_soft_brier_delta": 2.836704024909986e-05,
-      "full_vs_soft_logloss_delta": 3.181544453719765e-05
+      "full_vs_soft_brier_delta": 7.164213287665921e-05,
+      "full_vs_soft_logloss_delta": 0.00019681587680868694
     }
   },
   "research_only": true,
