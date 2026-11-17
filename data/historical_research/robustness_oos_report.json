@@ -2,10 +2,82 @@
   "horizons": {
     "10m": {
       "data_source": "live_binance_primary",
-      "minimum": 1000,
-      "n": 999,
-      "promotion_evidence_eligible": false,
-      "status": "insufficient_data"
+      "development": {
+        "accuracy": 0.40625,
+        "brier": 0.6426931507627808,
+        "logloss": 1.0559183609612803,
+        "n": 800
+      },
+      "development_n": 800,
+      "final_holdout": {
+        "accuracy": 0.485,
+        "brier": 0.5847207469116965,
+        "logloss": 0.9545429204440846,
+        "n": 200
+      },
+      "final_holdout_n": 200,
+      "final_holdout_protected": true,
+      "n": 1000,
+      "promotion_evidence_eligible": true,
+      "regimes": {
+        "DOWN_MOMENTUM|HIGH_VOL": {
+          "all_n": 275,
+          "development": {
+            "accuracy": 0.3756345177664975,
+            "brier": 0.6255530364402929,
+            "logloss": 1.0168513702663935,
+            "n": 197
+          },
+          "final_holdout": {
+            "minimum": 100,
+            "n": 78,
+            "status": "insufficient_data"
+          }
+        },
+        "DOWN_MOMENTUM|LOW_VOL": {
+          "all_n": 196,
+          "development": {
+            "accuracy": 0.3430232558139535,
+            "brier": 0.6601265224973502,
+            "logloss": 1.086236223775026,
+            "n": 172
+          },
+          "final_holdout": {
+            "minimum": 100,
+            "n": 24,
+            "status": "insufficient_data"
+          }
+        },
+        "UP_MOMENTUM|HIGH_VOL": {
+          "all_n": 289,
+          "development": {
+            "accuracy": 0.47533632286995514,
+            "brier": 0.6242336617331923,
+            "logloss": 1.0289294799162179,
+            "n": 223
+          },
+          "final_holdout": {
+            "minimum": 100,
+            "n": 66,
+            "status": "insufficient_data"
+          }
+        },
+        "UP_MOMENTUM|LOW_VOL": {
+          "all_n": 240,
+          "development": {
+            "accuracy": 0.41346153846153844,
+            "brier": 0.6643014615165419,
+            "logloss": 1.0967839630573257,
+            "n": 208
+          },
+          "final_holdout": {
+            "minimum": 100,
+            "n": 32,
+            "status": "insufficient_data"
+          }
+        }
+      },
+      "status": "ok"
     },
     "5m": {
       "data_source": "live_binance_primary",
