@@ -1,87 +1,87 @@
 {
   "deltas_vs_soft": {
-    "accuracy": -0.0007142857142857229,
-    "brier": -5.723144933689195e-05,
-    "ece": -0.002300349772465335,
-    "logloss": -0.00010911094732524163
+    "accuracy": -0.00035714285714283367,
+    "brier": -1.973793638598842e-05,
+    "ece": -0.0018520345859358023,
+    "logloss": -2.7665901456974673e-05
   },
   "horizon": "5m",
   "models": {
     "adaptive_ensemble": {
-      "accuracy": 0.4496428571428571,
+      "accuracy": 0.46464285714285714,
       "blocks": 28,
-      "brier": 0.6070659006580331,
-      "ece": 0.07155755886281108,
-      "logloss": 0.9885647576279811,
+      "brier": 0.5992250431910886,
+      "ece": 0.08058244028296563,
+      "logloss": 0.9784257787167868,
       "n": 2800
     },
     "disagreement_model": {
-      "accuracy": 0.44892857142857145,
+      "accuracy": 0.4642857142857143,
       "blocks": 28,
-      "brier": 0.6071229385271025,
-      "ece": 0.07185810337746584,
-      "logloss": 0.9886475955100531,
+      "brier": 0.5992505968942677,
+      "ece": 0.08052498253577935,
+      "logloss": 0.9784652388468857,
       "n": 2800
     },
     "drift_aware_router": {
-      "accuracy": 0.4496428571428571,
+      "accuracy": 0.4642857142857143,
       "blocks": 28,
-      "brier": 0.6070724580138613,
-      "ece": 0.07156551730400904,
-      "logloss": 0.9885739390696332,
+      "brier": 0.5992292517419239,
+      "ece": 0.08093959418265657,
+      "logloss": 0.9784320946888795,
       "n": 2800
     },
     "full_architecture": {
-      "accuracy": 0.4492857142857143,
+      "accuracy": 0.46285714285714286,
       "blocks": 28,
-      "brier": 0.6072558342129837,
-      "ece": 0.07094703458156942,
-      "logloss": 0.9888153965461114,
+      "brier": 0.599313211726589,
+      "ece": 0.07934629626051093,
+      "logloss": 0.9785673623172924,
       "n": 2800
     },
     "future_failure_predictor": {
-      "accuracy": 0.44821428571428573,
+      "accuracy": 0.4675,
       "blocks": 28,
-      "brier": 0.6072846198337979,
-      "ece": 0.0709057531629355,
-      "logloss": 0.9887469628323499,
+      "brier": 0.599757119954857,
+      "ece": 0.08113491739534444,
+      "logloss": 0.97943413839272,
       "n": 2800
     },
     "predictability_model": {
-      "accuracy": 0.45,
+      "accuracy": 0.4639285714285714,
       "blocks": 28,
-      "brier": 0.6071689051956423,
-      "ece": 0.07152639552587303,
-      "logloss": 0.9887125424638121,
+      "brier": 0.5992756692587096,
+      "ece": 0.08095385540676278,
+      "logloss": 0.9785023619402685,
       "n": 2800
     },
     "soft_ensemble": {
-      "accuracy": 0.45,
+      "accuracy": 0.4632142857142857,
       "blocks": 28,
-      "brier": 0.6073130656623206,
-      "ece": 0.07324738435403476,
-      "logloss": 0.9889245074934366,
+      "brier": 0.599332949662975,
+      "ece": 0.08119833084644673,
+      "logloss": 0.9785950282187493,
       "n": 2800
     }
   },
   "period_breakdown": {
     "early": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": -6.1679056923619804e-18,
-      "full_vs_soft_brier_delta": -0.00012924154647674257,
-      "full_vs_soft_logloss_delta": -0.0001730696522593833
+      "full_vs_soft_accuracy_delta": 0.0,
+      "full_vs_soft_brier_delta": -1.4277167400051422e-05,
+      "full_vs_soft_logloss_delta": -1.4834567331164136e-05
     },
     "middle": {
       "blocks": 9,
-      "full_vs_soft_accuracy_delta": -0.0011111111111111122,
-      "full_vs_soft_brier_delta": -5.849687213247782e-05,
-      "full_vs_soft_logloss_delta": -9.097590526633652e-05
+      "full_vs_soft_accuracy_delta": 0.0,
+      "full_vs_soft_brier_delta": 0.00013075527838870806,
+      "full_vs_soft_logloss_delta": 0.00024382596196263298
     },
     "recent": {
       "blocks": 10,
       "full_vs_soft_accuracy_delta": -0.0010000000000000009,
-      "full_vs_soft_brier_delta": 8.716518604978684e-06,
-      "full_vs_soft_logloss_delta": -6.786965073733997e-05
+      "full_vs_soft_brier_delta": -0.000160096521770392,
+      "full_vs_soft_logloss_delta": -0.0002835567792480176
     }
   },
   "research_only": true,
