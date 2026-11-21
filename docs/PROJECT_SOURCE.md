@@ -3186,3 +3186,21 @@ The Recency Challenger exploratory candidate is selected by equal rank across va
 Frozen Holdout remains descriptive-only and cannot tune the selection rule. The challenger also runs automatically when its research source/workflow/tests change, while ordinary data-state updates do not trigger the expensive lane.
 
 This is an evidence-generation change only. A positive result is not Production evidence without independent strict-PIT, OOS/WFO, robustness, calibration, Frozen Holdout, and shadow validation.
+
+
+⸻
+
+109. DEFERRED PIT AUDIT REFRESH CONTRACT
+
+A safely deferred Live Cycle does not create a new market prediction, but settlement of previously created predictions can still advance while the cycle is deferred. Therefore a deferred cycle must not permanently suppress the PIT/OOS audit.
+
+During a deferred cycle:
+
+- persisted PIT/OOS auditがfreshなら冗長な再監査をskipしてよい。
+- auditがmissing / malformed / future-dated / 900 seconds超なら、既存のimmutable prediction ledgerに対するread-only PIT/OOS auditを再実行する。
+- refreshによってmarket snapshot、prediction、Production stateをfabricateしない。
+- refresh policy resultがUNKNOWNならFAIL-CLOSEDとする。
+
+目的は、5分周期のDeferred実行で不要なcommit churnを増やさず、Continuous SupervisorのPIT freshness hard-stopを実際のprediction/settlement ledgerと同期させることである。
+
+実装は`src/pit_deferred_audit_policy.py`、回帰検証はunit testで固定する。この変更はaudit livenessだけを改善し、PIT validity、OOS/WFO、calibration、robustness、Frozen Holdout、shadow、promotionの条件を緩和しない。
