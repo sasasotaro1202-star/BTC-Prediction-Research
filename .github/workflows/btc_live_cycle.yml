@@ -894,6 +894,47 @@ jobs:
               f'exact_unique={expected} after={after}'
           )
           PY
+      - name: Refresh PIT-safe BTC time-state trajectory research
+        if: hashFiles('src/time_state_trajectory.py') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python src/time_state_trajectory.py
+          test -s data/historical_research/time_state_trajectory_registry.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('data/historical_research')
+          registry = json.loads((root / 'time_state_trajectory_registry.json').read_text(encoding='utf-8'))
+          if registry.get('research_only') is not True:
+              raise SystemExit('time-state trajectory research_only contract failed')
+          if registry.get('production_changed') is not False:
+              raise SystemExit('time-state trajectory production_changed contract failed')
+          if registry.get('promotion_allowed') is not False:
+              raise SystemExit('time-state trajectory promotion boundary failed')
+          expected = {'5m', '10m'}
+          horizons = registry.get('horizons')
+          if not isinstance(horizons, dict) or set(horizons) != expected:
+              raise SystemExit('time-state trajectory horizon coverage mismatch')
+          for horizon in sorted(expected):
+              path = root / f'time_state_trajectory_{horizon}.json'
+              if not path.is_file():
+                  raise SystemExit(f'missing time-state trajectory artifact: {horizon}')
+              obj = json.loads(path.read_text(encoding='utf-8'))
+              if obj.get('research_only') is not True or obj.get('production_changed') is not False:
+                  raise SystemExit(f'trajectory safety contract failed: {horizon}')
+              if obj.get('promotion_allowed') is not False:
+                  raise SystemExit(f'trajectory promotion boundary failed: {horizon}')
+              status = obj.get('status')
+              if status not in {'OK', 'DEFERRED', 'FAILED'}:
+                  raise SystemExit(f'unknown trajectory terminal status: {horizon}:{status}')
+              if status == 'OK' and obj.get('future_labels_used_for_transition_training') is not False:
+                  raise SystemExit(f'future-label contamination contract failed: {horizon}')
+              print(f'BTC time-state trajectory {horizon}: status={status} scored_rows={obj.get("scored_rows", 0)}')
+          print('BTC time-state trajectory refresh: VERIFIED')
+          PY
+        
       - name: Run non-fatal BTC research health audit
         run: python src/research_health.py
       - name: Run strict research input audit
@@ -1257,7 +1298,10 @@ jobs:
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
-              data/experience/experience_summary.json; do
+              data/experience/experience_summary.json \
+              data/historical_research/time_state_trajectory_5m.json \
+              data/historical_research/time_state_trajectory_10m.json \
+              data/historical_research/time_state_trajectory_registry.json; do
               if [ -f "$path" ]; then git add -- "$path"; fi
             done
             if [ -d data/historical_research/pit_history ]; then
@@ -1298,7 +1342,10 @@ jobs:
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
-              data/experience/experience_summary.json; do
+              data/experience/experience_summary.json \
+              data/historical_research/time_state_trajectory_5m.json \
+              data/historical_research/time_state_trajectory_10m.json \
+              data/historical_research/time_state_trajectory_registry.json; do
               if [ -f "$path" ]; then
                 mkdir -p "$STATE_ROOT/$(dirname "$path")"
                 cp -a "$path" "$STATE_ROOT/$path"
@@ -1333,7 +1380,10 @@ jobs:
               data/historical_research/performance_change.json \
               data/historical_research/venue_drift.json \
               data/historical_research/flat_diagnostic.json \
-              data/experience/experience_summary.json; do
+              data/experience/experience_summary.json \
+              data/historical_research/time_state_trajectory_5m.json \
+              data/historical_research/time_state_trajectory_10m.json \
+              data/historical_research/time_state_trajectory_registry.json; do
               if [ -f "$STATE_ROOT/$path" ]; then
                 mkdir -p "$(dirname "$path")"
                 cp -a "$STATE_ROOT/$path" "$path" || return 1
