@@ -25,7 +25,9 @@ on:
 
 concurrency:
   group: btc-research-pr-automerge
-  cancel-in-progress: true
+  # Do not let a newer draft/non-candidate event cancel an already-evaluable
+  # research merge check. Each run is independently SHA-gated below.
+  cancel-in-progress: false
 
 permissions:
   contents: write
